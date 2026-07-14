@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { createIncludedImportJsonFiles } from "htsw-editor-common/project";
+import { ALL_SECTIONS, createIncludedImportJsonFiles } from "htsw-editor-common/project";
 import { nodeProjectFs } from "./nodeProjectFs";
 import {
     applyEdits,
@@ -11,14 +11,7 @@ import {
     parseTree,
 } from "jsonc-parser";
 
-const IMPORTABLE_SECTIONS = new Set([
-    "functions",
-    "events",
-    "regions",
-    "items",
-    "menus",
-    "npcs",
-]);
+const IMPORTABLE_SECTIONS: ReadonlySet<string> = new Set(ALL_SECTIONS);
 const FILE_REFERENCE_KEYS = new Set([
     "include",
     "actions",

@@ -22,11 +22,16 @@ function syncFromUuid(uuid: string): void {
 
 function save(uuid: string): void {
     const trimmed = editingValue.trim();
+    const saved = trimmed.length === 0
+        ? clearAlias(uuid)
+        : setAlias(uuid, trimmed);
+    if (!saved) {
+        ChatLib.chat("&c[htsw] Couldn't save the house alias. Check housing-aliases.json.");
+        return;
+    }
     if (trimmed.length === 0) {
-        clearAlias(uuid);
         ChatLib.chat(`&7[htsw] Cleared alias for ${shortUuid(uuid)}`);
     } else {
-        setAlias(uuid, trimmed);
         ChatLib.chat(`&a[htsw] Aliased ${shortUuid(uuid)} → ${trimmed}`);
     }
     editingUuid = null;
@@ -35,7 +40,10 @@ function save(uuid: string): void {
 }
 
 function clear(uuid: string): void {
-    clearAlias(uuid);
+    if (!clearAlias(uuid)) {
+        ChatLib.chat("&c[htsw] Couldn't clear the house alias. Check housing-aliases.json.");
+        return;
+    }
     ChatLib.chat(`&7[htsw] Cleared alias for ${shortUuid(uuid)}`);
     editingUuid = null;
     editingValue = "";

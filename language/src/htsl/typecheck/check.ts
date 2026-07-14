@@ -1,10 +1,8 @@
 import { Diagnostic } from "../../diagnostic";
-import type { Action, ActionChangeVar, Condition, VarOperation } from "../../types";
+import type { Action, ActionChangeVar, VarOperation } from "../../types";
 import { TyCtxt } from "./context";
 import { parseValue } from "./values";
 import { applyNumericOperation, type VarKey } from "./state";
-
-// TODO: move this over to ../../check/passed/checkTypeflow probably
 
 export function check(tcx: TyCtxt, actions: Action[]) {
     for (let i = 0; i < actions.length; i++) {
@@ -15,36 +13,27 @@ export function check(tcx: TyCtxt, actions: Action[]) {
         }
 
         else if (action.type === "CONDITIONAL") {
-            if (!action.conditions || action.matchAny === undefined) continue;
-
-            for (const subCtxt of narrow(tcx, action.conditions, action.matchAny)) {
-                // tcx.exploredConditionalBranches.add(action.ifActions.value);
-                check(subCtxt, action.ifActions);
-                check(subCtxt, actions.slice(i + 1));
+            if (action.conditions.length === 0) {
+                check(tcx, action.ifActions);
+                continue;
             }
-
-            for (const subCtxt of narrow(tcx, action.conditions, action.matchAny, true)) {
-                // tcx.exploredConditionalBranches.add(action.elseActions.value);
-                check(subCtxt, action.elseActions);
-                check(subCtxt, actions.slice(i + 1));
-            }
-            
-            // We have already taken responsibility for exploring all branches. Checking is done.
-            return;
+            const branches = [tcx.clone(), tcx.clone()];
+            check(branches[0], action.ifActions);
+            check(branches[1], action.elseActions);
+            tcx.keepStatesUnchangedIn(branches);
         }
 
         else if (action.type === "RANDOM") {
-            if (!action.actions) continue;
+            if (action.actions.length === 0) continue;
 
-            for (const subAction of action.actions) {
-                check(tcx, [subAction, ...actions.slice(i + 1)]);
+            const branches = action.actions.map(() => tcx.clone());
+            for (let branchIndex = 0; branchIndex < action.actions.length; branchIndex++) {
+                check(branches[branchIndex], [action.actions[branchIndex]]);
             }
-            
-            return;
+            tcx.keepStatesUnchangedIn(branches);
         }
 
         else if (action.type === "PAUSE") {
-            // well, now we can't say anything about the state!
             tcx.clearState();
         }
     }
@@ -155,40 +144,4 @@ function update(tcx: TyCtxt, action: ActionChangeVar) {
 
     const newValue = applyNumericOperation(lhs, rhs, action.op);
     tcx.setState(key, { ...lhs, ...newValue });
-}
-
-function maybeInvert(value: boolean, inverted: boolean) {
-    return inverted ? !value : value;
-}
-
-function narrow(
-    tcx: TyCtxt,
-    conditions: Condition[],
-    matchAny: boolean,
-    inverted: boolean = false
-): TyCtxt[] {
-    if (conditions.length === 0) {
-        return inverted
-            ? []     // Never true
-            : [tcx]; // Always true, just use owning context
-    }
-    
-    return inverted ? [] : [tcx]; // For now
-
-    if (maybeInvert(matchAny, inverted)) {
-        const res: TyCtxt[] = [];
-        for (const condition of conditions) {
-            res.push(...narrow(tcx, [condition], inverted, inverted));
-        }
-        return res;
-    }
-
-    return []; // TODO: NOT IMPLEMENTED!
-}
-
-function narrowCondition(
-    tcx: TyCtxt,
-    condition: Condition,
-) {
-    // if (condition.)
 }

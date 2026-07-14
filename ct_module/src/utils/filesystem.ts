@@ -30,7 +30,7 @@ export function atomicWriteText(path: string, content: string): boolean {
     if (writeTempThenMove(path, tempPath, content)) return true;
     try {
         FileLib.write(path, content, true);
-        return true;
+        return String(FileLib.read(path) ?? "") === content;
     } catch (_fallbackError) {
         return false;
     }

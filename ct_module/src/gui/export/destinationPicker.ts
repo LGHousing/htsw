@@ -248,7 +248,10 @@ function exportSubTreeRows(): Element[] {
         selectedPath: canonicalPath(getEffectiveNewExportTarget()),
         disabledLabel: "",
         onSelect: (path) => {
-            setNewExportTarget(path);
+            if (!setNewExportTarget(path)) {
+                showToast("Couldn't save the export destination", 0xffe85c5c, 8000);
+                return;
+            }
             markGuiDirty();
         },
         onToggle: (path) => {
@@ -295,15 +298,23 @@ function newExportFileRow(): Element {
                 onSubmit: (folderPath) => {
                     try {
                         const created = createIncludedFolderInTree(base, folderPath);
-                        setNewExportTarget(created.importJsonPath);
+                        const targetSaved = setNewExportTarget(created.importJsonPath);
                         invalidateParseCacheEntry(base);
                         requestParse(base);
                         bumpTreeRevision();
                         closeAllPopovers();
-                        showToast(
-                            `New exports → ${shortPath(created.importJsonPath)}`,
-                            0xff5cb85c
-                        );
+                        if (targetSaved) {
+                            showToast(
+                                `New entries → ${shortPath(created.importJsonPath)}`,
+                                0xff5cb85c
+                            );
+                        } else {
+                            showToast(
+                                "Created the file, but couldn't save it as the export destination",
+                                0xffe85c5c,
+                                8000
+                            );
+                        }
                     } catch (err) {
                         ChatLib.chat(`&c[htsw] New file failed: ${err}`);
                     }
@@ -374,7 +385,13 @@ export function exportDestinationPicker(): Element {
                 style: { padding: { side: "x", value: 4 } },
             }),
             Text({
-                text: "Choose the project and where newly exported items are created.",
+                text: "Existing entries stay in their current file.",
+                color: COLOR_TEXT_DIM,
+                truncate: true,
+                style: { padding: { side: "x", value: 4 } },
+            }),
+            Text({
+                text: "Choose where brand-new entries are created.",
                 color: COLOR_TEXT_DIM,
                 truncate: true,
                 style: { padding: { side: "x", value: 4 } },
@@ -421,7 +438,7 @@ export function exportDestinationPicker(): Element {
                 style: { gap: 4, align: "center", height: { kind: "px", value: 16 } },
                 children: () => [
                     Text({
-                        text: "Folder for new exports",
+                        text: "New entries go in",
                         color: COLOR_TEXT_FAINT,
                         style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
                     }),

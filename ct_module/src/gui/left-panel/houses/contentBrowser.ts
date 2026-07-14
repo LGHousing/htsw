@@ -657,7 +657,7 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     if (getExportImportJsonPath().trim() === "") {
                                         return "Select a project and folder";
                                     }
-                                    return `New exports: ${shortPath(getEffectiveNewExportTarget())}`;
+                                    return `New entries go in: ${shortPath(getEffectiveNewExportTarget())}`;
                                 },
                                 color: COLOR_TEXT_DIM,
                                 truncate: true,

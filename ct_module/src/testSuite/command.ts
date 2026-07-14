@@ -10,7 +10,7 @@ export function commandTest(args: string[]): void {
         runCoverageCommand(args[1]);
         return;
     }
-    if (TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         ChatLib.chat("&c[htsw test] a task is already running.");
         return;
     }

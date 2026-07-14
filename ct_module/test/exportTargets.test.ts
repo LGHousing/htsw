@@ -127,6 +127,6 @@ describe("moveImportableEntry", () => {
             },
         ]);
         const source = JSON.parse(fs.readFile("/project/npcs.import.json"));
-        expect(source.npcs).toEqual([]);
+        expect(source).not.toHaveProperty("npcs");
     });
 });

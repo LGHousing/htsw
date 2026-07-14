@@ -349,12 +349,7 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
 }
 
 export function startImport(explicit?: readonly ImportQueueItem[]): void {
-    // Re-entry guard. TaskManager.run does not serialise tasks, so without this
-    // a second click (or a click during the brief end-of-run window where the
-    // panel already reads "done" but the task hasn't fully unwound) would launch
-    // a SECOND concurrent import. Two tasks driving the same Housing menus
-    // deadlock — the classic "menu opened once then stopped".
-    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first.");
         return;
     }

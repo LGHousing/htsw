@@ -144,7 +144,7 @@ export class SourceMap {
     registerFile(file: SourceFile) {
         if (this.sourceFiles.length > 0) {
             const last = this.sourceFiles[this.sourceFiles.length - 1];
-            file.startPos = last.endPos();
+            file.startPos = last.endPos() + 1;
         }
 
         this.sourceFiles.push(file);
@@ -170,7 +170,7 @@ export class SourceMap {
             const start = file.startPos;
             const end = file.endPos();
 
-            if (pos >= start && pos < end) {
+            if (pos >= start && pos <= end) {
                 return file;
             }
         }

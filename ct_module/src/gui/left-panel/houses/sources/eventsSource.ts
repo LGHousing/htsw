@@ -43,7 +43,12 @@ export function scanHouseEvents(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
     const names = knownEventNames();
-    recordHouseScan(uuid, "EVENT", names);
+    try {
+        recordHouseScan(uuid, "EVENT", names);
+    } catch (error) {
+        showToast(`Event refresh failed: ${error}`, 0xffe85c5c, 8000);
+        return;
+    }
     showToast(
         `Refreshed ${names.length} event${names.length === 1 ? "" : "s"}`,
         0xff5cb85c

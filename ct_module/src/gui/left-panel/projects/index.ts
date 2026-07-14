@@ -68,7 +68,9 @@ function currentHouseTrustButton(): Element {
         disabled: uuid === null,
         onClick: () => {
             if (uuid === null) return;
-            setHouseTrust(uuid, !trusted);
+            if (!setHouseTrust(uuid, !trusted)) {
+                ChatLib.chat("&c[htsw] Couldn't save the house trust setting.");
+            }
         },
         tooltip,
         tooltipColor,

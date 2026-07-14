@@ -11,6 +11,17 @@ function getMinecraftChatKeyBinding(): any | null {
     }
 }
 
+function getMinecraftInventoryKeyBinding(): any | null {
+    try {
+        const settings = Client.getMinecraft().field_71474_y;
+        if (settings === null || settings === undefined) return null;
+        const binding = settings.field_151445_Q;
+        return binding === undefined ? null : binding;
+    } catch (_e) {
+        return null;
+    }
+}
+
 function keyCodeOf(binding: any): number | null {
     try {
         return Number(binding.func_151463_i());
@@ -28,6 +39,13 @@ export function getChatKeyCode(): number {
     if (binding === null) return Keyboard.KEY_T;
     const code = keyCodeOf(binding);
     return code === null ? Keyboard.KEY_T : code;
+}
+
+export function getInventoryKeyCode(): number {
+    const binding = getMinecraftInventoryKeyBinding();
+    if (binding === null) return Keyboard.KEY_E;
+    const code = keyCodeOf(binding);
+    return code === null ? Keyboard.KEY_E : code;
 }
 
 /** Display name like "T" or "LSHIFT". Returns "(unbound)" when MC's controls

@@ -192,7 +192,7 @@ async function dumpGroupPermissions(
 }
 
 export function commandGroupPerms(args: string[]): void {
-    if (TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         ChatLib.chat("&c[htsw groupperms] a task is already running.");
         return;
     }

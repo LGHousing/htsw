@@ -14,10 +14,8 @@ import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
-    COLOR_BUTTON,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
-    COLOR_BUTTON_HOVER,
     COLOR_PANEL,
     COLOR_PANEL_BORDER,
     COLOR_PANEL_RAISED,
@@ -25,11 +23,6 @@ import {
     COLOR_TEXT_DIM,
 } from "../../lib/theme";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
-import {
-    getStepAuto,
-    requestStepAdvance,
-    setStepAuto,
-} from "../../../housingSync/stepGate";
 import { cancelActiveTask } from "../../../tasks/activeTask";
 import { isCurrentHouseTrusted } from "../../state";
 import {
@@ -385,50 +378,24 @@ function progressStatusText(): string {
     return pos.allDone ? `§lDone` : `§7Preparing…`;
 }
 
-function progressControlButtons(): Element[] {
-    return [
-        Button({
-            text: () => (getStepAuto() ? "Pause" : "Resume"),
-            style: {
-                width: { kind: "px", value: 56 },
-                height: { kind: "grow" },
-                background: COLOR_BUTTON,
-                hoverBackground: COLOR_BUTTON_HOVER,
-            },
-            onClick: () => setStepAuto(!getStepAuto()),
-        }),
-        ...(getStepAuto()
-            ? []
-            : [
-                  Button({
-                      text: "Step",
-                      style: {
-                          width: { kind: "px", value: 44 },
-                          height: { kind: "grow" },
-                          background: COLOR_BUTTON,
-                          hoverBackground: COLOR_BUTTON_HOVER,
-                      },
-                      onClick: () => requestStepAdvance(),
-                  }),
-              ]),
-        Button({
-            icon: Icons.x,
-            text: "Cancel",
-            style: {
-                width: { kind: "auto" },
-                height: { kind: "grow" },
-                background: COLOR_BUTTON_DANGER,
-                hoverBackground: COLOR_BUTTON_DANGER_HOVER,
-            },
-            onClick: () => {
-                if (getTaskProgress() === null) return;
-                cancelActiveTask();
-                setTaskProgress(null);
-                setActiveTaskPath(null);
-                ChatLib.chat(`&c[htsw] cancelling task…`);
-            },
-        }),
-    ];
+function cancelButton(): Element {
+    return Button({
+        icon: Icons.x,
+        text: "Cancel",
+        style: {
+            width: { kind: "auto" },
+            height: { kind: "grow" },
+            background: COLOR_BUTTON_DANGER,
+            hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+        },
+        onClick: () => {
+            if (getTaskProgress() === null) return;
+            cancelActiveTask();
+            setTaskProgress(null);
+            setActiveTaskPath(null);
+            ChatLib.chat(`&c[htsw] cancelling task…`);
+        },
+    });
 }
 
 export function liveTaskFooterPanel(): Element {
@@ -471,7 +438,7 @@ export function liveTaskFooterPanel(): Element {
                         children: [],
                     }),
                     progressBar(),
-                    // The total/ETA text and the Pause/Cancel buttons get
+                    // The total/ETA text and Cancel button get
                     // separate rows: sharing one row truncated the text to
                     // "total 9m37s - end…" on narrow GUIs.
                     Row({
@@ -505,7 +472,7 @@ export function liveTaskFooterPanel(): Element {
                                 },
                                 children: [],
                             }),
-                            ...progressControlButtons(),
+                            cancelButton(),
                         ],
                     }),
                 ],

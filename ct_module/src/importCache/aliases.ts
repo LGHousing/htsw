@@ -1,7 +1,9 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { atomicWriteText } from "../utils/filesystem";
-import { readSettingsFile, settingsFilePath } from "../persistence/settingsFiles";
+import {
+    readJsonSettingsFile,
+    writeJsonSettingsFile,
+} from "../persistence/settingsFiles";
 
 /**
  * Plain-English nicknames for Housing UUIDs. The UUID is the canonical
@@ -20,7 +22,6 @@ import { readSettingsFile, settingsFilePath } from "../persistence/settingsFiles
  */
 
 const ALIAS_FILE_NAME = "housing-aliases.json";
-const ALIAS_FILE = settingsFilePath(ALIAS_FILE_NAME);
 
 type AliasMap = { [uuid: string]: string };
 
@@ -28,43 +29,44 @@ let cachedMap: AliasMap | null = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 2000;
 
-function readMap(): AliasMap {
-    const now = Date.now();
-    if (cachedMap !== null && now - cachedAt < CACHE_TTL_MS) return cachedMap;
-    const map = readMapFromDisk();
+function rememberMap(map: AliasMap): AliasMap {
     cachedMap = map;
-    cachedAt = now;
+    cachedAt = Date.now();
     return map;
 }
 
-function readMapFromDisk(): AliasMap {
-    try {
-        const stored = readSettingsFile(ALIAS_FILE_NAME);
-        if (stored === null) return {};
-        const raw = stored;
-        if (raw.trim() === "") return {};
-        const parsed = JSON.parse(raw) as unknown;
-        if (parsed === null || typeof parsed !== "object") return {};
-        const out: AliasMap = {};
-        const obj = parsed as { [k: string]: unknown };
-        for (const key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                const value = obj[key];
-                if (typeof value === "string" && value.length > 0) {
-                    out[key] = value;
-                }
-            }
-        }
-        return out;
-    } catch (_e) {
-        return {};
-    }
+function readMap(): AliasMap {
+    const now = Date.now();
+    if (now - cachedAt < CACHE_TTL_MS) return cachedMap ?? {};
+    const map = readMapFromDisk();
+    if (map !== null) return rememberMap(map);
+    cachedAt = now;
+    return cachedMap ?? {};
 }
 
-function writeMap(map: AliasMap): void {
-    cachedMap = map;
-    cachedAt = Date.now();
-    atomicWriteText(ALIAS_FILE, JSON.stringify(map, null, 2));
+function readMapFromDisk(): AliasMap | null {
+    const stored = readJsonSettingsFile(ALIAS_FILE_NAME);
+    if (!stored.ok) return null;
+    if (!stored.found) return {};
+    const parsed = stored.value;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    const out: AliasMap = {};
+    const obj = parsed as { [k: string]: unknown };
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            if (typeof value !== "string" || value.length === 0) return null;
+            out[key] = value;
+        }
+    }
+    return out;
+}
+
+function writeMap(map: AliasMap): boolean {
+    if (!writeJsonSettingsFile(ALIAS_FILE_NAME, map, true)) return false;
+    rememberMap(map);
+    return true;
 }
 
 export function getAlias(uuid: string): string | null {
@@ -73,22 +75,32 @@ export function getAlias(uuid: string): string | null {
     return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-export function setAlias(uuid: string, alias: string): void {
+export function setAlias(uuid: string, alias: string): boolean {
     const trimmed = alias.trim();
-    const map = readMap();
+    const map = readMapFromDisk();
+    if (map === null) return false;
+    const previous = map[uuid];
+    if ((trimmed.length === 0 && previous === undefined) || previous === trimmed) {
+        rememberMap(map);
+        return true;
+    }
     if (trimmed.length === 0) {
         delete map[uuid];
     } else {
         map[uuid] = trimmed;
     }
-    writeMap(map);
+    return writeMap(map);
 }
 
-export function clearAlias(uuid: string): void {
-    const map = readMap();
-    if (!Object.prototype.hasOwnProperty.call(map, uuid)) return;
+export function clearAlias(uuid: string): boolean {
+    const map = readMapFromDisk();
+    if (map === null) return false;
+    if (!Object.prototype.hasOwnProperty.call(map, uuid)) {
+        rememberMap(map);
+        return true;
+    }
     delete map[uuid];
-    writeMap(map);
+    return writeMap(map);
 }
 
 export function listAliases(): AliasMap {

@@ -16,7 +16,7 @@ import { houseDisplayName } from "../importCache/aliases";
 import { recordHouseBinding } from "../importCache/houseBindings";
 import { setHouseUuidKey } from "../project/importJsonMutations";
 
-export function boundHouseUuidOf(fullPath: string): string | null {
+function boundHouseUuidOf(fullPath: string): string | null {
     const parse = requestParse(fullPath);
     if (parse === null || parse.parsed === null) return null;
     return parse.parsed.importJson.houseUuid;

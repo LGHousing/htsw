@@ -11,7 +11,6 @@ import {
 } from "../importCache";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "./identity";
-import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import { resetMenuNameSession } from "./menus/listMenus";
@@ -42,7 +41,6 @@ import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
 } from "../housingSync/actions/apply";
-import { waitIfStepPaused } from "../housingSync/stepGate";
 import { writeImportFailureLog } from "../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
@@ -123,7 +121,6 @@ export async function importSelectedImportables(
         new SourceMap(new FileSystemFileLoader()),
         selection.sourcePath
     );
-    const sm = new SourceMap(new FileSystemFileLoader());
     const items = createItemRegistry(parsed.value, parsed.gcx);
 
     const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
@@ -203,7 +200,6 @@ export async function importSelectedImportables(
 
     // ── Pass 1: pre-read + diff every non-trusted importable. ──────────
     for (let i = 0; i < rowsMeta.length; i++) {
-        await waitIfStepPaused(ctx);
         const row = rowsMeta[i];
         const cacheEntry = row.trustPlan?.entry ?? null;
         events?.emit({
@@ -247,7 +243,6 @@ export async function importSelectedImportables(
             }
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
-            printDiagnostic(sm, diag);
             const logPath = writeImportFailureLog({
                 phase: "pre-read",
                 sourcePath: selection.sourcePath,
@@ -273,7 +268,6 @@ export async function importSelectedImportables(
     // ── Pass 2: apply every collected plan in original order. ──────────
     for (let planIndex = 0; planIndex < plans.length; planIndex++) {
         const { row, plan } = plans[planIndex];
-        await waitIfStepPaused(ctx);
         events?.emit({
             kind: "importableReactivated",
             key: row.key,
@@ -311,7 +305,6 @@ export async function importSelectedImportables(
             }
             const diag = toImportDiagnostic(error, "import", row.importable.type);
             events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
-            printDiagnostic(sm, diag);
             const logPath = writeImportFailureLog({
                 phase: "apply",
                 sourcePath: selection.sourcePath,

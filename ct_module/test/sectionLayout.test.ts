@@ -239,6 +239,45 @@ describe("preferred new-export target routing", () => {
         expect(target.htslReference).toBe("mine.htsl");
     });
 
+    test("a function declared in the entry file ignores the preferred target", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["combat/import.json"],
+                functions: [{ name: "Duel", actions: "mine.htsl" }],
+            }),
+            "/project/mine.htsl": 'chat "hi"',
+            "/project/combat/import.json": "{}",
+        });
+
+        const target = htslTargetForFunctionExport(
+            fs,
+            ROOT,
+            "Duel",
+            "/project/combat/import.json"
+        );
+        expect(target.importJsonPath).toBe(ROOT);
+        expect(target.htslReference).toBe("mine.htsl");
+        expect(target.htslPath).toBe("/project/mine.htsl");
+    });
+
+    test("a team declared in the entry file ignores the preferred target", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["combat/import.json"],
+                teams: [{ name: "Red", color: "RED" }],
+            }),
+            "/project/combat/import.json": "{}",
+        });
+
+        expect(importJsonTargetForSectionEntry(
+            fs,
+            ROOT,
+            "teams",
+            "Red",
+            "/project/combat/import.json"
+        )).toBe(ROOT);
+    });
+
     test("a preferred target not reachable in the include tree is ignored", () => {
         const fs = memoryFs({
             [ROOT]: JSON.stringify({ include: ["functions/import.json"] }),

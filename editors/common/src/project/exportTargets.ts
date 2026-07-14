@@ -4,8 +4,8 @@ import { canonicalSlug } from "./filenames";
 import { joinPath, type ProjectFs } from "./fs";
 import {
     importableEntryMatchesIdentity,
+    findDeclaringImportJsonForSection,
     npcPosIdentity,
-    resolveImportableFile,
     type Section,
 } from "./importJsonMutations";
 import { sectionFolderImportJson } from "./sectionLayout";
@@ -509,8 +509,13 @@ export function importJsonTargetForSectionEntry(
     identity: string,
     preferredNewTargetImportJson?: string
 ): string {
-    const declared = resolveImportableFile(fs, entryImportJsonPath, section, identity);
-    if (declared !== entryImportJsonPath) return declared;
+    const declared = findDeclaringImportJsonForSection(
+        fs,
+        entryImportJsonPath,
+        section,
+        identity
+    );
+    if (declared !== null) return declared;
     const preferred = reachablePreferredTarget(
         fs,
         entryImportJsonPath,

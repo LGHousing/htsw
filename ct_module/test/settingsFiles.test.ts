@@ -2,6 +2,17 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readSettingsFile, settingsFilePath } from "../src/persistence/settingsFiles";
 
+vi.mock("../src/utils/filesystem", () => ({
+    atomicWriteText: (path: string, value: string) => {
+        try {
+            FileLib.write(path, value, true);
+            return true;
+        } catch (_e) {
+            return false;
+        }
+    },
+}));
+
 describe("persistent settings files", () => {
     let files: Map<string, string>;
 
@@ -41,5 +52,22 @@ describe("persistent settings files", () => {
         expect(readSettingsFile("trusted-houses.json")).toBe("legacy");
         expect(files.get(settingsFilePath("trusted-houses.json"))).toBe("legacy");
         expect(files.has("./htsw/.cache/trusted-houses.json")).toBe(false);
+    });
+
+    test("keeps the old copy when migration cannot write the new one", () => {
+        const legacyPath = "./htsw/.state/trusted-houses.json";
+        files.set(legacyPath, "legacy");
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files.has(path),
+            read: (path: string) => files.get(path) ?? null,
+            write: () => {
+                throw new Error("read-only");
+            },
+            delete: (path: string) => files.delete(path),
+        });
+
+        expect(readSettingsFile("trusted-houses.json")).toBe("legacy");
+        expect(files.get(legacyPath)).toBe("legacy");
+        expect(files.has(settingsFilePath("trusted-houses.json"))).toBe(false);
     });
 });

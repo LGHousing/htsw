@@ -57,11 +57,17 @@ export class TyCtxt {
     clone(): TyCtxt {
         return new TyCtxt(
             this.gcx,
-            new Map(
-                JSON.parse(JSON.stringify([...this.states]))
-            ),
+            new Map(this.states),
             this.emittedDiagnosticLocations,
         );
+    }
+
+    keepStatesUnchangedIn(contexts: TyCtxt[]) {
+        for (const [key, state] of this.states) {
+            if (contexts.some(context => context.states.get(key) !== state)) {
+                this.states.delete(key);
+            }
+        }
     }
 
     addDiagnostic(diag: Diagnostic) {

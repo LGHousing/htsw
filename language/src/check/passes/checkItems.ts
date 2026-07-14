@@ -2,6 +2,7 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { resolveItemReference } from "../../items";
 import type { Action, Condition, Importable, ImportableItem } from "../../types";
+import { visitActionTrees } from "../actionTree";
 
 export function checkItems(
     gcx: GlobalCtxt,
@@ -24,47 +25,24 @@ function checkItemReferences(
 ): void {
     const itemNames = new Map(items.map((item) => [item.name, item]));
 
-    for (const importable of importables) {
-        if (importable.type === "FUNCTION") {
-            checkActions(gcx, itemNames, importable.actions ?? []);
-        } else if (importable.type === "EVENT") {
-            checkActions(gcx, itemNames, importable.actions);
-        } else if (importable.type === "REGION") {
-            checkActions(gcx, itemNames, importable.onEnterActions ?? []);
-            checkActions(gcx, itemNames, importable.onExitActions ?? []);
-        } else if (importable.type === "ITEM") {
-            checkActions(gcx, itemNames, importable.leftClickActions ?? []);
-            checkActions(gcx, itemNames, importable.rightClickActions ?? []);
-        } else if (importable.type === "MENU") {
-            for (const slot of importable.slots) {
-                checkActions(gcx, itemNames, slot.actions ?? []);
-            }
-        }
-    }
+    visitActionTrees(importables, {
+        action: action => checkAction(gcx, itemNames, action),
+        conditions: conditions => checkConditions(gcx, itemNames, conditions),
+    });
 }
 
-function checkActions(
+function checkAction(
     gcx: GlobalCtxt,
     itemNames: ReadonlyMap<string, ImportableItem>,
-    actions: readonly Action[]
+    action: Action,
 ): void {
-    for (const action of actions) {
-        if (
-            action.type === "GIVE_ITEM" ||
-            action.type === "REMOVE_ITEM" ||
-            action.type === "DROP_ITEM"
-        ) {
-            if (action.itemName !== undefined) {
-                checkItemReference(gcx, itemNames, action, action.itemName);
-            }
-        }
-
-        if (action.type === "CONDITIONAL") {
-            checkConditions(gcx, itemNames, action.conditions);
-            checkActions(gcx, itemNames, action.ifActions);
-            checkActions(gcx, itemNames, action.elseActions);
-        } else if (action.type === "RANDOM") {
-            checkActions(gcx, itemNames, action.actions);
+    if (
+        action.type === "GIVE_ITEM" ||
+        action.type === "REMOVE_ITEM" ||
+        action.type === "DROP_ITEM"
+    ) {
+        if (action.itemName !== undefined) {
+            checkItemReference(gcx, itemNames, action, action.itemName);
         }
     }
 }

@@ -12,7 +12,7 @@ import { setHouseTrust } from "../../state";
 import { showToast } from "../../toast";
 
 function acceptProjectLock(importJsonPath: string): void {
-    if (TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
         return;
     }
@@ -60,11 +60,13 @@ function acceptProjectLock(importJsonPath: string): void {
             showToast("No current project entries match this house lock", 0xffe5bc4b, 8000);
             return;
         }
-        setHouseTrust(result.housingUuid, true);
+        const trustSaved = setHouseTrust(result.housingUuid, true);
         const skipped = result.skipped > 0 ? `; ${result.skipped} changed or unlocked` : "";
         showToast(
-            `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}${skipped}`,
-            0xff5cb85c,
+            trustSaved
+                ? `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}${skipped}`
+                : `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}, but couldn't save house trust${skipped}`,
+            trustSaved ? 0xff5cb85c : 0xffe85c5c,
             8000
         );
     }).catch((err: unknown) => {

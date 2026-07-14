@@ -19,7 +19,6 @@ import { toggleHtswGui } from "../gui/overlay";
 import { resetTimingStats } from "../housingSync/progress/timing";
 import {
     getEventContainerCounts,
-    resetEventContainers,
 } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/projects/tree";
 import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
@@ -43,8 +42,8 @@ import {
 import { commandTest } from "../testSuite/command";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
 import { createItemRegistry } from "../importables/itemRegistry";
-import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
 import { startImport } from "../gui/right-panel/import-tab/taskController";
+import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import {
@@ -526,7 +525,7 @@ function isRawImportToken(token: string | undefined): boolean {
 }
 
 function startRawHtslImport(path: string): void {
-    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish first.");
         return;
     }
@@ -552,31 +551,20 @@ function startRawHtslImport(path: string): void {
     }
 
     const items = createItemRegistry([], result.gcx);
-    TaskManager.run(async (ctx) => {
-        setTaskRunning(true);
-        try {
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-            }
-
-            if (ctx.tryGetMenuItemSlot("Add Action") === null) {
-                throw new Error("Open a Housing action-list menu first.");
-            }
-
-            const count = result.value.length;
-            ChatLib.chat(
-                `&7[htsw] Appending ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
-            );
-            await appendActionsToOpenActionList(ctx, result.value, items);
-            ChatLib.chat(
-                `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
-            );
-        } finally {
-            setTaskRunning(false);
+    runHousingSyncTask("import", async (ctx) => {
+        if (ctx.tryGetMenuItemSlot("Add Action") === null) {
+            throw new Error("Open a Housing action-list menu first.");
         }
+
+        const count = result.value.length;
+        ChatLib.chat(
+            `&7[htsw] Appending ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
+        );
+        await appendActionsToOpenActionList(ctx, result.value, items);
+        ChatLib.chat(
+            `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
+        );
     }).catch((err: unknown) => {
-        setTaskRunning(false);
         if (err instanceof Diagnostic) {
             printDiagnostic(sm, err);
             return;

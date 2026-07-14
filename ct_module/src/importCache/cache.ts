@@ -42,10 +42,10 @@ type ReadCacheMemo = {
 
 const readCache = new Map<string, ReadCacheMemo>();
 
-// Bumped on every content write/delete. Lets lazy consumers (the source
-// diff's negative memo) revalidate "this importable has no cache entry"
-// without re-reading the filesystem. Presence-only writes don't bump: they
-// read back as null content, so nothing derived from content can change.
+// Bumped on every content write/delete. Lets lazy consumers revalidate
+// content-derived state without re-reading the filesystem. Presence-only
+// writes don't bump: they read back as null content, so nothing derived from
+// content can change.
 let contentWriteRevision = 0;
 let presenceWriteRevision = 0;
 
@@ -214,7 +214,7 @@ export function writePresence(
     label?: string,
     icon?: FunctionIcon,
     color?: Color
-): void {
+): boolean {
     // Skip if this importable is already known — as content (don't clobber a
     // verified read) or as an existing presence record (don't re-write on every
     // rescan). `name` is the identity for every type (events included).
@@ -234,7 +234,7 @@ export function writePresence(
                 ...(color !== undefined ? { color } : {}),
             });
         }
-        return;
+        return true;
     }
     if (
         existing !== undefined &&
@@ -244,7 +244,7 @@ export function writePresence(
         existing.icon?.enchanted === icon?.enchanted &&
         existing.color === color
     ) {
-        return;
+        return true;
     }
     const path = cachePathForId(housingUuid, type, name);
     const record: PresenceRecord = {
@@ -257,7 +257,7 @@ export function writePresence(
         ...(color !== undefined ? { color } : {}),
     };
     try {
-        if (!atomicWriteText(path, JSON.stringify(record, null, 4))) return;
+        if (!atomicWriteText(path, JSON.stringify(record, null, 4))) return false;
         readCache.set(path, {
             entry: null,
             mtime: getFileMtimeMs(path),
@@ -273,8 +273,9 @@ export function writePresence(
             color,
         });
         presenceWriteRevision++;
+        return true;
     } catch (_e) {
-        // best-effort
+        return false;
     }
 }
 
@@ -352,62 +353,68 @@ export function deleteImportableCache(
     housingUuid: string,
     type: Importable["type"],
     identity: string
-): void {
+): boolean {
     const path = cachePathForId(housingUuid, type, identity);
-    readCache.delete(path);
-    contentWriteRevision++;
-    presenceWriteRevision++;
-    indexRemove(housingUuid, type, identity);
     try {
         const Paths = Java.type("java.nio.file.Paths");
         const Files = Java.type("java.nio.file.Files");
         Files.deleteIfExists(Paths.get(String(path)));
     } catch {
-        // best-effort
+        return false;
     }
+    readCache.delete(path);
+    contentWriteRevision++;
+    presenceWriteRevision++;
+    indexRemove(housingUuid, type, identity);
+    return true;
 }
 
-/**
- * Recursively delete the entire per-housing cache directory:
- * `./htsw/.cache/<uuid>/` and everything beneath it (all importable
- * `.knowledge.json` files plus the `items/` SNBT cache). Best-effort —
- * any individual delete failure is swallowed.
- */
-export function deleteHousingCache(housingUuid: string): boolean {
+export type HousingCacheDeleteResult = "deleted" | "missing" | "partial";
+
+/** Delete every cache file for one house and report what remains. */
+export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResult {
+    let result: HousingCacheDeleteResult = "partial";
+    try {
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        const root = Paths.get(String(`${IMPORT_CACHE_ROOT}/${housingUuid}`));
+        if (!Files.exists(root)) {
+            result = Files.notExists(root) ? "missing" : "partial";
+        } else {
+            let deleteCompleted = false;
+            try {
+                deletePathRecursive(Files, root);
+                deleteCompleted = true;
+            } catch (_deleteError) {}
+            result = deleteCompleted && Files.notExists(root) ? "deleted" : "partial";
+        }
+    } catch (_e) {
+        result = "partial";
+    }
+
+    // A partial delete can leave any subset of files behind. Force the next
+    // lookup to rebuild its view from what is actually still on disk.
     readCache.clear();
     contentWriteRevision++;
     presenceWriteRevision++;
     enumIndex.clear();
     scanMarkerCache.clear();
-    try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const root = Paths.get(String(`${IMPORT_CACHE_ROOT}/${housingUuid}`));
-        if (!Files.exists(root)) return false;
-        deletePathRecursive(Files, root);
-        return true;
-    } catch (_e) {
-        return false;
-    }
+    return result;
 }
 
 function deletePathRecursive(Files: any, path: any): void {
-    try {
-        if (Files.isDirectory(path)) {
-            const stream = Files.newDirectoryStream(path);
-            try {
-                const it = stream.iterator();
-                while (it.hasNext()) {
-                    deletePathRecursive(Files, it.next());
-                }
-            } finally {
-                try { stream.close(); } catch (_e) { /* ignore */ }
+    if (Files.isDirectory(path)) {
+        const stream = Files.newDirectoryStream(path);
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) {
+                deletePathRecursive(Files, it.next());
             }
+        } finally {
+            try { stream.close(); } catch (_e) { /* ignore */ }
         }
-        Files.delete(path);
-    } catch (_e) {
-        // best-effort
     }
+    Files.deleteIfExists(path);
 }
 
 // ── Enumeration (everything of a type in a house) ──────────────────────────
@@ -624,25 +631,55 @@ export function recordHouseScan(
     colors?: ReadonlyMap<string, Color | undefined>
 ): void {
     const markerPath = cacheScanMarkerPath(uuid, type);
-    const scanRecorded = atomicWriteText(markerPath, new Date().toISOString());
-    scanMarkerCache.set(enumKey(uuid, type), scanRecorded);
-    if (scanRecorded) presenceWriteRevision++;
+    const scanKey = enumKey(uuid, type);
+    if (!removeScanMarker(markerPath)) {
+        scanMarkerCache.set(scanKey, false);
+        throw new Error(`Could not replace the saved ${type.toLowerCase()} scan`);
+    }
+    scanMarkerCache.set(scanKey, false);
+    presenceWriteRevision++;
+
     const present = new Set<string>();
     for (let i = 0; i < names.length; i++) present.add(names[i]);
+    enumIndex.delete(scanKey);
     const known = ensureEnumLoaded(uuid, type).slice();
     for (let i = 0; i < known.length; i++) {
         if (!present.has(known[i].name)) {
-            deleteImportableCache(uuid, type, known[i].name);
+            if (!deleteImportableCache(uuid, type, known[i].name)) {
+                throw new Error(`Could not remove stale ${type.toLowerCase()} cache data`);
+            }
         }
     }
     for (let i = 0; i < names.length; i++) {
-        writePresence(
-            uuid,
-            type,
-            names[i],
-            labels?.get(names[i]),
-            icons?.get(names[i]),
-            colors?.get(names[i])
-        );
+        if (
+            !writePresence(
+                uuid,
+                type,
+                names[i],
+                labels?.get(names[i]),
+                icons?.get(names[i]),
+                colors?.get(names[i])
+            )
+        ) {
+            throw new Error(`Could not save ${type.toLowerCase()} scan data`);
+        }
+    }
+
+    if (!atomicWriteText(markerPath, new Date().toISOString())) {
+        throw new Error(`Could not mark the ${type.toLowerCase()} scan complete`);
+    }
+    scanMarkerCache.set(scanKey, true);
+    presenceWriteRevision++;
+}
+
+function removeScanMarker(path: string): boolean {
+    try {
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        const marker = Paths.get(String(path));
+        Files.deleteIfExists(marker);
+        return !Files.exists(marker);
+    } catch (_e) {
+        return false;
     }
 }

@@ -10,27 +10,16 @@ import {
     setActiveTaskContext,
     type ActiveTaskKind,
 } from "../tasks/activeTask";
-import { resetStepGate } from "./stepGate";
 import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
-// The one place that owns per-run task bookkeeping: active-context
-// registration (Cancel button), the running flag, the Pause/Step gate reset,
-// and purging event waiters leaked by a prior run. Every housing-menu task
-// (import, export, deep read) must start through here — the pause bug
-// happened because each starter hand-rolled this list and drifted.
-//
-// Resolves with the task's result, or undefined when the task was cancelled
-// (TaskManager swallows cancellation), so callers skip completion handling
-// by checking for undefined. Non-cancellation errors reject as usual.
+// Cancellation resolves undefined; other errors still reject.
 export async function runHousingSyncTask<T>(
     kind: ActiveTaskKind,
     task: (ctx: TaskContext) => Promise<T>
 ): Promise<T | undefined> {
-    let result: T | undefined;
-    await TaskManager.run(async (ctx) => {
+    return TaskManager.run(async (ctx) => {
         setActiveTaskContext(kind, ctx);
         setTaskRunning(true);
-        resetStepGate();
         try {
             // Purge waiters left over from a prior run. Nothing legit is
             // waiting at a task boundary, so survivors are leaks; a non-zero
@@ -40,13 +29,13 @@ export async function runHousingSyncTask<T>(
                 ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
             }
             setPacketCaptureForTask(true);
-            result = await task(ctx);
+            const result = await task(ctx);
             resetRuntimeDebugRecords();
+            return result;
         } finally {
             setPacketCaptureForTask(false);
             clearActiveTaskContext(kind, ctx);
             setTaskRunning(false);
         }
     });
-    return result;
 }

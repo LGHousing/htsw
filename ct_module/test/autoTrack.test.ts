@@ -6,6 +6,17 @@ vi.mock("../src/gui/parsing/parses", () => ({
     canonicalPath: (path: string) => path.replace(/\\/g, "/").toLowerCase(),
 }));
 
+vi.mock("../src/utils/filesystem", () => ({
+    atomicWriteText: (path: string, value: string) => {
+        try {
+            FileLib.write(path, value, true);
+            return true;
+        } catch (_e) {
+            return false;
+        }
+    },
+}));
+
 describe("auto-track persistence", () => {
     let files: Map<string, string>;
 
@@ -41,5 +52,29 @@ describe("auto-track persistence", () => {
 
         expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBe(false);
         expect(JSON.parse(files.get(AUTO_TRACK_FILE) ?? "null")).toEqual([]);
+    });
+
+    test("does not replace a malformed settings file", async () => {
+        files.set(AUTO_TRACK_FILE, "not json");
+        const state = await import("../src/gui/state/autoTrack");
+
+        expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBeNull();
+        expect(files.get(AUTO_TRACK_FILE)).toBe("not json");
+    });
+
+    test("does not write after the settings read fails", async () => {
+        let writes = 0;
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => path === AUTO_TRACK_FILE,
+            read: () => null,
+            write: () => {
+                writes++;
+            },
+            delete: () => false,
+        });
+        const state = await import("../src/gui/state/autoTrack");
+
+        expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBeNull();
+        expect(writes).toBe(0);
     });
 });

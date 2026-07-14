@@ -78,7 +78,7 @@ import { detectHousingUuid } from "../importCache/housingId";
 import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
-import { getChatKeyCode } from "./keybinds";
+import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
@@ -194,9 +194,7 @@ function maybeAutoFetchHousingUuid(): void {
     if (uuidFetchInFlight) return;
     if (housingPresence !== "unknown") return;
     if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
-    uuidFetchInFlight = true;
-    lastUuidFetchAt = Date.now();
-    void TaskManager.run(async (ctx) => {
+    const task = TaskManager.tryRun(async (ctx) => {
         const uuid = await detectHousingUuid(ctx);
         if (uuid === null) {
             housingPresence = "out";
@@ -205,7 +203,11 @@ function maybeAutoFetchHousingUuid(): void {
             setHousingUuid(uuid);
             openBoundProjectForHouse(uuid);
         }
-    })
+    });
+    if (task === null) return;
+    uuidFetchInFlight = true;
+    lastUuidFetchAt = Date.now();
+    void task
         .catch(() => {
             /* timeout — stay "unknown" and allow a retry after the cooldown */
         })
@@ -641,6 +643,21 @@ export function initHtswGui(): void {
         if (!KeyboardClass.getEventKeyState()) return; // key-up — ignore
         const keyCode = KeyboardClass.getEventKey();
         const focusedId = getFocusedInput();
+        const screen = (Client.getMinecraft() as any).field_71462_r;
+        const taskMenuOpen =
+            isTaskRunning() &&
+            (isPlaceholderScreen(screen) || getOpenContainerBounds() !== null);
+        const inventoryCloseKey =
+            focusedId === null &&
+            !nativeScreenUsesTypedCharacters() &&
+            keyCode === getInventoryKeyCode();
+        if (taskMenuOpen && (keyCode === 1 || inventoryCloseKey)) {
+            if (focusedId !== null) setFocusedInput(null);
+            if (popoverIsOpen()) closeAllPopovers();
+            markGuiDirty();
+            cancel(event);
+            return;
+        }
 
         // Global chat-focus key: when no input is focused and the GUI is
         // shown, focus the chat input so the user can type messages without

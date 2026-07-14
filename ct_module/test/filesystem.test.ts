@@ -12,7 +12,11 @@ afterEach(() => {
     globals.FileLib = originalFileLib;
 });
 
-function stubFilesystem(move: ReturnType<typeof vi.fn>, write: ReturnType<typeof vi.fn>): void {
+function stubFilesystem(
+    move: ReturnType<typeof vi.fn>,
+    write: ReturnType<typeof vi.fn>,
+    read: () => string = () => "contents"
+): void {
     const paths = { get: (path: string) => path };
     const files = {
         exists: () => true,
@@ -30,7 +34,7 @@ function stubFilesystem(move: ReturnType<typeof vi.fn>, write: ReturnType<typeof
             return options;
         },
     };
-    globals.FileLib = { ...originalFileLib, write };
+    globals.FileLib = { ...originalFileLib, write, read };
 }
 
 describe("atomicWriteText", () => {
@@ -79,5 +83,13 @@ describe("atomicWriteText", () => {
             "contents",
             true
         );
+    });
+
+    it("reports a direct write that did not replace the file", () => {
+        const move = vi.fn(() => { throw new Error("move failed"); });
+        const write = vi.fn();
+        stubFilesystem(move, write, () => "old contents");
+
+        expect(atomicWriteText("cache/state.json", "contents")).toBe(false);
     });
 });

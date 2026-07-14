@@ -68,19 +68,8 @@ export class VarLong implements Var<Long> {
     }
 
     cmpOp(other: Var<any>, op: Comparison): boolean {
-        if (other instanceof VarString) return false;
-        switch (op) {
-            case "Equal":
-                return this.value.eq(other.value);
-            case "Less Than":
-                return this.value.lt(other.value);
-            case "Less Than or Equal":
-                return this.value.lte(other.value);
-            case "Greater Than":
-                return this.value.gt(other.value);
-            case "Greater Than or Equal":
-                return this.value.gte(other.value);
-        }
+        if (!(other instanceof VarLong || other instanceof VarDouble)) return false;
+        return compareNumbers(this, other, op);
     }
 
     shouldUnset(): boolean {
@@ -139,33 +128,8 @@ export class VarDouble implements Var<number> {
     }
 
     cmpOp(other: Var<any>, op: Comparison): boolean {
-        if (other instanceof VarString) return false;
-        if (other instanceof VarLong) {
-            switch (op) {
-                case "Equal":
-                    return other.value.eq(this.value);
-                case "Less Than":
-                    return other.value.gte(this.value);
-                case "Less Than or Equal":
-                    return other.value.gt(this.value);
-                case "Greater Than":
-                    return other.value.lte(this.value);
-                case "Greater Than or Equal":
-                    return other.value.lt(this.value);
-            }
-        }
-        switch (op) {
-            case "Equal":
-                return this.value == other.value;
-            case "Less Than":
-                return this.value < other.value;
-            case "Less Than or Equal":
-                return this.value <= other.value;
-            case "Greater Than":
-                return this.value > other.value;
-            case "Greater Than or Equal":
-                return this.value >= other.value;
-        }
+        if (!(other instanceof VarLong || other instanceof VarDouble)) return false;
+        return compareNumbers(this, other, op);
     }
 
     shouldUnset(): boolean {
@@ -237,6 +201,42 @@ export class VarString implements Var<string> {
 
     toDisplayString(): string {
         return `"${this.value}"`;
+    }
+}
+
+function compareNumbers(
+    left: VarLong | VarDouble,
+    right: VarLong | VarDouble,
+    op: Comparison,
+): boolean {
+    if (left instanceof VarLong && right instanceof VarLong) {
+        switch (op) {
+            case "Equal":
+                return left.value.eq(right.value);
+            case "Less Than":
+                return left.value.lt(right.value);
+            case "Less Than or Equal":
+                return left.value.lte(right.value);
+            case "Greater Than":
+                return left.value.gt(right.value);
+            case "Greater Than or Equal":
+                return left.value.gte(right.value);
+        }
+    }
+
+    const leftValue = left.toDouble();
+    const rightValue = right.toDouble();
+    switch (op) {
+        case "Equal":
+            return leftValue === rightValue;
+        case "Less Than":
+            return leftValue < rightValue;
+        case "Less Than or Equal":
+            return leftValue <= rightValue;
+        case "Greater Than":
+            return leftValue > rightValue;
+        case "Greater Than or Equal":
+            return leftValue >= rightValue;
     }
 }
 

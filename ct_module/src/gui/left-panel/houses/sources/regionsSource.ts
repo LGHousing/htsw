@@ -28,7 +28,7 @@ export function houseRegionsScanned(uuid: string | null): boolean {
 }
 
 export function scanHouseRegions(): void {
-    if (scanInFlight || TaskManager.hasRunningTasks()) return;
+    if (scanInFlight || TaskManager.isBusy()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
     scanInFlight = true;

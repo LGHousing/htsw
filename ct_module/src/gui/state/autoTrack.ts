@@ -1,57 +1,60 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { canonicalPath } from "../parsing/parses";
-import { readSettingsFile, settingsFilePath } from "../../persistence/settingsFiles";
+import {
+    readJsonSettingsFile,
+    writeJsonSettingsFile,
+} from "../../persistence/settingsFiles";
 
 const AUTO_TRACK_FILE_NAME = "auto-track.json";
-const AUTO_TRACK_FILE = settingsFilePath(AUTO_TRACK_FILE_NAME);
 let autoTrackSourcesLoaded = false;
 const autoTrackSources: Set<string> = new Set();
 
-function loadAutoTrackSources(): void {
-    if (autoTrackSourcesLoaded) return;
-    try {
-        const stored = readSettingsFile(AUTO_TRACK_FILE_NAME);
-        if (stored !== null) {
-            const raw = stored;
-            if (raw.trim() !== "") {
-                const parsed = JSON.parse(raw) as unknown;
-                if (Array.isArray(parsed)) {
-                    for (let i = 0; i < parsed.length; i++) {
-                        if (typeof parsed[i] === "string") {
-                            autoTrackSources.add(canonicalPath(parsed[i]));
-                        }
-                    }
-                }
-            }
-        }
-        autoTrackSourcesLoaded = true;
-    } catch (_e) {}
+function loadAutoTrackSources(): boolean {
+    if (autoTrackSourcesLoaded) return true;
+    const stored = readJsonSettingsFile(AUTO_TRACK_FILE_NAME);
+    if (!stored.ok) return false;
+    if (stored.found && !Array.isArray(stored.value)) return false;
+
+    const values: unknown[] = stored.found ? stored.value as unknown[] : [];
+    for (let i = 0; i < values.length; i++) {
+        if (typeof values[i] !== "string") return false;
+    }
+    autoTrackSources.clear();
+    for (let i = 0; i < values.length; i++) {
+        autoTrackSources.add(canonicalPath(values[i] as string));
+    }
+    autoTrackSourcesLoaded = true;
+    return true;
 }
 
-function saveAutoTrackSources(): void {
-    try {
-        const sources: string[] = [];
-        autoTrackSources.forEach((source) => sources.push(source));
-        sources.sort();
-        FileLib.write(AUTO_TRACK_FILE, JSON.stringify(sources), true);
-    } catch (_e) {}
+function saveAutoTrackSources(): boolean {
+    const sources: string[] = [];
+    autoTrackSources.forEach((source) => sources.push(source));
+    sources.sort();
+    return writeJsonSettingsFile(AUTO_TRACK_FILE_NAME, sources);
 }
 
 export function isAutoTrackSource(sourcePath: string): boolean {
     loadAutoTrackSources();
     return autoTrackSources.has(canonicalPath(sourcePath));
 }
-export function toggleAutoTrackSource(sourcePath: string): boolean {
-    loadAutoTrackSources();
+export function toggleAutoTrackSource(sourcePath: string): boolean | null {
+    if (!loadAutoTrackSources()) return null;
     const canon = canonicalPath(sourcePath);
     if (autoTrackSources.has(canon)) {
         autoTrackSources.delete(canon);
-        saveAutoTrackSources();
+        if (!saveAutoTrackSources()) {
+            autoTrackSources.add(canon);
+            return null;
+        }
         return false;
     }
     autoTrackSources.add(canon);
-    saveAutoTrackSources();
+    if (!saveAutoTrackSources()) {
+        autoTrackSources.delete(canon);
+        return null;
+    }
     return true;
 }
 export function isAnyAutoTrackEnabled(): boolean {

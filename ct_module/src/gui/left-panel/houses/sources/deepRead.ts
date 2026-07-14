@@ -26,7 +26,7 @@ export function makeDeepRead(
     isScanning: () => boolean
 ): (onlyNames?: string[]) => void {
     return (onlyNames?: string[]): void => {
-        if (readInFlight || isScanning() || TaskManager.hasRunningTasks()) return;
+        if (readInFlight || isScanning() || TaskManager.isBusy()) return;
         const uuid = getHousingUuid();
         if (uuid === null) return;
         const importJsonPath = getExportImportJsonPath();

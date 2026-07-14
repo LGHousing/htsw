@@ -1,6 +1,5 @@
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
-import { isTaskRunning } from "../tasks/runningState";
 import { traceError, traceRecord } from "../housingSync/trace/taskTrace";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import {
@@ -18,7 +17,7 @@ export function runExportWithDestination(
 }
 
 function runExportTask(task: (ctx: TaskContext) => Promise<void>): void {
-    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         ChatLib.chat("&c[htsw] An export (or another task) is already running - wait for it to finish or cancel it first.");
         return;
     }

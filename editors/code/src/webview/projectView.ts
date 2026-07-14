@@ -26,6 +26,11 @@ import {
 } from "htsw-editor-common/project";
 import { itemFieldsFromTag } from "htsw-editor-common/item/buildItemNbt";
 import { nodeProjectFs } from "../nodeProjectFs";
+import {
+    planProjectMutation,
+    projectFsWithOpenDocuments,
+    runProjectMutation,
+} from "../projectMutation";
 import { bumpWorkspaceGeneration, type ContextParse, getCachedRootParse } from "../rootParse";
 import { isPathInExcludedDiagnosticFolder } from "../diagnosticExclusions";
 import type {
@@ -188,7 +193,7 @@ async function moveImportable(
         // declarations get copied instead of moved.
         const entryJsonPath = treeRootOf.get(sourceKey) ?? importJsonPath;
 
-        let destJsonPath: string;
+        let newFolderPath: string | null = null;
         if (pick.fsPath === null) {
             const folderPath = await vscode.window.showInputBox({
                 prompt: "New folder, relative to the project root",
@@ -203,15 +208,19 @@ async function moveImportable(
                 },
             });
             if (!folderPath) return;
-            const created = await withDocAwareWrites((fs) =>
-                createIncludedFolderInTree(fs, entryJsonPath, folderPath)
-            );
-            destJsonPath = created.importJsonPath;
-        } else {
-            destJsonPath = pick.fsPath;
+            newFolderPath = folderPath;
         }
 
-        await moveImportableWithOpenDocs(entryJsonPath, section, identity, destJsonPath);
+        const selectedDestination = pick.fsPath;
+        const destJsonPath = await runProjectMutation((fs) => {
+            const destination = selectedDestination ?? createIncludedFolderInTree(
+                fs,
+                entryJsonPath,
+                newFolderPath!,
+            ).importJsonPath;
+            moveImportableOrThrow(fs, entryJsonPath, section, identity, destination);
+            return destination;
+        });
 
         await webview.postMessage({
             type: "projectResult",
@@ -317,7 +326,7 @@ async function renameImportable(
         if (value === undefined) return;
         const nextIdentity = value.trim();
 
-        const renamed = await withDocAwareWrites((fs) =>
+        const renamed = await runProjectMutation((fs) =>
             renameImportableEntry(fs, entryJsonPath, section, identity, nextIdentity)
         );
         if (!renamed) throw new Error(`Couldn't rename '${identity}' in ${declaringJsonPath}`);
@@ -398,25 +407,42 @@ async function deleteImportable(
         const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
         if (!choice) return;
 
-        const result = await withDocAwareWrites((fs) =>
+        const result = await runProjectMutation((fs) =>
             removeImportableEntryForDelete(fs, entryJsonPath, section, identity)
         );
         if (!result.ok) throw new Error(result.message);
+        const approvedOwnedFiles = new Set(plan.ownedFiles.map(pathKey));
+        const filesToDelete = result.ownedFiles.filter((filePath) => approvedOwnedFiles.has(pathKey(filePath)));
 
+        let filesDeleted = 0;
+        const fileFailures: string[] = [];
         if (choice === deleteFilesLabel) {
-            for (const filePath of result.ownedFiles) {
-                await vscode.workspace.fs.delete(vscode.Uri.file(filePath), { useTrash: true });
+            for (const filePath of filesToDelete) {
+                try {
+                    if (await deletePathToTrashIfPresent(filePath)) filesDeleted++;
+                } catch (err) {
+                    fileFailures.push(
+                        `${vscode.workspace.asRelativePath(filePath, false)}: ` +
+                        (err instanceof Error ? err.message : String(err)),
+                    );
+                }
             }
         }
 
-        const suffix = choice === deleteFilesLabel && result.ownedFiles.length > 0
-            ? ` and ${result.ownedFiles.length} file${result.ownedFiles.length === 1 ? "" : "s"}`
+        const suffix = filesDeleted > 0
+            ? ` and ${filesDeleted} file${filesDeleted === 1 ? "" : "s"}`
             : "";
-        await webview.postMessage({
-            type: "projectResult",
-            ok: true,
-            message: `Deleted ${target}${suffix}.`,
-        } satisfies ProjectFromHostMessage);
+        await webview.postMessage(fileFailures.length === 0
+            ? {
+                type: "projectResult",
+                ok: true,
+                message: `Deleted ${target}${suffix}.`,
+            }
+            : {
+                type: "projectResult",
+                ok: false,
+                error: `Removed ${target}, but could not delete ${fileFailures.length} file${fileFailures.length === 1 ? "" : "s"}: ${fileFailures.join("; ")}`,
+            } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
@@ -444,7 +470,7 @@ async function deleteImportJsonProject(
         if (choice !== "Delete Folder") return;
 
         if (parentImportJsonPath !== null) {
-            await withDocAwareWrites((fs) => {
+            await runProjectMutation((fs) => {
                 if (!removeIncludeFromImportJson(fs, parentImportJsonPath, importJsonPath)) {
                     throw new Error(
                         `Could not remove include from ${vscode.workspace.asRelativePath(parentImportJsonPath, false)}.`
@@ -453,7 +479,7 @@ async function deleteImportJsonProject(
             });
         }
 
-        await vscode.workspace.fs.delete(vscode.Uri.file(dir), { recursive: true, useTrash: true });
+        await deletePathToTrashIfPresent(dir, true);
         await webview.postMessage({
             type: "projectResult",
             ok: true,
@@ -494,7 +520,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
         );
         if (!pick) return;
 
-        let destJsonPath: string;
+        let newFolderPath: string | null = null;
         if (pick.fsPath === null) {
             const folderPath = await vscode.window.showInputBox({
                 prompt: "New folder, relative to the project root",
@@ -509,39 +535,54 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
                 },
             });
             if (!folderPath) return;
-            const anchorRoot = treeRootOf.get(pathKey(items[0].importJsonPath)) ?? roots[0]?.fsPath;
-            if (!anchorRoot) throw new Error("No project root to create a folder in.");
-            const created = await withDocAwareWrites((fs) =>
-                createIncludedFolderInTree(fs, anchorRoot, folderPath)
-            );
-            destJsonPath = created.importJsonPath;
-        } else {
-            destJsonPath = pick.fsPath;
+            newFolderPath = folderPath;
         }
 
-        const destKey = pathKey(destJsonPath);
-        let moved = 0;
-        const failures: string[] = [];
+        const prepared: Array<{ item: SelectedImportable; section: Section; entryJsonPath: string }> = [];
         for (const item of items) {
-            try {
-                const section = SECTION_BY_KIND[item.kind];
-                const entryJsonPath = treeRootOf.get(pathKey(item.importJsonPath))
-                    ?? await treeRootForImportJson(item.importJsonPath);
-                const current = resolveImportableFile(projectFsWithOpenDocuments(), entryJsonPath, section, item.identity);
-                if (pathKey(current) === destKey) continue;
-                await moveImportableWithOpenDocs(entryJsonPath, section, item.identity, destJsonPath);
-                moved++;
-            } catch (err) {
-                failures.push(`${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`);
-            }
+            prepared.push({
+                item,
+                section: SECTION_BY_KIND[item.kind],
+                entryJsonPath: treeRootOf.get(pathKey(item.importJsonPath))
+                    ?? await treeRootForImportJson(item.importJsonPath),
+            });
         }
 
+        const selectedDestination = pick.fsPath;
+        const anchorRoot = treeRootOf.get(pathKey(items[0].importJsonPath)) ?? roots[0]?.fsPath;
+        if (selectedDestination === null && !anchorRoot) {
+            throw new Error("No project root to create a folder in.");
+        }
+        const result = await runProjectMutation((fs) => {
+            const destJsonPath = selectedDestination ?? createIncludedFolderInTree(
+                fs,
+                anchorRoot!,
+                newFolderPath!,
+            ).importJsonPath;
+            const destKey = pathKey(destJsonPath);
+            let moved = 0;
+            for (const { item, section, entryJsonPath } of prepared) {
+                const current = resolveImportableFile(fs, entryJsonPath, section, item.identity);
+                if (pathKey(current) === destKey) continue;
+                try {
+                    moveImportableOrThrow(fs, entryJsonPath, section, item.identity, destJsonPath);
+                    moved++;
+                } catch (err) {
+                    throw new Error(
+                        `${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`,
+                    );
+                }
+            }
+            return { destJsonPath, moved };
+        });
+
+        const { destJsonPath, moved } = result;
         const rel = vscode.workspace.asRelativePath(destJsonPath, false);
-        await webview.postMessage(
-            failures.length === 0
-                ? { type: "projectResult", ok: true, message: `Moved ${moved} item${moved === 1 ? "" : "s"} to ${rel}.` }
-                : { type: "projectResult", ok: false, error: `Moved ${moved} of ${items.length} items to ${rel} (${failures.length} failed: ${failures.join("; ")}).` }
-        );
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Moved ${moved} item${moved === 1 ? "" : "s"} to ${rel}.`,
+        } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
@@ -552,19 +593,14 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
 
 async function deleteImportables(webview: vscode.Webview, items: SelectedImportable[]): Promise<void> {
     try {
-        const fs = projectFsWithOpenDocuments();
         const plans: Array<{ item: SelectedImportable; section: Section; entryJsonPath: string }> = [];
-        const ownedSet = new Set<string>();
         for (const item of items) {
             const section = SECTION_BY_KIND[item.kind];
             const entryJsonPath = await treeRootForImportJson(item.importJsonPath);
-            const plan = planDeleteImportableEntry(fs, entryJsonPath, section, item.identity);
-            if (!plan.ok) throw new Error(plan.message);
-            for (const filePath of plan.ownedFiles) ownedSet.add(filePath);
             plans.push({ item, section, entryJsonPath });
         }
 
-        const ownedFiles = [...ownedSet];
+        const ownedFiles = planProjectMutation((fs) => removeSelectedImportables(fs, plans));
         const ownedRelative = ownedFiles.map((filePath) => vscode.workspace.asRelativePath(filePath, false));
         const deleteFilesLabel = `Delete ${items.length} entries and files`;
         const removeEntryLabel = `Remove ${items.length} entries only`;
@@ -578,46 +614,67 @@ async function deleteImportables(webview: vscode.Webview, items: SelectedImporta
         const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
         if (!choice) return;
 
-        let removed = 0;
-        const failures: string[] = [];
-        for (const { item, section, entryJsonPath } of plans) {
-            try {
-                const result = await withDocAwareWrites((writeFs) =>
-                    removeImportableEntryForDelete(writeFs, entryJsonPath, section, item.identity)
-                );
-                if (!result.ok) {
-                    failures.push(`${item.kind} "${item.identity}": ${result.message}`);
-                    continue;
-                }
-                removed++;
-            } catch (err) {
-                failures.push(`${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`);
-            }
-        }
+        const committedOwnedFiles = await runProjectMutation((fs) => removeSelectedImportables(fs, plans));
+        const approvedOwnedFiles = new Set(ownedFiles.map(pathKey));
+        const filesToDelete = committedOwnedFiles.filter(
+            (filePath) => approvedOwnedFiles.has(pathKey(filePath)),
+        );
 
         let filesDeleted = 0;
-        if (choice === deleteFilesLabel && failures.length === 0) {
-            for (const filePath of ownedFiles) {
+        const fileFailures: string[] = [];
+        if (choice === deleteFilesLabel) {
+            for (const filePath of filesToDelete) {
                 try {
-                    await vscode.workspace.fs.delete(vscode.Uri.file(filePath), { useTrash: true });
-                    filesDeleted++;
-                } catch {
-                    // A file already gone (e.g. removed with a prior entry) is not an error.
+                    if (await deletePathToTrashIfPresent(filePath)) filesDeleted++;
+                } catch (err) {
+                    fileFailures.push(
+                        `${vscode.workspace.asRelativePath(filePath, false)}: ` +
+                        (err instanceof Error ? err.message : String(err)),
+                    );
                 }
             }
         }
 
         const suffix = filesDeleted > 0 ? ` and ${filesDeleted} file${filesDeleted === 1 ? "" : "s"}` : "";
-        await webview.postMessage(
-            failures.length === 0
-                ? { type: "projectResult", ok: true, message: `Deleted ${removed} importable${removed === 1 ? "" : "s"}${suffix}.` }
-                : { type: "projectResult", ok: false, error: `Deleted ${removed} of ${items.length} importables (${failures.length} failed: ${failures.join("; ")}).` }
-        );
+        await webview.postMessage(fileFailures.length === 0
+            ? {
+                type: "projectResult",
+                ok: true,
+                message: `Deleted ${plans.length} importable${plans.length === 1 ? "" : "s"}${suffix}.`,
+            }
+            : {
+                type: "projectResult",
+                ok: false,
+                error: `Removed ${plans.length} importable${plans.length === 1 ? "" : "s"}, but could not delete ${fileFailures.length} file${fileFailures.length === 1 ? "" : "s"}: ${fileFailures.join("; ")}`,
+            } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete importables: ${error}`);
+    }
+}
+
+function removeSelectedImportables(
+    fs: ProjectFs,
+    plans: ReadonlyArray<{ item: SelectedImportable; section: Section; entryJsonPath: string }>,
+): string[] {
+    const owned = new Map<string, string>();
+    for (const { item, section, entryJsonPath } of plans) {
+        const result = removeImportableEntryForDelete(fs, entryJsonPath, section, item.identity);
+        if (!result.ok) throw new Error(`${item.kind} "${item.identity}": ${result.message}`);
+        for (const filePath of result.ownedFiles) owned.set(pathKey(filePath), filePath);
+    }
+    return [...owned.values()];
+}
+
+async function deletePathToTrashIfPresent(filePath: string, recursive = false): Promise<boolean> {
+    try {
+        await vscode.workspace.fs.delete(vscode.Uri.file(filePath), { recursive, useTrash: true });
+        return true;
+    } catch (err) {
+        if (err instanceof vscode.FileSystemError && err.code === "FileNotFound") return false;
+        throw err;
     }
 }
 
@@ -719,45 +776,38 @@ async function addImportable(
         if (kind === "npc") throw new Error("NPC entries are created by exporting an existing in-game NPC.");
 
         const section = SECTION_BY_KIND[kind];
-        const readFs = projectFsWithOpenDocuments();
+        const result = await runProjectMutation((fs) => {
+            let targetImportJson = importJsonPath;
+            const entry: Record<string, unknown> = {};
+            const created: string[] = [];
 
-        // Action-backed importables get a starter .htsl; the export-target
-        // helper resolves the declaring file and a collision-free filename.
-        let targetImportJson = importJsonPath;
-        const entry: Record<string, unknown> = {};
-        const created: string[] = [];
-
-        if (kind === "function" || kind === "event" || kind === "command") {
-            const target = kind === "function"
-                ? htslTargetForFunctionExport(readFs, importJsonPath, id)
-                : kind === "event"
-                    ? htslTargetForEventExport(readFs, importJsonPath, id)
-                    : htslTargetForCommandExport(readFs, importJsonPath, id);
-            targetImportJson = target.importJsonPath;
-            requireNew(readFs, targetImportJson, section, id, kind);
-            if (!nodeProjectFs.exists(target.htslPath)) {
-                nodeProjectFs.ensureDir(path.dirname(target.htslPath));
-                nodeProjectFs.writeFile(target.htslPath, "\n");
-                created.push(target.htslPath);
+            if (kind === "function" || kind === "event" || kind === "command") {
+                const target = kind === "function"
+                    ? htslTargetForFunctionExport(fs, importJsonPath, id)
+                    : kind === "event"
+                        ? htslTargetForEventExport(fs, importJsonPath, id)
+                        : htslTargetForCommandExport(fs, importJsonPath, id);
+                targetImportJson = target.importJsonPath;
+                requireNew(fs, targetImportJson, section, id, kind);
+                if (!fs.exists(target.htslPath)) {
+                    fs.ensureDir(path.dirname(target.htslPath));
+                    fs.writeFile(target.htslPath, "\n");
+                    created.push(target.htslPath);
+                }
+                entry[kind === "event" ? "event" : "name"] = id;
+                entry.actions = target.htslReference;
+            } else {
+                targetImportJson = resolveImportableFile(fs, importJsonPath, section, id);
+                requireNew(fs, targetImportJson, section, id, kind);
+                entry.name = id;
+                if (kind === "menu") entry.slots = [];
             }
-            entry[kind === "event" ? "event" : "name"] = id;
-            entry.actions = target.htslReference;
-        } else {
-            // Region/menu entries are pure JSON, but the name may already
-            // be declared in an INCLUDED file — resolve that declaring file
-            // first (like the function/event path) so the duplicate check sees
-            // it and we don't write a second declaration into the parent.
-            targetImportJson = resolveImportableFile(readFs, importJsonPath, section, id);
-            requireNew(readFs, targetImportJson, section, id, kind);
-            entry.name = id;
-            if (kind === "menu") entry.slots = [];
-        }
 
-        await applyImportableUpsert(targetImportJson, section, entry);
+            upsertImportableEntry(fs, targetImportJson, section, entry);
+            return { targetImportJson, created };
+        });
 
-        // Land the user on the new starter file if there is one, else the
-        // import.json so they can fill in the remaining fields.
-        await openProjectFile(created[0] ?? targetImportJson, false);
+        await openProjectFile(result.created[0] ?? result.targetImportJson, false);
         await webview.postMessage({
             type: "projectResult",
             ok: true,
@@ -771,61 +821,15 @@ async function addImportable(
     }
 }
 
-/**
- * Run a project mutation with doc-aware writes: an open import.json gets a
- * WorkspaceEdit + save instead of a disk write that would clobber unsaved
- * edits. Rethrows whatever `run` throws (before any edits are applied).
- */
-async function withDocAwareWrites<T>(run: (fs: ProjectFs) => T): Promise<T> {
-    const replacements = new Map<string, string>();
-    const fs: ProjectFs = {
-        ...nodeProjectFs,
-        readFile(filePath) {
-            const pending = replacements.get(pathKey(filePath));
-            if (pending !== undefined) return pending;
-            const open = openTextDocumentForPath(filePath);
-            return open ? open.getText() : nodeProjectFs.readFile(filePath);
-        },
-        writeFile(filePath, text) {
-            if (openTextDocumentForPath(filePath)) {
-                replacements.set(pathKey(filePath), text);
-                return;
-            }
-            nodeProjectFs.writeFile(filePath, text);
-        },
-    };
-
-    const result = run(fs);
-
-    for (const [key, text] of replacements) {
-        const open = openTextDocumentForPath(key);
-        if (!open) continue;
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(
-            open.uri,
-            new vscode.Range(open.positionAt(0), open.positionAt(open.getText().length)),
-            text,
-        );
-        await vscode.workspace.applyEdit(edit);
-        await open.save();
-    }
-    return result;
-}
-
-/**
- * moveImportableEntry via withDocAwareWrites. Throws on failure. Used by the
- * tree's right-click move and the module-visibility quick fix.
- */
-async function moveImportableWithOpenDocs(
+function moveImportableOrThrow(
+    fs: ProjectFs,
     entryJsonPath: string,
     section: Section,
     identity: string,
     destJsonPath: string,
-): Promise<void> {
-    await withDocAwareWrites((fs) => {
-        const result = moveImportableEntry(fs, entryJsonPath, section, identity, destJsonPath);
-        if (!result.ok) throw new Error(result.message);
-    });
+): void {
+    const result = moveImportableEntry(fs, entryJsonPath, section, identity, destJsonPath);
+    if (!result.ok) throw new Error(result.message);
 }
 
 function requireNew(
@@ -877,47 +881,6 @@ async function importablePrimaryPath(
         if (fs.exists(sourcePath)) return sourcePath;
     }
     return declaringJsonPath;
-}
-
-// Write the entry through a doc-aware fs: an import.json that's open (possibly
-// with unsaved edits) gets a WorkspaceEdit + save rather than a disk write that
-// would clobber the buffer. Mirrors the Item Editor's upsert path.
-async function applyImportableUpsert(
-    importJsonPath: string,
-    section: Section,
-    entry: Record<string, unknown>,
-): Promise<void> {
-    const replacements = new Map<string, string>();
-    const fs: ProjectFs = {
-        ...nodeProjectFs,
-        readFile(filePath) {
-            const open = openTextDocumentForPath(filePath);
-            return open ? open.getText() : nodeProjectFs.readFile(filePath);
-        },
-        writeFile(filePath, text) {
-            const open = openTextDocumentForPath(filePath);
-            if (open) {
-                replacements.set(pathKey(filePath), text);
-                return;
-            }
-            nodeProjectFs.writeFile(filePath, text);
-        },
-    };
-
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(importJsonPath));
-    upsertImportableEntry(fs, importJsonPath, section, entry);
-
-    const replacement = replacements.get(pathKey(importJsonPath));
-    if (replacement !== undefined) {
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(
-            document.uri,
-            new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
-            replacement,
-        );
-        await vscode.workspace.applyEdit(edit);
-        await document.save();
-    }
 }
 
 async function postProjectTree(webview: vscode.Webview): Promise<void> {
@@ -1429,42 +1392,12 @@ async function createIncludedImportJson(
             throw new Error("Choose an existing parent import.json.");
         }
 
-        const parentUri = vscode.Uri.file(parentImportJsonPath);
-        const document = await vscode.workspace.openTextDocument(parentUri);
-        let parentReplacement: string | undefined;
-        const fs: ProjectFs = {
-            ...nodeProjectFs,
-            readFile(filePath) {
-                if (pathKey(filePath) === pathKey(parentImportJsonPath)) return document.getText();
-                const open = openTextDocumentForPath(filePath);
-                return open ? open.getText() : nodeProjectFs.readFile(filePath);
-            },
-            writeFile(filePath, text) {
-                if (pathKey(filePath) === pathKey(parentImportJsonPath)) {
-                    parentReplacement = text;
-                    return;
-                }
-                nodeProjectFs.writeFile(filePath, text);
-            },
-        };
-
-        const result = createIncludedImportJsonFiles(
+        const result = await runProjectMutation((fs) => createIncludedImportJsonFiles(
             fs,
             path.dirname(parentImportJsonPath),
             folderPath,
             parentImportJsonPath,
-        );
-
-        if (parentReplacement !== undefined) {
-            const edit = new vscode.WorkspaceEdit();
-            edit.replace(
-                parentUri,
-                new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
-                parentReplacement,
-            );
-            await vscode.workspace.applyEdit(edit);
-            await document.save();
-        }
+        ));
 
         await openProjectFile(result.importJsonPath, false);
         await webview.postMessage({
@@ -1556,16 +1489,6 @@ function validProjectTextSpan(
         && span.end <= textLength;
 }
 
-function projectFsWithOpenDocuments(): ProjectFs {
-    return {
-        ...nodeProjectFs,
-        readFile(filePath) {
-            const open = openTextDocumentForPath(filePath);
-            return open ? open.getText() : nodeProjectFs.readFile(filePath);
-        },
-    };
-}
-
 function parseImportJson(fs: ProjectFs, filePath: string): json.Node | null {
     try {
         const text = fs.readFile(filePath);
@@ -1587,16 +1510,6 @@ function readIncludePathsFromTree(tree: json.Node | null): string[] {
     return (includeNode.children ?? [])
         .filter((node) => node.type === "string" && typeof node.value === "string")
         .map((node) => String(node.value));
-}
-
-// Pull just the item id and Damage out of an item's snbt for the row icon. A
-// regex rather than a full parse: a malformed snbt still renders (it falls
-// back to a type glyph) and the tree refresh stays a cheap read.
-function openTextDocumentForPath(filePath: string): vscode.TextDocument | undefined {
-    const key = pathKey(filePath);
-    return vscode.workspace.textDocuments.find(
-        (document) => document.uri.scheme === "file" && pathKey(document.uri.fsPath) === key,
-    );
 }
 
 function pathKey(filePath: string): string {

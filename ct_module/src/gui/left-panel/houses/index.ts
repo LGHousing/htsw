@@ -48,17 +48,18 @@ import { typeBrowserSection } from "./contentBrowser";
 const TRUST_ICON_ON = 0xff5cb85c | 0;
 
 function detectHousing(): void {
-    TaskManager.run(async (ctx) => {
-        try {
-            const uuid = await getCurrentHousingUuid(ctx);
-            setHousingUuid(uuid);
-            openBoundProjectForHouse(uuid);
-            ChatLib.chat(`&a[htsw] Housing UUID: ${uuid}`);
-        } catch (err) {
-            ChatLib.chat(`&c[htsw] Detect failed: ${err}`);
-        }
-    }).catch((err: unknown) => {
-        ChatLib.chat(`&c[htsw] Detect task failed: ${err}`);
+    const task = TaskManager.tryRun(async (ctx) => {
+        const uuid = await getCurrentHousingUuid(ctx);
+        setHousingUuid(uuid);
+        openBoundProjectForHouse(uuid);
+        ChatLib.chat(`&a[htsw] Housing UUID: ${uuid}`);
+    });
+    if (task === null) {
+        ChatLib.chat("&e[htsw] Another task is already running.");
+        return;
+    }
+    task.catch((err: unknown) => {
+        ChatLib.chat(`&c[htsw] Detect failed: ${err}`);
     });
 }
 
@@ -118,9 +119,10 @@ function confirmDeleteHouse(uuid: string, onDeleted?: () => void): void {
 }
 
 function deleteHouse(uuid: string): void {
-    const ok = deleteHousingCache(uuid);
-    clearAlias(uuid);
-    setHouseTrust(uuid, false);
+    const label = houseDisplayName(uuid);
+    const cacheResult = deleteHousingCache(uuid);
+    const aliasCleared = clearAlias(uuid);
+    const trustCleared = setHouseTrust(uuid, false);
     if (getHousingUuid() === uuid) {
         setHousingUuid(null);
     }
@@ -129,9 +131,18 @@ function deleteHouse(uuid: string): void {
     if (viewedHouse === uuid) {
         viewedHouse = null;
     }
-    const label = houseDisplayName(uuid);
-    if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
-    else ChatLib.chat(`&e[htsw] No cache directory for ${label} (alias/trust cleared anyway).`);
+
+    const failures: string[] = [];
+    if (cacheResult === "partial") failures.push("some cache files");
+    if (!aliasCleared) failures.push("the alias");
+    if (!trustCleared) failures.push("the trust setting");
+    if (failures.length > 0) {
+        ChatLib.chat(`&c[htsw] Could not fully remove ${label}. Still present: ${failures.join(", ")}.`);
+    } else if (cacheResult === "deleted") {
+        ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
+    } else {
+        ChatLib.chat(`&e[htsw] Cleared ${label}; it had no cache directory.`);
+    }
 }
 
 // The house the browser is showing. Null tracks the in-game house, so the
@@ -278,7 +289,9 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
         disabled: !enabled,
         onClick: () => {
             if (uuid === null) return;
-            setHouseTrust(uuid, !trusted);
+            if (!setHouseTrust(uuid, !trusted)) {
+                ChatLib.chat("&c[htsw] Couldn't save the house trust setting.");
+            }
         },
         tooltip,
         tooltipColor,

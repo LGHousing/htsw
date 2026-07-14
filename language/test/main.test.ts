@@ -597,4 +597,84 @@ describe("Main API", () => {
             message.includes("Maximum amount of Has Potion Effect conditions exceeded in Conditional: 23/22."),
         )).toBe(true);
     });
+
+    it.each([
+        ["commands", { name: "test", actions: "actions.htsl" }],
+        ["npcs", {
+            name: "test",
+            pos: { x: 0, y: 0, z: 0 },
+            leftClickActions: "actions.htsl",
+        }],
+    ])("runs every action check for %s", (section, entry) => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/import.json": JSON.stringify({ [section]: [entry] }),
+                "/project/actions.htsl": [
+                    "cancelEvent",
+                    "giveItem \"Missing Item\"",
+                    "chat \"\"",
+                    "changePlayerGroup \"group\" false",
+                    "changePlayerGroup \"group\" false",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const errors = errorMessages(
+            htsw.parseImportablesResult(sourceMap, "/project/import.json")
+        );
+        expect(errors.some(message => message.includes("Cancel Event action cannot be used"))).toBe(true);
+        expect(errors.some(message => message.includes("Unknown item 'Missing Item'"))).toBe(true);
+        expect(errors.some(message => message.includes("Empty string is not a valid value"))).toBe(true);
+        expect(errors.some(message => message.includes("Maximum amount of Change Player's Group actions exceeded"))).toBe(true);
+    });
+
+    it("typeflow checks the false side of conditionals", () => {
+        const result = parseFunctionWithActions([
+            "stat value = 1",
+            "if and (doingParkour) {",
+            "} else {",
+            "    stat value = \"text\"",
+            "    stat value += 1",
+            "}",
+            "",
+        ].join("\n"));
+
+        expect(result.diagnostics.some(diagnostic =>
+            diagnostic.message.includes("Strings cannot be incremented")
+        )).toBe(true);
+    });
+
+    it("typeflow treats an empty conditional as always true", () => {
+        const result = parseFunctionWithActions([
+            "stat value = 1",
+            "if and () {",
+            "    stat value = \"text\"",
+            "} else {",
+            "    stat value = 2",
+            "}",
+            "stat value += 1",
+            "",
+        ].join("\n"));
+
+        expect(result.diagnostics.some(diagnostic =>
+            diagnostic.message.includes("Strings cannot be incremented")
+        )).toBe(true);
+    });
+
+    it("typeflow keeps random alternatives independent", () => {
+        const result = parseFunctionWithActions([
+            "stat value = 1",
+            "random {",
+            "    stat value = \"text\"",
+            "    stat value += 1",
+            "}",
+            "",
+        ].join("\n"));
+
+        expect(result.diagnostics.some(diagnostic =>
+            diagnostic.message.includes("Strings cannot be incremented")
+        )).toBe(false);
+        expect(result.diagnostics.some(diagnostic => diagnostic.level === "bug")).toBe(false);
+    });
 });

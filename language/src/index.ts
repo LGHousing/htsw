@@ -78,11 +78,7 @@ export function parseImportablesResult(
         if (primary === undefined) continue;
         try {
             filesWithParseErrors.add(gcx.sourceMap.getFileByPos(primary.span.start).path);
-        } catch (_error) {
-            if (primary.span.start > 0) {
-                filesWithParseErrors.add(gcx.sourceMap.getFileByPos(primary.span.start - 1).path);
-            }
-        }
+        } catch (_error) {}
     }
     check(gcx, gcx.importables.filter(importable =>
         importableFilePaths(importable).every(file => !filesWithParseErrors.has(file))

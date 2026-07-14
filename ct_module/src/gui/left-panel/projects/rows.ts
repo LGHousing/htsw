@@ -943,6 +943,10 @@ export function resultRow(
                   label: isAutoTrackSource(r.fullPath) ? "Auto-Track: ON" : "Auto-Track: OFF",
                   onClick: () => {
                       const nowOn = toggleAutoTrackSource(r.fullPath);
+                      if (nowOn === null) {
+                          ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
+                          return;
+                      }
                       if (nowOn) autoTrackRefresh();
                   },
               },

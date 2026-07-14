@@ -2,16 +2,15 @@
 
 import { getExportImportJsonPath } from "./paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import { readSettingsFile, settingsFilePath } from "../../persistence/settingsFiles";
+import {
+    readJsonSettingsFile,
+    writeJsonSettingsFile,
+} from "../../persistence/settingsFiles";
 
-// The sticky "new exports land here" file, chosen per export destination. It is
-// keyed by the base destination (the parse root the include tree walks from),
-// so switching destinations recalls that destination's own choice. Only new
-// importables honor it — the routing in exportTargets keeps re-exports on their
-// existing declaration and ignores a target the include tree no longer reaches.
+// Saved separately for each project. It only chooses the file for brand-new
+// entries; existing entries stay in the file that already declares them.
 
 const EXPORT_TARGETS_FILE_NAME = "export-targets.json";
-const EXPORT_TARGETS_FILE = settingsFilePath(EXPORT_TARGETS_FILE_NAME);
 let loaded = false;
 const targetByBase: Map<string, string> = new Map();
 
@@ -19,46 +18,35 @@ function baseKey(basePath: string): string {
     return normalizeHtswPath(basePath).toLowerCase();
 }
 
-function loadTargets(): void {
-    if (loaded) return;
-    try {
-        const stored = readSettingsFile(EXPORT_TARGETS_FILE_NAME);
-        if (stored !== null) {
-            const raw = stored;
-            if (raw.trim() !== "") {
-                const obj = JSON.parse(raw) as unknown;
-                if (obj !== null && typeof obj === "object" && !Array.isArray(obj)) {
-                    const rec = obj as Record<string, unknown>;
-                    const keys = Object.keys(rec);
-                    for (let i = 0; i < keys.length; i++) {
-                        const value = rec[keys[i]];
-                        if (typeof value === "string") targetByBase.set(keys[i], value);
-                    }
-                }
-            }
-        }
-        // Only mark loaded once a read actually succeeded (a missing file is a
-        // legitimately empty map). A transient failure leaves this false so a
-        // later call retries rather than persisting a partial map over disk.
-        loaded = true;
-    } catch (_e) {}
+function loadTargets(): boolean {
+    if (loaded) return true;
+    const stored = readJsonSettingsFile(EXPORT_TARGETS_FILE_NAME);
+    if (!stored.ok) return false;
+    const value = stored.found ? stored.value : {};
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+
+    const rec = value as Record<string, unknown>;
+    const keys = Object.keys(rec);
+    for (let i = 0; i < keys.length; i++) {
+        if (typeof rec[keys[i]] !== "string") return false;
+    }
+    targetByBase.clear();
+    for (let i = 0; i < keys.length; i++) {
+        targetByBase.set(keys[i], rec[keys[i]] as string);
+    }
+    loaded = true;
+    return true;
 }
 
-function saveTargets(): void {
-    try {
-        const obj: Record<string, string> = {};
-        targetByBase.forEach((value, key) => {
-            obj[key] = value;
-        });
-        FileLib.write(EXPORT_TARGETS_FILE, JSON.stringify(obj), true);
-    } catch (_e) {}
+function saveTargets(): boolean {
+    const obj: Record<string, string> = {};
+    targetByBase.forEach((value, key) => {
+        obj[key] = value;
+    });
+    return writeJsonSettingsFile(EXPORT_TARGETS_FILE_NAME, obj);
 }
 
-/**
- * The explicit sub-target chosen for the current destination, or null when the
- * user hasn't picked one (routing then uses its default declared/section-folder/
- * base fallback). Pass this to export tasks as `newExportTargetImportJson`.
- */
+/** The saved file for brand-new entries in this project, if the user chose one. */
 export function getNewExportTarget(): string | null {
     loadTargets();
     const base = getExportImportJsonPath();
@@ -72,10 +60,17 @@ export function getEffectiveNewExportTarget(): string {
     return explicit !== null ? explicit : getExportImportJsonPath();
 }
 
-export function setNewExportTarget(path: string): void {
-    loadTargets();
+export function setNewExportTarget(path: string): boolean {
+    if (!loadTargets()) return false;
     const base = getExportImportJsonPath();
-    if (base.trim() === "") return;
-    targetByBase.set(baseKey(base), normalizeHtswPath(path));
-    saveTargets();
+    if (base.trim() === "") return false;
+    const key = baseKey(base);
+    const normalized = normalizeHtswPath(path);
+    const previous = targetByBase.get(key);
+    if (previous === normalized) return true;
+    targetByBase.set(key, normalized);
+    if (saveTargets()) return true;
+    if (previous === undefined) targetByBase.delete(key);
+    else targetByBase.set(key, previous);
+    return false;
 }

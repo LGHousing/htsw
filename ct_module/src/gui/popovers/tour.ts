@@ -112,8 +112,8 @@ const STEPS: TourStep[] = [
         title: "Import: files into the house",
         lines: [
             "Queue and Import sit in the footer, below",
-            "the code. A run shows progress there (ETA,",
-            "Pause/Step/Cancel), plus a live upload tab",
+            "the code. A run shows progress there (ETA",
+            "and Cancel), plus a live upload tab",
             "that follows the file being written.",
         ],
         anchor: "tour:right-import",

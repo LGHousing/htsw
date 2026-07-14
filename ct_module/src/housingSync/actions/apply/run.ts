@@ -17,7 +17,6 @@ import {
     editUnitsWithChildLists,
 } from "../../progress/costs";
 import type { PhaseUnits } from "../../progress/types";
-import { waitIfStepPaused } from "../../stepGate";
 import type { ActionListOperation, Observed } from "../../types";
 import { applyConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
@@ -382,7 +381,6 @@ export class ActionListApplyRun {
     private async beginOperation(op: ActionListOperation): Promise<void> {
         this.operationStartUnits = this.appliedUnits;
         this.emitStarted(op, this.pathForOp(op));
-        if (this.isTopLevel) await waitIfStepPaused(this.ctx);
     }
 
     private writerHooksFor(

@@ -115,12 +115,8 @@ function exportHook(spec: ExportSpec): HouseContentType["export"] {
     };
 }
 
-// Fire a one-shot menu-navigation task from a row action (open an importable's
-// editor, teleport). Types with no per-importable slash command reach their
-// editor by walking the live menu, which must run as a task. Guards against
-// overlapping tasks and toasts on failure.
 function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>): void {
-    if (TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
         return;
     }

@@ -2,6 +2,8 @@ import { editor, IDisposable, languages, MarkerSeverity } from "monaco-editor";
 import * as htsw from "htsw";
 import * as common from "htsw-editor-common";
 
+const DIAGNOSTIC_MARKER_OWNER = "htsl";
+
 class StringFileLoader implements htsw.FileLoader {
     constructor(private readonly src: string) {}
 
@@ -65,7 +67,7 @@ export class DiagnosticsAdapter {
                 if (model.isAttachedToEditor()) {
                     this.validate(model);
                 } else {
-                    editor.setModelMarkers(model, "htsl", []);
+                    editor.setModelMarkers(model, DIAGNOSTIC_MARKER_OWNER, []);
                 }
             });
 
@@ -81,7 +83,7 @@ export class DiagnosticsAdapter {
         };
 
         const onModelRemoved = (model: editor.ITextModel) => {
-            editor.setModelMarkers(model, "htsl", []);
+            editor.setModelMarkers(model, DIAGNOSTIC_MARKER_OWNER, []);
             const key = model.uri.toString();
             if (this.listeners[key]) {
                 this.listeners[key].dispose();
@@ -137,18 +139,22 @@ export class DiagnosticsAdapter {
             ];
         });
 
-        editor.setModelMarkers(model, "owner", markers);
+        editor.setModelMarkers(model, DIAGNOSTIC_MARKER_OWNER, markers);
     }
 
     private htslDiagnosticLevelToMarkerSeverity(
         severity: htsw.DiagnosticLevel
     ): MarkerSeverity {
-        if (severity === "error") {
-            return MarkerSeverity.Error;
-        } else if (severity === "warning") {
-            return MarkerSeverity.Warning;
+        switch (severity) {
+            case "bug":
+            case "error":
+                return MarkerSeverity.Error;
+            case "warning":
+                return MarkerSeverity.Warning;
+            case "note":
+                return MarkerSeverity.Info;
+            case "help":
+                return MarkerSeverity.Hint;
         }
-
-        return MarkerSeverity.Error;
     }
 }

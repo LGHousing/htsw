@@ -2,17 +2,9 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import type { Action, Condition, Event, Importable } from "../../types";
 import { ACTION_NAMES } from "../../types";
+import { visitActionTrees, type ActionTreeContext } from "../actionTree";
 
-type ActionContainer = "functions" | "events" | "items" | "menus" | "regions";
-type NestedActionContainer = "conditional" | "random";
-
-type ActionScope = {
-    container: ActionContainer;
-    event?: Event;
-    nested?: NestedActionContainer;
-};
-
-type Check = (gcx: GlobalCtxt, action: Action, scope: ActionScope) => void;
+type ActionScope = ActionTreeContext;
 
 const EVENT_SCOPED_CONDITIONS: Partial<Record<Condition["type"], Event[]>> = {
     COMPARE_DAMAGE: ["Player Damage"],
@@ -78,57 +70,27 @@ export function checkActionContext(
     gcx: GlobalCtxt,
     importables: Importable[] = gcx.importables,
 ) {
-    for (const importable of importables) {
-        if (importable.type === "FUNCTION") {
-            checkAll(gcx, checkActionInFunction, importable.actions ?? [], { container: "functions" });
-        }
-
-        else if (importable.type === "EVENT") {
-            checkAll(gcx, checkActionInEvent, importable.actions, {
-                container: "events",
-                event: importable.event,
-            });
-        }
-
-        else if (importable.type === "ITEM") {
-            checkAll(gcx, checkActionInItem, importable.leftClickActions ?? [], { container: "items" });
-            checkAll(gcx, checkActionInItem, importable.rightClickActions ?? [], { container: "items" });
-        }
-
-        else if (importable.type === "MENU") {
-            for (const slot of importable.slots) {
-                checkAll(gcx, checkActionInMenu, slot.actions ?? [], { container: "menus" });
+    visitActionTrees(importables, {
+        action: (action, scope) => {
+            if (scope.importable === "events") {
+                checkActionInEvent(gcx, action, scope);
+            } else if (scope.importable === "items") {
+                checkActionInItem(gcx, action, scope);
+            } else if (scope.importable === "menus") {
+                checkActionInMenu(gcx, action, scope);
+            } else {
+                checkActionInGeneralContainer(gcx, action, scope);
             }
         }
-
-        else if (importable.type === "REGION") {
-            checkAll(gcx, checkActionInRegion, importable.onEnterActions ?? [], { container: "regions" });
-            checkAll(gcx, checkActionInRegion, importable.onExitActions ?? [], { container: "regions" });
-        }
-    }
+    });
 }
 
-function checkAll(gcx: GlobalCtxt, check: Check, actions: Action[], scope: ActionScope) {
-    for (const action of actions) {
-        check(gcx, action, scope);
-
-        if (action.type === "CONDITIONAL") {
-            checkAll(gcx, check, action.ifActions, { ...scope, nested: "conditional" });
-            checkAll(gcx, check, action.elseActions, { ...scope, nested: "conditional" });
-        }
-
-        else if (action.type === "RANDOM") {
-            checkAll(gcx, check, action.actions, { ...scope, nested: "random" });
-        }
-    }
-}
-
-function checkActionInFunction(gcx: GlobalCtxt, action: Action, scope: ActionScope) {
+function checkActionInGeneralContainer(gcx: GlobalCtxt, action: Action, scope: ActionScope) {
     checkNestedScope(gcx, action, scope);
-    checkNotCancelEvent(gcx, action, "functions");
+    checkNotCancelEvent(gcx, action, scope.importable);
     checkConditionScopes(gcx, action, undefined);
-    checkNotItemOnly(gcx, action, "functions");
-    checkNotMenuOnly(gcx, action, "functions");
+    checkNotItemOnly(gcx, action, scope.importable);
+    checkNotMenuOnly(gcx, action, scope.importable);
     checkExitScope(gcx, action, scope);
 }
 
@@ -172,15 +134,6 @@ function checkActionInEvent(gcx: GlobalCtxt, action: Action, scope: ActionScope)
     checkConditionScopes(gcx, action, event);
     checkNotItemOnly(gcx, action, "events");
     checkNotMenuOnly(gcx, action, "events");
-    checkExitScope(gcx, action, scope);
-}
-
-function checkActionInRegion(gcx: GlobalCtxt, action: Action, scope: ActionScope) {
-    checkNestedScope(gcx, action, scope);
-    checkNotCancelEvent(gcx, action, "regions");
-    checkConditionScopes(gcx, action, undefined);
-    checkNotItemOnly(gcx, action, "regions");
-    checkNotMenuOnly(gcx, action, "regions");
     checkExitScope(gcx, action, scope);
 }
 

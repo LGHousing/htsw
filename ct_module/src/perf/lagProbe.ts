@@ -129,7 +129,7 @@ function record(
         heapAfterMB,
         screen: screenName(),
         importing: getTaskProgress() !== null,
-        taskRunning: TaskManager.hasRunningTasks(),
+        taskRunning: TaskManager.isBusy(),
         waiters: getEventContainerCounts(),
         lastParse: lastParseSummary(),
     });

@@ -6,42 +6,55 @@ export function isTaskCancelled(err: unknown): err is TaskCancelledError {
     return !!err && typeof err === "object" && (err as any).__taskCancelled === true;
 }
 
-type TaskCallback<A extends unknown[] = unknown[]> = (
+type TaskCallback<T, A extends unknown[] = unknown[]> = (
     ctx: TaskContext,
     ...args: A
-) => Promise<void>;
+) => Promise<T>;
 
 export class TaskManager {
-    private static runningContexts: Set<TaskContext> = new Set();
+    private static runningContext: TaskContext | null = null;
 
-    public static async run<A extends unknown[]>(
-        callback: TaskCallback<A>,
+    public static run<T, A extends unknown[]>(
+        callback: TaskCallback<T, A>,
         ...args: A
-    ): Promise<void> {
-        const ctx = new TaskContext();
-        this.runningContexts.add(ctx);
+    ): Promise<T | undefined> {
+        const task = this.tryRun(callback, ...args);
+        if (task === null) {
+            return Promise.reject(new Error("A task is already running"));
+        }
+        return task;
+    }
 
+    public static tryRun<T, A extends unknown[]>(
+        callback: TaskCallback<T, A>,
+        ...args: A
+    ): Promise<T | undefined> | null {
+        if (this.runningContext !== null) return null;
+        const ctx = new TaskContext();
+        this.runningContext = ctx;
+        return this.execute(ctx, callback, args);
+    }
+
+    private static async execute<T, A extends unknown[]>(
+        ctx: TaskContext,
+        callback: TaskCallback<T, A>,
+        args: A
+    ): Promise<T | undefined> {
         try {
-            await callback(ctx, ...args);
+            return await callback(ctx, ...args);
         } catch (err: any) {
             if (isTaskCancelled(err)) {
                 ChatLib.chat(`&cTask cancelled`);
+                return undefined;
             } else {
                 throw err;
             }
         } finally {
-            this.runningContexts.delete(ctx);
+            if (this.runningContext === ctx) this.runningContext = null;
         }
     }
 
-    public static hasRunningTasks(): boolean {
-        return this.runningContexts.size > 0;
-    }
-
-    public static cancelAll() {
-        for (const ctx of this.runningContexts) {
-            ctx.cancel();
-        }
-        this.runningContexts.clear();
+    public static isBusy(): boolean {
+        return this.runningContext !== null;
     }
 }

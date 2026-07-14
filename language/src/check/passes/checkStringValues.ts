@@ -1,6 +1,7 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import type { Action, Importable } from "../../types";
+import { visitActionTrees } from "../actionTree";
 
 const MAX_CHAT_INPUT_LENGTH = 256;
 
@@ -24,36 +25,9 @@ export function checkStringValues(
     gcx: GlobalCtxt,
     importables: Importable[] = gcx.importables,
 ) {
-    for (const importable of importables) {
-        if (importable.type === "FUNCTION") {
-            checkActions(gcx, importable.actions ?? []);
-        } else if (importable.type === "EVENT") {
-            checkActions(gcx, importable.actions);
-        } else if (importable.type === "ITEM") {
-            checkActions(gcx, importable.leftClickActions ?? []);
-            checkActions(gcx, importable.rightClickActions ?? []);
-        } else if (importable.type === "MENU") {
-            for (const slot of importable.slots) {
-                checkActions(gcx, slot.actions ?? []);
-            }
-        } else if (importable.type === "REGION") {
-            checkActions(gcx, importable.onEnterActions ?? []);
-            checkActions(gcx, importable.onExitActions ?? []);
-        }
-    }
-}
-
-function checkActions(gcx: GlobalCtxt, actions: Action[]) {
-    for (const action of actions) {
-        checkAction(gcx, action);
-
-        if (action.type === "CONDITIONAL") {
-            checkActions(gcx, action.ifActions);
-            checkActions(gcx, action.elseActions);
-        } else if (action.type === "RANDOM") {
-            checkActions(gcx, action.actions);
-        }
-    }
+    visitActionTrees(importables, {
+        action: action => checkAction(gcx, action),
+    });
 }
 
 function checkAction(gcx: GlobalCtxt, action: Action) {

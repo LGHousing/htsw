@@ -14,7 +14,6 @@ import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
 import { createExportProgressSink } from "./progressSink";
 import { showToast } from "../toast";
-import { isTaskRunning } from "../../tasks/runningState";
 import { runHousingSyncTask } from "../../housingSync/taskRunner";
 
 export type ExportSpec = {
@@ -39,7 +38,7 @@ export function startExport(
         showToast("Nothing selected to export", 0xffe5bc4b);
         return;
     }
-    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
+    if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
         return;
     }

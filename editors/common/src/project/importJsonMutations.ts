@@ -251,7 +251,7 @@ function findEntry(
     return null;
 }
 
-function findDeclaringImportJsonForSection(
+export function findDeclaringImportJsonForSection(
     fs: ProjectFs,
     entryPath: string,
     section: Section,

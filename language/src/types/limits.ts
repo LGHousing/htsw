@@ -2,8 +2,7 @@ import type { Action } from "./actions";
 import type { Condition } from "./conditions";
 
 export type ActionLimitContext = {
-    importable: "functions" | "events" | "items" | "menus" | "regions";
-    eventName?: string;
+    importable: "functions" | "events" | "items" | "menus" | "regions" | "commands" | "npcs";
     nested?: "conditional" | "random";
 };
 
