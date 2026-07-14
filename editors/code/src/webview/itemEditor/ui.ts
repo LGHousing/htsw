@@ -1,5 +1,9 @@
 import * as htsw from "htsw";
-import { applyItemEditsToTag, buildItemTag } from "htsw-editor-common/item/buildItemNbt";
+import {
+    applyItemEditsToTag,
+    buildItemTag,
+    MAX_HOUSING_ENCHANTMENT_LEVEL,
+} from "htsw-editor-common/item/buildItemNbt";
 import { ensureMinecraftFont, renderItemPreviewInto, type ItemView } from "../mcItem/render";
 import { scrollPastNumberInputs } from "../numberInputWheel";
 import type {
@@ -290,7 +294,12 @@ export function mountItemEditor(
                 updateSnbtPreview();
             });
             bindInput(`enchant-level-${i}`, (value) => {
-                state.enchants[i].level = clamp(Number(value), 1, 32767);
+                const enteredLevel = Number(value);
+                state.enchants[i].level = clamp(enteredLevel, 1, MAX_HOUSING_ENCHANTMENT_LEVEL);
+                if (enteredLevel > MAX_HOUSING_ENCHANTMENT_LEVEL) {
+                    const input = app.querySelector(`#enchant-level-${i}`) as HTMLInputElement | null;
+                    if (input) input.value = String(MAX_HOUSING_ENCHANTMENT_LEVEL);
+                }
                 updateFormattedPreviews();
                 updateSnbtPreview();
             });
@@ -593,7 +602,7 @@ function enchantRow(enchant: { name: string; level: number }, index: number): st
             <select id="enchant-name-${index}">
                 ${ENCHANTMENTS.map((name) => option(name, name, name === enchant.name)).join("")}
             </select>
-            <input id="enchant-level-${index}" type="number" min="1" max="32767" value="${enchant.level}">
+            <input id="enchant-level-${index}" type="number" min="1" max="${MAX_HOUSING_ENCHANTMENT_LEVEL}" value="${enchant.level}">
             <button id="enchant-remove-${index}" class="secondary icon" type="button" title="Remove">×</button>
         </div>
     `;

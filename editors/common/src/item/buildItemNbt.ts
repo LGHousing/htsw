@@ -16,6 +16,8 @@ export type BuildItemEnchant = {
 };
 
 const ENCHANTMENT_IDS: Record<string, number> = {
+export const MAX_HOUSING_ENCHANTMENT_LEVEL = 10;
+
     "Protection": 0,
     "Fire Protection": 1,
     "Feather Falling": 2,
@@ -159,7 +161,10 @@ function enchantsFromTag(tag: Tag | undefined): BuildItemEnchant[] {
         const id = numberValue(entry.id);
         const name = id === undefined ? undefined : enchantmentNameForId(id);
         if (name === undefined) return [];
-        return [{ name, level: numberValue(entry.lvl) ?? 1 }];
+        return [{
+            name,
+            level: clampInt(numberValue(entry.lvl) ?? 1, 1, MAX_HOUSING_ENCHANTMENT_LEVEL),
+        }];
     });
 }
 
@@ -203,7 +208,7 @@ function buildEnchantList(enchants: BuildItemEnchant[]): TagList | undefined {
         if (id === undefined) return [];
         return [compoundTag({
             id: shortTag(id),
-            lvl: shortTag(clampInt(enchant.level, 1, 32767)),
+            lvl: shortTag(clampInt(enchant.level, 1, MAX_HOUSING_ENCHANTMENT_LEVEL)),
         })];
     });
     if (entries.length === 0) return undefined;
