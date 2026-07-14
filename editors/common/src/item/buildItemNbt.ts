@@ -8,6 +8,7 @@ export type BuildItemNbtForm = {
     displayName?: string;
     lore?: string[];
     enchants?: BuildItemEnchant[];
+    customTags?: BuildItemCustomTag[];
 };
 
 export type BuildItemEnchant = {
@@ -15,9 +16,14 @@ export type BuildItemEnchant = {
     level: number;
 };
 
-const ENCHANTMENT_IDS: Record<string, number> = {
+export type BuildItemCustomTag = {
+    name: string;
+    value: Tag;
+};
+
 export const MAX_HOUSING_ENCHANTMENT_LEVEL = 10;
 
+const ENCHANTMENT_IDS: Record<string, number> = {
     "Protection": 0,
     "Fire Protection": 1,
     "Feather Falling": 2,
@@ -58,10 +64,12 @@ export function buildItemTag(form: BuildItemNbtForm): TagCompound {
 
     const display = buildDisplayTag(form);
     const ench = buildEnchantList(form.enchants ?? []);
-    if (display || ench) {
+    const customTags = customTagsToRecord(form.customTags ?? []);
+    if (display || ench || hasAnyValue(customTags)) {
         tag.tag = compoundTag({
             display,
             ench,
+            ...customTags,
         });
     }
 
@@ -91,6 +99,17 @@ export type ItemFields = {
     lore: string[];
     enchants: BuildItemEnchant[];
 };
+
+export function customItemTagsFromTag(tag: Tag): BuildItemCustomTag[] {
+    if (tag.type !== "compound") return [];
+    const innerTag = compoundValue(tag.value.tag);
+    if (innerTag === undefined) return [];
+
+    return Object.entries(innerTag).flatMap(([name, value]) => {
+        if (name === "display" || name === "ench" || value === undefined) return [];
+        return [{ name, value }];
+    });
+}
 
 /** Reverse of {@link buildItemTag}: pull the editable fields out of a parsed
  * item tag. Returns null when the tag isn't a compound with a string `id`. */
@@ -130,8 +149,11 @@ export function applyItemEditsToTag(original: Tag, form: BuildItemNbtForm): TagC
     if (metadata !== 0) next.Damage = shortTag(metadata);
     else delete next.Damage;
 
-    const innerTag = { ...(compoundValue(original.value.tag) ?? {}) };
-    const display = { ...(compoundValue(innerTag.display) ?? {}) };
+    const originalInnerTag = compoundValue(original.value.tag) ?? {};
+    const innerTag = form.customTags === undefined
+        ? { ...originalInnerTag }
+        : customTagsToRecord(form.customTags);
+    const display = { ...(compoundValue(originalInnerTag.display) ?? {}) };
 
     const displayName = form.displayName?.trim();
     if (displayName) display.Name = stringTag(ampToSection(displayName));
@@ -187,6 +209,22 @@ function stringListValue(tag: Tag | undefined): string[] {
 
 function hasAnyValue(record: Record<string, Tag | undefined>): boolean {
     return Object.values(record).some((value) => value !== undefined);
+}
+
+function customTagsToRecord(customTags: readonly BuildItemCustomTag[]): Record<string, Tag> {
+    const tags: Record<string, Tag> = Object.create(null) as Record<string, Tag>;
+    for (const customTag of customTags) {
+        const name = customTag.name.trim();
+        if (!name) throw new Error("Custom NBT tag names cannot be empty.");
+        if (name === "display" || name === "ench") {
+            throw new Error(`Custom NBT tag \"${name}\" is managed by the item editor.`);
+        }
+        if (tags[name] !== undefined) {
+            throw new Error(`Custom NBT tag \"${name}\" is duplicated.`);
+        }
+        tags[name] = customTag.value;
+    }
+    return tags;
 }
 
 function buildDisplayTag(form: BuildItemNbtForm): TagCompound | undefined {

@@ -127,6 +127,7 @@ async function writeItem(form: ItemEditorForm): Promise<string[]> {
         displayName: form.displayName,
         lore: form.lore,
         enchants: form.enchants,
+        customTags: form.customTags,
     });
     const snbt = `${htsw.nbt.printSnbt(tag, { pretty: true, indent: "    " })}\n`;
 

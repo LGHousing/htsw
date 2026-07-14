@@ -2,6 +2,7 @@ import * as htsw from "htsw";
 import {
     applyItemEditsToTag,
     buildItemTag,
+    customItemTagsFromTag,
     MAX_HOUSING_ENCHANTMENT_LEVEL,
 } from "htsw-editor-common/item/buildItemNbt";
 import { ensureMinecraftFont, renderItemPreviewInto, type ItemView } from "../mcItem/render";
@@ -36,6 +37,11 @@ type FilteredItem = {
     label: string;
 };
 
+type CustomTagInput = {
+    name: string;
+    value: string;
+};
+
 type State = {
     itemSearch: string;
     itemName: string;
@@ -44,6 +50,7 @@ type State = {
     displayName: string;
     lore: string[];
     enchants: { name: string; level: number }[];
+    customTags: CustomTagInput[];
     entryName: string;
     importJsonPath: string;
     targets: ImportTarget[];
@@ -82,6 +89,7 @@ export function mountItemEditor(
         displayName: load ? load.item.displayName : "",
         lore: load && load.item.lore.length > 0 ? [...load.item.lore] : [""],
         enchants: load ? load.item.enchants.map((enchant) => ({ ...enchant })) : [],
+        customTags: load ? customTagInputsFromTag(load.tag) : [],
         entryName: firstItem?.displayName ?? "Stone",
         importJsonPath: "",
         targets: [],
@@ -192,6 +200,19 @@ export function mountItemEditor(
                         <button id="addEnchant" class="secondary" type="button">Add Enchant</button>
                     </div>
 
+                    <div class="section">
+                        <h2>Custom NBT</h2>
+                        <p class="section-hint">Added inside <code>tag</code>. Values use SNBT, for example <code>ItemModel</code> with <code>"minecraft:netherite_spear"</code>.</p>
+                        <div class="custom-tag-headings" aria-hidden="true">
+                            <span>Tag name</span>
+                            <span>SNBT value</span>
+                        </div>
+                        <div id="customTagRows">
+                            ${state.customTags.map((customTag, index) => customTagRow(customTag, index)).join("")}
+                        </div>
+                        <button id="addCustomTag" class="secondary" type="button">Add Tag</button>
+                    </div>
+
                     ${projectSection(state)}
                 </div>
 
@@ -209,6 +230,7 @@ export function mountItemEditor(
         `;
 
         bindControls(vscode);
+        updateCustomTagFeedback();
         updateFormattedPreviews();
         updateSnbtPreview();
         renderStatus();
@@ -253,11 +275,11 @@ export function mountItemEditor(
         });
         bindInput("entryName", (value) => {
             state.entryName = value;
-            updateGenerateState();
+            updateActionState();
         });
         bindSelect("importJsonPath", (value) => {
             state.importJsonPath = value;
-            updateGenerateState();
+            updateActionState();
         });
         bindCheckbox("createLeftClickActions", (value) => {
             state.createLeftClickActions = value;
@@ -309,6 +331,23 @@ export function mountItemEditor(
             });
         }
 
+        for (let i = 0; i < state.customTags.length; i++) {
+            bindInput(`custom-tag-name-${i}`, (value) => {
+                state.customTags[i].name = value;
+                updateCustomTagFeedback();
+                updateSnbtPreview();
+            });
+            bindInput(`custom-tag-value-${i}`, (value) => {
+                state.customTags[i].value = value;
+                updateCustomTagFeedback();
+                updateSnbtPreview();
+            });
+            bindClick(`custom-tag-remove-${i}`, () => {
+                state.customTags.splice(i, 1);
+                render();
+            });
+        }
+
         bindClick("addLore", () => {
             state.lore.push("");
             render();
@@ -317,6 +356,12 @@ export function mountItemEditor(
             state.enchants.push({ name: ENCHANTMENTS[0], level: 1 });
             render();
         });
+        bindClick("addCustomTag", () => {
+            const index = state.customTags.length;
+            state.customTags.push({ name: "", value: "" });
+            render();
+            app.querySelector<HTMLInputElement>(`#custom-tag-name-${index}`)?.focus();
+        });
         bindClick("generate", () => {
             if (!canSubmit(state)) return;
             state.status = { kind: "idle", text: "Generating..." };
@@ -324,7 +369,7 @@ export function mountItemEditor(
             post(vscode, { type: "submitItem", form: toForm(state) });
         });
         bindClick("save", () => {
-            if (state.editPath === undefined) return;
+            if (state.editPath === undefined || !customTagsAreValid(state.customTags)) return;
             state.status = { kind: "idle", text: "Saving..." };
             renderStatus();
             post(vscode, { type: "saveItem", snbtPath: state.editPath, tag: currentItemTag(state) });
@@ -361,9 +406,27 @@ export function mountItemEditor(
             .join("");
     }
 
-    function updateGenerateState(): void {
+    function updateActionState(): void {
         const generate = app.querySelector("#generate") as HTMLButtonElement | null;
         if (generate) generate.disabled = !canSubmit(state);
+        const save = app.querySelector("#save") as HTMLButtonElement | null;
+        if (save) save.disabled = !customTagsAreValid(state.customTags);
+    }
+
+    function updateCustomTagFeedback(): void {
+        const errors = customTagErrors(state.customTags);
+        for (let i = 0; i < errors.length; i++) {
+            const row = app.querySelector<HTMLElement>(`#custom-tag-row-${i}`);
+            const error = app.querySelector<HTMLElement>(`#custom-tag-error-${i}`);
+            const invalid = errors[i].length > 0;
+            row?.classList.toggle("invalid", invalid);
+            if (error) error.textContent = errors[i];
+            app.querySelector<HTMLInputElement>(`#custom-tag-name-${i}`)
+                ?.setAttribute("aria-invalid", String(invalid));
+            app.querySelector<HTMLInputElement>(`#custom-tag-value-${i}`)
+                ?.setAttribute("aria-invalid", String(invalid));
+        }
+        updateActionState();
     }
 
     function renderStatus(): void {
@@ -382,6 +445,7 @@ function applyItemLoad(state: State, load: ItemEditorLoad): void {
     state.displayName = load.item.displayName;
     state.lore = load.item.lore.length > 0 ? [...load.item.lore] : [""];
     state.enchants = load.item.enchants.map((enchant) => ({ ...enchant }));
+    state.customTags = customTagInputsFromTag(load.tag);
     state.status = { kind: "idle", text: "" };
     state.editPath = load.snbtPath;
     state.editLabel = load.label;
@@ -396,6 +460,7 @@ function toForm(state: State): ItemEditorForm {
         displayName: state.displayName,
         lore: trimTrailingEmptyLines(state.lore),
         enchants: state.enchants,
+        customTags: parseCustomTags(state.customTags),
         entryName: state.entryName,
         importJsonPath: state.importJsonPath,
         createLeftClickActions: state.createLeftClickActions,
@@ -420,8 +485,8 @@ function projectSection(state: State): string {
         return `
             <div class="section">
                 <h2>Save</h2>
-                <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>. NBT the editor doesn't manage is kept.</p>
-                <button id="save" type="button">Save</button>
+                <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>. Unmanaged top-level NBT is kept.</p>
+                <button id="save" type="button" ${customTagsAreValid(state.customTags) ? "" : "disabled"}>Save</button>
                 <div id="status" class="status"></div>
             </div>
         `;
@@ -608,6 +673,65 @@ function enchantRow(enchant: { name: string; level: number }, index: number): st
     `;
 }
 
+function customTagRow(customTag: CustomTagInput, index: number): string {
+    return `
+        <div id="custom-tag-row-${index}" class="custom-tag-row">
+            <div class="custom-tag-fields">
+                <input id="custom-tag-name-${index}" value="${escapeAttr(customTag.name)}" placeholder="ItemModel" aria-label="Tag name" spellcheck="false">
+                <input id="custom-tag-value-${index}" value="${escapeAttr(customTag.value)}" placeholder="&quot;minecraft:netherite_spear&quot;" aria-label="SNBT value" spellcheck="false">
+                <button id="custom-tag-remove-${index}" class="secondary icon" type="button" title="Remove tag">×</button>
+            </div>
+            <div id="custom-tag-error-${index}" class="field-error" role="status"></div>
+        </div>
+    `;
+}
+
+function customTagInputsFromTag(tag: unknown): CustomTagInput[] {
+    return customItemTagsFromTag(tag as Parameters<typeof customItemTagsFromTag>[0]).map((customTag) => ({
+        name: customTag.name,
+        value: htsw.nbt.printSnbt(customTag.value),
+    }));
+}
+
+function parseCustomTags(customTags: readonly CustomTagInput[]): ItemEditorForm["customTags"] {
+    return customTags.map((customTag) => ({
+        name: customTag.name.trim(),
+        value: htsw.nbt.parseSnbtText(customTag.value.trim()),
+    }));
+}
+
+function customTagsAreValid(customTags: readonly CustomTagInput[]): boolean {
+    return customTagErrors(customTags).every((error) => error.length === 0);
+}
+
+function customTagErrors(customTags: readonly CustomTagInput[]): string[] {
+    const names = customTags.map((customTag) => customTag.name.trim());
+    return customTags.map((customTag, index) => {
+        const name = names[index];
+        if (!name) return "Enter a tag name.";
+        if (name === "display" || name === "ench") {
+            return `Use the editor's ${name === "display" ? "Display" : "Enchantments"} section for this tag.`;
+        }
+        if (names.indexOf(name) !== index || names.lastIndexOf(name) !== index) {
+            return `The tag ${name} is listed more than once.`;
+        }
+        if (!customTag.value.trim()) return "Enter an SNBT value.";
+        try {
+            htsw.nbt.parseSnbtText(customTag.value.trim());
+            return "";
+        } catch (err) {
+            return `Invalid SNBT: ${errorMessage(err)}`;
+        }
+    });
+}
+
+function errorMessage(error: unknown): string {
+    if (typeof error === "object" && error !== null && "message" in error) {
+        return String(error.message);
+    }
+    return String(error);
+}
+
 function bindInputIn(app: HTMLElement, id: string, handler: (value: string) => void): void {
     const input = app.querySelector(`#${id}`) as HTMLInputElement | null;
     input?.addEventListener("input", () => handler(input.value));
@@ -638,7 +762,9 @@ function option(value: string, label: string, selected: boolean): string {
 }
 
 function canSubmit(state: State): boolean {
-    return state.entryName.trim().length > 0 && state.importJsonPath.length > 0;
+    return state.entryName.trim().length > 0 &&
+        state.importJsonPath.length > 0 &&
+        customTagsAreValid(state.customTags);
 }
 
 function post(vscode: VsCodeApi, message: ItemEditorToHostMessage): void {

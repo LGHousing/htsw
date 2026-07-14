@@ -112,6 +112,13 @@ label {
     font-size: 12px;
 }
 
+.section-hint {
+    margin: -2px 0 10px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .row {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -132,6 +139,39 @@ label {
     gap: 8px;
     align-items: center;
     margin-bottom: 8px;
+}
+
+.custom-tag-headings,
+.custom-tag-fields {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.7fr) minmax(150px, 1.3fr) 28px;
+    gap: 8px;
+}
+
+.custom-tag-headings {
+    margin: 0 0 5px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 12px;
+}
+
+.custom-tag-row {
+    margin-bottom: 8px;
+}
+
+.custom-tag-row.invalid input {
+    border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.field-error {
+    min-height: 0;
+    margin-top: 4px;
+    color: var(--vscode-errorForeground);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.field-error:empty {
+    display: none;
 }
 
 .checks {

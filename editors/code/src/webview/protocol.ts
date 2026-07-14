@@ -1,3 +1,5 @@
+import type { Tag } from "htsw/nbt";
+
 export type SoundVersionId = "1.8.9" | "1.21.1";
 
 export type GitDecoration = {
@@ -17,6 +19,7 @@ export type ItemEditorForm = {
     displayName: string;
     lore: string[];
     enchants: ItemEditorEnchant[];
+    customTags: ItemEditorCustomTag[];
     entryName: string;
     importJsonPath: string;
     createLeftClickActions: boolean;
@@ -26,6 +29,11 @@ export type ItemEditorForm = {
 type ItemEditorEnchant = {
     name: string;
     level: number;
+};
+
+type ItemEditorCustomTag = {
+    name: string;
+    value: Tag;
 };
 
 /** Enough of a parsed item to render its in-game sprite and hover tooltip.
