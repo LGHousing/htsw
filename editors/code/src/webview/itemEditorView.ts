@@ -17,7 +17,14 @@ import type {
     ItemEditorForm,
     ItemEditorFromHostMessage,
     ItemEditorToHostMessage,
+    ProjectFromHostMessage,
 } from "./protocol";
+
+type CreatedItem = {
+    files: string[];
+    importJsonPath: string;
+    identity: string;
+};
 
 export async function handleItemEditorMessage(
     webview: vscode.Webview,
@@ -75,9 +82,19 @@ async function saveItem(webview: vscode.Webview, snbtPath: string, tag: unknown)
 
 async function submitItem(webview: vscode.Webview, form: ItemEditorForm): Promise<void> {
     try {
-        const files = await writeItem(form);
-        await webview.postMessage({ type: "submitResult", ok: true, files } satisfies ItemEditorFromHostMessage);
-        await revealFiles(files);
+        const created = await writeItem(form);
+        await webview.postMessage({
+            type: "submitResult",
+            ok: true,
+            files: created.files,
+        } satisfies ItemEditorFromHostMessage);
+        await webview.postMessage({
+            type: "revealProjectImportable",
+            importJsonPath: created.importJsonPath,
+            kind: "item",
+            identity: created.identity,
+        } satisfies ProjectFromHostMessage);
+        await openGeneratedItem(created.files);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({ type: "submitResult", ok: false, error } satisfies ItemEditorFromHostMessage);
@@ -108,7 +125,7 @@ async function discoverImportTargets(): Promise<ImportTarget[]> {
     return [...found.values()].sort((left, right) => left.label.localeCompare(right.label));
 }
 
-async function writeItem(form: ItemEditorForm): Promise<string[]> {
+async function writeItem(form: ItemEditorForm): Promise<CreatedItem> {
     const importJsonPath = form.importJsonPath;
     if (!importJsonPath) throw new Error("Choose a target import.json.");
     if (!nodeProjectFs.exists(importJsonPath)) {
@@ -155,7 +172,11 @@ async function writeItem(form: ItemEditorForm): Promise<string[]> {
     }
 
     await upsertItemEntry(target.importJsonPath, entry);
-    return [target.snbtPath, ...actionFiles, target.importJsonPath];
+    return {
+        files: [target.snbtPath, ...actionFiles, target.importJsonPath],
+        importJsonPath: target.importJsonPath,
+        identity: entryName,
+    };
 }
 
 function writeActionFile(
@@ -224,12 +245,11 @@ function openTextDocumentForPath(filePath: string): vscode.TextDocument | undefi
     );
 }
 
-async function revealFiles(files: string[]): Promise<void> {
+async function openGeneratedItem(files: string[]): Promise<void> {
     const first = files[0];
     if (first) {
         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(first));
         await vscode.window.showTextDocument(doc, { preview: false });
-        await vscode.commands.executeCommand("revealInExplorer", vscode.Uri.file(first));
     }
 }
 

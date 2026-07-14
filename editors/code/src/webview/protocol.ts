@@ -109,6 +109,12 @@ export type ProjectImportableSummary = {
     metadataEntries?: ProjectImportableMetadata[];
 };
 
+export type ProjectImportableReveal = {
+    importJsonPath: string;
+    kind: ProjectImportableSummary["type"];
+    identity: string;
+};
+
 export type ProjectImportJsonNode = {
     fsPath: string;
     parentFsPath?: string;
@@ -163,7 +169,8 @@ export type ProjectToHostMessage =
 export type ProjectFromHostMessage =
     | { type: "projectTree"; roots: ProjectImportJsonNode[]; workspaceName?: string }
     | { type: "projectResult"; ok: true; message: string; createdPath?: string }
-    | { type: "projectResult"; ok: false; error: string };
+    | { type: "projectResult"; ok: false; error: string }
+    | ({ type: "revealProjectImportable" } & ProjectImportableReveal);
 
 export type ItemEditorToHostMessage =
     | { type: "requestImportTargets" }

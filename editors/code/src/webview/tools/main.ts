@@ -1,6 +1,7 @@
 import projectStyles from "../project/styles.css?inline";
 import { mountProjectExplorer } from "../project/ui";
 import type { ProjectExplorerPersistedState } from "../project/ui";
+import type { ProjectImportableReveal } from "../protocol";
 import itemStyles from "../itemEditor/styles.css?inline";
 import { mountItemEditor, type ItemEditorLoad } from "../itemEditor/ui";
 import soundStyles from "../soundPreviewer/styles.css?inline";
@@ -32,14 +33,37 @@ if (root) {
 }
 
 function onShellMessage(event: MessageEvent): void {
-    const message = event.data as { type?: string } | undefined;
-    if (message?.type !== "loadItem") return;
-    pendingItemLoad = event.data as ItemEditorLoad;
-    if (activeTool !== "item") {
-        persistActiveScroll();
-        activeTool = "item";
-        vscode.setState({ ...(vscode.getState() ?? {}), activeTool });
+    const message = event.data as ({ type?: string } & Partial<ProjectImportableReveal>) | undefined;
+    if (message?.type === "loadItem") {
+        pendingItemLoad = event.data as ItemEditorLoad;
+        if (activeTool !== "item") {
+            persistActiveScroll();
+            activeTool = "item";
+            vscode.setState({ ...(vscode.getState() ?? {}), activeTool });
+        }
+        showActiveTool();
+        return;
     }
+
+    if (message?.type !== "revealProjectImportable"
+        || typeof message.importJsonPath !== "string"
+        || typeof message.kind !== "string"
+        || typeof message.identity !== "string") return;
+    if (activeTool !== "project") persistActiveScroll();
+    activeTool = "project";
+    const state = vscode.getState() ?? {};
+    vscode.setState({
+        ...state,
+        activeTool,
+        project: {
+            ...state.project,
+            pendingReveal: {
+                importJsonPath: message.importJsonPath,
+                kind: message.kind as ProjectImportableReveal["kind"],
+                identity: message.identity,
+            },
+        },
+    });
     showActiveTool();
 }
 

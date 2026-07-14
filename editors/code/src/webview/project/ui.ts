@@ -4,6 +4,7 @@ import type {
     ItemPreviewData,
     ProjectFromHostMessage,
     ProjectImportableMetadata,
+    ProjectImportableReveal,
     ProjectImportableSub,
     ProjectImportableSummary,
     GitDecoration,
@@ -21,6 +22,7 @@ export type ProjectExplorerPersistedState = {
     showAdd?: boolean;
     addKind?: ProjectImportableSummary["type"];
     addName?: string;
+    pendingReveal?: ProjectImportableReveal;
 };
 
 type WebviewState = {
@@ -53,6 +55,7 @@ type State = {
     showAdd: boolean;
     addKind: ImportableKind;
     addName: string;
+    pendingReveal: ProjectImportableReveal | undefined;
     workspaceName: string;
     status: { kind: "idle" | "ok" | "error"; text: string };
     loading: boolean;
@@ -85,6 +88,7 @@ type RestoredProjectState = {
     showAdd: boolean;
     addKind: ImportableKind;
     addName: string;
+    pendingReveal: ProjectImportableReveal | undefined;
 };
 
 function restoreProjectState(saved: ProjectExplorerPersistedState | undefined): RestoredProjectState {
@@ -102,6 +106,7 @@ function restoreProjectState(saved: ProjectExplorerPersistedState | undefined): 
         showAdd: saved?.showCreate === true ? false : saved?.showAdd === true,
         addKind,
         addName,
+        pendingReveal: validImportableReveal(saved?.pendingReveal) ? saved.pendingReveal : undefined,
     };
 }
 
@@ -129,6 +134,14 @@ function validProjectImportableKind(value: unknown): value is ProjectImportableS
         || value === "group";
 }
 
+function validImportableReveal(value: unknown): value is ProjectImportableReveal {
+    if (typeof value !== "object" || value === null) return false;
+    const reveal = value as Partial<ProjectImportableReveal>;
+    return typeof reveal.importJsonPath === "string"
+        && validProjectImportableKind(reveal.kind)
+        && typeof reveal.identity === "string";
+}
+
 export function mountProjectExplorer(
     app: HTMLElement,
     vscode: VsCodeApi,
@@ -150,6 +163,7 @@ export function mountProjectExplorer(
         showAdd: persisted.showAdd,
         addKind: persisted.addKind,
         addName: persisted.addName,
+        pendingReveal: persisted.pendingReveal,
         workspaceName: "",
         status: { kind: "idle", text: "" },
         loading: true,
@@ -173,12 +187,21 @@ export function mountProjectExplorer(
             state.loading = false;
             reconcileProjectTreeState(state);
             if (!hadRoots && !hasPersistedExpanded) seedExpanded(state);
+            const revealedId = applyPendingReveal(state);
             persistProjectState();
             // Only a full re-render on the first load. Later updates (e.g. the
             // live diagnostics refresh) patch the tree in place so they don't
             // reset scroll or steal focus from the search box.
-            if (wasLoading) render();
+            if (wasLoading || revealedId !== null) render();
             else refreshTreeData();
+            if (revealedId !== null) scrollImportableIntoView(revealedId);
+            return;
+        }
+
+        if (message.type === "revealProjectImportable") {
+            state.pendingReveal = message;
+            persistProjectState();
+            post(vscode, { type: "requestProjectTree", fresh: true });
             return;
         }
 
@@ -223,6 +246,7 @@ export function mountProjectExplorer(
                 showAdd: state.showAdd,
                 addKind: state.addKind,
                 addName: state.addName,
+                pendingReveal: state.pendingReveal,
             },
         });
     }
@@ -680,11 +704,23 @@ export function mountProjectExplorer(
         const rows = document.querySelectorAll<HTMLElement>(`[data-open-path]`);
         for (const candidate of rows) {
             if (candidate.dataset.openPath !== fsPath || !candidate.classList.contains("file")) continue;
-            candidate.scrollIntoView({ block: "center" });
-            candidate.classList.add("jump-flash");
-            setTimeout(() => candidate.classList.remove("jump-flash"), 1200);
+            flashRowIntoView(candidate);
             return;
         }
+    }
+
+    function scrollImportableIntoView(id: string): void {
+        for (const row of document.querySelectorAll<HTMLElement>(".row.imp[data-importable-id]")) {
+            if (row.dataset.importableId !== id) continue;
+            flashRowIntoView(row);
+            return;
+        }
+    }
+
+    function flashRowIntoView(row: HTMLElement): void {
+        row.scrollIntoView({ block: "center" });
+        row.classList.add("jump-flash");
+        setTimeout(() => row.classList.remove("jump-flash"), 1200);
     }
 
     function renderTreeOnly(): void {
@@ -1126,6 +1162,56 @@ function reconcileProjectTreeState(state: State): void {
     }
     const validKeys = expandedStateKeys(state.roots);
     state.expanded = new Set([...state.expanded].filter((key) => validKeys.has(key)));
+}
+
+function applyPendingReveal(state: State): string | null {
+    const target = state.pendingReveal;
+    if (target === undefined) return null;
+    const found = findImportable(state.roots, target);
+    if (found === null) return null;
+
+    for (const ancestor of ancestorChain(state.roots, found.node.fsPath) ?? []) {
+        state.expanded.add(ancestor.fsPath);
+    }
+    state.expanded.add(found.node.fsPath);
+    state.query = "";
+    state.selection = new Set([found.entry.id]);
+    state.selectionAnchor = found.entry.id;
+    state.pendingReveal = undefined;
+    return found.entry.id;
+}
+
+function findImportable(
+    roots: ProjectImportJsonNode[],
+    target: ProjectImportableReveal,
+): { node: ProjectImportJsonNode; entry: ProjectImportableSummary } | null {
+    const targetPath = normalizedFsPath(target.importJsonPath);
+    const visit = (
+        node: ProjectImportJsonNode,
+    ): { node: ProjectImportJsonNode; entry: ProjectImportableSummary } | null => {
+        if (!node.reference && normalizedFsPath(node.fsPath) === targetPath) {
+            const entry = node.importables.find((candidate) =>
+                candidate.type === target.kind && candidate.identity === target.identity
+            );
+            if (entry !== undefined) return { node, entry };
+        }
+        for (const child of node.children) {
+            const found = visit(child);
+            if (found !== null) return found;
+        }
+        return null;
+    };
+    for (const root of roots) {
+        const found = visit(root);
+        if (found !== null) return found;
+    }
+    return null;
+}
+
+function normalizedFsPath(fsPath: string): string {
+    const windowsPath = fsPath.includes("\\") || /^[a-z]:[\\/]/i.test(fsPath);
+    const normalized = fsPath.replaceAll("\\", "/");
+    return windowsPath ? normalized.toLowerCase() : normalized;
 }
 
 function expandedStateKeys(nodes: ProjectImportJsonNode[]): Set<string> {

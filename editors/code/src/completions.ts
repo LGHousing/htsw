@@ -233,9 +233,8 @@ class HtslCompletionProvider {
         return htsw.htsl.helpers.ACTION_KWS.map((kw) => {
             const spec = htsw.types.getActionSpec(kw);
             const overrideSnippet = ACTION_SNIPPETS[kw];
-            const generatedSnippet = spec ? generateActionSnippet(spec) : undefined;
-            const insertText = overrideSnippet ?? generatedSnippet ?? kw;
-            const isSnippet = Boolean(overrideSnippet) || Boolean(generatedSnippet && spec && spec.fields.length > 0);
+            const insertText = overrideSnippet ?? kw;
+            const isSnippet = Boolean(overrideSnippet);
             const detail = spec
                 ? htsw.types.renderActionSignature(spec)
                 : "HTSL action";
@@ -253,17 +252,14 @@ class HtslCompletionProvider {
     private conditionCompletions(): CompletionSpec[] {
         return htsw.htsl.helpers.CONDITION_KWS.map((kw) => {
             const spec = htsw.types.getConditionSpec(kw);
-            const generated = spec ? generateActionSnippet(spec) : undefined;
-            const insertText = generated ?? kw;
-            const isSnippet = Boolean(generated && spec && spec.fields.length > 0);
             const detail = spec ? htsw.types.renderActionSignature(spec) : "HTSL condition";
             return {
                 label: kw,
-                insertText,
+                insertText: kw,
                 kind: "condition",
                 detail,
-                snippet: isSnippet,
-                sortText: isSnippet ? `0_${kw}` : `1_${kw}`,
+                snippet: false,
+                sortText: `1_${kw}`,
             };
         });
     }
@@ -849,34 +845,6 @@ function varOperationCompletions(detail?: string): CompletionSpec[] {
         kind: "operator",
         detail,
     }));
-}
-
-function generateActionSnippet(spec: htsw.types.ActionSpec): string {
-    const required = spec.fields.filter((field) => !field.optional);
-    if (required.length === 0) return spec.kw;
-    const args = required.map((field, i) => snippetForField(field, i + 1));
-    return `${spec.kw} ${args.join(" ")}`;
-}
-
-function snippetForField(field: htsw.types.ActionFieldSpec, n: number): string {
-    switch (field.kind) {
-        case "boolean":
-            return `\${${n}|false,true|}`;
-        case "ifMode":
-            return `\${${n}|and,or,true,false|}`;
-        case "string":
-        case "item":
-        case "team":
-        case "function":
-        case "group":
-            return `"\${${n}:${field.name}}"`;
-        case "block":
-            return `{\n\t\${${n}}\n}`;
-        case "placeholder":
-            return `\${${n}:%${field.name}%}`;
-        default:
-            return `\${${n}:${field.name}}`;
-    }
 }
 
 // Spec-driven per-position completions. Field index = argCount with trailing
