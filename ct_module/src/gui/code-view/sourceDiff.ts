@@ -13,7 +13,7 @@
  *
  *   1. The user edits a file (the parse changes, mtime-detected by
  *      `parseImportJsonAt`) → entries for files in that parse cleared.
- *   2. An import completes for an importable → that file's entry cleared.
+ *   2. Cached Housing content changes after an import, read, or export.
  *   3. The current house changes → every entry recomputes on next access.
  *
  * "No diff available" results are memoized too (see `SourceDiffMemo`).
@@ -81,10 +81,8 @@ export type SourceDiffEntry = {
 // One memo per (import.json, file) key — including "no diff available"
 // (`value: null`). Without the negative memo, a file that isn't in the
 // import cache re-runs the whole target/cache lookup for EVERY line of
-// EVERY rebuilt frame (the decorator asks per line). A null result can
-// flip without this module hearing about it, so it revalidates against
-// the three inputs that produce one: the current house, the parse cache,
-// and import-cache content writes.
+// EVERY rebuilt frame (the decorator asks per line). Results revalidate
+// against the current house, parse cache, and import-cache content writes.
 type SourceDiffMemo = {
     value: SourceDiffEntry | null;
     housingUuid: string | null;
@@ -97,8 +95,17 @@ const entries: Map<string, SourceDiffMemo> = new Map();
 // Bumped whenever any memo's value changes. The code view keys its cached
 // whole-file decoration pass on this (via `diffDecorator.modelKey`).
 let revision = 0;
+let observedCacheWriteRevision = getImportCacheWriteRevision();
+
+function syncCacheWriteRevision(): void {
+    const current = getImportCacheWriteRevision();
+    if (current === observedCacheWriteRevision) return;
+    observedCacheWriteRevision = current;
+    revision++;
+}
 
 export function getSourceDiffRevision(): number {
+    syncCacheWriteRevision();
     return revision;
 }
 
@@ -127,24 +134,25 @@ export function ensureSourceDiff(
     filePath: string,
     importJsonPath?: string | null
 ): SourceDiffEntry | undefined {
+    syncCacheWriteRevision();
     const k = key(filePath, importJsonPath);
     const housingUuid = getHousingUuid();
+    const cacheWriteRev = getImportCacheWriteRevision();
     const memo = entries.get(k);
-    if (memo !== undefined && memo.housingUuid === housingUuid) {
-        if (memo.value !== null) return memo.value;
-        if (
-            memo.parseRev === getParseCacheRevision()
-            && memo.cacheWriteRev === getImportCacheWriteRevision()
-        ) {
-            return undefined;
-        }
+    if (
+        memo !== undefined
+        && memo.housingUuid === housingUuid
+        && memo.parseRev === getParseCacheRevision()
+        && memo.cacheWriteRev === cacheWriteRev
+    ) {
+        return memo.value ?? undefined;
     }
     const computed = computeFor(filePath, importJsonPath);
     entries.set(k, {
         value: computed,
         housingUuid,
         parseRev: getParseCacheRevision(),
-        cacheWriteRev: getImportCacheWriteRevision(),
+        cacheWriteRev,
     });
     if (computed !== null || (memo !== undefined && memo.value !== null)) revision++;
     return computed ?? undefined;
