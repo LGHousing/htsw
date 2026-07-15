@@ -13,7 +13,7 @@
         "vscode": "^1.97.2"
     },
     "scripts": {
-        "generate:grammar": "node scripts/generateHtslGrammar.mjs",
+        "generate:grammar": "node --experimental-strip-types scripts/generateHtslGrammar.mjs",
         "build": "npm run generate:grammar && tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
         "check:schema": "node -e \"JSON.parse(require('fs').readFileSync('./schemas/import.schema.json', 'utf8'))\"",
         "package": "npm run build && npx @vscode/vsce package --no-dependencies"
