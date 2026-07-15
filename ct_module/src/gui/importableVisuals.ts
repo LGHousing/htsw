@@ -9,7 +9,7 @@ import type { Element, Style } from "./lib/layout";
 import { Icon, McItem } from "./lib/components";
 import { Icons, type IconName } from "./lib/icons.generated";
 
-export const IMPORTABLE_TYPE_VISUALS: {
+const IMPORTABLE_TYPE_VISUALS: {
     [K in Importable["type"]]: { icon: IconName; color: number };
 } = {
     FUNCTION: { icon: Icons.squareFunction, color: 0xff67a7e8 | 0 },

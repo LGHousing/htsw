@@ -154,44 +154,49 @@ export class Panel {
         return this.cachedLaid;
     }
 
+    public drawAt(rawX: number, rawY: number): void {
+        const b = extract(this.bounds);
+        const x = mcToOverlay(rawX);
+        const y = mcToOverlay(rawY);
+        warmIconTextures();
+        if (this.paintBackground) {
+            Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
+        }
+        const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
+        const renderStart = Date.now();
+        let rebuild = this.needsRebuild(b);
+        try {
+            if (!rebuild && !this.advanceCachedScrolls()) rebuild = true;
+            if (rebuild) {
+                const layoutStart = Date.now();
+                this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+                recordPhase("layout-total", Date.now() - layoutStart);
+                this.builtRevision = getGuiRevision();
+                this.builtAt = Date.now();
+                this.builtBounds = b;
+                this.captureScrollOffsets();
+            }
+            const drawStart = Date.now();
+            drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
+            if (rebuild) recordPhase("draw-rebuild", Date.now() - drawStart);
+        } catch (err) {
+            debugLogError("panel render", err);
+        }
+        recordPanelFrame(Date.now() - renderStart, rebuild);
+    }
+
     public register(): void {
         if (this.renderTrigger !== null) {
             throw new Error("Panel is already registered");
         }
         const paint = (rawX: number, rawY: number) => {
             if (!extract(this.shouldBeVisible)) return;
-            const b = extract(this.bounds);
-            const x = mcToOverlay(rawX);
-            const y = mcToOverlay(rawY);
             beginHtswOverlayDraw();
-            warmIconTextures();
-            if (this.paintBackground) {
-                Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
-            }
-            // Hover follows click propagation: panels stay interactive unless the cursor is
-            // actually over a popover (in which case the popover absorbs the click).
-            const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
-            const renderStart = Date.now();
-            let rebuild = this.needsRebuild(b);
             try {
-                if (!rebuild && !this.advanceCachedScrolls()) rebuild = true;
-                if (rebuild) {
-                    const layoutStart = Date.now();
-                    this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
-                    recordPhase("layout-total", Date.now() - layoutStart);
-                    this.builtRevision = getGuiRevision();
-                    this.builtAt = Date.now();
-                    this.builtBounds = b;
-                    this.captureScrollOffsets();
-                }
-                const drawStart = Date.now();
-                drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
-                if (rebuild) recordPhase("draw-rebuild", Date.now() - drawStart);
-            } catch (err) {
-                debugLogError("panel render", err);
+                this.drawAt(rawX, rawY);
+            } finally {
+                endHtswOverlayDraw();
             }
-            recordPanelFrame(Date.now() - renderStart, rebuild);
-            endHtswOverlayDraw();
         };
         // CT's "guiRender" maps to Forge's BackgroundDrawnEvent — fires after MC's dim gradient
         // but before slot/foreground/tooltip rendering, so MC's hover tooltip on container

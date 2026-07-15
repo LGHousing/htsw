@@ -125,11 +125,6 @@ function createSyncEventHandler(args: {
         );
     }
 
-    const sync = (): void => {
-        setTaskProgress(state.progress);
-        setActiveTaskPath(activeViewPath);
-    };
-
     // Mapped type: one handler per event kind, parameter narrowed to the
     // specific event shape. TS enforces exhaustiveness — a new kind on the
     // union surfaces here as a typecheck error.
@@ -235,7 +230,10 @@ function createSyncEventHandler(args: {
             traceProgressEvent(event, before, state.progress);
             traceSyncEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
-            sync();
+            if (state.progress !== before) {
+                setTaskProgress(state.progress);
+            }
+            setActiveTaskPath(activeViewPath);
         },
         counts: () => {
             let imported = 0;

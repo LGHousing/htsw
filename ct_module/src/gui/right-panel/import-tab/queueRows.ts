@@ -38,58 +38,112 @@ import {
 } from "./taskProgress";
 import { importableIdentity } from "../../../importables/identity";
 import { buildCacheStatusRow } from "../../../importCache/status";
+import { getImportCacheWriteRevision } from "../../../importCache/cache";
 import {
     isQueueSessionItem,
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import { canonicalPath, requestParse } from "../../parsing/parses";
+import {
+    canonicalPath,
+    getParseCacheRevision,
+    requestParse,
+} from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { taskPhaseSegments } from "./progressPanel";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
-import {
-    findImportableHome,
-    type IncludeNode,
-} from "../../left-panel/projects/includeTree";
+import type { IncludeNode } from "../../left-panel/projects/includeTree";
 
-type CachedDeclaringFolder = { folder: string | null; expiresAt: number };
-const declaringFolderCache = new Map<string, CachedDeclaringFolder>();
+type QueueSourceIndex = {
+    importables: Map<string, Importable>;
+    declaringFolders: Map<string, string | null>;
+    importJsonChildren: QueueItem[] | null;
+    parsedImportables: readonly Importable[];
+};
+
+let queueSourceIndexRevision = -1;
+const queueSourceIndexes = new Map<string, QueueSourceIndex | null>();
+
+function importableIndexKey(type: Importable["type"], identity: string): string {
+    return `${type}\u0000${identity}`;
+}
 
 function directoryOf(path: string): string {
     const slash = path.lastIndexOf("/");
     return slash < 0 ? "" : path.substring(0, slash);
 }
 
-function declaringFolder(item: QueueItem): string | null {
-    if (item.operation !== "import" || item.kind !== "importable") return null;
-    const key = `${item.sourcePath}\u0000${item.type}\u0000${item.identity}`;
-    const now = Date.now();
-    const cached = declaringFolderCache.get(key);
-    if (cached !== undefined && cached.expiresAt > now) return cached.folder;
-    let folder: string | null = null;
-    const parse = requestParse(item.sourcePath);
-    if (parse !== null && parse.parsed !== null) {
-        const parsed = parse.parsed;
-        const tree: IncludeNode = parsed.importJson.fileTree ?? {
-            path: item.sourcePath,
-            importables: parsed.value,
-            includes: [],
-        };
-        const home = findImportableHome(tree, item.type, item.identity);
-        if (home !== null) {
-            const rootDir = directoryOf(canonicalPath(item.sourcePath));
-            const homeDir = directoryOf(canonicalPath(home.node.path));
-            const prefix = rootDir === "" ? "" : `${rootDir}/`;
-            if (homeDir !== rootDir && homeDir.indexOf(prefix) === 0) {
-                folder = homeDir.substring(prefix.length);
-            }
+function relativeDeclaringFolder(rootDir: string, nodePath: string): string | null {
+    const homeDir = directoryOf(canonicalPath(nodePath));
+    const prefix = rootDir === "" ? "" : `${rootDir}/`;
+    if (homeDir === rootDir || homeDir.indexOf(prefix) !== 0) return null;
+    return homeDir.substring(prefix.length);
+}
+
+function indexDeclaringFolders(
+    node: IncludeNode,
+    rootDir: string,
+    folders: Map<string, string | null>
+): void {
+    if (node.reference !== true) {
+        const folder = relativeDeclaringFolder(rootDir, node.path);
+        for (let i = 0; i < node.importables.length; i++) {
+            const imp = node.importables[i];
+            const key = importableIndexKey(imp.type, importableIdentity(imp));
+            if (!folders.has(key)) folders.set(key, folder);
         }
     }
-    declaringFolderCache.set(key, { folder, expiresAt: now + 300 });
-    return folder;
+    for (let i = 0; i < node.includes.length; i++) {
+        indexDeclaringFolders(node.includes[i], rootDir, folders);
+    }
+}
+
+function queueSourceIndex(sourcePath: string): QueueSourceIndex | null {
+    const revision = getParseCacheRevision();
+    if (revision !== queueSourceIndexRevision) {
+        queueSourceIndexRevision = revision;
+        queueSourceIndexes.clear();
+    }
+    const sourceKey = canonicalPath(sourcePath);
+    if (queueSourceIndexes.has(sourceKey)) {
+        return queueSourceIndexes.get(sourceKey) ?? null;
+    }
+    const parse = requestParse(sourcePath);
+    if (parse === null || parse.parsed === null) {
+        queueSourceIndexes.set(sourceKey, null);
+        return null;
+    }
+    const importables = new Map<string, Importable>();
+    for (let i = 0; i < parse.parsed.value.length; i++) {
+        const imp = parse.parsed.value[i];
+        const key = importableIndexKey(imp.type, importableIdentity(imp));
+        if (!importables.has(key)) importables.set(key, imp);
+    }
+    const tree: IncludeNode = parse.parsed.importJson.fileTree ?? {
+        path: sourcePath,
+        importables: parse.parsed.value,
+        includes: [],
+    };
+    const declaringFolders = new Map<string, string | null>();
+    indexDeclaringFolders(tree, directoryOf(sourceKey), declaringFolders);
+    const index: QueueSourceIndex = {
+        importables,
+        declaringFolders,
+        importJsonChildren: null,
+        parsedImportables: parse.parsed.value,
+    };
+    queueSourceIndexes.set(sourceKey, index);
+    return index;
+}
+
+function declaringFolder(item: QueueItem): string | null {
+    if (item.operation !== "import" || item.kind !== "importable") return null;
+    const index = queueSourceIndex(item.sourcePath);
+    if (index === null) return null;
+    return index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null;
 }
 
 function declaringFolderElement(item: QueueItem): Element | false {
@@ -124,47 +178,54 @@ function revealQueueItem(item: QueueItem, info: ClickInfo): void {
     }
 }
 
-function willBeSkipped(item: QueueItem): boolean {
-    if (!isCurrentHouseTrusted()) return false;
+type SkipPredictionContext = {
+    housingUuid: string | null;
+    trusted: boolean;
+};
+
+let skipPredictionParseRevision = -1;
+let skipPredictionCacheRevision = -1;
+let skipPredictionHousingUuid: string | null = null;
+let skipPredictionTrusted = false;
+const skipPredictions = new Map<string, boolean>();
+
+function currentSkipPredictionContext(): SkipPredictionContext {
+    const parseRevision = getParseCacheRevision();
+    const cacheRevision = getImportCacheWriteRevision();
+    const housingUuid = getHousingUuid();
+    const trusted = isCurrentHouseTrusted();
+    if (
+        parseRevision !== skipPredictionParseRevision ||
+        cacheRevision !== skipPredictionCacheRevision ||
+        housingUuid !== skipPredictionHousingUuid ||
+        trusted !== skipPredictionTrusted
+    ) {
+        skipPredictionParseRevision = parseRevision;
+        skipPredictionCacheRevision = cacheRevision;
+        skipPredictionHousingUuid = housingUuid;
+        skipPredictionTrusted = trusted;
+        skipPredictions.clear();
+    }
+    return { housingUuid, trusted };
+}
+
+function willBeSkipped(
+    item: QueueItem,
+    context: SkipPredictionContext = currentSkipPredictionContext()
+): boolean {
+    if (isTaskRunning() || !context.trusted) return false;
     if (item.operation !== "import" || item.kind !== "importable") return false;
-    const uuid = getHousingUuid();
-    if (uuid === null) return false;
-    const cached = requestParse(item.sourcePath);
-    const parsed = cached?.parsed ?? null;
-    if (parsed === null) return false;
-    const imp = findImportableInList(parsed.value, item.identity, item.type);
-    if (imp === null) return false;
-    return buildCacheStatusRow(uuid, imp).state === "current";
-}
-
-export function queueWillSkipCount(items: readonly QueueItem[]): number {
-    let count = 0;
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (willBeSkipped(item)) {
-            count++;
-            continue;
-        }
-        if (item.operation === "import" && item.kind === "importJson") {
-            const children = queueImportJsonChildren(item);
-            for (let j = 0; j < children.length; j++) {
-                if (willBeSkipped(children[j])) count++;
-            }
-        }
-    }
-    return count;
-}
-
-function findImportableInList(
-    list: readonly Importable[],
-    identity: string,
-    type: Importable["type"]
-): Importable | null {
-    for (let i = 0; i < list.length; i++) {
-        if (list[i].type === type && importableIdentity(list[i]) === identity)
-            return list[i];
-    }
-    return null;
+    if (context.housingUuid === null) return false;
+    const key = queueItemKey(item);
+    const cached = skipPredictions.get(key);
+    if (cached !== undefined) return cached;
+    const index = queueSourceIndex(item.sourcePath);
+    const imp = index?.importables.get(importableIndexKey(item.type, item.identity));
+    const skipped =
+        imp !== undefined &&
+        buildCacheStatusRow(context.housingUuid, imp).state === "current";
+    skipPredictions.set(key, skipped);
+    return skipped;
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();
@@ -256,13 +317,14 @@ function queueImportableLabel(imp: Importable): string {
 
 export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
     if (item.operation !== "import" || item.kind !== "importJson") return [];
-    const cached = requestParse(item.sourcePath);
-    if (cached === null || cached.parsed === null) return [];
+    const index = queueSourceIndex(item.sourcePath);
+    if (index === null) return [];
+    if (index.importJsonChildren !== null) return index.importJsonChildren;
     const ordered = orderImportablesForImportSession(
-        cached.parsed.value,
-        cached.parsed.value
+        index.parsedImportables,
+        index.parsedImportables
     );
-    return ordered.map((imp) => ({
+    index.importJsonChildren = ordered.map((imp) => ({
         operation: "import",
         kind: "importable",
         sourcePath: item.sourcePath,
@@ -270,6 +332,7 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
         type: imp.type,
         label: queueImportableLabel(imp),
     }));
+    return index.importJsonChildren;
 }
 
 export function isQueueImportJsonExpanded(item: QueueItem): boolean {
@@ -289,7 +352,7 @@ function skipBadge(
 ): { teal: boolean; tooltip: string | undefined } {
     if (runState.kind === "skipped") return { teal: true, tooltip: "Trusted - skipped" };
     const finished = runState.kind === "done" || runState.kind === "failed";
-    if (!finished && willBeSkipped(item))
+    if (!isTaskRunning() && !finished && willBeSkipped(item))
         return { teal: true, tooltip: "Trusted - will skip" };
     return { teal: false, tooltip: undefined };
 }

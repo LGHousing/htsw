@@ -12,7 +12,7 @@
         "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\" \"test/**/*.ts\"",
         "knip": "knip --directory .. --workspace ct_module",
         "test": "npm run typecheck && vitest run",
-        "build": "npm run check:metadata && npm run generate:icons && npm run typecheck && npm run lint && vite build --mode production && npm run build:java",
+        "build": "npm run check:metadata && npm run generate:icons && npm run typecheck && npm run lint && npm run knip && vite build --mode production && npm run build:java",
         "sync:metadata": "node --experimental-strip-types ./scripts/syncMetadataVersion.ts",
         "generate:icons": "node --experimental-strip-types ./scripts/generateIconsList.ts",
         "generate:condition-mappings": "node --experimental-strip-types ./scripts/generateConditionMappingScaffold.ts",

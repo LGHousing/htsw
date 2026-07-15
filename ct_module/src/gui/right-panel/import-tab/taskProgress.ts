@@ -200,6 +200,7 @@ function normalizeTaskProgress(p: TaskProgress): TaskProgress {
 
 export function setTaskProgress(p: TaskProgress | null): void {
     const wasNull = taskProgress === null;
+    const previousRows = taskProgress?.rows ?? null;
     if (p !== null && taskProgress === null) {
         taskStartedAt = Date.now();
         etaCalc = createEtaCalculator();
@@ -219,7 +220,7 @@ export function setTaskProgress(p: TaskProgress | null): void {
         etaCalc = null;
     }
     taskProgress = p === null ? null : normalizeTaskProgress(p);
-    if (taskProgress !== null) {
+    if (taskProgress !== null && taskProgress.rows !== previousRows) {
         taskProgressRows = new Map<string, TaskProgressEntry>();
         for (let i = 0; i < taskProgress.rows.length; i++) {
             const row = taskProgress.rows[i];

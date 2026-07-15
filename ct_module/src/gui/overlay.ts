@@ -87,7 +87,6 @@ import {
     isDraggingScrollbar,
     updateScrollbarDrag,
     endScrollbarDrag,
-    renderElement,
     hasDeferredTooltip,
     drawDeferredTooltip,
     clearDeferredTooltip,
@@ -327,26 +326,25 @@ function nativeScreenUsesTypedCharacters(): boolean {
 // Pre cancellations so they don't bleed through this 25% window.
 const COLOR_IMPORT_GAP_SHADE = 0xc0101010 | 0;
 
-function paintImportShade(rawX: number, rawY: number, root: Element, _source: string): void {
+function paintImportShade(rawX: number, rawY: number, frame: Panel): void {
     if (!enabled) return;
     if (getTaskProgress() === null) return;
     if (getContainerBounds() !== null) return;
     const cached = getImportCachedBounds();
     if (cached === null) return;
-    const b = getFullscreenPanelRect(cached);
-    const x = mcToOverlay(rawX);
-    const y = mcToOverlay(rawY);
     beginHtswOverlayDraw();
-    Renderer.drawRect(
-        COLOR_IMPORT_GAP_SHADE,
-        0,
-        0,
-        getOverlayScreenW(),
-        getOverlayScreenH()
-    );
-    const interactive = !mouseIsOverPopover(x, y);
-    renderElement(root, b.x, b.y, b.w, b.h, x, y, interactive);
-    endHtswOverlayDraw();
+    try {
+        Renderer.drawRect(
+            COLOR_IMPORT_GAP_SHADE,
+            0,
+            0,
+            getOverlayScreenW(),
+            getOverlayScreenH()
+        );
+        frame.drawAt(rawX, rawY);
+    } finally {
+        endHtswOverlayDraw();
+    }
 }
 
 // Stand-in GuiScreen we swap in when Hypixel briefly closes the housing
@@ -447,12 +445,12 @@ export function initHtswGui(): void {
         sampleProgressTraceTick();
         const screen = (Client.getMinecraft() as any).field_71462_r;
         if (screen !== null && screen !== undefined) return;
-        paintImportShade(0, 0, frame.getRoot(), "renderGameOverlayPost");
+        paintImportShade(0, 0, frame);
         renderToast();
     });
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         sampleProgressTraceTick();
-        paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender");
+        paintImportShade(mouseX, mouseY, frame);
         renderToast();
     });
 

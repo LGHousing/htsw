@@ -370,14 +370,17 @@ function finishImportable(
     const active = state.active;
     const completedAddend = active.currentTotalUnits;
     const totalAddend = active.currentTotalUnits - active.initialUnits;
-    const rows = state.progress.rows.map((r, i): TaskProgressEntry =>
-        i === active.rowIndex ? { ...r, status, totalUnits: active.currentTotalUnits } : r
+    const rows = replaceRow(
+        state.progress.rows,
+        active.rowIndex,
+        status,
+        active.currentTotalUnits
     );
     // Include still-parked importables in the displayed totals (the
     // accumulators below stay parked-free — they're the finished/initial
     // base). Without this the display drops parked contributions the instant
     // an importable finishes, then re-adds them on the next reactivation.
-    const parked = parkedSums(state.parkedRows);
+    const parked = deriveParked(state.parkedRows);
     return {
         ...state,
         progress: {
@@ -387,7 +390,7 @@ function finishImportable(
                     ? { key, message: error ?? "Import failed" }
                     : state.progress.failure,
             active: null,
-            parked: snapshotParked(state.parkedRows),
+            parked: parked.snapshots,
             rows,
             completedUnits:
                 state.completedSessionUnits + completedAddend + parked.completed,
@@ -420,9 +423,14 @@ function updateRowStatus(
     status: "imported" | "skipped" | "failed",
     error?: string
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r): TaskProgressEntry =>
-        r.key === key ? { ...r, status } : r
-    );
+    let rowIndex = -1;
+    for (let i = 0; i < state.progress.rows.length; i++) {
+        if (state.progress.rows[i].key === key) {
+            rowIndex = i;
+            break;
+        }
+    }
+    const rows = replaceRow(state.progress.rows, rowIndex, status);
     return {
         ...state,
         progress: {
@@ -440,12 +448,13 @@ function rebuildSnapshot(
     state: ProgressReducerState,
     active: ActiveBookkeeping
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r, i): TaskProgressEntry =>
-        i === active.rowIndex
-            ? { ...r, status: "current", totalUnits: active.currentTotalUnits }
-            : r
+    const rows = replaceRow(
+        state.progress.rows,
+        active.rowIndex,
+        "current",
+        active.currentTotalUnits
     );
-    const parked = parkedSums(state.parkedRows);
+    const parked = deriveParked(state.parkedRows);
     const remainingSessionUnits =
         state.totalSessionUnits - state.completedSessionUnits - active.initialUnits;
     const sessionCompletedUnits =
@@ -473,7 +482,7 @@ function rebuildSnapshot(
             completedUnits: sessionCompletedUnits,
             totalUnits: Math.max(1, sessionTotalUnits),
             active: activeSnapshot,
-            parked: snapshotParked(state.parkedRows),
+            parked: parked.snapshots,
             rows,
         },
     };
@@ -487,29 +496,26 @@ function rebuildSnapshot(
  * switches instead of dropping a parked importable's estimate until it's
  * applied.
  */
-function parkedSums(parkedRows: { [key: string]: ActiveBookkeeping }): {
+type ParkedDerived = {
     refinement: number;
     completed: number;
-} {
+    snapshots: { [key: string]: TaskProgressActive };
+};
+
+const parkedDerivedCache = new WeakMap<object, ParkedDerived>();
+
+function deriveParked(parkedRows: { [key: string]: ActiveBookkeeping }): ParkedDerived {
+    const cached = parkedDerivedCache.get(parkedRows);
+    if (cached !== undefined) return cached;
     let refinement = 0;
     let completed = 0;
+    const snapshots: { [key: string]: TaskProgressActive } = {};
     for (const k in parkedRows) {
         const b = parkedRows[k];
         if (b === undefined) continue;
         refinement += b.currentTotalUnits - b.initialUnits;
         completed += b.currentCompletedUnits;
-    }
-    return { refinement, completed };
-}
-
-function snapshotParked(parkedRows: { [key: string]: ActiveBookkeeping }): {
-    [key: string]: TaskProgressActive;
-} {
-    const out: { [key: string]: TaskProgressActive } = {};
-    for (const k in parkedRows) {
-        const b = parkedRows[k];
-        if (b === undefined) continue;
-        out[k] = {
+        snapshots[k] = {
             key: b.key,
             type: b.type,
             identity: b.identity,
@@ -521,7 +527,32 @@ function snapshotParked(parkedRows: { [key: string]: ActiveBookkeeping }): {
             currentSlot: b.currentSlot,
         };
     }
-    return out;
+    const derived = { refinement, completed, snapshots };
+    parkedDerivedCache.set(parkedRows, derived);
+    return derived;
+}
+
+function replaceRow(
+    rows: readonly TaskProgressEntry[],
+    index: number,
+    status: TaskProgressEntry["status"],
+    totalUnits?: number
+): readonly TaskProgressEntry[] {
+    const current = rows[index];
+    if (current === undefined) return rows;
+    if (
+        current.status === status &&
+        (totalUnits === undefined || current.totalUnits === totalUnits)
+    ) {
+        return rows;
+    }
+    const next = rows.slice();
+    next[index] = {
+        ...current,
+        status,
+        ...(totalUnits === undefined ? {} : { totalUnits }),
+    };
+    return next;
 }
 
 function clamp(value: number, floor: number, ceiling: number): number {

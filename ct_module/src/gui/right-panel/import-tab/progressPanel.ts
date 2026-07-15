@@ -48,6 +48,7 @@ import {
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;
+const MAX_DETAILED_PROGRESS_ROWS = 128;
 
 // ── Time formatting ────────────────────────────────────────────────────
 
@@ -221,6 +222,20 @@ function parkedRowPhaseChildren(key: string): Element[] {
     return taskPhaseSegments(parked);
 }
 
+function compactProgressBarChildren(): Element[] {
+    const p = getTaskProgress();
+    if (p === null) return [];
+    let color = ACCENT_SUCCESS;
+    if (p.active?.phase === "reading" || p.active?.phase === "setup") {
+        color = PHASE_READING;
+    } else if (p.active?.phase === "hydrating") {
+        color = PHASE_HYDRATING;
+    } else if (p.active?.phase === "applying") {
+        color = PHASE_APPLYING;
+    } else if (p.failure) color = ACCENT_DANGER;
+    return [phaseSegment(1, getTaskProgressFraction(), color)];
+}
+
 function progressBar(): Element {
     return Container({
         style: {
@@ -232,6 +247,9 @@ function progressBar(): Element {
         children: () => {
             const p = getTaskProgress();
             if (p === null || p.totalUnits <= 0) return [];
+            if (p.rows.length > MAX_DETAILED_PROGRESS_ROWS) {
+                return compactProgressBarChildren();
+            }
             const children: Element[] = [];
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
@@ -318,17 +336,39 @@ function progressTotalEtaLine(): string {
     return `total ${rough}${formatEtaSeconds(secs)}${etcText}`;
 }
 
-function progressPosition(): {
+type ProgressPosition = {
     current: NonNullable<ReturnType<typeof getTaskProgress>>["active"];
     currentNumber: number;
     completedImportables: number;
     failedImportables: number;
     totalImportables: number;
     allDone: boolean;
-} | null {
+};
+
+let progressPositionRows: NonNullable<ReturnType<typeof getTaskProgress>>["rows"] | null = null;
+let progressPositionActiveKey: string | null = null;
+let cachedProgressPosition: ProgressPosition | null = null;
+
+function progressPosition(): ProgressPosition | null {
     const p = getTaskProgress();
-    if (p === null) return null;
+    if (p === null) {
+        progressPositionRows = null;
+        progressPositionActiveKey = null;
+        cachedProgressPosition = null;
+        return null;
+    }
     const current = p.active;
+    const activeKey = current?.key ?? null;
+    if (
+        p.rows === progressPositionRows &&
+        activeKey === progressPositionActiveKey &&
+        cachedProgressPosition !== null
+    ) {
+        cachedProgressPosition.current = current;
+        return cachedProgressPosition;
+    }
+    progressPositionRows = p.rows;
+    progressPositionActiveKey = activeKey;
     const {
         completed: completedImportables,
         failed: failedImportables,
@@ -344,7 +384,7 @@ function progressPosition(): {
             }
         }
     }
-    return {
+    cachedProgressPosition = {
         current,
         currentNumber,
         completedImportables,
@@ -352,6 +392,7 @@ function progressPosition(): {
         totalImportables,
         allDone,
     };
+    return cachedProgressPosition;
 }
 
 function progressHeadlineText(): string {
