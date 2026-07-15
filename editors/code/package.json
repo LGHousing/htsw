@@ -26,11 +26,11 @@
         "typeface-minecraft": "^1.0.0"
     },
     "devDependencies": {
-        "@types/node": "^25.9.3",
+        "@types/node": "^26.1.1",
         "@types/vscode": "^1.97",
         "@vscode/vsce": "^3.6",
-        "typescript": "^6.0",
-        "vite": "^8.0.16"
+        "typescript": "^7.0",
+        "vite": "^8.1.4"
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
