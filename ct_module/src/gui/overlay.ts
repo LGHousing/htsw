@@ -110,6 +110,7 @@ import {
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { openBoundProjectForHouse } from "./boundProject";
+import { canShowHousingFrame, type HousingPresence } from "./overlayVisibility";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -137,11 +138,11 @@ function frameBounds(): Rect {
 
 function frameVisible(): boolean {
     if (!enabled) return false;
-    // Only paint over Housing menus. `housingPresence` is the live /wtfmap
-    // verdict — "in" only once we've actually confirmed a house on this
-    // server — NOT the persisted UUID, which lingers in lobbies and would
-    // otherwise keep the overlay covering non-Housing containers.
-    if (housingPresence !== "in") return false;
+    // Idle containers require the live /wtfmap verdict rather than the
+    // persisted UUID, which lingers in lobbies. A running Housing task is
+    // allowed through while that verdict is still unknown because task
+    // serialization prevents the idle presence probe from running alongside it.
+    if (!canShowHousingFrame(housingPresence, isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return getTaskProgress() !== null && getImportCachedBounds() !== null;
 }
@@ -183,7 +184,6 @@ function anyHtswPanelVisible(): boolean {
 // zeroes the cooldown) so the next container open re-checks the new server.
 // The persisted UUID is deliberately NOT the gate: it survives into lobbies,
 // so the overlay keys on `housingPresence` instead.
-type HousingPresence = "unknown" | "in" | "out";
 let housingPresence: HousingPresence = "unknown";
 let lastDebugSampleAt = 0;
 let uuidFetchInFlight = false;
