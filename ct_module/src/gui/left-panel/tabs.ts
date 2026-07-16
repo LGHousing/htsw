@@ -111,25 +111,12 @@ export function TabBar(availW: number): Element {
     const perTab = (availW - TAB_GAP * (n - 1)) / n;
     const showLabels = tabLabelsFit(perTab, TABS.map((t) => t.label));
     const buttons = TABS.map((t) => tabButton(t, showLabels));
-    // Projects + Houses are the two "sides of your project" the tour's step 3
-    // points at; Settings isn't one of them. Grouping just those two under the
-    // anchor keeps the spotlight off Settings. The pair group takes grow 2 to
-    // the lone Settings tab's grow 1, so all three tabs keep their even thirds.
-    const projectTabs = Row({
-        anchorKey: "tour:project-tabs",
-        style: {
-            gap: TAB_GAP,
-            width: { kind: "grow", factor: 2 },
-            height: { kind: "grow" },
-        },
-        children: [buttons[0], buttons[1]],
-    });
     return Row({
         style: {
             gap: TAB_GAP,
             height: { kind: "px", value: SIZE_TAB_H + 2 },
             width: { kind: "grow" },
         },
-        children: [projectTabs, ...buttons.slice(2)],
+        children: buttons,
     });
 }

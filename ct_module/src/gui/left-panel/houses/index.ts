@@ -43,6 +43,7 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { typeBrowserSection } from "./contentBrowser";
+import { exportDestinationControl } from "../../export/destinationControl";
 
 // Trust glyph tint: green when trusted, faint otherwise.
 const TRUST_ICON_ON = 0xff5cb85c | 0;
@@ -453,7 +454,11 @@ export function HousesView(bodyW: number): Element {
         style: { gap: 6, height: { kind: "grow" }, padding: 4 },
         children: () => {
             if (knownHouses().length === 0) return [emptyState()];
-            return [housePickerRow(), typeBrowserSection(viewedUuid, bodyW - 8)];
+            return [
+                housePickerRow(),
+                exportDestinationControl(),
+                typeBrowserSection(viewedUuid, bodyW - 8),
+            ];
         },
     });
 }

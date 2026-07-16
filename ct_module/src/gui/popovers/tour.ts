@@ -43,25 +43,23 @@ type TourStep = {
 
 const STEPS: TourStep[] = [
     {
-        title: "Welcome to HTSW",
+        title: "HTSW moves work both ways",
         lines: [
-            "HTSW turns your Housing into files you can",
-            "edit, version, and share, then back again.",
-            "This tour points at each part of the overlay.",
+            "Projects are files on your computer.",
+            "Import sends those files into the house.",
+            "Export copies the house into one chosen project.",
         ],
         setup: () => {
             setActiveLeftTab("projects");
         },
     },
     {
-        // Its own step so the button isn't dead weight once the project is
-        // open — clicking the action advances, giving the click an ending.
-        title: "Grab the sample project",
+        title: "Start with a project",
         lines: [
-            "A tiny commented project: a function, an",
-            "event, a region, and an item, showing how",
-            "import.json and .htsl files fit together.",
-            "Already have your own files? Just hit Next.",
+            "Every workflow starts from an import.json.",
+            "Open your own with Browse, or create the sample.",
+            "The sample is small, commented, and safe to edit.",
+            "You can delete it when you're comfortable.",
         ],
         anchor: "tour:left-body",
         setup: () => setActiveLeftTab("projects"),
@@ -74,67 +72,45 @@ const STEPS: TourStep[] = [
         },
     },
     {
-        title: "Two sides of your project",
+        title: "Import: files → house",
         lines: [
-            "Projects is your FILES; Houses is what's",
-            "actually built in the house you're in.",
-            "Everything HTSW does moves content between",
-            "these two.",
+            "Select project entries with their checkboxes.",
+            "The queue and Import button live below the code.",
+            "Import changes the house to match your files.",
+            "Review the preview before you run it.",
         ],
-        anchor: "tour:project-tabs",
-        setup: () => setActiveLeftTab("projects"),
-    },
-    {
-        title: "Projects: your files",
-        lines: [
-            "Each import.json lists functions, items,",
-            "regions, and a checkbox to queue each.",
-            "Each row has a file/house status icon.",
-            "Hover it to see exactly what it means.",
-        ],
-        anchor: "tour:left-body",
-        setup: () => setActiveLeftTab("projects"),
-    },
-    {
-        title: "View: read before you write",
-        lines: [
-            "Single-click anything on the left to preview",
-            "its source here (italic tab = temporary).",
-            "Double-click pins the tab so it sticks.",
-            "Colors show the diff against the house.",
-        ],
-        anchor: "tour:right-view",
+        anchor: "tour:right-import",
         setup: () => {
+            setActiveLeftTab("projects");
             previewFirstAvailableSource();
         },
     },
     {
-        title: "Import: files into the house",
+        title: "Choose where export writes",
         lines: [
-            "Queue and Import sit in the footer, below",
-            "the code. A run shows progress there (ETA",
-            "and Cancel), plus a live upload tab",
-            "that follows the file being written.",
+            "This project receives everything you export.",
+            "Pick or create it before starting a long export.",
         ],
-        anchor: "tour:right-import",
+        anchor: "tour:export-destination",
+        setup: () => setActiveLeftTab("houses"),
     },
     {
-        title: "Houses: the house into files",
+        title: "Export: house → files",
         lines: [
-            "Scan lists names (fast). Read into knowledge",
-            "(in the export dropdown) pulls full contents.",
-            "Export writes house content to your files and",
-            "confirms before overwriting local changes.",
+            "Scan lists names quickly; select what you need.",
+            "Export copies full house content into the project",
+            "shown above and confirms before overwriting.",
+            "Use Read when you only want a comparison.",
         ],
         anchor: "tour:left-body",
         setup: () => setActiveLeftTab("houses"),
     },
     {
-        title: "That's the loop",
+        title: "Keep each house paired",
         lines: [
+            "Bind a project with the house button on its row.",
+            "HTSW will select it when you enter this house.",
             "Edit files → Import. Build in-game → Export.",
-            "Bind a file to its house (the house button on",
-            "its row) and HTSW lines the two up for you.",
             "Replay this anytime with /htsw tour.",
         ],
         setup: () => {
@@ -177,6 +153,7 @@ function previewFirstAvailableSource(): void {
 
 let activeHandle: PopoverHandle | null = null;
 let step = 0;
+let reopenVersion = 0;
 
 function currentAnchorRect(): Rect | null {
     const key = STEPS[step].anchor;
@@ -219,6 +196,7 @@ function cardAnchor(): Rect {
 }
 
 function finish(): void {
+    reopenVersion++;
     setTourDone();
     if (activeHandle !== null) {
         closePopover(activeHandle);
@@ -228,8 +206,15 @@ function finish(): void {
 
 function goTo(next: number): void {
     step = next;
+    if (activeHandle !== null) {
+        closePopover(activeHandle);
+        activeHandle = null;
+    }
     STEPS[step].setup?.();
-    reopen();
+    const version = ++reopenVersion;
+    setTimeout(() => {
+        if (version === reopenVersion) reopen();
+    }, 0);
 }
 
 function navButton(

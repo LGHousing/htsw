@@ -423,11 +423,7 @@ function viewTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
-            // Split into two tour anchors so the View step spotlights the
-            // reading area and the Import step spotlights the queue/Import
-            // footer — not the whole pane each time.
             Container({
-                anchorKey: "tour:right-view",
                 style: {
                     direction: "col",
                     gap: 4,

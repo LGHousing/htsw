@@ -5,18 +5,16 @@ import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../li
 import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
 import {
-    getEffectiveNewExportTarget,
     getExportImportJsonPath,
     getHousingUuid,
     isHouseTrusted,
 } from "../../state";
 import { GLYPH_DOT } from "../../lib/theme";
-import { basename, dirname, shortPath } from "../../lib/pathDisplay";
 import { requestParse } from "../../parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
-import { exportDestinationPicker } from "../../export/destinationPicker";
+import { getExportDestinationStatus } from "../../export/destinationStatus";
 import {
     clearExportSelection,
     getExportSelection,
@@ -607,66 +605,13 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
         .items(uuid)
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
-    const hasDest = getExportImportJsonPath().trim() !== "";
+    const destination = getExportDestinationStatus();
+    const hasDest = destination.kind === "ready";
     const hasItems = totalCount > 0;
     const canExportItems = hasDest && hasItems;
     return Col({
         style: { gap: 4, padding: { side: "right", value: 8 } },
         children: [
-            Button({
-                style: {
-                    direction: "row",
-                    justify: "start",
-                    gap: 6,
-                    padding: { side: "x", value: 8 },
-                    height: { kind: "px", value: 34 },
-                    align: "center",
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                tooltip: hasDest ? "Change export destination" : "Choose an export destination",
-                tooltipColor: COLOR_TEXT_DIM,
-                onClick: (rect: Rect) =>
-                    togglePopover({
-                        key: "houses-export-destination",
-                        anchor: rect,
-                        content: exportDestinationPicker(),
-                        width: 380,
-                        height: 320,
-                    }),
-                children: [
-                    Icon({
-                        name: hasDest ? Icons.folderOutput : Icons.folderPlus,
-                        color: hasDest ? undefined : COLOR_TEXT_DIM,
-                    }),
-                    Col({
-                        style: { gap: 2, width: { kind: "grow" } },
-                        children: [
-                            Text({
-                                text: () => {
-                                    const destination = getExportImportJsonPath();
-                                    if (destination.trim() === "") return "Choose where to export";
-                                    const project = basename(dirname(destination));
-                                    return `Project: ${project}`;
-                                },
-                                color: hasDest ? COLOR_TEXT : COLOR_TEXT_DIM,
-                                truncate: true,
-                            }),
-                            Text({
-                                text: () => {
-                                    if (getExportImportJsonPath().trim() === "") {
-                                        return "Select a project and folder";
-                                    }
-                                    return `New entries go in: ${shortPath(getEffectiveNewExportTarget())}`;
-                                },
-                                color: COLOR_TEXT_DIM,
-                                truncate: true,
-                            }),
-                        ],
-                    }),
-                    Icon({ name: Icons.chevronRight, color: COLOR_TEXT_DIM }),
-                ],
-            }),
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
@@ -693,7 +638,9 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                 : COLOR_BUTTON,
                         },
                         tooltip: !hasDest
-                            ? "Choose a destination first"
+                            ? destination.kind === "missing"
+                                ? "The selected export project is missing"
+                                : "Choose an export project first"
                             : !hasItems
                               ? `No ${t.label.toLowerCase()} in this house`
                               : undefined,
@@ -754,7 +701,9 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                 : COLOR_BUTTON,
                         },
                         tooltip: !hasDest
-                            ? "Choose a destination first"
+                            ? destination.kind === "missing"
+                                ? "The selected export project is missing"
+                                : "Choose an export project first"
                             : !hasItems
                               ? `No ${t.label.toLowerCase()} in this house`
                               : undefined,

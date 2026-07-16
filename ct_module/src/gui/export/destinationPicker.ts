@@ -63,10 +63,12 @@ import {
     projectSectionFolders,
     restructureProjectPerSection,
 } from "../../project/paths";
+import { getExportDestinationStatus } from "./destinationStatus";
 
 function selectExportImportJson(path: string): void {
     setExportImportJsonPath(path);
     addRecent(path);
+    markGuiDirty();
 }
 
 function aliasPrefill(): string {
@@ -90,7 +92,7 @@ function createExportProject(name: string, sectionFolders: boolean): void {
 
 function pushUniquePath(out: string[], path: string): void {
     const norm = normalizeHtswPath(path);
-    if (norm.trim() === "") return;
+    if (norm.trim() === "" || !projectPathExists(norm)) return;
     for (let i = 0; i < out.length; i++) {
         if (out[i] === norm) return;
     }
@@ -133,7 +135,6 @@ function destinationRow(path: string, boundPath: string | null): Element {
         // revamp is to pick the project AND where new exports land in one place.
         onClick: () => {
             selectExportImportJson(path);
-            markGuiDirty();
         },
         children: [
             Icon({ name: () => (selected() ? Icons.check : Icons.fileJson) }),
@@ -233,7 +234,7 @@ function rebuildExportSubTree(base: string): void {
 }
 
 function ensureExportSubTree(): void {
-    const base = getExportImportJsonPath();
+    const base = availableExportImportJsonPath();
     const sig = exportSubSignature(base);
     if (sig === exportSubSig) return;
     exportSubSig = sig;
@@ -242,10 +243,11 @@ function ensureExportSubTree(): void {
 
 function exportSubTreeRows(): Element[] {
     ensureExportSubTree();
+    const base = availableExportImportJsonPath();
     return pickerTreeRows(exportSubRoots, {
         expansion: exportSubExpansion,
         filter: "",
-        selectedPath: canonicalPath(getEffectiveNewExportTarget()),
+        selectedPath: base === "" ? "" : canonicalPath(getEffectiveNewExportTarget()),
         disabledLabel: "",
         onSelect: (path) => {
             if (!setNewExportTarget(path)) {
@@ -267,13 +269,13 @@ function exportSubTreeRows(): Element[] {
 // folder contains it, so `functions/combat` nests under functions/) and route
 // new exports there. Closes the picker; reopening shows the new file checked.
 function newExportFileRow(): Element {
-    const disabled = (): boolean => getExportImportJsonPath().trim() === "";
+    const disabled = (): boolean => availableExportImportJsonPath() === "";
     return Button({
         icon: Icons.folderPlus,
         text: "New import.json…",
         disabled,
         tooltip: () =>
-            disabled() ? "Choose a project first" : "Create an included export folder",
+            disabled() ? "Choose an available project first" : "Create an included export folder",
         tooltipColor: COLOR_TEXT_FAINT,
         style: {
             width: { kind: "grow" },
@@ -283,7 +285,7 @@ function newExportFileRow(): Element {
             hoverBackground: COLOR_BUTTON_HOVER,
         },
         onClick: () => {
-            const base = getExportImportJsonPath();
+            const base = availableExportImportJsonPath();
             if (base.trim() === "") return;
             openTextPromptPopover({
                 title: "New import.json",
@@ -375,6 +377,9 @@ export function exportDestinationPicker(): Element {
         ...open.map(row),
         ...(recents.length === 0 ? [] : [destinationSection("Recent"), ...recents.map(row)]),
     ];
+    if (projectRows.length === 0) {
+        projectRows.push(destinationSection("No available projects"));
+    }
 
     return Col({
         style: { gap: 4, padding: 4, height: { kind: "grow" } },
@@ -442,7 +447,7 @@ export function exportDestinationPicker(): Element {
                         color: COLOR_TEXT_FAINT,
                         style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
                     }),
-                    splitAction(getExportImportJsonPath()),
+                    splitAction(availableExportImportJsonPath()),
                 ],
             }),
             Scroll({
@@ -471,4 +476,9 @@ export function exportDestinationPicker(): Element {
             }),
         ],
     });
+}
+
+function availableExportImportJsonPath(): string {
+    const status = getExportDestinationStatus();
+    return status.kind === "ready" ? status.path : "";
 }

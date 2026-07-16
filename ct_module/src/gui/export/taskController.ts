@@ -2,7 +2,7 @@
 
 import type { Importable } from "htsw/types";
 
-import { getExportImportJsonPath, getNewExportTarget } from "../state";
+import { getNewExportTarget } from "../state";
 import {
     getParseAt,
     markParseStale,
@@ -15,6 +15,7 @@ import { shortPath } from "../lib/pathDisplay";
 import { createExportProgressSink } from "./progressSink";
 import { showToast } from "../toast";
 import { runHousingSyncTask } from "../../housingSync/taskRunner";
+import { getExportDestinationStatus } from "./destinationStatus";
 
 export type ExportSpec = {
     type: Importable["type"];
@@ -29,11 +30,19 @@ export function startExport(
     labels?: ReadonlyMap<string, string>
 ): void {
     closeAllPopovers();
-    const importJsonPath = getExportImportJsonPath();
-    if (importJsonPath.trim() === "") {
-        showToast("No import.json loaded — pick a destination first", 0xffe85c5c);
+    const destination = getExportDestinationStatus();
+    if (destination.kind === "none") {
+        showToast("Export stopped — choose or create an export project first", 0xffe85c5c, 8000);
         return;
     }
+    if (destination.kind === "missing") {
+        showToast("Export stopped — the selected project no longer exists", 0xffe85c5c, 8000);
+        ChatLib.chat("&c[htsw] Export stopped: the selected project no longer exists.");
+        ChatLib.chat(`&7  ${destination.path}`);
+        ChatLib.chat("&7Choose another project from Houses → Export project.");
+        return;
+    }
+    const importJsonPath = destination.path;
     if (names !== undefined && names.length === 0) {
         showToast("Nothing selected to export", 0xffe5bc4b);
         return;
