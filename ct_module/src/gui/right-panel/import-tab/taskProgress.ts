@@ -32,7 +32,11 @@ import {
     type QueueItem,
 } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
-import { onTaskRunningChanged, setLiveTaskPathProvider } from "../selection";
+import {
+    onTaskRunningChanged,
+    rememberLiveTaskPath,
+    setLiveTaskPathProvider,
+} from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
@@ -60,6 +64,7 @@ let taskProgressRows = new Map<string, TaskProgressEntry>();
  */
 let lastFinishedTaskProgress: TaskProgress | null = null;
 let lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
+let finishedTaskFailure: string | null = null;
 /**
  * `Date.now()` of the moment the in-flight task started. Captured the
  * first time `setTaskProgress` transitions from null to non-null and
@@ -158,6 +163,7 @@ export function getActiveTaskPath(): string | null {
 export function setActiveTaskPath(p: string | null): void {
     if (activeTaskPath === p) return;
     activeTaskPath = p;
+    if (p !== null) rememberLiveTaskPath(p);
     markGuiDirty();
 }
 
@@ -198,7 +204,10 @@ function normalizeTaskProgress(p: TaskProgress): TaskProgress {
     };
 }
 
-export function setTaskProgress(p: TaskProgress | null): void {
+function updateTaskProgress(
+    p: TaskProgress | null,
+    finishedTaskNeedsAttention: boolean
+): void {
     const wasNull = taskProgress === null;
     const previousRows = taskProgress?.rows ?? null;
     if (p !== null && taskProgress === null) {
@@ -206,6 +215,7 @@ export function setTaskProgress(p: TaskProgress | null): void {
         etaCalc = createEtaCalculator();
         resetSessionTiming();
         lastFinishedTaskProgress = null;
+        finishedTaskFailure = null;
         // Session defaults — reset at START, not at clear: the queue keeps
         // rendering `lastFinishedTaskProgress` for a confirmation window after a
         // run, and resetting the verb on clear would mislabel those rows.
@@ -227,14 +237,29 @@ export function setTaskProgress(p: TaskProgress | null): void {
             taskProgressRows.set(row.key, row);
         }
     }
-    onTaskRunningChanged(!wasNull, p !== null);
+    onTaskRunningChanged(!wasNull, p !== null, finishedTaskNeedsAttention);
     markGuiDirty();
 }
 
+export function setTaskProgress(p: TaskProgress | null): void {
+    if (p === null) finishedTaskFailure = null;
+    updateTaskProgress(p, false);
+}
+
+export function finishTaskProgress(failure: string | null): void {
+    finishedTaskFailure = failure;
+    updateTaskProgress(null, failure !== null);
+}
+
+export function getFinishedTaskFailure(): string | null {
+    return finishedTaskFailure;
+}
+
 export function clearLastFinishedProgress(): void {
-    if (lastFinishedTaskProgress === null) return;
+    if (lastFinishedTaskProgress === null && finishedTaskFailure === null) return;
     lastFinishedTaskProgress = null;
     lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
+    finishedTaskFailure = null;
     markGuiDirty();
 }
 

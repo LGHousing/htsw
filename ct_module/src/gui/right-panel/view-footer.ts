@@ -15,9 +15,11 @@ import {
 import { clearImportableChecks } from "../state";
 import {
     getActiveTaskLabel,
+    getFinishedTaskFailure,
     getSessionVerb,
     getTaskProgress,
 } from "./import-tab/taskProgress";
+import { isLiveTabActive } from "./selection";
 import {
     clearQueue,
     getQueueLength,
@@ -32,7 +34,10 @@ import {
     queueRow,
 } from "./import-tab/queueRows";
 import { importControl } from "./import-tab/importButtons";
-import { liveTaskFooterPanel } from "./import-tab/progressPanel";
+import {
+    failedTaskFooterPanel,
+    liveTaskFooterPanel,
+} from "./import-tab/progressPanel";
 
 let queueExpanded = true;
 const QUEUE_SCROLL_ID = "right-import-queue-scroll";
@@ -276,6 +281,9 @@ export function viewFooter(): Element {
                 if (isQueueExpanded()) children.push(queueScroll());
             }
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
+            else if (isLiveTabActive() && getFinishedTaskFailure() !== null) {
+                children.push(failedTaskFooterPanel());
+            }
             children.push(importControl());
             return children;
         },

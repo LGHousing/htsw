@@ -27,6 +27,7 @@ import { cancelActiveTask } from "../../../tasks/activeTask";
 import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,
+    getFinishedTaskFailure,
     getTaskElapsedMs,
     getTaskEtaSeconds,
     getTaskEtcMs,
@@ -515,6 +516,34 @@ export function liveTaskFooterPanel(): Element {
                             }),
                             cancelButton(),
                         ],
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
+export function failedTaskFooterPanel(): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            padding: 4,
+            background: COLOR_PANEL_RAISED,
+        },
+        children: [
+            Col({
+                style: { gap: 3, width: { kind: "grow" } },
+                children: [
+                    Text({
+                        text: "Import failed",
+                        color: ACCENT_DANGER,
+                    }),
+                    Text({
+                        text: () => getFinishedTaskFailure() ?? "",
+                        color: COLOR_TEXT,
+                        truncate: true,
+                        tooltip: () => getFinishedTaskFailure() ?? "",
+                        style: { width: { kind: "grow" } },
                     }),
                 ],
             }),

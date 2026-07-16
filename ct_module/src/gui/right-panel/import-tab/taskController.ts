@@ -11,6 +11,7 @@ import {
     createTaskRows,
     createTaskProgress,
     clearLastFinishedProgress,
+    finishTaskProgress,
     getTaskProgress,
     setActiveTaskPath,
     setTaskProgress,
@@ -387,6 +388,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
         totalUnits: 1,
         rows,
     }));
+    setActiveTaskPath(batches[0].sourcePath);
 
     // A command import (`explicit`) gets reflected into the visible queue so
     // it shows up + animates like a GUI run; otherwise we'd run an invisible
@@ -411,6 +413,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
+        let unexpectedError: unknown = null;
         try {
             const cached = getHousingUuid();
             let housingUuid = cached;
@@ -458,12 +461,13 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             if (isTaskCancelled(err)) {
                 cancelled = true;
             } else {
-                throw err;
+                unexpectedError = err;
             }
         } finally {
             setActiveTaskPath(null);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
+            let failureMessage: string | null = null;
             if (cancelled) {
                 showToast(
                     `Import cancelled after ${elapsed} · ${totalImported} imported`,
@@ -486,15 +490,12 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 // below) — a failure halts the whole run, so the *why* must be
                 // visible, not just "N failed".
                 const failure = getTaskProgress()?.failure;
-                showToast(
-                    failure
-                        ? `Import failed: ${failure.message}`
-                        : `Import finished in ${elapsed} with ${totalFailed} failed`,
-                    0xffe85c5c,
-                    8000
-                );
+                failureMessage =
+                    failure?.message ??
+                    String(unexpectedError ?? `${totalFailed} failed`);
+                showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
             }
-            setTaskProgress(null);
+            finishTaskProgress(failureMessage);
             // End the queue session after the 1.5s done-state window. A fully
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the
@@ -515,10 +516,11 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 if (!isTaskRunning()) {
                     endQueueSession(false);
                     if (removeSessionItems) clearImportableChecks();
-                    clearLastFinishedProgress();
+                    if (removeSessionItems || cancelled) clearLastFinishedProgress();
                 }
             }, 1500);
         }
+        if (unexpectedError !== null) throw unexpectedError;
     }).catch((err: unknown) => {
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });

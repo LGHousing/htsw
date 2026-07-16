@@ -50,13 +50,22 @@ export function closeLiveTab(): void {
     markGuiDirty();
 }
 
-export function onTaskRunningChanged(wasRunning: boolean, isRunning: boolean): void {
+export function rememberLiveTaskPath(path: string): void {
+    lastLivePath = path;
+}
+
+export function onTaskRunningChanged(
+    wasRunning: boolean,
+    isRunning: boolean,
+    finishedTaskNeedsAttention = false
+): void {
     if (!wasRunning && isRunning) {
         dismissedLiveImport = false;
         lastLivePath = null;
         liveTabActive = true;
         markGuiDirty();
     } else if (wasRunning && !isRunning) {
+        if (finishedTaskNeedsAttention) return;
         dismissedLiveImport = false;
         lastLivePath = null;
         liveTabActive = false;

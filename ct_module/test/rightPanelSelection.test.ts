@@ -41,4 +41,18 @@ describe("right-panel live import tab", () => {
 
         expect(selection.getTabs()).toEqual([]);
     });
+
+    test("keeps a failed task tab available for attention", () => {
+        livePath = "C:/project/functions/foo.htsl";
+        selection.onTaskRunningChanged(false, true);
+        selection.rememberLiveTaskPath(livePath);
+
+        livePath = null;
+        selection.onTaskRunningChanged(true, false, true);
+
+        expect(selection.getTabs()).toEqual([
+            { kind: "live", path: "C:/project/functions/foo.htsl" },
+        ]);
+        expect(selection.isLiveTabActive()).toBe(true);
+    });
 });
