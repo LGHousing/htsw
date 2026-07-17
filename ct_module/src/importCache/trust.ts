@@ -6,7 +6,7 @@ import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
 import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
-import { readCachedActionList } from "./actionLists";
+import { actionListsOfImportable, readCachedActionList } from "./actionLists";
 import type {
     TrustedChildListPath,
     TrustedChildListSnapshot,
@@ -25,6 +25,7 @@ export type ImportableTrustPlan = {
     sourceHash: string;
     cacheHash: string | null;
     lockHash: string | null;
+    lockListScanHashes: Record<string, string> | null;
     cacheMatchesLock: boolean;
     trustMode: boolean;
     wholeImportableTrusted: boolean;
@@ -34,6 +35,7 @@ export type ImportableTrustPlan = {
 
 export type TrustPlan = {
     housingUuid: string;
+    trustMode: boolean;
     importables: Map<string, ImportableTrustPlan>;
 };
 
@@ -112,6 +114,7 @@ export function buildTrustPlan(
             sourceHash: sourceHash ?? "",
             cacheHash: entry?.hash ?? null,
             lockHash: lockEntry?.hash ?? null,
+            lockListScanHashes: lockEntry?.listScanHashes ?? null,
             cacheMatchesLock,
             trustMode: trustAllowed,
             wholeImportableTrusted,
@@ -122,6 +125,7 @@ export function buildTrustPlan(
 
     return {
         housingUuid,
+        trustMode,
         importables: plans,
     };
 }
@@ -134,9 +138,14 @@ function lockEntryForImportable(
 ) {
     if (lock === null) return null;
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) {
-        return { hash: "" };
+        return { hash: "", listScanHashes: undefined };
     }
-    return houseLockEntryFor(lock, type, identity) ?? { hash: "" };
+    return (
+        houseLockEntryFor(lock, type, identity) ?? {
+            hash: "",
+            listScanHashes: undefined,
+        }
+    );
 }
 
 export function trustedChildListSnapshotsForImportable(
@@ -145,18 +154,18 @@ export function trustedChildListSnapshotsForImportable(
     cachedLists: Record<string, string[]>
 ): Map<TrustedChildListPath, TrustedChildListSnapshot> {
     const trusted = new Map<TrustedChildListPath, TrustedChildListSnapshot>();
-    forEachTopLevelActionList(importable, (path, actions) => {
-        const cachedActions = readCachedActionList(cachedImportable, path);
-        if (cachedActions === undefined) return;
+    for (const { basePath, actions } of actionListsOfImportable(importable)) {
+        const cachedActions = readCachedActionList(cachedImportable, basePath);
+        if (cachedActions === undefined) continue;
         collectTrustedActionListSnapshots(
             trusted,
-            path,
-            path,
+            basePath,
+            basePath,
             actions,
             cachedActions,
             cachedLists
         );
-    });
+    }
     return trusted;
 }
 
@@ -165,61 +174,10 @@ export function trustedChildListPathsForImportable(
     cachedLists: Record<string, string[]>
 ): Set<TrustedChildListPath> {
     const trusted = new Set<TrustedChildListPath>();
-    forEachTopLevelActionList(importable, (path, actions) => {
-        collectTrustedActionListPaths(trusted, path, path, actions, cachedLists);
-    });
-    return trusted;
-}
-
-function forEachTopLevelActionList(
-    importable: Importable,
-    visit: (path: string, actions: readonly Action[]) => void
-): void {
-    switch (importable.type) {
-        case "FUNCTION":
-            visit("actions", importable.actions ?? []);
-            break;
-        case "COMMAND":
-            if (importable.actions !== undefined) {
-                visit("actions", importable.actions);
-            }
-            break;
-        case "EVENT":
-            visit("actions", importable.actions);
-            break;
-        case "REGION":
-            if (importable.onEnterActions !== undefined) {
-                visit("onEnterActions", importable.onEnterActions);
-            }
-            if (importable.onExitActions !== undefined) {
-                visit("onExitActions", importable.onExitActions);
-            }
-            break;
-        case "ITEM":
-            if (importable.leftClickActions !== undefined) {
-                visit("leftClickActions", importable.leftClickActions);
-            }
-            if (importable.rightClickActions !== undefined) {
-                visit("rightClickActions", importable.rightClickActions);
-            }
-            break;
-        case "NPC":
-            if (importable.leftClickActions !== undefined) {
-                visit("leftClickActions", importable.leftClickActions);
-            }
-            if (importable.rightClickActions !== undefined) {
-                visit("rightClickActions", importable.rightClickActions);
-            }
-            break;
-        case "MENU":
-            for (let i = 0; i < importable.slots.length; i++) {
-                const actions = importable.slots[i].actions;
-                if (actions !== undefined && actions.length > 0) {
-                    visit(`slots[${i}].actions`, actions);
-                }
-            }
-            break;
+    for (const { basePath, actions } of actionListsOfImportable(importable)) {
+        collectTrustedActionListPaths(trusted, basePath, basePath, actions, cachedLists);
     }
+    return trusted;
 }
 
 function collectTrustedActionListSnapshots(

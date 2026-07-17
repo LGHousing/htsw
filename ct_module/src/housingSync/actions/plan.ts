@@ -17,6 +17,10 @@ import {
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
+import type { ImportConflict } from "../../importables/importConflicts";
+import { scanConflictVerdict } from "../../importables/importConflicts";
+import { importableKey } from "../../importables/identity";
+import { actionListScanHashFromActions, actionListScanHashFromSlots } from "./scanHash";
 
 export type ActionListApplyOptions = {
     session: ImportSession;
@@ -27,6 +31,7 @@ export type ActionListApplyOptions = {
 export type ActionListPrereadOptions = ActionListApplyOptions & {
     trust?: ActionListTrust;
     baselineCurrent?: readonly Action[];
+    conflictTarget?: ImportConflict;
 };
 
 export type ActionListPlan = {
@@ -69,6 +74,7 @@ export async function prereadActionList(
         },
         readOptions
     );
+    recordActionListConflict(actionListScanHashFromSlots(scan.slots), desired, options);
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
@@ -99,7 +105,7 @@ export async function prereadActionList(
 
 export function createKnownEmptyActionListPlan(
     desired: Action[],
-    options: ActionListApplyOptions
+    options: ActionListPrereadOptions
 ): ActionListPlan {
     return createKnownActionListPlan(desired, [], options);
 }
@@ -107,7 +113,7 @@ export function createKnownEmptyActionListPlan(
 export function createKnownActionListPlan(
     desired: Action[],
     current: readonly Action[],
-    options: ActionListApplyOptions
+    options: ActionListPrereadOptions
 ): ActionListPlan {
     const observed = current.map((action, index) => ({
         index,
@@ -115,6 +121,7 @@ export function createKnownActionListPlan(
         hydrated: true,
         truncatedFields: [],
     }));
+    recordActionListConflict(actionListScanHashFromActions(current), desired, options);
     for (const entry of observed) {
         canonicalizeActionItemName(entry.action, options.session.items);
     }
@@ -130,4 +137,26 @@ export function createKnownActionListPlan(
         1
     );
     return { desired, observed, diff, phaseUnits };
+}
+
+function recordActionListConflict(
+    liveHash: string,
+    desired: readonly Action[],
+    options: ActionListPrereadOptions
+): void {
+    const target = options.conflictTarget;
+    if (target === undefined || !options.session.trust.trustMode) return;
+    const trustPlan = options.session.trust.importables.get(
+        importableKey(target.type, target.identity)
+    );
+    const lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
+    if (
+        scanConflictVerdict(
+            liveHash,
+            lockHash,
+            actionListScanHashFromActions(desired)
+        ) === "conflict"
+    ) {
+        options.session.conflicts.push(target);
+    }
 }

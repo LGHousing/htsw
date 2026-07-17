@@ -48,7 +48,12 @@ function sessionWith(handler: SyncEventHandler): ImportSession {
         parsed: { value: [] } as never,
         items: createItemRegistry([]),
         housingUuid: "test-house",
-        trust: { housingUuid: "test-house", importables: new Map() },
+        trust: {
+            housingUuid: "test-house",
+            trustMode: false,
+            importables: new Map(),
+        },
+        conflicts: [],
         events: handler,
         npcLookup: createNpcLookupCache(),
     };

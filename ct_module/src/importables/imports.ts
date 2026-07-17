@@ -2,10 +2,7 @@ import { type ImportablesParseResult } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import {
-    type ImportableTrustPlan,
-    type TrustPlan,
-} from "../importCache";
+import { type ImportableTrustPlan, type TrustPlan } from "../importCache";
 import { importableIdentity, importableKey } from "./identity";
 import {
     applyImportableEventPlan,
@@ -70,12 +67,14 @@ import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
 import type { NpcLookupCache } from "./npcs/listNpcs";
 import type { ActionListApplyResult } from "../housingSync/actions/apply";
+import type { ImportConflict } from "./importConflicts";
 
 export type ImportSession = {
     parsed: ImportablesParseResult;
     items: ItemRegistry;
     housingUuid: string;
     trust: TrustPlan;
+    conflicts: ImportConflict[];
     events: SyncEventHandler | undefined;
     itemCaptures?: ItemCaptureRegistry;
     npcLookup: NpcLookupCache;
@@ -115,68 +114,23 @@ export async function prereadImportable(
     const trust = trustFor(session, importable);
     switch (importable.type) {
         case "FUNCTION":
-            return prereadImportableFunction(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableFunction(ctx, importable, session, trust);
         case "EVENT":
-            return prereadImportableEvent(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableEvent(ctx, importable, session, trust);
         case "COMMAND":
-            return prereadImportableCommand(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableCommand(ctx, importable, session, trust);
         case "REGION":
-            return prereadImportableRegion(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableRegion(ctx, importable, session, trust);
         case "MENU":
-            return prereadImportableMenu(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableMenu(ctx, importable, session, trust);
         case "ITEM":
-            return prereadImportableItem(
-                ctx,
-                importable,
-                session,
-                trust
-            );
+            return prereadImportableItem(ctx, importable, session, trust);
         case "NPC":
-            return prereadImportableNpc(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableNpc(ctx, importable, session, trust);
         case "TEAM":
-            return prereadImportableTeam(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableTeam(ctx, importable, session, trust);
         case "GROUP":
-            return prereadImportableGroup(
-                ctx,
-                importable,
-                session,
-                trust,
-            );
+            return prereadImportableGroup(ctx, importable, session, trust);
         default: {
             const _exhaustiveCheck: never = importable;
             return _exhaustiveCheck;
@@ -297,9 +251,7 @@ export function reconstructPartialImportable(
  * was read but never applied (the session aborted first). Same conservative
  * type coverage and settings-dropping as the partial write above.
  */
-export function reconstructObservedImportable(
-    plan: ImportablePlan
-): Importable | null {
+export function reconstructObservedImportable(plan: ImportablePlan): Importable | null {
     switch (plan.kind) {
         case "FUNCTION":
             return reconstructObservedFunction(plan);

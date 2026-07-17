@@ -35,6 +35,7 @@ import {
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
 import { importableIdentity } from "../../../importables/identity";
+import { HOUSE_READERS } from "../../../importables/houseReaders";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
@@ -72,6 +73,11 @@ import {
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
+import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
+import type { ImportConflict } from "../../../importables/importConflicts";
+import type TaskContext from "../../../tasks/context";
+import { previewSelect } from "../selection";
+import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -82,6 +88,101 @@ function formatElapsedSeconds(secs: number): string {
     const h = Math.floor(m / 60);
     const mm = m % 60;
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
+}
+
+const CONFLICT_TYPE_LABEL: Partial<Record<ImportConflict["type"], string>> = {
+    FUNCTION: "Function",
+    COMMAND: "Command",
+    EVENT: "Event",
+    REGION: "Region",
+    NPC: "NPC",
+    MENU: "Menu",
+};
+
+function conflictListLabel(basePath: string): string {
+    if (basePath === "actions") return "actions";
+    if (basePath === "onEnterActions") return "enter actions";
+    if (basePath === "onExitActions") return "exit actions";
+    if (basePath === "leftClickActions") return "left-click actions";
+    if (basePath === "rightClickActions") return "right-click actions";
+    const slot = basePath.match(/^slots\[(\d+)\]\.actions$/);
+    if (slot !== null) return `slot ${slot[1]} actions`;
+    return basePath;
+}
+
+function conflictSubject(type: ImportConflict["type"], identity: string): string {
+    const label = CONFLICT_TYPE_LABEL[type] ?? type;
+    if (type === "NPC") {
+        return `NPC at ${identity.split(",").join(", ")}`;
+    }
+    return `${label} "${identity}"`;
+}
+
+function conflictLines(conflicts: readonly ImportConflict[]): string[] {
+    const groups: Array<{
+        type: ImportConflict["type"];
+        identity: string;
+        paths: string[];
+    }> = [];
+    const byImportable = new Map<string, (typeof groups)[number]>();
+    for (const conflict of conflicts) {
+        const key = `${conflict.type}:${conflict.identity}`;
+        let group = byImportable.get(key);
+        if (group === undefined) {
+            group = { type: conflict.type, identity: conflict.identity, paths: [] };
+            byImportable.set(key, group);
+            groups.push(group);
+        }
+        if (group.paths.indexOf(conflict.basePath) < 0) {
+            group.paths.push(conflict.basePath);
+        }
+    }
+
+    const lines = groups.map((group) => {
+        const subject = conflictSubject(group.type, group.identity);
+        // A lone "actions" list is the type's only list (functions, commands,
+        // events) — naming it adds nothing over the subject itself.
+        if (group.paths.length === 1 && group.paths[0] === "actions") {
+            return subject;
+        }
+        return `${subject} — ${group.paths.map(conflictListLabel).join(", ")}`;
+    });
+    const visible = lines.slice(0, 10);
+    if (lines.length > visible.length) {
+        visible.push(`…and ${lines.length - visible.length} more`);
+    }
+    return ["Someone edited these in Housing after your last import:", ...visible];
+}
+
+async function confirmImportConflicts(
+    ctx: TaskContext,
+    conflicts: readonly ImportConflict[],
+    onReview: () => void
+): Promise<boolean> {
+    let decision: boolean | null = null;
+    const decide = (value: boolean): void => {
+        if (decision === null) decision = value;
+    };
+
+    openConfirmPopover({
+        title: "Housing changed since your last import",
+        lines: conflictLines(conflicts),
+        confirmLabel: "Import anyway",
+        extraLabel: "See changes",
+        danger: true,
+        onConfirm: () => decide(true),
+        onExtra: () => {
+            onReview();
+            decide(false);
+        },
+        onClose: () => decide(false),
+    });
+    try {
+        while (decision === null) await ctx.sleep(50);
+        return decision;
+    } finally {
+        closeConfirmPopover();
+    }
 }
 
 const BODY_LIST_PROPS: Record<string, true> = {
@@ -257,6 +358,68 @@ type ImportBatch = {
     importables: Importable[]; // ordered for the importer
 };
 
+type ConflictReviewRequest = {
+    batch: ImportBatch;
+    conflicts: readonly ImportConflict[];
+    housingUuid: string;
+};
+
+function conflictedImportables(request: ConflictReviewRequest): Importable[] {
+    const byKey = new Map<string, Importable>();
+    for (const imp of request.batch.parsed.value) {
+        byKey.set(`${imp.type}:${importableIdentity(imp)}`, imp);
+    }
+
+    const resolved: Importable[] = [];
+    const seen = new Set<string>();
+    for (const conflict of request.conflicts) {
+        const key = `${conflict.type}:${conflict.identity}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const imp = byKey.get(key);
+        if (imp !== undefined) resolved.push(imp);
+    }
+    return resolved;
+}
+
+function startConflictReview(request: ConflictReviewRequest): void {
+    const importables = conflictedImportables(request);
+    if (importables.length === 0) return;
+
+    const specsByType = new Map<Importable["type"], DeepReadSpec & { names: string[] }>();
+    for (const imp of importables) {
+        const read = HOUSE_READERS[imp.type];
+        if (read === null) continue;
+        let spec = specsByType.get(imp.type);
+        if (spec === undefined) {
+            spec = {
+                type: imp.type,
+                label: (CONFLICT_TYPE_LABEL[imp.type] ?? imp.type).toLowerCase(),
+                read,
+                names: [],
+            };
+            specsByType.set(imp.type, spec);
+        }
+        spec.names.push(importableIdentity(imp));
+    }
+
+    const firstSourcePath = importableSourcePath(importables[0]);
+    startDeepRead(Array.from(specsByType.values()), {
+        housingUuid: request.housingUuid,
+        importJsonPath: request.batch.sourcePath,
+        parsed: request.batch.parsed,
+        summaryLabel: "changed importable",
+        onSuccess: () => {
+            if (firstSourcePath !== undefined) {
+                previewSelect(firstSourcePath, request.batch.sourcePath);
+            }
+            ChatLib.chat(
+                "&7[htsw] Read the changed lists — the View tab shows what changed in Housing."
+            );
+        },
+    });
+}
+
 /**
  * Group queued items by their declaring import.json so we can hand each
  * batch to a single `importSelectedImportables` call (which assumes one
@@ -417,6 +580,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
         explicit ?? getQueue().filter(isImportQueueItem)
     ).map(queueItemKey);
     const startedAt = Date.now();
+    let reviewRequest: ConflictReviewRequest | null = null;
 
     runHousingSyncTask("import", async (ctx) => {
         gmcOnImportStart();
@@ -452,6 +616,21 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     sourcePath: batch.sourcePath,
                     parsed: batch.parsed,
                     events,
+                    confirmConflicts: async (conflicts) => {
+                        const proceed = await confirmImportConflicts(
+                            ctx,
+                            conflicts,
+                            () => {
+                                reviewRequest = {
+                                    batch,
+                                    conflicts: conflicts.slice(),
+                                    housingUuid,
+                                };
+                            }
+                        );
+                        if (!proceed) cancelled = true;
+                        return proceed;
+                    },
                     onImportableAutoAdded: (importable) => {
                         const queueItem = makeImportableQueueItem(
                             importable,
@@ -468,12 +647,13 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
                 totalFailed += c.failed;
+                if (cancelled) break;
                 // A failed importable can leave the Housing menu mid-edit, so
                 // the menu state for the next batch is unknown. Abort the run
                 // rather than drive unrelated files from an uncertain menu.
                 if (c.failed > 0) break;
             }
-            importSucceeded = totalFailed === 0;
+            importSucceeded = totalFailed === 0 && !cancelled;
         } catch (err) {
             if (isTaskCancelled(err)) {
                 cancelled = true;
@@ -527,10 +707,9 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                         removeFromQueueKey(sessionItemKeys[i]);
                     }
                 }
-                // The global session marking + last-finished progress belong to
-                // whichever import is live. Only clear them when nothing is
-                // running, so a stranded session can't leave the divider stuck.
-                if (!isTaskRunning()) {
+                // A conflict review is a separate read task, so it must not
+                // strand the import session while it runs.
+                if (!isTaskRunning() || reviewRequest !== null) {
                     endQueueSession(false);
                     if (removeSessionItems) clearImportableChecks();
                     if (removeSessionItems || cancelled) clearLastFinishedProgress();
@@ -538,7 +717,11 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             }, 1500);
         }
         if (unexpectedError !== null) throw unexpectedError;
-    }).catch((err: unknown) => {
-        ChatLib.chat(`&c[htsw] Import failed: ${err}`);
-    });
+    })
+        .then(() => {
+            if (reviewRequest !== null) startConflictReview(reviewRequest);
+        })
+        .catch((err: unknown) => {
+            ChatLib.chat(`&c[htsw] Import failed: ${err}`);
+        });
 }

@@ -25,6 +25,7 @@ import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import type { ItemRegistry } from "../itemRegistry";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { menuCreated } from "../waiters";
@@ -36,11 +37,7 @@ import {
     type LiveMenu,
     type LiveMenuGrid,
 } from "./read";
-import {
-    openMenuEditor,
-    openMenuElements,
-    setMenuSize,
-} from "./shared";
+import { openMenuEditor, openMenuElements, setMenuSize } from "./shared";
 
 /**
  * One grid slot's work. A slot needs at most one op, which may both set the
@@ -132,7 +129,10 @@ export async function prereadImportableMenu(
     session: ImportSession,
     trustPlan?: ImportableTrustPlan
 ): Promise<MenuImportPlan> {
-    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
+    const setup = createSetupStepEmitter(
+        session.events,
+        countReferencedShells(importable) + 1
+    );
 
     await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -150,8 +150,7 @@ export async function prereadImportableMenu(
         // Fresh menu: every desired slot is a pure ADD, size always set.
         const ops: MenuSlotOp[] = importable.slots.map((slot, i) => {
             const item = getItemFromNbt(slot.nbt);
-            const hasActions =
-                slot.actions !== undefined && slot.actions.length > 0;
+            const hasActions = slot.actions !== undefined && slot.actions.length > 0;
             return {
                 slot: slot.slot,
                 setItem: item,
@@ -167,6 +166,14 @@ export async function prereadImportableMenu(
                     : {}),
             };
         });
+        await prereadMenuConflictLists(
+            ctx,
+            importable,
+            session,
+            trustPlan,
+            ops,
+            new Set<number>()
+        );
         return {
             kind: "MENU",
             importable,
@@ -195,12 +202,68 @@ export async function prereadImportableMenu(
             grid.size,
             session.items
         );
+        await prereadMenuConflictLists(
+            ctx,
+            importable,
+            session,
+            trustPlan,
+            diff.ops,
+            new Set(grid.slots.map((slot) => slot.slot))
+        );
         return { kind: "MENU", importable, trustPlan, diff };
     }
 
     const live = await readLiveMenu(ctx);
-    const diff = buildMenuDiff(importable, baselineSlotsFromLive(live), live.size, session.items);
+    const diff = buildMenuDiff(
+        importable,
+        baselineSlotsFromLive(live),
+        live.size,
+        session.items
+    );
     return { kind: "MENU", importable, trustPlan, diff };
+}
+
+async function prereadMenuConflictLists(
+    ctx: TaskContext,
+    importable: ImportableMenu,
+    session: ImportSession,
+    trustPlan: ImportableTrustPlan | undefined,
+    ops: readonly MenuSlotOp[],
+    populatedSlots: ReadonlySet<number>
+): Promise<void> {
+    if (!session.trust.trustMode || trustPlan?.lockListScanHashes === null) return;
+
+    for (const op of ops) {
+        const desired = op.syncActions;
+        const basePath = op.actionsPath;
+        if (
+            desired === undefined ||
+            basePath === undefined ||
+            trustPlan?.lockListScanHashes?.[basePath] === undefined
+        ) {
+            continue;
+        }
+
+        let editorOpened = false;
+        await prepareActionListSync(ctx, {
+            desired,
+            session,
+            trustPlan,
+            basePath,
+            current: populatedSlots.has(op.slot) ? undefined : { kind: "known-empty" },
+            conflictTarget: {
+                type: importable.type,
+                identity: importableIdentity(importable),
+                basePath,
+            },
+            open: async () => {
+                menuGridClick(op.slot, "LEFT");
+                await timedWaitForMenu(ctx, "menuClickWait");
+                editorOpened = true;
+            },
+        });
+        if (editorOpened) await clickGoBack(ctx);
+    }
 }
 
 /** The live-grid slot data `buildMenuDiff` compares the desired menu against. */
@@ -311,8 +374,8 @@ function actionsDiffer(
     for (const a of liveCopy) canonicalizeActionItemName(a, itemRegistry);
     for (const a of desiredCopy) canonicalizeActionItemName(a, itemRegistry);
     return (
-        diffActionList(baselineActionListFromActions(liveCopy), desiredCopy)
-            .operations.length > 0
+        diffActionList(baselineActionListFromActions(liveCopy), desiredCopy).operations
+            .length > 0
     );
 }
 

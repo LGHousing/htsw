@@ -1,10 +1,7 @@
 import type { ImportableNpc } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
-import {
-    prereadActionList,
-    type ActionListPlan,
-} from "../../housingSync/actions/plan";
+import { prereadActionList, type ActionListPlan } from "../../housingSync/actions/plan";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import type { ImportableTrustPlan } from "../../importCache";
@@ -14,6 +11,7 @@ import {
     getBaselineActionList,
 } from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import {
@@ -96,6 +94,11 @@ export async function prereadImportableNpc(
                 session,
                 baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
                 trust: getActionListTrust(trustPlan, "leftClickActions"),
+                conflictTarget: {
+                    type: importable.type,
+                    identity: importableIdentity(importable),
+                    basePath: "leftClickActions",
+                },
             });
         }
     }
@@ -106,6 +109,11 @@ export async function prereadImportableNpc(
             session,
             baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
             trust: getActionListTrust(trustPlan, "rightClickActions"),
+            conflictTarget: {
+                type: importable.type,
+                identity: importableIdentity(importable),
+                basePath: "rightClickActions",
+            },
         });
     }
 
@@ -147,14 +155,8 @@ export async function applyImportableNpcPlan(
 }
 
 export function npcPlanIsNoOp(plan: NpcImportPlan): boolean {
-    const leftNoOp =
-        plan.leftPlan === null || plan.leftPlan.diff.operations.length === 0;
+    const leftNoOp = plan.leftPlan === null || plan.leftPlan.diff.operations.length === 0;
     const rightNoOp =
         plan.rightPlan === null || plan.rightPlan.diff.operations.length === 0;
-    return (
-        plan.nameHandled &&
-        plan.leftClickRedirectHandled &&
-        leftNoOp &&
-        rightNoOp
-    );
+    return plan.nameHandled && plan.leftClickRedirectHandled && leftNoOp && rightNoOp;
 }

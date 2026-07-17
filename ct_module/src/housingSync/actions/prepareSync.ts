@@ -14,6 +14,7 @@ import {
     type ActionListPlan,
 } from "./plan";
 import { emitDiffPlanned } from "./apply/progress";
+import type { ImportConflict } from "../../importables/importConflicts";
 
 export type ActionListSyncResult =
     | { kind: "skipped"; reason: "undeclared" | "trusted" }
@@ -28,6 +29,7 @@ export type ActionListSyncTarget = {
     current?: { kind: "known-empty" };
     listPath?: ActionListPath;
     progressScope?: ProgressScope;
+    conflictTarget?: ImportConflict;
 };
 
 export function shouldSyncActionList(
@@ -51,10 +53,9 @@ export async function prepareActionListSync(
     if (target.current?.kind === "known-empty") {
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
     }
-    const trustedBaseline = getTrustedBaselineActionList(
-        target.trustPlan,
-        target.basePath
-    );
+    const trustedBaseline = conflictScanRequired(target)
+        ? undefined
+        : getTrustedBaselineActionList(target.trustPlan, target.basePath);
     if (trustedBaseline !== undefined) {
         return planned(
             createKnownActionListPlan(target.desired, trustedBaseline, target),
@@ -71,8 +72,17 @@ export async function prepareActionListSync(
             progressScope: target.progressScope,
             baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
             trust: getActionListTrust(target.trustPlan, target.basePath),
+            conflictTarget: target.conflictTarget,
         }),
         target
+    );
+}
+
+function conflictScanRequired(target: ActionListSyncTarget): boolean {
+    return (
+        target.conflictTarget !== undefined &&
+        target.session.trust.trustMode &&
+        target.trustPlan?.lockListScanHashes?.[target.basePath] !== undefined
     );
 }
 

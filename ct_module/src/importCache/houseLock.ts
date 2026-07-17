@@ -3,6 +3,11 @@ import type { Importable } from "htsw/types";
 import { ensureParentDirs } from "../utils/filesystem";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { importableHash } from "./hash";
+import { actionListsOfImportable } from "./actionLists";
+import {
+    ACTION_LIST_SCAN_HASH_VERSION,
+    actionListScanHashFromActions,
+} from "../housingSync/actions/scanHash";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -11,11 +16,13 @@ type HouseLockEntry = {
     type: Importable["type"];
     identity: string;
     hash: string;
+    listScanHashes?: Record<string, string>;
 };
 
 export type HouseLock = {
     schemaVersion: typeof HOUSE_LOCK_SCHEMA_VERSION;
     houseUuid: string | null;
+    scanHashVersion?: number;
     importables: Record<string, HouseLockEntry>;
 };
 
@@ -51,6 +58,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
     const obj = parsed as {
         schemaVersion?: unknown;
         houseUuid?: unknown;
+        scanHashVersion?: unknown;
         importables?: unknown;
     };
     if (obj.schemaVersion !== HOUSE_LOCK_SCHEMA_VERSION) return null;
@@ -64,6 +72,9 @@ function parseHouseLock(raw: string | null): HouseLock | null {
     }
 
     const importables: Record<string, HouseLockEntry> = {};
+    const scanHashVersion =
+        typeof obj.scanHashVersion === "number" ? obj.scanHashVersion : undefined;
+    const exposeListScanHashes = scanHashVersion === ACTION_LIST_SCAN_HASH_VERSION;
     const records = obj.importables as Record<string, unknown>;
     for (const key in records) {
         const entry = records[key];
@@ -72,6 +83,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
             type?: unknown;
             identity?: unknown;
             hash?: unknown;
+            listScanHashes?: unknown;
         };
         if (
             typeof e.type !== "string" ||
@@ -80,18 +92,39 @@ function parseHouseLock(raw: string | null): HouseLock | null {
         ) {
             continue;
         }
-        importables[key] = {
+        const parsedEntry: HouseLockEntry = {
             type: e.type as Importable["type"],
             identity: e.identity,
             hash: e.hash,
         };
+        if (exposeListScanHashes) {
+            const listScanHashes = parseStringRecord(e.listScanHashes);
+            if (listScanHashes !== undefined) {
+                parsedEntry.listScanHashes = listScanHashes;
+            }
+        }
+        importables[key] = parsedEntry;
     }
 
     return {
         schemaVersion: HOUSE_LOCK_SCHEMA_VERSION,
         houseUuid: obj.houseUuid,
+        ...(scanHashVersion !== undefined ? { scanHashVersion } : {}),
         importables,
     };
+}
+
+function parseStringRecord(value: unknown): Record<string, string> | undefined {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const parsed: Record<string, string> = {};
+    for (const key in value as Record<string, unknown>) {
+        const entry = (value as Record<string, unknown>)[key];
+        if (typeof entry !== "string") return undefined;
+        parsed[key] = entry;
+    }
+    return parsed;
 }
 
 export function readHouseLock(importJsonPath: string): HouseLock | null {
@@ -134,10 +167,16 @@ export function upsertHouseLockImportable(
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
     const identity = importableIdentity(importable);
     lock.houseUuid = housingUuid;
+    lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
+    const listScanHashes: Record<string, string> = {};
+    for (const { basePath, actions } of actionListsOfImportable(importable)) {
+        listScanHashes[basePath] = actionListScanHashFromActions(actions);
+    }
     lock.importables[importableKey(importable.type, identity)] = {
         type: importable.type,
         identity,
         hash: importableHash(importable),
+        listScanHashes,
     };
     return writeHouseLock(path, lock);
 }

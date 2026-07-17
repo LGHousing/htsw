@@ -17,6 +17,7 @@ import {
     getBaselineActionList,
 } from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import {
@@ -75,6 +76,11 @@ export async function prereadImportableCommand(
             session,
             baselineCurrent: getBaselineActionList(trustPlan, "actions"),
             trust: getActionListTrust(trustPlan, "actions"),
+            conflictTarget: {
+                type: importable.type,
+                identity: importableIdentity(importable),
+                basePath: "actions",
+            },
         });
     } else {
         created = (await ensureCommandExists(ctx, importable.name)) === "created";

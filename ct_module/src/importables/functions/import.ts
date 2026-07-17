@@ -16,6 +16,7 @@ import { functionIconsEqual } from "../../importCache/hash";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { functionListOpened } from "../waiters";
@@ -68,6 +69,11 @@ export async function prereadImportableFunction(
         session,
         trustPlan,
         basePath: "actions",
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath: "actions",
+        },
         open: async () => {
             await ensureFunctionExists(ctx, importable.name);
             actionsEditorOpened = true;

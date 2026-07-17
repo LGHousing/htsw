@@ -2,10 +2,8 @@ import type { Action, Bounds, Condition, FunctionIcon, Importable } from "htsw/t
 
 import { cyrb53, stableStringify } from "../utils/helpers";
 import { canonicalStringify } from "../housingSync/fields/compare";
-import {
-    type TagLike,
-    canonicalItemTag,
-} from "../housingSync/fields/itemTagCanonical";
+import { type TagLike, canonicalItemTag } from "../housingSync/fields/itemTagCanonical";
+import { actionListsOfImportable } from "./actionLists";
 
 /**
  * Importable-cache hashing.
@@ -23,7 +21,7 @@ import {
  */
 
 /** Hex-encoded 53-bit cyrb53 digest, prefixed with "0x" for clarity in JSON. */
-function hashHex(input: string): string {
+export function hashHex(input: string): string {
     return "0x" + cyrb53(input).toString(16);
 }
 
@@ -35,7 +33,9 @@ export function actionHash(action: Action): string {
 /** Hash a single normalized condition. */
 export function conditionHash(cond: Condition): string {
     return hashHex(canonicalStringify(cond));
-}/**
+}
+
+/**
  * One hash per action in the list. Stored in the cache so a single action
  * list can later be checked for changes by comparing hashes, without walking
  * and comparing the whole action tree.
@@ -79,60 +79,8 @@ function collectActionListHashes(
  */
 export function listHashes(importable: Importable): Record<string, string[]> {
     const out: Record<string, string[]> = {};
-    switch (importable.type) {
-        case "FUNCTION":
-        case "EVENT":
-        case "COMMAND":
-            collectActionListHashes(out, "actions", importable.actions ?? []);
-            break;
-        case "REGION":
-            if (importable.onEnterActions) {
-                collectActionListHashes(out, "onEnterActions", importable.onEnterActions);
-            }
-            if (importable.onExitActions) {
-                collectActionListHashes(out, "onExitActions", importable.onExitActions);
-            }
-            break;
-        case "ITEM":
-            if (importable.leftClickActions) {
-                collectActionListHashes(
-                    out,
-                    "leftClickActions",
-                    importable.leftClickActions
-                );
-            }
-            if (importable.rightClickActions) {
-                collectActionListHashes(
-                    out,
-                    "rightClickActions",
-                    importable.rightClickActions
-                );
-            }
-            break;
-        case "NPC":
-            if (importable.leftClickActions) {
-                collectActionListHashes(
-                    out,
-                    "leftClickActions",
-                    importable.leftClickActions
-                );
-            }
-            if (importable.rightClickActions) {
-                collectActionListHashes(
-                    out,
-                    "rightClickActions",
-                    importable.rightClickActions
-                );
-            }
-            break;
-        case "MENU":
-            for (let i = 0; i < importable.slots.length; i++) {
-                const slot = importable.slots[i];
-                if (slot.actions && slot.actions.length > 0) {
-                    collectActionListHashes(out, `slots[${i}].actions`, slot.actions);
-                }
-            }
-            break;
+    for (const list of actionListsOfImportable(importable)) {
+        collectActionListHashes(out, list.basePath, list.actions);
     }
     return out;
 }
@@ -319,8 +267,7 @@ export function clickActionsHash(
     left: readonly Action[] | undefined,
     right: readonly Action[] | undefined
 ): string {
-    const key =
-        actionListCanonical(left ?? []) + " " + actionListCanonical(right ?? []);
+    const key = actionListCanonical(left ?? []) + " " + actionListCanonical(right ?? []);
     return String(cyrb53(key));
 }
 

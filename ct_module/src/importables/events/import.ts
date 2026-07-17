@@ -14,6 +14,7 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { openEventEditor } from "./shared";
@@ -45,6 +46,11 @@ export async function prereadImportableEvent(
         session,
         trustPlan,
         basePath: "actions",
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath: "actions",
+        },
         open: async () => {
             await openEventEditor(ctx, importable.event);
             setup(`opened event actions`);

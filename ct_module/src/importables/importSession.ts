@@ -1,14 +1,16 @@
-import { Diagnostic, SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
+import {
+    Diagnostic,
+    SourceMap,
+    parseImportablesResult,
+    type ImportablesParseResult,
+} from "htsw";
 import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
 import { isTaskTraceEnabled, traceNote } from "../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import {
-    buildTrustPlan,
-    tryWriteImportableCache,
-} from "../importCache";
+import { buildTrustPlan, tryWriteImportableCache } from "../importCache";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "./identity";
 import { createItemRegistry } from "./itemRegistry";
@@ -43,6 +45,7 @@ import {
 } from "../housingSync/actions/apply";
 import { writeImportFailureLog } from "../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
+import type { ImportConflict } from "./importConflicts";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -51,6 +54,7 @@ export type ImportSelection = {
     sourcePath: string;
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
+    confirmConflicts?: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
     /**
      * Called for each click-action item dependency the session adds beyond
      * `importables`. Expansion needs the housing UUID, so it can only run
@@ -117,10 +121,12 @@ export async function importSelectedImportables(
     resetMenuNameSession();
     resetCommandNameSession();
 
-    const parsed = selection.parsed ?? parseImportablesResult(
-        new SourceMap(new FileSystemFileLoader()),
-        selection.sourcePath
-    );
+    const parsed =
+        selection.parsed ??
+        parseImportablesResult(
+            new SourceMap(new FileSystemFileLoader()),
+            selection.sourcePath
+        );
     const items = createItemRegistry(parsed.value, parsed.gcx);
 
     const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
@@ -152,7 +158,10 @@ export async function importSelectedImportables(
         );
     }
 
-    const orderedImportables = orderImportablesForImportSession(parsed.value, expansion.importables);
+    const orderedImportables = orderImportablesForImportSession(
+        parsed.value,
+        expansion.importables
+    );
     await ctx.sleep(1);
     // Building a trust plan hashes every importable and all of its actions,
     // which is slow. Pass only the ones we're importing this run, not the
@@ -170,6 +179,7 @@ export async function importSelectedImportables(
         items,
         housingUuid: selection.housingUuid,
         trust: trustPlan,
+        conflicts: [],
         events,
         npcLookup: createNpcLookupCache(),
     };
@@ -182,7 +192,11 @@ export async function importSelectedImportables(
             key: queueRowKey(importable.type, identity, selection.sourcePath),
             rowIndex,
             trustPlan: tp,
-            units: estimateImportableUnits(importable, tp?.entry ?? null, tp?.trustMode === true),
+            units: estimateImportableUnits(
+                importable,
+                tp?.entry ?? null,
+                tp?.trustMode === true
+            ),
         };
     });
 
@@ -216,8 +230,17 @@ export async function importSelectedImportables(
         // A trusted ITEM still has work to do: the item itself must land in
         // the player's inventory (its apply spawns from the SNBT cache).
         if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
-            await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
-            upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
+            await tryWriteImportableCache(
+                ctx,
+                row.importable,
+                "importer",
+                selection.housingUuid
+            );
+            upsertHouseLockImportable(
+                selection.sourcePath,
+                selection.housingUuid,
+                row.importable
+            );
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;
         }
@@ -225,9 +248,22 @@ export async function importSelectedImportables(
         try {
             const plan = await prereadImportable(ctx, row.importable, session);
             if (planIsNoOp(plan)) {
-                await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
-                upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
-                events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
+                await tryWriteImportableCache(
+                    ctx,
+                    row.importable,
+                    "importer",
+                    selection.housingUuid
+                );
+                upsertHouseLockImportable(
+                    selection.sourcePath,
+                    selection.housingUuid,
+                    row.importable
+                );
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "imported",
+                });
                 continue;
             }
             plans.push({ row, plan });
@@ -242,24 +278,64 @@ export async function importSelectedImportables(
                 throw error;
             }
             const diag = toImportDiagnostic(error, "read", row.importable.type);
-            events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
-            const logPath = writeImportFailureLog({
-                phase: "pre-read",
-                sourcePath: selection.sourcePath,
-                housingUuid: selection.housingUuid,
-                importableType: row.importable.type,
-                identity: row.identity,
-                rowIndex: row.rowIndex,
-            }, error);
+            events?.emit({
+                kind: "importableFinished",
+                key: row.key,
+                status: "failed",
+                error: diag.message,
+            });
+            const logPath = writeImportFailureLog(
+                {
+                    phase: "pre-read",
+                    sourcePath: selection.sourcePath,
+                    housingUuid: selection.housingUuid,
+                    importableType: row.importable.type,
+                    identity: row.identity,
+                    rowIndex: row.rowIndex,
+                },
+                error
+            );
             if (isTaskTraceEnabled()) {
-                const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
-                const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
-                if (trace) traceNote("read-stack", String(trace).split("\n").slice(0, 8).join(" | "));
+                const stack = error as {
+                    stack?: string;
+                    rhinoException?: { getScriptStackTrace?: () => string };
+                };
+                const trace =
+                    stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
+                if (trace)
+                    traceNote(
+                        "read-stack",
+                        String(trace).split("\n").slice(0, 8).join(" | ")
+                    );
             }
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`
             );
             ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
+            events?.emit({ kind: "sessionFinished" });
+            return;
+        }
+    }
+
+    if (plans.length > 0 && session.conflicts.length > 0) {
+        const proceed =
+            selection.confirmConflicts === undefined
+                ? true
+                : await selection.confirmConflicts(session.conflicts);
+        if (!proceed) {
+            for (const { row } of plans) {
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "skipped",
+                });
+            }
+            ctx.displayMessage(
+                "&c[htsw] Import cancelled — Housing changed since the last import."
+            );
+            ctx.displayMessage(
+                "&7[htsw] Review the conflicting action lists in Housing, then retry."
+            );
             events?.emit({ kind: "sessionFinished" });
             return;
         }
@@ -284,8 +360,16 @@ export async function importSelectedImportables(
                     selection.housingUuid
                 );
             }
-            upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
-            events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
+            upsertHouseLockImportable(
+                selection.sourcePath,
+                selection.housingUuid,
+                row.importable
+            );
+            events?.emit({
+                kind: "importableFinished",
+                key: row.key,
+                status: "imported",
+            });
         } catch (error) {
             await maybeWritePartialImportCache(
                 ctx,
@@ -304,15 +388,23 @@ export async function importSelectedImportables(
                 throw error;
             }
             const diag = toImportDiagnostic(error, "import", row.importable.type);
-            events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
-            const logPath = writeImportFailureLog({
-                phase: "apply",
-                sourcePath: selection.sourcePath,
-                housingUuid: selection.housingUuid,
-                importableType: row.importable.type,
-                identity: row.identity,
-                rowIndex: row.rowIndex,
-            }, error);
+            events?.emit({
+                kind: "importableFinished",
+                key: row.key,
+                status: "failed",
+                error: diag.message,
+            });
+            const logPath = writeImportFailureLog(
+                {
+                    phase: "apply",
+                    sourcePath: selection.sourcePath,
+                    housingUuid: selection.housingUuid,
+                    importableType: row.importable.type,
+                    identity: row.identity,
+                    rowIndex: row.rowIndex,
+                },
+                error
+            );
             ctx.displayMessage(
                 `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
             );

@@ -30,11 +30,16 @@ const MAX_WIDTH = 380;
 // Fit the widest line (MC's font is proportional, so a fixed width either
 // wastes space or lets a long line spill past the box). Truncation on the
 // Text rows is the backstop for lines longer than MAX_WIDTH.
-function fitWidth(title: string, lines: string[]): number {
+function fitWidth(title: string, lines: string[], buttonLabels: string[]): number {
     let w = Renderer.getStringWidth(title);
     for (let i = 0; i < lines.length; i++) {
         w = Math.max(w, Renderer.getStringWidth(lines[i]));
     }
+    let buttonRowWidth = GAP * Math.max(0, buttonLabels.length - 1);
+    for (let i = 0; i < buttonLabels.length; i++) {
+        buttonRowWidth += Renderer.getStringWidth(buttonLabels[i]) + 8;
+    }
+    w = Math.max(w, buttonRowWidth);
     return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w + PAD * 2 + 4));
 }
 
@@ -43,10 +48,13 @@ export type ConfirmOptions = {
     /** Body lines, one Text row each. Keep them short — no wrapping. */
     lines?: string[];
     confirmLabel?: string;
+    extraLabel?: string;
     cancelLabel?: string;
     /** Danger-tints the confirm button for destructive actions. */
     danger?: boolean;
     onConfirm: () => void;
+    onExtra?: () => void;
+    onClose?: () => void;
 };
 
 function closeSelf(): void {
@@ -54,6 +62,10 @@ function closeSelf(): void {
         closePopover(activeHandle);
         activeHandle = null;
     }
+}
+
+export function closeConfirmPopover(): void {
+    closeSelf();
 }
 
 function content(opts: ConfirmOptions): Element {
@@ -71,17 +83,29 @@ function content(opts: ConfirmOptions): Element {
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
-                            background: opts.danger === true ? COLOR_BUTTON_DANGER : COLOR_BUTTON_PRIMARY,
+                            background:
+                                opts.danger === true
+                                    ? COLOR_BUTTON_DANGER
+                                    : COLOR_BUTTON_PRIMARY,
                             hoverBackground:
                                 opts.danger === true
                                     ? COLOR_BUTTON_DANGER_HOVER
                                     : COLOR_BUTTON_PRIMARY_HOVER,
                         },
-                        onClick: () => {
-                            closeSelf();
-                            opts.onConfirm();
-                        },
+                        onClick: opts.onConfirm,
                     }),
+                    opts.extraLabel !== undefined &&
+                        opts.onExtra !== undefined &&
+                        Button({
+                            text: opts.extraLabel,
+                            style: {
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: COLOR_BUTTON_HOVER,
+                            },
+                            onClick: opts.onExtra,
+                        }),
                     Button({
                         text: opts.cancelLabel ?? "Cancel",
                         style: {
@@ -101,18 +125,37 @@ function content(opts: ConfirmOptions): Element {
 export function openConfirmPopover(opts: ConfirmOptions): void {
     closeSelf();
     const lines = opts.lines ?? [];
+    let handled = false;
+    const runAction = (action: () => void): void => {
+        if (handled) return;
+        handled = true;
+        closeSelf();
+        action();
+    };
+    const extraAction = opts.onExtra;
     // Mirrors content(): title text, then each line and the button row each
     // preceded by one gap, inside the Col's padding.
     const height = PAD * 2 + TEXT_H + lines.length * (GAP + TEXT_H) + GAP + BUTTON_ROW_H;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
-        content: content(opts),
-        width: fitWidth(opts.title, lines),
+        content: content({
+            ...opts,
+            onConfirm: () => runAction(opts.onConfirm),
+            onExtra: extraAction === undefined ? undefined : () => runAction(extraAction),
+        }),
+        width: fitWidth(opts.title, lines, [
+            opts.confirmLabel ?? "Confirm",
+            ...(opts.extraLabel !== undefined && opts.onExtra !== undefined
+                ? [opts.extraLabel]
+                : []),
+            opts.cancelLabel ?? "Cancel",
+        ]),
         height,
         key: "confirm",
         placement: "modal",
         onClose: () => {
             activeHandle = null;
+            if (!handled) opts.onClose?.();
         },
     });
 }

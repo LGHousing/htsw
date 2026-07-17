@@ -108,7 +108,10 @@ describe("trustedChildListPathsForImportable", () => {
     it("does not trust a changed top-level list", () => {
         const cached = fn([chat("old")]);
         const desired = fn([chat("new")]);
-        const trustedChildListPaths = trustedChildListPathsForImportable(desired, listHashes(cached));
+        const trustedChildListPaths = trustedChildListPathsForImportable(
+            desired,
+            listHashes(cached)
+        );
 
         expect(trustedChildListPaths.has("actions")).toBe(false);
     });
@@ -163,7 +166,8 @@ describe("buildTrustPlan house lock gating", () => {
         const desired = fn([chat("cached")]);
         const entry = cacheEntry(cached);
         const files: Record<string, string> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(entry),
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+                JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,
@@ -190,6 +194,7 @@ describe("buildTrustPlan house lock gating", () => {
         expect(row?.trustMode).toBe(false);
         expect(row?.wholeImportableTrusted).toBe(false);
         expect(row?.cacheMatchesLock).toBe(false);
+        expect(row?.lockListScanHashes).toBeNull();
     });
 
     it("keeps trust available when the local cache matches the project lock", () => {
@@ -198,7 +203,8 @@ describe("buildTrustPlan house lock gating", () => {
         const cached = fn([chat("same")]);
         const entry = cacheEntry(cached);
         const files: Record<string, string> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(entry),
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+                JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,
@@ -224,6 +230,40 @@ describe("buildTrustPlan house lock gating", () => {
         expect(row?.trustMode).toBe(true);
         expect(row?.wholeImportableTrusted).toBe(true);
         expect(row?.cacheMatchesLock).toBe(true);
+        expect(row?.lockListScanHashes).toBeNull();
+    });
+
+    it("exposes current-version lock scan hashes", () => {
+        const uuid = "lock-test-scan-hash";
+        const importJsonPath = "./projects/demo/import.json";
+        const desired = fn([chat("same")]);
+        const files: Record<string, string> = {
+            "./projects/demo/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                scanHashVersion: 1,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: importableHash(desired),
+                        listScanHashes: { actions: "0xscan" },
+                    },
+                },
+            }),
+        };
+
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        const row = buildTrustPlan(uuid, [desired], true, importJsonPath).importables.get(
+            "FUNCTION:Debug"
+        );
+
+        expect(row?.lockListScanHashes).toEqual({ actions: "0xscan" });
     });
 });
 
@@ -237,7 +277,12 @@ describe("trusted action-list planning", () => {
             parsed: { value: [] } as never,
             items: createItemRegistry([]),
             housingUuid: "test-house",
-            trust: { housingUuid: "test-house", importables: new Map() },
+            trust: {
+                housingUuid: "test-house",
+                trustMode: true,
+                importables: new Map(),
+            },
+            conflicts: [],
             events: undefined,
             npcLookup: createNpcLookupCache(),
         };
@@ -253,6 +298,7 @@ describe("trusted action-list planning", () => {
                 sourceHash: importableHash(desired),
                 cacheHash: importableHash(cached),
                 lockHash: importableHash(cached),
+                lockListScanHashes: null,
                 cacheMatchesLock: true,
                 trustMode: true,
                 wholeImportableTrusted: false,

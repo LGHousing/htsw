@@ -1,9 +1,7 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
-import {
-    type ActionListPlan,
-} from "../../housingSync/actions/plan";
+import { type ActionListPlan } from "../../housingSync/actions/plan";
 import {
     prepareActionListSync,
     shouldSyncActionList,
@@ -14,6 +12,7 @@ import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { ensureCreativeFlight } from "../../housingSync/sideEffects";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
+import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import {
@@ -35,7 +34,11 @@ export type RegionImportPlan = {
     exitPlan: ActionListPlan | null;
 };
 
-async function setRegionCorner(ctx: TaskContext, pos: Pos, corner: "A" | "B"): Promise<void> {
+async function setRegionCorner(
+    ctx: TaskContext,
+    pos: Pos,
+    corner: "A" | "B"
+): Promise<void> {
     await ctx.expectAfter(
         () => ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`),
         teleportSucceeded(pos)
@@ -112,6 +115,7 @@ async function setDesiredRegionSelection(
 
 async function createEmptyActionPlan(
     ctx: TaskContext,
+    importable: ImportableRegion,
     desired: ImportableRegion["onEnterActions"],
     session: ImportSession,
     trustPlan: ImportableTrustPlan | undefined,
@@ -123,6 +127,11 @@ async function createEmptyActionPlan(
         current: { kind: "known-empty" },
         trustPlan,
         basePath,
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath,
+        },
     });
     return sync.kind === "planned" ? sync.plan : null;
 }
@@ -144,6 +153,11 @@ async function readLiveRegionActionPlans(
             session,
             trustPlan,
             basePath: "onEnterActions",
+            conflictTarget: {
+                type: importable.type,
+                identity: importableIdentity(importable),
+                basePath: "onEnterActions",
+            },
             open: async () => {
                 ctx.getItemSlot("Entry Actions").click();
                 await timedWaitForMenu(ctx, "menuClickWait");
@@ -165,6 +179,11 @@ async function readLiveRegionActionPlans(
             session,
             trustPlan,
             basePath: "onExitActions",
+            conflictTarget: {
+                type: importable.type,
+                identity: importableIdentity(importable),
+                basePath: "onExitActions",
+            },
             open: async () => {
                 ctx.getItemSlot("Exit Actions").click();
                 await timedWaitForMenu(ctx, "menuClickWait");
@@ -268,8 +287,11 @@ export async function prereadImportableRegion(
     );
 
     const desiredBounds = requireRegionBounds(importable);
-    const regionOpenSteps = (enterEligible || exitEligible) ? 2 : 1;
-    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + regionOpenSteps);
+    const regionOpenSteps = enterEligible || exitEligible ? 2 : 1;
+    const setup = createSetupStepEmitter(
+        session.events,
+        countReferencedShells(importable) + regionOpenSteps
+    );
 
     await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -277,16 +299,17 @@ export async function prereadImportableRegion(
 
     if (trustPlan?.trustMode === true && trustPlan.entry?.importable.type === "REGION") {
         const cachedRegion = trustPlan.entry.importable;
-        const actionPlans = enterEligible || exitEligible
-            ? await readLiveRegionActionPlans(
-                  ctx,
-                  importable,
-                  session,
-                  trustPlan,
-                  enterEligible,
-                  exitEligible
-              )
-            : { enterPlan: null, exitPlan: null };
+        const actionPlans =
+            enterEligible || exitEligible
+                ? await readLiveRegionActionPlans(
+                      ctx,
+                      importable,
+                      session,
+                      trustPlan,
+                      enterEligible,
+                      exitEligible
+                  )
+                : { enterPlan: null, exitPlan: null };
         const liveRegion = {
             index: 0,
             name: importable.name,
@@ -323,6 +346,7 @@ export async function prereadImportableRegion(
     if (liveRegion === null) {
         const enterPlan = await createEmptyActionPlan(
             ctx,
+            importable,
             importable.onEnterActions,
             session,
             trustPlan,
@@ -330,6 +354,7 @@ export async function prereadImportableRegion(
         );
         const exitPlan = await createEmptyActionPlan(
             ctx,
+            importable,
             importable.onExitActions,
             session,
             trustPlan,
@@ -388,7 +413,6 @@ export async function applyImportableRegionPlan(
 export function regionPlanIsNoOp(plan: RegionImportPlan): boolean {
     const enterNoOp =
         plan.enterPlan === null || plan.enterPlan.diff.operations.length === 0;
-    const exitNoOp =
-        plan.exitPlan === null || plan.exitPlan.diff.operations.length === 0;
+    const exitNoOp = plan.exitPlan === null || plan.exitPlan.diff.operations.length === 0;
     return plan.liveRegion !== null && plan.boundsMatch && enterNoOp && exitNoOp;
 }

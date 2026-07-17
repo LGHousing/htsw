@@ -17,12 +17,12 @@ This guide says **what each part is for and the rules it must keep**. Do not cop
 - `editors/` — VS Code, Monaco, shared editor features.
 - `docs/`, `examples/` — guide content and example projects. Tests live per package (`language/test`, `ct_module/test`).
 
-| area | build | test | notes |
-|---|---|---|---|
-| `language/` | `npm run build` | `npm test` | `lib: es2022` |
-| `cli/` | `npm run build` | — | |
-| `editors/code/` | `npm run build` | — | |
-| `ct_module/` | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `python install.py` |
+| area            | build           | test       | notes                                                         |
+| --------------- | --------------- | ---------- | ------------------------------------------------------------- |
+| `language/`     | `npm run build` | `npm test` | `lib: es2022`                                                 |
+| `cli/`          | `npm run build` | —          |                                                               |
+| `editors/code/` | `npm run build` | —          |                                                               |
+| `ct_module/`    | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `python install.py` |
 
 **After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `python install.py` from `ct_module/`** so `/ct reload` picks it up. It runs the full build (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. `.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
@@ -46,7 +46,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 
 **When a comment earns its place, make it stand on its own.** Write it for a reader who doesn't yet know the codebase's vocabulary. Don't lean on an undefined internal term or a bare local variable name — say what the thing costs or does and why it matters, in plain words. Plain sentences, not dense shorthand.
 
-**Fix the name before reaching for a comment.** When a comment exists only to decode an under-named thing, rename the thing instead. A clear name removes the need for the comment; keep it only if a real *why* remains after renaming.
+**Fix the name before reaching for a comment.** When a comment exists only to decode an under-named thing, rename the thing instead. A clear name removes the need for the comment; keep it only if a real _why_ remains after renaming.
 
 ## Code style
 
@@ -74,6 +74,7 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - Which importable types are wired — the switch in `importables/imports.ts` for import; `HOUSE_READERS` in `importables/houseReaders.ts` for live-house read/deep-read coverage; and `HOUSE_EXPORT_TYPES` in `importables/houseExportTypes.ts` for name-based exports. `gui/left-panel/houses/contentTypes.ts` adds GUI-only behavior.
 - Per-type import procedure — that type's `importables/<type>/import.ts`. Per-type house reads usually live in `importables/<type>/readHouse<Type>.ts` and use `makeReadHouse` from `importables/readHouse.ts`; `importables/read.ts` owns the shared loop. NPCs adapt their position-keyed export flow to the same `ReadFn` interface.
 - Read/write + child-list coverage per action/condition — `ACTION_IO` / `CONDITION_IO`, via `getActionIo` / `getConditionIo`.
+- Trust-mode conflict detection runs during pass 1 in `prereadActionList`, and `importSession` gates between the read and apply passes; v1 scan hashes cover only action types plus child-list type structure, and Cancel must leave `house.lock.json` untouched.
 - Which import.json a NEW export lands in — `importJsonTargetForSectionEntry` (and the per-type `htslTargetFor*`/`snbtTargetForItemExport`) in `editors/common/src/project/exportTargets.ts`: an existing declaration wins, else the user's sticky sub-target (`gui/state/newExportTarget.ts`, set in the Houses "Change" picker) when it's reachable in the include tree, else the section folder, else the base file. Re-exports of already-declared importables ignore the sub-target. The choice threads in via `ReadOptions.newExportTargetImportJson` (set in `gui/export/taskController.ts:startExport`).
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 
@@ -83,5 +84,5 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. Importable-owned export helpers that cut across types live under the owning importable folder, such as `importables/items/`. Task state and cancellation helpers live under `tasks/`.
 - Start every import, export, and deep read with `housingSync/taskRunner.ts:runHousingSyncTask` so one place starts and cleans up Housing menu work.
 - Import, export, and deep-read reuse the same live-menu readers (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate that read logic.
-- A list/browser opener that walks `/hmenu` -> submenu (e.g. `openNpcBrowser`, `openGroupsList`) guards on `housingSync/menus/currentMenu.ts:isAtMenuTitle` and early-returns when already at that menu, so the list phase -> per-item phase doesn't re-run the whole `/hmenu` round-trip. It compares the *base* title (pagination's `(page/total)` prefix stripped), which is safe because the paginated navigation reads the live page from the title and self-corrects from any page. Only guard *list* openers this way — never early-return into a specific item's editor unless the menu title uniquely identifies that item (NPCs are position-keyed with non-unique names; the group edit menu title doesn't name the group).
+- A list/browser opener that walks `/hmenu` -> submenu (e.g. `openNpcBrowser`, `openGroupsList`) guards on `housingSync/menus/currentMenu.ts:isAtMenuTitle` and early-returns when already at that menu, so the list phase -> per-item phase doesn't re-run the whole `/hmenu` round-trip. It compares the _base_ title (pagination's `(page/total)` prefix stripped), which is safe because the paginated navigation reads the live page from the title and self-corrects from any page. Only guard _list_ openers this way — never early-return into a specific item's editor unless the menu title uniquely identifies that item (NPCs are position-keyed with non-unique names; the group edit menu title doesn't name the group).
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
