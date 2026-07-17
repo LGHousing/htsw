@@ -14,7 +14,7 @@ export function parseValue(tcx: TyCtxt, value: string): VarState | undefined {
 
     if (value.startsWith('"') && value.endsWith('"')) {
         const content = value.substring(1, value.length - 1);
-        return parseString(tcx, content);
+        return parseString(content);
     }
 
     if (value.includes(".") && !isNaN(Number(value))) {
@@ -28,28 +28,8 @@ export function parseValue(tcx: TyCtxt, value: string): VarState | undefined {
     throw Error("Invalid value type")
 }
 
-const PLACEHOLDER_RE = /%([^%]+?)%/g;
-const ONE_PLACEHOLDER_RE = /^%([^%]+?)%$/;
-
-function parseString(tcx: TyCtxt, value: string): VarState | undefined {
-    const placeholders = value.match(PLACEHOLDER_RE);
-
-    if (!placeholders) {
-        return string(value);
-    }
-
-    if (ONE_PLACEHOLDER_RE.test(value)) {
-        const placeholder = value.slice(1, -1);
-        return parsePlaceholder(tcx, placeholder);
-    }
-
-    // If the value is not one of:
-    //  - A string with no placeholders => string
-    //  - A singular placeholder        => resolve placeholder type
-    // Then we reasonably can't say anything about it, because there
-    // Are too many possibilites for what it could become.
-    // In this case, we want to treat the value (RHS) as unknown.
-    return;
+function parseString(value: string): VarState {
+    return string(value);
 }
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {
