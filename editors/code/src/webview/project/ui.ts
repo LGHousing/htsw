@@ -1,5 +1,5 @@
 import * as htsw from "htsw";
-import { itemSpriteDataUri } from "../mcItem/render";
+import { ensureMinecraftFont, itemSpriteDataUri } from "../mcItem/render";
 import type {
     ItemPreviewData,
     ProjectFromHostMessage,
@@ -148,6 +148,7 @@ export function mountProjectExplorer(
     onOpenItemEditor?: () => void,
     initialScrollTop = 0,
 ): () => void {
+    ensureMinecraftFont();
     const persisted = restoreProjectState(vscode.getState()?.project);
     const hasPersistedExpanded = persisted.expanded !== undefined;
     const state: State = {
@@ -1070,7 +1071,10 @@ function baseName(fsPath: string): string {
 function importableIcon(entry: ProjectImportableSummary): string {
     const uri = entry.iconItem ? itemSpriteDataUri(entry.iconItem, entry.iconMeta ?? 0) : null;
     if (uri) {
-        return `<span class="row-icon mc"><img src="${uri}" alt="" draggable="false"></span>`;
+        const count = entry.iconCount !== undefined && entry.iconCount > 1
+            ? `<span class="row-icon-count">${entry.iconCount}</span>`
+            : "";
+        return `<span class="row-icon mc"><img src="${uri}" alt="" draggable="false">${count}</span>`;
     }
     return `<span class="row-icon glyph ${entry.type}">${TYPE_GLYPH[entry.type]}</span>`;
 }

@@ -370,6 +370,7 @@ select {
     width: 16px;
     height: 16px;
     margin: 0 6px 0 1px;
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -380,6 +381,18 @@ select {
     height: 16px;
     object-fit: contain;
     image-rendering: pixelated;
+}
+
+.row-icon-count {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    color: #fff;
+    font-family: "Minecraft", var(--vscode-editor-font-family), monospace;
+    font-size: 10px;
+    line-height: 10px;
+    text-shadow: 1px 1px #3f3f3f;
+    pointer-events: none;
 }
 
 .row-icon.json {
