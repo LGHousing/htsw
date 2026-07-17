@@ -24,6 +24,7 @@
         "knip.configFilePath": "./knip.jsonc",
         "htsw.diagnostics.excludeFolders": ["language/test/cases"],
         "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "peacock.color": "#215732",
         "workbench.colorCustomizations": {
             "activityBar.activeBackground": "#2f7c47",
             "activityBar.background": "#2f7c47",
@@ -43,6 +44,6 @@
             "titleBar.inactiveBackground": "#21573299",
             "titleBar.inactiveForeground": "#e7e7e799"
         },
-        "peacock.color": "#215732",
+        "peacock.remoteColor": "#215732",
     },
 }
