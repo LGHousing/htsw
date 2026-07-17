@@ -1,12 +1,11 @@
 import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
+import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
 import {
-    type DeferredActionListRead,
-    hydrateDeferredActionList,
-    readActionList,
-    readActionListDeferred,
-} from "../../housingSync/actions/readList";
+    completeActionListScan,
+    readActionListFully,
+} from "../../housingSync/actions/hydration/run";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
@@ -14,7 +13,6 @@ import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
 import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
@@ -35,7 +33,7 @@ import {
 } from "./listFunctions";
 
 type PendingFunctionRead = {
-    deferred: DeferredActionListRead;
+    scan: ActionListScan;
     icon: ImportableFunction["icon"];
     repeatTicks?: number;
 };
@@ -55,7 +53,7 @@ async function readFunction(
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    const observed = await readActionList(ctx, { kind: "deep" }, {
+    const actions = await readActionListFully(ctx, {
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -64,7 +62,6 @@ async function readFunction(
               }
             : {}),
     });
-    const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);
     await openFunctionSettings(ctx, name);
@@ -72,9 +69,7 @@ async function readFunction(
     const repeatTicks = readAutomaticExecutionTicks(ctx);
     await clickGoBack(ctx);
     const valid = validRepeatTicks(repeatTicks);
-    return valid !== undefined
-        ? { actions, repeatTicks: valid }
-        : { actions };
+    return valid !== undefined ? { actions, repeatTicks: valid } : { actions };
 }
 
 // Read a function from the live house into a full `ImportableFunction` AST
@@ -88,7 +83,12 @@ async function readFunctionImportable(
 ): Promise<ImportableFunction> {
     // The icon lives on the /functions list slot, not the editor — read it first.
     const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
-    const { actions, repeatTicks } = await readFunction(ctx, name, itemCaptures, onReadProgress);
+    const { actions, repeatTicks } = await readFunction(
+        ctx,
+        name,
+        itemCaptures,
+        onReadProgress
+    );
     return {
         type: "FUNCTION",
         name,
@@ -110,17 +110,21 @@ async function scanFunction(
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
-        itemCaptures: state.itemCaptures,
-        exactHydrationEstimate: true,
-        events,
-        ...(onReadProgress !== undefined
-            ? {
-                  progress: onReadProgress,
-                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
-              }
-            : {}),
-    });
+    const scan = await scanActionList(
+        ctx,
+        { kind: "full" },
+        {
+            itemCaptures: state.itemCaptures,
+            exactHydrationEstimate: true,
+            events,
+            ...(onReadProgress !== undefined
+                ? {
+                      progress: onReadProgress,
+                      phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+                  }
+                : {}),
+        }
+    );
 
     await clickGoBack(ctx);
     await openFunctionSettings(ctx, name);
@@ -128,7 +132,7 @@ async function scanFunction(
     await clickGoBack(ctx);
 
     return {
-        deferred,
+        scan,
         icon,
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
     };
@@ -146,7 +150,7 @@ async function hydrateFunction(
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    await hydrateDeferredActionList(ctx, pending.deferred, {
+    const actions = await completeActionListScan(ctx, pending.scan, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,
@@ -162,8 +166,10 @@ async function hydrateFunction(
     return {
         type: "FUNCTION",
         name,
-        actions: observedSlotsToActions(pending.deferred.observed),
-        ...(pending.repeatTicks !== undefined ? { repeatTicks: pending.repeatTicks } : {}),
+        actions,
+        ...(pending.repeatTicks !== undefined
+            ? { repeatTicks: pending.repeatTicks }
+            : {}),
         ...(pending.icon !== undefined ? { icon: pending.icon } : {}),
     };
 }
@@ -183,7 +189,13 @@ async function writeFunctionResult(
         // Captures matched against the seeded project reuse real item names;
         // unmatched ones carry minted names whose only job is to make the
         // drift diff truthfully report "differs from your project".
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         return;
     }
 
@@ -204,7 +216,9 @@ async function writeFunctionResult(
     upsertImportableEntry(target.importJsonPath, "functions", {
         name,
         actions: target.htslReference,
-        ...(importable.repeatTicks !== undefined ? { repeatTicks: importable.repeatTicks } : {}),
+        ...(importable.repeatTicks !== undefined
+            ? { repeatTicks: importable.repeatTicks }
+            : {}),
         ...(importable.icon !== undefined ? { icon: importable.icon } : {}),
     });
 

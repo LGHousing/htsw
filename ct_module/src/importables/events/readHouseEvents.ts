@@ -1,18 +1,16 @@
 import type { Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
+import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
 import {
-    type DeferredActionListRead,
-    hydrateDeferredActionList,
-    readActionList,
-    readActionListDeferred,
-} from "../../housingSync/actions/readList";
+    completeActionListScan,
+    readActionListFully,
+} from "../../housingSync/actions/hydration/run";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
@@ -24,7 +22,7 @@ import { openEventEditor } from "./shared";
 import { listAllEventNames } from "./listEvents";
 
 type PendingEventRead = {
-    deferred: DeferredActionListRead;
+    scan: ActionListScan;
 };
 
 async function scanEvent(
@@ -35,19 +33,23 @@ async function scanEvent(
     events: SyncEventHandler | undefined
 ): Promise<PendingEventRead> {
     await openEventEditor(ctx, name);
-    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
-        itemCaptures: state.itemCaptures,
-        exactHydrationEstimate: true,
-        events,
-        ...(onReadProgress !== undefined
-            ? {
-                  progress: onReadProgress,
-                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
-              }
-            : {}),
-    });
+    const scan = await scanActionList(
+        ctx,
+        { kind: "full" },
+        {
+            itemCaptures: state.itemCaptures,
+            exactHydrationEstimate: true,
+            events,
+            ...(onReadProgress !== undefined
+                ? {
+                      progress: onReadProgress,
+                      phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+                  }
+                : {}),
+        }
+    );
     await clickGoBack(ctx);
-    return { deferred };
+    return { scan };
 }
 
 async function hydrateEvent(
@@ -59,7 +61,7 @@ async function hydrateEvent(
     events: SyncEventHandler | undefined
 ): Promise<ImportableEvent> {
     await openEventEditor(ctx, name);
-    await hydrateDeferredActionList(ctx, pending.deferred, {
+    const actions = await completeActionListScan(ctx, pending.scan, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,
@@ -75,7 +77,7 @@ async function hydrateEvent(
     return {
         type: "EVENT",
         event: name as Event,
-        actions: observedSlotsToActions(pending.deferred.observed),
+        actions,
     };
 }
 
@@ -90,7 +92,13 @@ async function writeEventResult(
     }
 ): Promise<void> {
     if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         return;
     }
 
@@ -133,7 +141,7 @@ async function exportEvent(
     onReadProgress: ProgressHandler | undefined
 ): Promise<void> {
     await openEventEditor(ctx, name);
-    const observed = await readActionList(ctx, { kind: "deep" }, {
+    const actions = await readActionListFully(ctx, {
         itemCaptures: state.itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -142,7 +150,6 @@ async function exportEvent(
               }
             : {}),
     });
-    const actions = observedSlotsToActions(observed);
 
     const importable: ImportableEvent = {
         type: "EVENT",

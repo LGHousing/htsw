@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Action } from "htsw/types";
 
-import type { ActionListDiff, ObservedActionSlot } from "../src/housingSync/types";
+import type { ActionListDiff } from "../src/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
@@ -10,14 +11,16 @@ import { message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
     clickGoBack: vi.fn(async () => undefined),
-    setListItemNote: vi.fn(async (
-        _ctx: unknown,
-        _slot: unknown,
-        _note: unknown,
-        options?: { onApplied?: () => void }
-    ) => {
-        options?.onApplied?.();
-    }),
+    setListItemNote: vi.fn(
+        async (
+            _ctx: unknown,
+            _slot: unknown,
+            _note: unknown,
+            options?: { onApplied?: () => void }
+        ) => {
+            options?.onApplied?.();
+        }
+    ),
     writeOpenAction: vi.fn(async () => undefined),
 }));
 
@@ -38,17 +41,15 @@ vi.mock("../src/housingSync/menus/menuUtils", () => ({
     getSlotPaginate: vi.fn(() => null),
     isLimitExceeded: vi.fn(() => false),
     setListItemNote: mocks.setListItemNote,
-    setNoteOnLastVisibleSlot: vi.fn(async (
-        _ctx: unknown,
-        _note: unknown,
-        options?: { onApplied?: () => void }
-    ) => {
-        options?.onApplied?.();
-    }),
+    setNoteOnLastVisibleSlot: vi.fn(
+        async (_ctx: unknown, _note: unknown, options?: { onApplied?: () => void }) => {
+            options?.onApplied?.();
+        }
+    ),
 }));
 
-vi.mock("../src/housingSync/actions/specs", () => ({
-    getActionSpec: vi.fn(() => ({
+vi.mock("../src/housingSync/actions/io", () => ({
+    getActionIo: vi.fn(() => ({
         displayName: "Send a Chat Message",
         write: true,
     })),
@@ -112,9 +113,8 @@ describe("ActionListApplyResult", () => {
         mocks.writeOpenAction.mockRejectedValue(
             new Error("writer failed after touching the editor")
         );
-        const { applyActionListPlan, actionListApplyResultFromError } = await import(
-            "../src/housingSync/actions/apply"
-        );
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
 
         let thrown: unknown = null;
         try {
@@ -133,9 +133,8 @@ describe("ActionListApplyResult", () => {
 
     test("exposes the updated result when a confirmed edit is followed by a later failure", async () => {
         mocks.clickGoBack.mockRejectedValue(new Error("failed after writer returned"));
-        const { applyActionListPlan, actionListApplyResultFromError } = await import(
-            "../src/housingSync/actions/apply"
-        );
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
 
         let thrown: unknown = null;
         try {

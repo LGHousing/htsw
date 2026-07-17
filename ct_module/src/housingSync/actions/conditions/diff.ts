@@ -5,8 +5,8 @@ import type {
     ConditionListDiff,
     ConditionListOperation,
     CurrentConditionListEntry,
-    ObservedConditionSlot,
-} from "../../types";
+} from "../diff/types";
+import type { ObservedConditionSlot } from "../../observedActions";
 
 export function currentConditionListFromSlots(
     slots: readonly ObservedConditionSlot[]
@@ -98,10 +98,7 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const currentIndex = indexOfNoteOnlyCondition(
-            unmatchedCurrent,
-            desiredCondition
-        );
+        const currentIndex = indexOfNoteOnlyCondition(unmatchedCurrent, desiredCondition);
 
         if (currentIndex === -1) {
             continue;

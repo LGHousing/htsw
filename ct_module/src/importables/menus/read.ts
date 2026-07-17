@@ -1,18 +1,14 @@
 import type { Action } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import { COST } from "../../housingSync/progress/costs";
-import type {
-    ProgressHandler,
-    ProgressPhase,
-} from "../../housingSync/progress/types";
+import type { ProgressHandler, ProgressPhase } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { snbtFromItem } from "../../housingSync/itemCapture";
 import { openMenuElements } from "./shared";
 
@@ -135,9 +131,8 @@ async function readMenuSlotActions(
     container.click(slotId, false, "LEFT");
     await waitForMenu(ctx);
 
-    const observed = await readActionList(
+    const actions = await readActionListFully(
         ctx,
-        { kind: "deep" },
         onListProgress === undefined
             ? undefined
             : {
@@ -145,7 +140,6 @@ async function readMenuSlotActions(
                   phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
               }
     );
-    const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);
     return actions;
@@ -182,7 +176,11 @@ export async function snapshotLiveMenuGrid(ctx: TaskContext): Promise<LiveMenuGr
     return {
         size,
         gridSize,
-        slots: snapshot.map((s) => ({ slot: s.slotId, snbt: s.snbt, nameHint: s.nameHint })),
+        slots: snapshot.map((s) => ({
+            slot: s.slotId,
+            snbt: s.snbt,
+            nameHint: s.nameHint,
+        })),
     };
 }
 
@@ -234,7 +232,11 @@ export async function readLiveMenu(
                 doneReadingUnits + doneHydratingUnits + currentSlotCompletedUnits,
             totalUnits: reading + hydrating,
             phaseUnits: { setup: 0, reading, hydrating, applying: 0 },
-            sync: { completedUnits: doneSlots, totalUnits: snapshot.length, parent: null },
+            sync: {
+                completedUnits: doneSlots,
+                totalUnits: snapshot.length,
+                parent: null,
+            },
         });
     };
 

@@ -3,20 +3,17 @@ import type { Action, Condition } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../../importables/imports";
 import type { ItemRegistry } from "../../importables/itemRegistry";
-import type {
-    Observed,
-    ObservedActionSlot,
-    ChildListDiff,
-} from "../types";
+import type { ChildListDiff } from "../actions/diff/types";
+import type { Observed, ObservedActionSlot } from "../observedActions";
 import type { SyncEventHandler, ProgressScope } from "../syncEvents";
 import {
-    childActionListPath,
-    conditionListPath,
-    type ActionListPath,
+    ActionListPath,
     type ActionPath,
     type ChildActionListName,
+    type ChildConditionListName,
     type ChildListName,
     type NestedListPath,
+    ConditionListPath,
 } from "../actionPath";
 import type { ProgressHandler } from "../progress/types";
 import {
@@ -40,8 +37,14 @@ type ConditionApplyArgs = {
 export type ActionApplyContext = {
     markHeaderApplied(): void;
     shouldApplyList(prop: ChildListName): boolean;
-    applyChildActions(prop: ChildActionListName, args: ChildActionApplyArgs): Promise<void>;
-    applyConditions(prop: "conditions", args: ConditionApplyArgs): Promise<void>;
+    applyChildActions(
+        prop: ChildActionListName,
+        args: ChildActionApplyArgs
+    ): Promise<void>;
+    applyConditions(
+        prop: ChildConditionListName,
+        args: ConditionApplyArgs
+    ): Promise<void>;
 };
 
 type ApplyChildActionList = (
@@ -126,9 +129,10 @@ export function createActionApplyContext({
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const events = session.events;
     const scopeAt = childListScope(appliedUnits, completedOps, totalOps);
-    const listsToApply = childListDiffs === undefined
-        ? null
-        : new Set(childListDiffs.map((diff) => diff.prop));
+    const listsToApply =
+        childListDiffs === undefined
+            ? null
+            : new Set(childListDiffs.map((diff) => diff.prop));
     let nextOffset = 0;
 
     return {
@@ -137,11 +141,13 @@ export function createActionApplyContext({
         },
 
         shouldApplyList(prop) {
-            return listsToApply === null || listsToApply.has(prop as ChildListDiff["prop"]);
+            return (
+                listsToApply === null || listsToApply.has(prop as ChildListDiff["prop"])
+            );
         },
 
         async applyChildActions(prop, args) {
-            const path = childActionListPath(actionPath, prop);
+            const path = ActionListPath.childOf(actionPath, prop);
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
             const offset = args.offset ?? nextOffset;
             await applyChildActions(ctx, args.desired, {
@@ -150,22 +156,26 @@ export function createActionApplyContext({
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
             });
-            nextOffset = offset + phaseUnitsTotal(
-                estimateActionListPhaseUnits(args.desired, baselineCurrent)
-            );
+            nextOffset =
+                offset +
+                phaseUnitsTotal(
+                    estimateActionListPhaseUnits(args.desired, baselineCurrent)
+                );
         },
 
         async applyConditions(prop, args) {
-            const path = conditionListPath(actionPath);
+            const path = ConditionListPath.of(actionPath, prop);
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.desired, {
                 itemRegistry: session.items,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
             });
-            nextOffset = offset + phaseUnitsTotal(
-                estimateConditionListPhaseUnits(args.desired, args.observed)
-            );
+            nextOffset =
+                offset +
+                phaseUnitsTotal(
+                    estimateConditionListPhaseUnits(args.desired, args.observed)
+                );
         },
     };
 }

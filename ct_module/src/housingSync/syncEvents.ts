@@ -6,6 +6,7 @@ import type {
     ActionTreePath,
     NestedListPath,
 } from "./actionPath";
+import type { ObservedNode } from "./observedActions";
 
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
@@ -150,7 +151,7 @@ export type SyncEvent =
           path: ActionTreePath;
           actionType: Action["type"] | null;
       }
-    | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
+    | { kind: "observedSnapshot"; nodes: readonly ObservedNode[] }
     | { kind: "actionReadCompleted"; path: ActionPath; hydrated: boolean }
     | {
           kind: "diffPlanned";

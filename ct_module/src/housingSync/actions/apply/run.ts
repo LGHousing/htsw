@@ -5,24 +5,26 @@ import type { ActionApplyContext } from "../../context/actionApplyContext";
 import { createActionApplyContext } from "../../context/actionApplyContext";
 import { timedWaitForMenu } from "../../menus/menuWait";
 import { clickGoBack, setListItemNote } from "../../menus/menuUtils";
-import { getPaginatedListSlotAtIndex, goToPaginatedListPage } from "../../menus/paginatedList";
-import type {
-    DiffFinalState,
-    SyncEventHandler,
-    ProgressScope,
-} from "../../syncEvents";
-import { actionPathForIndex, type ActionPath } from "../../actionPath";
 import {
-    actionListDiffApplyUnits,
-    editUnitsWithChildLists,
-} from "../../progress/costs";
+    getPaginatedListSlotAtIndex,
+    goToPaginatedListPage,
+} from "../../menus/paginatedList";
+import type { DiffFinalState, SyncEventHandler, ProgressScope } from "../../syncEvents";
+import { ActionPath } from "../../actionPath";
+import { actionListDiffApplyUnits, editUnitsWithChildLists } from "../../progress/costs";
 import type { PhaseUnits } from "../../progress/types";
-import type { ActionListOperation, Observed } from "../../types";
+import type { Observed } from "../../observedActions";
+import type { ActionListOperation } from "../diff/types";
 import { applyConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import type { ActionListApplyOptions, ActionListPlan } from "../plan";
-import { getActionSpec, writeOpenAction } from "../specs";
-import { addAction, actionWithNote, deleteObservedAction, moveActionToIndex } from "./actionOps";
+import { getActionIo, writeOpenAction } from "../io";
+import {
+    addAction,
+    actionWithNote,
+    deleteObservedAction,
+    moveActionToIndex,
+} from "./actionOps";
 import {
     actionTypeForOp,
     desiredIndexForOp,
@@ -124,7 +126,9 @@ export class ActionListApplyRun {
         this.nextEntryId = plan.observed.length;
     }
 
-    async apply(applyChildActionList: ApplyChildActionList): Promise<ActionListApplyResult> {
+    async apply(
+        applyChildActionList: ApplyChildActionList
+    ): Promise<ActionListApplyResult> {
         try {
             emitDiffPlanned(
                 this.events,
@@ -158,7 +162,7 @@ export class ActionListApplyRun {
             currentSnapshot: this.current.map((entry) =>
                 entry.action === null
                     ? null
-                    : JSON.parse(JSON.stringify(entry.action)) as Action
+                    : (JSON.parse(JSON.stringify(entry.action)) as Action)
             ),
         };
     }
@@ -245,7 +249,7 @@ export class ActionListApplyRun {
                 continue;
             }
 
-            const spec = getActionSpec(op.desired.type);
+            const spec = getActionIo(op.desired.type);
             const actionWithCurrentNote = (): Action =>
                 actionWithNote(op.desired, op.baselineAction.note);
             let desiredSnapshotUpdated = false;
@@ -320,25 +324,24 @@ export class ActionListApplyRun {
             };
             const apply = this.writerHooksFor(op, applyChildActionList);
             this.markSnapshotUnsafe();
-            await addAction(
-                this.ctx,
-                actionToImport,
-                this.options.session.items,
-                apply,
-                {
-                    onActionAdded: () => {
-                        updateAddedSnapshot();
-                        this.markSnapshotSafe();
-                    },
-                }
-            );
+            await addAction(this.ctx, actionToImport, this.options.session.items, apply, {
+                onActionAdded: () => {
+                    updateAddedSnapshot();
+                    this.markSnapshotSafe();
+                },
+            });
             if (!actionAdded) {
                 updateAddedSnapshot();
                 this.markSnapshotSafe();
             }
 
             this.markSnapshotUnsafe();
-            await moveActionToIndex(this.ctx, currentLength, op.toIndex, currentLength + 1);
+            await moveActionToIndex(
+                this.ctx,
+                currentLength,
+                op.toIndex,
+                currentLength + 1
+            );
 
             this.moveCurrentEntry(currentLength, op.toIndex);
             currentLength += 1;
@@ -470,13 +473,13 @@ export class ActionListApplyRun {
         throwWithActionListApplyResult(error, this.result());
     }
 
-    private completeUnits(
-        op: ActionListOperation,
-        mode: "add" | "fromStart"
-    ): void {
+    private completeUnits(op: ActionListOperation, mode: "add" | "fromStart"): void {
         const units = operationApplyUnits(op, this.plan.desired.length);
         if (mode === "fromStart") {
-            this.appliedUnits = Math.max(this.appliedUnits, this.operationStartUnits + units);
+            this.appliedUnits = Math.max(
+                this.appliedUnits,
+                this.operationStartUnits + units
+            );
         } else {
             this.appliedUnits += units;
         }
@@ -540,10 +543,7 @@ export class ActionListApplyRun {
         }
     }
 
-    private emitCompleted(
-        op: ActionListOperation,
-        finalState: DiffFinalState
-    ): void {
+    private emitCompleted(op: ActionListOperation, finalState: DiffFinalState): void {
         if (this.events === undefined) return;
         const path = this.pathForOp(op);
         if (path === null) return;
@@ -558,8 +558,9 @@ export class ActionListApplyRun {
 
     private pathForOp(op: ActionListOperation): ActionPath | null {
         const desiredIndex = desiredIndexForOp(op);
-        if (desiredIndex >= 0) return actionPathForIndex(this.options.listPath, desiredIndex);
-        if (op.kind === "delete") return actionPathForIndex(this.options.listPath, op.fromIndex);
+        if (desiredIndex >= 0) return ActionPath.at(this.options.listPath, desiredIndex);
+        if (op.kind === "delete")
+            return ActionPath.at(this.options.listPath, op.fromIndex);
         return null;
     }
 

@@ -4,12 +4,11 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
+import { prereadActionList, type ActionListPlan } from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
-    prereadActionList,
-    type ActionListPlan,
-} from "../../housingSync/actions/plan";
+} from "../../housingSync/actions/hydration/plan";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
@@ -44,7 +43,10 @@ export async function prereadImportableCommand(
     session: ImportSession,
     trustPlan?: ImportableTrustPlan
 ): Promise<CommandImportPlan> {
-    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
+    const setup = createSetupStepEmitter(
+        session.events,
+        countReferencedShells(importable) + 1
+    );
 
     await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -55,7 +57,13 @@ export async function prereadImportableCommand(
 
     if (actionsTrusted && settingsTrusted) {
         setup(`skipped /${importable.name}`);
-        return { kind: "COMMAND", importable, trustPlan, actionsPlan: null, settingsHandled: true };
+        return {
+            kind: "COMMAND",
+            importable,
+            trustPlan,
+            actionsPlan: null,
+            settingsHandled: true,
+        };
     }
 
     let created = false;
@@ -114,9 +122,7 @@ export function commandPlanIsNoOp(plan: CommandImportPlan): boolean {
     return actionsNoOp && plan.settingsHandled;
 }
 
-export function reconstructObservedCommand(
-    plan: CommandImportPlan
-): Importable | null {
+export function reconstructObservedCommand(plan: CommandImportPlan): Importable | null {
     if (plan.actionsPlan === null) return null;
     const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
     if (actions === null) return null;
@@ -129,7 +135,11 @@ export function reconstructPartialCommand(
 ): Importable | null {
     const current = result?.currentSnapshot;
     if (current === undefined || !actionsFullyHydrated(current)) return null;
-    return { type: "COMMAND", name: plan.importable.name, actions: current.slice() as Action[] };
+    return {
+        type: "COMMAND",
+        name: plan.importable.name,
+        actions: current.slice() as Action[],
+    };
 }
 
 function commandSettingsTrusted(

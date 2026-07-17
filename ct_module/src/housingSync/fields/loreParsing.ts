@@ -11,7 +11,7 @@
 import type { Location } from "htsw/types";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
-import type { UiFieldKind } from "../types";
+import type { UiFieldKind } from "./loreSpecs";
 
 export function parseLoreKeyValueLine(
     line: string
@@ -53,7 +53,9 @@ export function looksTruncated(value: string): boolean {
 }
 
 export function isTruncatableKind(kind: UiFieldKind): boolean {
-    return kind === "value" || kind === "select" || kind === "location" || kind === "item";
+    return (
+        kind === "value" || kind === "select" || kind === "location" || kind === "item"
+    );
 }
 
 export function normalizeLoreValueFormatting(value: string): string {
@@ -146,7 +148,8 @@ function parseFieldValue(
             return parseLocationField(value);
         case "boolean":
             return parseBooleanText(value);
-        case "childList":
+        case "actionList":
+        case "conditionList":
             return undefined;
         default:
             const _exhaustiveCheck: never = kind;
@@ -230,7 +233,8 @@ export function parseLoreFields<TProp extends string>(
                 const nextKv = parseLoreKeyValueLine(next);
                 if (nextKv !== null && loreFields[nextKv.label] !== undefined) break;
                 rawValue +=
-                    " " + stripWrapInheritedColor(
+                    " " +
+                    stripWrapInheritedColor(
                         stripHousingEditorValuePrefix(
                             normalizeLoreValueFormatting(next)
                         ).trim()

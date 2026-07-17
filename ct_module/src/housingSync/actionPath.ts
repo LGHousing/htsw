@@ -1,7 +1,21 @@
-import type { Action } from "htsw/types";
+import type { Action, Condition } from "htsw/types";
 
-export type ChildActionListName = "ifActions" | "elseActions" | "actions";
-export type ChildListName = "conditions" | ChildActionListName;
+// Addresses nodes in an action tree. A path's parts alternate action index and
+// child-list name, so "2.ifActions.0" is the first action inside the third
+// root action's If Actions list.
+
+type ArrayFieldNames<TObject, TItem> = TObject extends unknown
+    ? {
+          [K in keyof TObject]-?: NonNullable<TObject[K]> extends readonly TItem[]
+              ? K
+              : never;
+      }[keyof TObject]
+    : never;
+
+// Derive the names for possible action & condition child lists from mappings
+export type ChildActionListName = Extract<ArrayFieldNames<Action, Action>, string>;
+export type ChildConditionListName = Extract<ArrayFieldNames<Action, Condition>, string>;
+export type ChildListName = ChildActionListName | ChildConditionListName;
 export type ActionPathPart = number | ChildActionListName;
 
 export type ActionPath = {
@@ -17,139 +31,136 @@ export type ActionListPath = {
 export type ConditionListPath = {
     readonly kind: "conditionList";
     readonly parent: ActionPath;
+    readonly prop: ChildConditionListName;
 };
 
 export type NestedListPath = ActionListPath | ConditionListPath;
 export type ActionTreePath = ActionPath | NestedListPath;
 
-declare const actionPathKeyBrand: unique symbol;
 declare const actionTreePathKeyBrand: unique symbol;
+declare const actionPathKeyBrand: unique symbol;
 
-export type ActionPathKey = string & { readonly [actionPathKeyBrand]: true };
-export type ActionTreePathKey = string & { readonly [actionTreePathKeyBrand]: true };
+type ActionTreePathKey = string & {
+    readonly [actionTreePathKeyBrand]: true;
+};
+export type ActionPathKey = ActionTreePathKey & { readonly [actionPathKeyBrand]: true };
 
-export function rootActionListPath(): ActionListPath {
-    return { kind: "actionList", parts: [] };
-}
+export const ActionPath = {
+    at(list: ActionListPath | undefined, index: number): ActionPath {
+        return {
+            kind: "action",
+            parts: list === undefined ? [index] : list.parts.concat(index),
+        };
+    },
 
-export function actionPathForIndex(
-    listPath: ActionListPath | undefined,
-    index: number
-): ActionPath {
-    return {
-        kind: "action",
-        parts: listPath === undefined ? [index] : listPath.parts.concat(index),
-    };
-}
+    fromParts(parts: readonly ActionPathPart[]): ActionPath {
+        if (parts.length === 0 || parts.length % 2 === 0) {
+            throw new Error("Action path must end at an action index");
+        }
+        for (let i = 0; i < parts.length; i++) {
+            const expectedNumber = i % 2 === 0;
+            if ((typeof parts[i] === "number") !== expectedNumber) {
+                throw new Error("Action path parts must alternate index and child-list name");
+            }
+        }
+        return { kind: "action", parts: parts.slice() };
+    },
 
-export function childActionListPath(
-    parent: ActionPath,
-    prop: ChildActionListName
-): ActionListPath {
-    return { kind: "actionList", parts: parent.parts.concat(prop) };
-}
+    key(path: ActionPath): ActionPathKey {
+        return path.parts.map(String).join(".") as ActionPathKey;
+    },
 
-export function conditionListPath(parent: ActionPath): ConditionListPath {
-    return { kind: "conditionList", parent };
-}
+    equals(a: ActionPath, b: ActionPath): boolean {
+        return partsEqual(a.parts, b.parts);
+    },
 
-export function actionPathKey(path: ActionPath): ActionPathKey {
-    return path.parts.map(String).join(".") as ActionPathKey;
-}
+    depth(path: ActionPath): number {
+        return Math.floor((path.parts.length - 1) / 2);
+    },
 
-export function actionTreePathKey(path: ActionTreePath): ActionTreePathKey {
-    if (path.kind === "conditionList") {
-        return `${actionPathKey(path.parent)}.conditions` as ActionTreePathKey;
-    }
-    return path.parts.map(String).join(".") as ActionTreePathKey;
-}
+    index(path: ActionPath): number {
+        return path.parts[path.parts.length - 1] as number;
+    },
 
-export function actionPathEquals(a: ActionPath, b: ActionPath): boolean {
-    return partsEqual(a.parts, b.parts);
-}
+    containingList(path: ActionPath): ActionListPath | undefined {
+        if (path.parts.length === 1) return undefined;
+        return { kind: "actionList", parts: path.parts.slice(0, -1) };
+    },
 
-export function actionTreePathEquals(a: ActionTreePath, b: ActionTreePath): boolean {
-    if (a.kind !== b.kind) return false;
-    if (a.kind === "conditionList" && b.kind === "conditionList") {
-        return actionPathEquals(a.parent, b.parent);
-    }
-    if (a.kind === "conditionList" || b.kind === "conditionList") return false;
-    return partsEqual(a.parts, b.parts);
-}
-
-export function actionPathDepth(path: ActionPath): number {
-    return Math.floor((path.parts.length - 1) / 2);
-}
-
-export function actionIndex(path: ActionPath): number {
-    return path.parts[path.parts.length - 1] as number;
-}
-
-export function actionListForAction(path: ActionPath): ActionListPath | undefined {
-    if (path.parts.length === 1) return undefined;
-    return { kind: "actionList", parts: path.parts.slice(0, -1) };
-}
-
-export function parentActionPath(path: ActionTreePath): ActionPath | null {
-    if (path.kind === "conditionList") return path.parent;
-    if (path.kind === "actionList") {
-        if (path.parts.length < 2) return null;
-        return { kind: "action", parts: path.parts.slice(0, -1) };
-    }
-    if (path.parts.length < 3) return null;
-    return { kind: "action", parts: path.parts.slice(0, -2) };
-}
-
-export function nearestActionPath(path: ActionTreePath): ActionPath | null {
-    return path.kind === "action" ? path : parentActionPath(path);
-}
-
-export function isPathWithinAction(path: ActionTreePath, ancestor: ActionPath): boolean {
-    const parts: Array<ActionPathPart | "conditions"> = path.kind === "conditionList"
-        ? path.parent.parts.slice()
-        : path.parts.slice();
-    if (path.kind === "conditionList") parts.push("conditions");
-    return hasPartsPrefix(parts, ancestor.parts);
-}
-
-export function actionAtPath(
-    actions: readonly Action[],
-    path: ActionPath
-): Action | null {
-    let list = actions;
-    let action: Action | null = null;
-    for (let i = 0; i < path.parts.length; i++) {
-        const part = path.parts[i];
-        if (typeof part === "number") {
-            action = list[part] ?? null;
+    resolve(actions: readonly Action[], path: ActionPath): Action | null {
+        let list = actions;
+        let action: Action | null = null;
+        for (let i = 0; i < path.parts.length; i++) {
+            const part = path.parts[i];
+            if (typeof part === "number") {
+                action = list[part] ?? null;
+                if (action === null) return null;
+                continue;
+            }
             if (action === null) return null;
-            continue;
+            const childList = (action as unknown as Record<string, unknown>)[part];
+            if (!Array.isArray(childList)) return null;
+            list = childList as Action[];
+            action = null;
         }
-        if (action === null) return null;
-        if (part === "ifActions" || part === "elseActions") {
-            if (action.type !== "CONDITIONAL") return null;
-            list = action[part];
-        } else {
-            if (action.type !== "RANDOM") return null;
-            list = action.actions;
-        }
-        action = null;
-    }
-    return action;
-}
+        return action;
+    },
+};
 
-export function actionPathFromParts(parts: readonly ActionPathPart[]): ActionPath {
-    if (parts.length === 0 || parts.length % 2 === 0) {
-        throw new Error("Action path must end at an action index");
-    }
-    for (let i = 0; i < parts.length; i++) {
-        const expectedNumber = i % 2 === 0;
-        if ((typeof parts[i] === "number") !== expectedNumber) {
-            throw new Error("Action path parts must alternate index and child-list name");
+export const ActionListPath = {
+    root(): ActionListPath {
+        return { kind: "actionList", parts: [] };
+    },
+
+    childOf(parent: ActionPath, prop: ChildActionListName): ActionListPath {
+        return { kind: "actionList", parts: parent.parts.concat(prop) };
+    },
+};
+
+export const ConditionListPath = {
+    of(parent: ActionPath, prop: ChildConditionListName): ConditionListPath {
+        return { kind: "conditionList", parent, prop };
+    },
+};
+
+export const ActionTreePath = {
+    key(path: ActionTreePath): ActionTreePathKey {
+        if (path.kind === "conditionList") {
+            return `${ActionPath.key(path.parent)}.${path.prop}` as ActionTreePathKey;
         }
-    }
-    return { kind: "action", parts: parts.slice() };
-}
+        return path.parts.map(String).join(".") as ActionTreePathKey;
+    },
+
+    equals(a: ActionTreePath, b: ActionTreePath): boolean {
+        if (a.kind !== b.kind) return false;
+        if (a.kind === "conditionList" && b.kind === "conditionList") {
+            return a.prop === b.prop && ActionPath.equals(a.parent, b.parent);
+        }
+        if (a.kind === "conditionList" || b.kind === "conditionList") return false;
+        return partsEqual(a.parts, b.parts);
+    },
+
+    parentAction(path: ActionTreePath): ActionPath | null {
+        if (path.kind === "conditionList") return path.parent;
+        if (path.kind === "actionList") {
+            if (path.parts.length < 2) return null;
+            return { kind: "action", parts: path.parts.slice(0, -1) };
+        }
+        if (path.parts.length < 3) return null;
+        return { kind: "action", parts: path.parts.slice(0, -2) };
+    },
+
+    nearestAction(path: ActionTreePath): ActionPath | null {
+        return path.kind === "action" ? path : ActionTreePath.parentAction(path);
+    },
+
+    isWithinAction(path: ActionTreePath, ancestor: ActionPath): boolean {
+        const parts: Array<ActionPathPart | ChildConditionListName> =
+            path.kind === "conditionList" ? path.parent.parts.slice() : path.parts.slice();
+        if (path.kind === "conditionList") parts.push(path.prop);
+        return hasPartsPrefix(parts, ancestor.parts);
+    },
+};
 
 function partsEqual(a: readonly ActionPathPart[], b: readonly ActionPathPart[]): boolean {
     if (a.length !== b.length) return false;
@@ -160,7 +171,7 @@ function partsEqual(a: readonly ActionPathPart[], b: readonly ActionPathPart[]):
 }
 
 function hasPartsPrefix(
-    parts: readonly (ActionPathPart | "conditions")[],
+    parts: readonly (ActionPathPart | ChildConditionListName)[],
     prefix: readonly ActionPathPart[]
 ): boolean {
     if (parts.length < prefix.length) return false;

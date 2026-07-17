@@ -1,14 +1,29 @@
 import type { Action, Condition } from "htsw/types";
 
-import type {
-    ActionHydrationPlan,
-    ActionListTrust,
-    ChildListName,
-    ObservedActionSlot,
-    TrustedChildListSnapshot,
-} from "../types";
-import { desiredChildListTypes, type DesiredActionEntry } from "./childListMatching";
-import { actionHydrationWorkRequiresHousing } from "./hydrationPlan";
+import type { ChildListName } from "../actionPath";
+import type { ObservedActionSlot } from "../observedActions";
+import { presentChildListsContainNoNulls } from "../observedActions";
+import { desiredChildListTypes, type DesiredActionEntry } from "./diff/childListMatching";
+import type { ActionHydrationPlan } from "./hydration/plan";
+import { actionHydrationWorkRequiresHousing } from "./hydration/plan";
+
+export type TrustedChildListPath = string;
+
+export type TrustedChildListSnapshot =
+    | {
+          kind: "actions";
+          actions: readonly Action[];
+      }
+    | {
+          kind: "conditions";
+          conditions: readonly Condition[];
+      };
+
+export type ActionListTrust = {
+    basePath: string;
+    trustedChildListPaths: ReadonlySet<TrustedChildListPath>;
+    trustedChildLists: ReadonlyMap<TrustedChildListPath, TrustedChildListSnapshot>;
+};
 
 /**
  * Consumes the same matches as `createActionHydrationPlan` so trust never
@@ -38,6 +53,7 @@ export function applyActionListTrust(
 
         if (!actionHydrationWorkRequiresHousing(work)) {
             plan.delete(observed);
+            observed.hydrated = presentChildListsContainNoNulls(observed.action);
         }
     }
 }

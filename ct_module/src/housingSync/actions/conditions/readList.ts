@@ -14,7 +14,7 @@ import {
     tryGetConditionTypeFromDisplayName,
 } from "../../fields/conditionMappings";
 import { isTruncatableKind, looksTruncated } from "../../fields/loreParsing";
-import type { ObservedConditionSlot } from "../../types";
+import type { ObservedConditionSlot } from "../../observedActions";
 import {
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
@@ -26,7 +26,7 @@ import {
 import { timedWaitForMenu } from "../../menus/menuWait";
 import { clickGoBack } from "../../menus/menuUtils";
 import { CONDITION_LIST_CONFIG } from "../listConfigs";
-import { getConditionSpec, isConditionListItemInverted } from "./specs";
+import { getConditionIo, isConditionListItemInverted } from "./io";
 import {
     COST,
     ITEM_CAPTURE_FIELD_UNITS,
@@ -74,10 +74,8 @@ export async function readConditionList(
     ctx: TaskContext,
     options?: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
-    const observed = await readPaginatedList(
-        ctx,
-        CONDITION_LIST_CONFIG,
-        () => readConditionsListPage(ctx)
+    const observed = await readPaginatedList(ctx, CONDITION_LIST_CONFIG, () =>
+        readConditionsListPage(ctx)
     );
     await hydrateScalarConditions(ctx, observed, options);
     await captureConditionItems(ctx, observed, options);
@@ -102,7 +100,7 @@ const SCALAR_CONDITION_HYDRATION_UNITS = COST.menuClickWait + COST.goBackWait;
 const CONDITION_ITEM_CAPTURE_UNITS = COST.menuClickWait + COST.goBackWait;
 
 function shouldHydrateScalarCondition(condition: Condition): boolean {
-    if (!getConditionSpec(condition.type).read) return false;
+    if (!getConditionIo(condition.type).read) return false;
     const fields = getConditionScalarLoreFields(condition.type);
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
@@ -179,7 +177,7 @@ async function hydrateScalarCondition(
     entry.slotId = slot.getSlotId();
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
-    const spec = getConditionSpec(entry.condition.type);
+    const spec = getConditionIo(entry.condition.type);
     if (!spec.read) {
         await clickGoBack(ctx);
         return;

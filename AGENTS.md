@@ -73,7 +73,7 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 
 - Which importable types are wired — the switch in `importables/imports.ts` for import; `HOUSE_READERS` in `importables/houseReaders.ts` for live-house read/deep-read coverage; and `HOUSE_EXPORT_TYPES` in `importables/houseExportTypes.ts` for name-based exports. `gui/left-panel/houses/contentTypes.ts` adds GUI-only behavior.
 - Per-type import procedure — that type's `importables/<type>/import.ts`. Per-type house reads usually live in `importables/<type>/readHouse<Type>.ts` and use `makeReadHouse` from `importables/readHouse.ts`; `importables/read.ts` owns the shared loop. NPCs adapt their position-keyed export flow to the same `ReadFn` interface.
-- Read/write + child-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
+- Read/write + child-list coverage per action/condition — `ACTION_IO` / `CONDITION_IO`, via `getActionIo` / `getConditionIo`.
 - Which import.json a NEW export lands in — `importJsonTargetForSectionEntry` (and the per-type `htslTargetFor*`/`snbtTargetForItemExport`) in `editors/common/src/project/exportTargets.ts`: an existing declaration wins, else the user's sticky sub-target (`gui/state/newExportTarget.ts`, set in the Houses "Change" picker) when it's reachable in the include tree, else the section folder, else the base file. Re-exports of already-declared importables ignore the sub-target. The choice threads in via `ReadOptions.newExportTargetImportJson` (set in `gui/export/taskController.ts:startExport`).
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 

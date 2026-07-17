@@ -32,7 +32,10 @@ import type { Action, Condition, Importable } from "htsw/types";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { matchByHash } from "../../importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
-import { getImportCacheWriteRevision, readImportableCache } from "../../importCache/cache";
+import {
+    getImportCacheWriteRevision,
+    readImportableCache,
+} from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importables/identity";
 import { cacheEntryListHashes } from "../../importCache/status";
@@ -53,15 +56,9 @@ import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importCache/actionLists";
 import { actionLineRange as parsedActionLineRange, parseHtslFile } from "./htslParse";
 import {
-    actionAtPath,
-    actionPathDepth,
-    actionPathForIndex,
-    actionPathKey,
-    actionTreePathKey,
-    childActionListPath,
-    parentActionPath,
-    type ActionListPath,
-    type ActionPath,
+    ActionListPath,
+    ActionPath,
+    ActionTreePath,
     type ActionPathKey,
 } from "../../housingSync/actionPath";
 
@@ -117,7 +114,8 @@ function deleteEntriesForFile(filePath: string): void {
     const suffix = "\n" + normalizeHtswPath(filePath);
     const stale: string[] = [];
     entries.forEach((_value, entryKey) => {
-        if (entryKey.indexOf(suffix) === entryKey.length - suffix.length) stale.push(entryKey);
+        if (entryKey.indexOf(suffix) === entryKey.length - suffix.length)
+            stale.push(entryKey);
     });
     for (let i = 0; i < stale.length; i++) entries.delete(stale[i]);
     if (stale.length > 0) revision++;
@@ -140,10 +138,10 @@ export function ensureSourceDiff(
     const cacheWriteRev = getImportCacheWriteRevision();
     const memo = entries.get(k);
     if (
-        memo !== undefined
-        && memo.housingUuid === housingUuid
-        && memo.parseRev === getParseCacheRevision()
-        && memo.cacheWriteRev === cacheWriteRev
+        memo !== undefined &&
+        memo.housingUuid === housingUuid &&
+        memo.parseRev === getParseCacheRevision() &&
+        memo.cacheWriteRev === cacheWriteRev
     ) {
         return memo.value ?? undefined;
     }
@@ -181,7 +179,10 @@ export function invalidateSourceDiffForImportable(importable: Importable): void 
 
 // ── Compute ───────────────────────────────────────────────────────────
 
-function computeFor(filePath: string, importJsonPath?: string | null): SourceDiffEntry | null {
+function computeFor(
+    filePath: string,
+    importJsonPath?: string | null
+): SourceDiffEntry | null {
     const match = findFileTarget(filePath, importJsonPath);
     if (match === null) return null;
     const housingUuid = getHousingUuid();
@@ -247,7 +248,10 @@ function cacheListPrefix(match: FileTarget, cached: Importable): string {
 let fileTargetCacheRev = -1;
 const fileTargetCache = new Map<string, FileTarget | null>();
 
-export function findFileTarget(filePath: string, importJsonPath?: string | null): FileTarget | null {
+export function findFileTarget(
+    filePath: string,
+    importJsonPath?: string | null
+): FileTarget | null {
     const rev = getParseCacheRevision();
     if (rev !== fileTargetCacheRev) {
         fileTargetCache.clear();
@@ -292,7 +296,11 @@ export function findFileTarget(filePath: string, importJsonPath?: string | null)
             }
         }
     };
-    if (importJsonPath !== null && importJsonPath !== undefined && importJsonPath !== "") {
+    if (
+        importJsonPath !== null &&
+        importJsonPath !== undefined &&
+        importJsonPath !== ""
+    ) {
         const entry = getParseAt(importJsonPath);
         if (entry !== null && entry.parsed !== null) visitParse(entry.parsed);
     } else {
@@ -325,8 +333,8 @@ function walk(
     addDeletedGhosts(out, sourceListPath, items, cachedItems, matched, sourceFile);
     for (let i = 0; i < items.length; i++) {
         const action = items[i];
-        const sourcePath = actionPathForIndex(sourceListPath, i);
-        const sourcePathKey = actionPathKey(sourcePath);
+        const sourcePath = ActionPath.at(sourceListPath, i);
+        const sourcePathKey = ActionPath.key(sourcePath);
         const j = matched[i];
         const cachedAction = j === null ? undefined : cachedItems[j];
         let state: DiffState;
@@ -348,7 +356,8 @@ function walk(
             // `random {` has no head fields; child-list changes show on child lines.
             state = "match";
         } else {
-            state = slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
+            state =
+                slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
         out.states.set(sourcePathKey, state);
         if (state === "edit" && cachedAction !== undefined) {
@@ -358,7 +367,7 @@ function walk(
                 {
                     id: `${sourcePathKey}:edit`,
                     action: cachedAction,
-                    depth: actionPathDepth(sourcePath),
+                    depth: ActionPath.depth(sourcePath),
                     headOnly: action.type === "CONDITIONAL",
                 },
                 sourceFile
@@ -375,7 +384,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].ifActions`,
-                childActionListPath(sourcePath, "ifActions"),
+                ActionListPath.childOf(sourcePath, "ifActions"),
                 action.ifActions,
                 cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
                     ? cachedAction.ifActions
@@ -387,7 +396,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].elseActions`,
-                childActionListPath(sourcePath, "elseActions"),
+                ActionListPath.childOf(sourcePath, "elseActions"),
                 action.elseActions,
                 cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
                     ? cachedAction.elseActions
@@ -400,7 +409,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].actions`,
-                childActionListPath(sourcePath, "actions"),
+                ActionListPath.childOf(sourcePath, "actions"),
                 action.actions,
                 cachedAction !== undefined && cachedAction.type === "RANDOM"
                     ? cachedAction.actions
@@ -417,7 +426,7 @@ function actionLineRange(
     actionPath: ActionPath
 ): { start: number; end: number } | null {
     if (sourceFile.file === null || sourceFile.spans === null) return null;
-    const action = actionAtPath(sourceFile.actions, actionPath);
+    const action = ActionPath.resolve(sourceFile.actions, actionPath);
     if (action === null) return null;
     return parsedActionLineRange(sourceFile.file, sourceFile.spans, action);
 }
@@ -456,16 +465,16 @@ function addDeletedGhosts(
         const cachedIndex = matched[i];
         if (cachedIndex !== null) used[cachedIndex] = true;
     }
-    const lineCount = sourceFile.file === null ? 0 : sourceFile.file.src.split("\n").length;
+    const lineCount =
+        sourceFile.file === null ? 0 : sourceFile.file.src.split("\n").length;
     for (let j = 0; j < cachedItems.length; j++) {
         if (used[j]) continue;
-        const listKey = sourceListPath === undefined
-            ? "root"
-            : actionTreePathKey(sourceListPath);
+        const listKey =
+            sourceListPath === undefined ? "root" : ActionTreePath.key(sourceListPath);
         const ghost: SourceDiffGhost = {
             id: `${listKey}:delete:${j}`,
             action: cachedItems[j],
-            depth: actionPathDepth(actionPathForIndex(sourceListPath, 0)),
+            depth: ActionPath.depth(ActionPath.at(sourceListPath, 0)),
             headOnly: false,
         };
         let nextSource = -1;
@@ -477,7 +486,7 @@ function addDeletedGhosts(
             }
         }
         if (nextSource >= 0) {
-            const nextPath = actionPathForIndex(sourceListPath, nextSource);
+            const nextPath = ActionPath.at(sourceListPath, nextSource);
             addGhostBeforeAction(out, nextPath, ghost, sourceFile);
             continue;
         }
@@ -490,7 +499,7 @@ function addDeletedGhosts(
             }
         }
         if (previousSource >= 0) {
-            const previousPath = actionPathForIndex(sourceListPath, previousSource);
+            const previousPath = ActionPath.at(sourceListPath, previousSource);
             const range = actionLineRange(sourceFile, previousPath);
             if (range !== null && range.end < lineCount) {
                 addGhostBeforeLine(out, range.end + 1, ghost);
@@ -500,12 +509,12 @@ function addDeletedGhosts(
             continue;
         }
         if (items.length > 0) {
-            const firstPath = actionPathForIndex(sourceListPath, 0);
+            const firstPath = ActionPath.at(sourceListPath, 0);
             addGhostBeforeAction(out, firstPath, ghost, sourceFile);
             continue;
         }
         if (sourceListPath !== undefined) {
-            const parentPath = parentActionPath(sourceListPath);
+            const parentPath = ActionTreePath.parentAction(sourceListPath);
             if (parentPath === null) continue;
             const parentRange = actionLineRange(sourceFile, parentPath);
             if (parentRange !== null && parentRange.start < lineCount) {
@@ -517,7 +526,6 @@ function addDeletedGhosts(
         else out.ghostsAtEnd.push(ghost);
     }
 }
-
 
 function conditionsMatchCache(
     conditions: readonly Condition[],

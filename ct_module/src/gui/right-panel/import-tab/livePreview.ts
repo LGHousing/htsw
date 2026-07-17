@@ -11,30 +11,20 @@ import type {
     DiffSummary,
 } from "../../../housingSync/syncEvents";
 import {
-    actionIndex,
-    actionListForAction,
-    actionPathDepth,
-    actionPathEquals,
-    actionPathForIndex,
-    actionPathKey,
-    actionTreePathEquals,
-    actionTreePathKey,
-    childActionListPath,
-    isPathWithinAction,
-    nearestActionPath,
-    parentActionPath,
-    type ActionListPath,
-    type ActionPath,
+    ActionListPath,
+    ActionPath,
+    ActionTreePath,
     type ActionPathKey,
-    type ActionTreePath,
     type ChildActionListName,
 } from "../../../housingSync/actionPath";
 import { tokenizeHtsl } from "../syntax";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
-
-type MaybeAction = Action;
-type MaybeChildActions = ReadonlyArray<Action | null>;
+import type {
+    Observed,
+    ObservedChildList,
+    ObservedNode,
+} from "../../../housingSync/observedActions";
 
 type PreviewVariant = "body" | "else" | "close" | "ghost" | "placeholder";
 
@@ -112,7 +102,7 @@ function computeLineId(line: {
     variant: PreviewVariant;
     pending?: boolean;
 }): string {
-    const base = `${line.actionPath === undefined ? "?" : actionTreePathKey(line.actionPath)}:${line.variant}`;
+    const base = `${line.actionPath === undefined ? "?" : ActionTreePath.key(line.actionPath)}:${line.variant}`;
     return line.pending === true ? `${PENDING_PREFIX}${base}` : base;
 }
 
@@ -129,11 +119,12 @@ function findActionStartIndex(lines: PreviewLine[], actionPath: ActionPath): num
     for (let i = 0; i < lines.length; i++) {
         const linePath = lines[i].actionPath;
         if (
-            linePath?.kind === "action"
-            && actionPathEquals(linePath, actionPath)
-            && lines[i].variant === "body"
-            && lines[i].pending !== true
-        ) return i;
+            linePath?.kind === "action" &&
+            ActionPath.equals(linePath, actionPath) &&
+            lines[i].variant === "body" &&
+            lines[i].pending !== true
+        )
+            return i;
     }
     return -1;
 }
@@ -146,7 +137,7 @@ function findActionEndIndex(
     let endIdx = startIdx;
     for (let i = startIdx + 1; i < lines.length; i++) {
         const ap = lines[i].actionPath;
-        const inScope = ap !== undefined && isPathWithinAction(ap, actionPath);
+        const inScope = ap !== undefined && ActionTreePath.isWithinAction(ap, actionPath);
         if (inScope) {
             endIdx = i;
         } else {
@@ -164,9 +155,9 @@ function findIndexByPathVariant(
     for (let i = 0; i < lines.length; i++) {
         const linePath = lines[i].actionPath;
         if (
-            linePath !== undefined
-            && actionTreePathEquals(linePath, actionPath)
-            && lines[i].variant === variant
+            linePath !== undefined &&
+            ActionTreePath.equals(linePath, actionPath) &&
+            lines[i].variant === variant
         ) {
             return i;
         }
@@ -178,10 +169,10 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: ActionPath): nu
     const existing = findActionStartIndex(lines, actionPath);
     if (existing >= 0) return existing;
 
-    const lastIdx = actionIndex(actionPath);
-    const listPath = actionListForAction(actionPath);
+    const lastIdx = ActionPath.index(actionPath);
+    const listPath = ActionPath.containingList(actionPath);
     if (lastIdx > 0) {
-        const siblingPath = actionPathForIndex(listPath, lastIdx - 1);
+        const siblingPath = ActionPath.at(listPath, lastIdx - 1);
         const siblingStart = findIndexByPathVariant(lines, siblingPath, "body");
         if (siblingStart >= 0) {
             return findActionEndIndex(lines, siblingPath, siblingStart) + 1;
@@ -189,7 +180,7 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: ActionPath): nu
     }
 
     if (listPath !== undefined) {
-        const parentPath = parentActionPath(listPath);
+        const parentPath = ActionTreePath.parentAction(listPath);
         const prop = listPath.parts[listPath.parts.length - 1];
         if (parentPath === null) return lines.length;
         if (prop === "elseActions") {
@@ -209,140 +200,285 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: ActionPath): nu
 function linesForImportable(importable: Importable, shellOnly: boolean): PreviewLine[] {
     const out: PreviewLine[] = [];
     if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-        appendActions(out, importable.actions ?? [], undefined, 0, shellOnly);
+        appendActions(
+            out,
+            nodesFromActions(importable.actions ?? []),
+            undefined,
+            0,
+            shellOnly
+        );
     } else if (importable.type === "REGION") {
-        appendActions(out, importable.onEnterActions ?? [], undefined, 0, shellOnly);
+        appendActions(
+            out,
+            nodesFromActions(importable.onEnterActions ?? []),
+            undefined,
+            0,
+            shellOnly
+        );
     }
     renumberLines(out);
     return out;
 }
 
+function nodesFromActions(actions: readonly Action[]): ObservedNode[] {
+    return actions.map((action) => ({ kind: "action", action }));
+}
+
 function buildLines(
-    actions: ReadonlyArray<MaybeAction | null>,
+    nodes: readonly ObservedNode[],
     listPath: ActionListPath | undefined,
     depth: number
 ): PreviewLine[] {
     const out: PreviewLine[] = [];
-    appendActions(out, actions, listPath, depth, false);
+    appendActions(out, nodes, listPath, depth, false);
     renumberLines(out);
     return out;
 }
 
 function appendActions(
     out: PreviewLine[],
-    actions: ReadonlyArray<MaybeAction | null>,
+    nodes: readonly ObservedNode[],
     listPath: ActionListPath | undefined,
     depth: number,
     shellOnly: boolean
 ): void {
-    for (let i = 0; i < actions.length; i++) {
-        const action = actions[i];
-        const path = actionPathForIndex(listPath, i);
-        if (action === null) {
-            out.push(makePlaceholderSlot(listPath, i, depth, path));
-            continue;
-        }
-        appendActionLines(out, action, path, depth, shellOnly);
+    for (let i = 0; i < nodes.length; i++) {
+        appendActionLines(out, nodes[i], listPath, i, depth, shellOnly);
     }
 }
 
 function appendActionLines(
     out: PreviewLine[],
-    action: MaybeAction,
+    node: ObservedNode,
+    listPath: ActionListPath | undefined,
+    index: number,
+    depth: number,
+    shellOnly: boolean
+): void {
+    const actionPath = ActionPath.at(listPath, index);
+    switch (node.kind) {
+        case "unknown":
+            out.push(makePlaceholderSlot(listPath, index, depth, actionPath));
+            return;
+        case "action":
+            appendKnownActionLines(
+                out,
+                node.action,
+                node.action,
+                undefined,
+                actionPath,
+                depth,
+                shellOnly
+            );
+            return;
+        case "partial":
+            appendKnownActionLines(
+                out,
+                node.action,
+                undefined,
+                node.childLists,
+                actionPath,
+                depth,
+                shellOnly
+            );
+            return;
+    }
+}
+
+function appendKnownActionLines(
+    out: PreviewLine[],
+    action: Observed<Action>,
+    completeAction: Action | undefined,
+    childLists: Extract<ObservedNode, { kind: "partial" }>["childLists"] | undefined,
     actionPath: ActionPath,
     depth: number,
     shellOnly: boolean
 ): void {
     if (action.type === "CONDITIONAL") {
+        const conditions: ObservedChildList | undefined =
+            completeAction?.type === "CONDITIONAL"
+                ? { state: "conditions", entries: completeAction.conditions ?? [] }
+                : childLists?.conditions;
         const condText = shellOnly
             ? `${action.matchAny ? "or " : ""}(...conditions...)`
-            : formatConditionsHead(action);
+            : formatConditionsHead(action.matchAny ?? false, conditions);
         const headText = `${indent(depth)}if ${condText} {`;
-        out.push(makeLine({
-            variant: "body",
-            actionPath,
-            text: headText,
-            depth,
-        }));
+        out.push(
+            makeLine({
+                variant: "body",
+                actionPath,
+                text: headText,
+                depth,
+            })
+        );
         if (!shellOnly) {
-            appendChildListBody(out, action.ifActions, actionPath, "ifActions", depth + 1, shellOnly);
-            if (action.elseActions !== undefined && action.elseActions !== null && action.elseActions.length > 0) {
+            const ifActions: ObservedChildList | undefined =
+                completeAction?.type === "CONDITIONAL"
+                    ? {
+                          state: "actions",
+                          entries: nodesFromActions(completeAction.ifActions ?? []),
+                      }
+                    : childLists?.ifActions;
+            appendChildListBody(
+                out,
+                ifActions,
+                actionPath,
+                "ifActions",
+                depth + 1,
+                shellOnly
+            );
+            const elseActions: ObservedChildList | undefined =
+                completeAction?.type === "CONDITIONAL"
+                    ? {
+                          state: "actions",
+                          entries: nodesFromActions(completeAction.elseActions ?? []),
+                      }
+                    : childLists?.elseActions;
+            if (childListLength(elseActions) > 0) {
                 const elseText = `${indent(depth)}} else {`;
-                out.push(makeLine({
-                    variant: "else",
+                out.push(
+                    makeLine({
+                        variant: "else",
+                        actionPath,
+                        text: elseText,
+                        depth,
+                    })
+                );
+                appendChildListBody(
+                    out,
+                    elseActions,
                     actionPath,
-                    text: elseText,
-                    depth,
-                }));
-                appendChildListBody(out, action.elseActions, actionPath, "elseActions", depth + 1, shellOnly);
+                    "elseActions",
+                    depth + 1,
+                    shellOnly
+                );
             }
         }
-        out.push(makeLine({
-            variant: "close",
-            actionPath,
-            text: `${indent(depth)}}`,
-            depth,
-        }));
+        out.push(
+            makeLine({
+                variant: "close",
+                actionPath,
+                text: `${indent(depth)}}`,
+                depth,
+            })
+        );
         return;
     }
     if (action.type === "RANDOM") {
-        out.push(makeLine({
-            variant: "body",
-            actionPath,
-            text: `${indent(depth)}random {`,
-            depth,
-        }));
+        out.push(
+            makeLine({
+                variant: "body",
+                actionPath,
+                text: `${indent(depth)}random {`,
+                depth,
+            })
+        );
         if (!shellOnly) {
-            appendChildListBody(out, action.actions, actionPath, "actions", depth + 1, shellOnly);
+            const actions: ObservedChildList | undefined =
+                completeAction?.type === "RANDOM"
+                    ? {
+                          state: "actions",
+                          entries: nodesFromActions(completeAction.actions ?? []),
+                      }
+                    : childLists?.actions;
+            appendChildListBody(
+                out,
+                actions,
+                actionPath,
+                "actions",
+                depth + 1,
+                shellOnly
+            );
         }
-        out.push(makeLine({
-            variant: "close",
-            actionPath,
-            text: `${indent(depth)}}`,
-            depth,
-        }));
+        out.push(
+            makeLine({
+                variant: "close",
+                actionPath,
+                text: `${indent(depth)}}`,
+                depth,
+            })
+        );
         return;
     }
-    out.push(makeLine({
-        variant: "body",
-        actionPath,
-        text: `${indent(depth)}${printActionOneLine(action)}`,
-        depth,
-    }));
+    out.push(
+        makeLine({
+            variant: "body",
+            actionPath,
+            text: `${indent(depth)}${printActionOneLine(action)}`,
+            depth,
+        })
+    );
 }
 
 function appendChildListBody(
     out: PreviewLine[],
-    childActions: MaybeChildActions | null | undefined,
+    childList: ObservedChildList | undefined,
     parentPath: ActionPath,
     prop: ChildActionListName,
     depth: number,
     shellOnly: boolean
 ): void {
-    if (childActions === null || childActions === undefined || childActions.length === 0) {
-        return;
+    if (childList === undefined) return;
+    switch (childList.state) {
+        case "summary":
+            appendChildListSummary(out, childList.types.length, parentPath, prop, depth);
+            return;
+        case "conditions":
+            return;
+        case "actions":
+            if (childList.entries.length === 0) return;
+            if (shellOnly) {
+                appendChildListSummary(
+                    out,
+                    childList.entries.length,
+                    parentPath,
+                    prop,
+                    depth
+                );
+                return;
+            }
+            appendActions(
+                out,
+                childList.entries,
+                ActionListPath.childOf(parentPath, prop),
+                depth,
+                shellOnly
+            );
+            return;
     }
-    let allNull = true;
-    for (let i = 0; i < childActions.length; i++) {
-        if (childActions[i] !== null) {
-            allNull = false;
-            break;
-        }
-    }
-    if (allNull || shellOnly) {
-        const childListPath = childActionListPath(parentPath, prop);
-        const noun = childActions.length === 1 ? "action" : "actions";
-        out.push(makeLine({
+}
+
+function appendChildListSummary(
+    out: PreviewLine[],
+    count: number,
+    parentPath: ActionPath,
+    prop: ChildActionListName,
+    depth: number
+): void {
+    if (count === 0) return;
+    const childListPath = ActionListPath.childOf(parentPath, prop);
+    const noun = count === 1 ? "action" : "actions";
+    out.push(
+        makeLine({
             variant: "placeholder",
             actionPath: childListPath,
-            text: `${indent(depth)}...${childActions.length} ${noun}...`,
+            text: `${indent(depth)}...${count} ${noun}...`,
             depth,
             lineNum: 0,
             italic: true,
-        }));
-        return;
+        })
+    );
+}
+
+function childListLength(childList: ObservedChildList | undefined): number {
+    if (childList === undefined) return 0;
+    switch (childList.state) {
+        case "summary":
+            return childList.types.length;
+        case "conditions":
+        case "actions":
+            return childList.entries.length;
     }
-    appendActions(out, childActions, childActionListPath(parentPath, prop), depth, shellOnly);
 }
 
 function makePlaceholderSlot(
@@ -351,7 +487,7 @@ function makePlaceholderSlot(
     depth: number,
     actionPath: ActionPath
 ): PreviewLine {
-    const ownerKey = listPath === undefined ? String(idx) : actionTreePathKey(listPath);
+    const ownerKey = listPath === undefined ? String(idx) : ActionTreePath.key(listPath);
     return makeLine({
         id: `${ownerKey}:slot${idx}:placeholder`,
         variant: "placeholder",
@@ -363,12 +499,21 @@ function makePlaceholderSlot(
     });
 }
 
-function formatConditionsHead(action: { matchAny: boolean; conditions: ReadonlyArray<unknown> | null | undefined }): string {
-    const conds = action.conditions;
-    const mode = action.matchAny ? "or " : "";
-    if (conds === null || conds === undefined) {
+function formatConditionsHead(
+    matchAny: boolean,
+    childList: ObservedChildList | undefined
+): string {
+    const mode = matchAny ? "or " : "";
+    if (childList === undefined) {
         return `${mode}(...conditions...)`;
     }
+    if (childList.state === "summary") {
+        return `${mode}(...${childList.types.length} conditions...)`;
+    }
+    if (childList.state !== "conditions") {
+        return `${mode}(...conditions...)`;
+    }
+    const conds = childList.entries;
     if (conds.length === 0) return `${mode}()`;
     const parts: string[] = [];
     let allKnown = true;
@@ -380,10 +525,6 @@ function formatConditionsHead(action: { matchAny: boolean; conditions: ReadonlyA
         }
         let printed: string;
         try {
-            // Catch is intentional: conditions read from housing stream in
-            // field-by-field, so a partially-hydrated condition can fail
-            // printCondition on missing required fields. The catch handles
-            // that transient state; a hydration tick fires another snapshot.
             printed = htsw.htsl.printCondition(c as never);
         } catch (_e) {
             allKnown = false;
@@ -403,11 +544,10 @@ function indent(depth: number): string {
     return s;
 }
 
-function printActionOneLine(action: MaybeAction): string {
+function printActionOneLine(action: Observed<Action>): string {
     let text: string;
     try {
-        // Same partial-hydration catch as formatConditionsHead.
-        text = htsw.htsl.printAction(normalizeActionForPreview(action));
+        text = htsw.htsl.printAction(normalizeActionForPreview(action) as never);
     } catch (_e) {
         return `${action.type.toLowerCase()} ...`;
     }
@@ -415,7 +555,7 @@ function printActionOneLine(action: MaybeAction): string {
     return split.length > 0 ? split[0] : text;
 }
 
-function normalizeActionForPreview(action: MaybeAction): MaybeAction {
+function normalizeActionForPreview(action: Observed<Action>): Observed<Action> {
     if (action.type !== "PLAY_SOUND") return action;
     const normalized = { ...action } as Record<string, unknown>;
     if (typeof normalized.sound === "string") {
@@ -436,7 +576,7 @@ function normalizeActionForPreview(action: MaybeAction): MaybeAction {
             normalized.location = { type: normalized.location };
         }
     }
-    return normalized as MaybeAction;
+    return normalized as Observed<Action>;
 }
 
 function makeLine(opts: {
@@ -451,7 +591,9 @@ function makeLine(opts: {
     id?: string;
 }): PreviewLine {
     return {
-        id: opts.id ?? computeLineId({ variant: opts.variant, actionPath: opts.actionPath }),
+        id:
+            opts.id ??
+            computeLineId({ variant: opts.variant, actionPath: opts.actionPath }),
         variant: opts.variant,
         actionPath: opts.actionPath,
         tokens: tokenizeHtsl(opts.text),
@@ -480,10 +622,10 @@ function lineHasCompletedRead(
     completedPaths: Map<ActionPathKey, ActionPath>
 ): boolean {
     if (line.variant === "placeholder" || line.actionPath === undefined) return false;
-    let probe = nearestActionPath(line.actionPath);
+    let probe = ActionTreePath.nearestAction(line.actionPath);
     while (probe !== null) {
-        if (completedPaths.has(actionPathKey(probe))) return true;
-        probe = parentActionPath(probe);
+        if (completedPaths.has(ActionPath.key(probe))) return true;
+        probe = ActionTreePath.parentAction(probe);
     }
     return false;
 }
@@ -544,7 +686,7 @@ export function primeWithCache(
 
 export function setObservedTopLevel(
     path: string,
-    actions: ReadonlyArray<MaybeAction | null>,
+    nodes: readonly ObservedNode[],
     options?: { force?: boolean }
 ): void {
     const s = ensure(path);
@@ -557,7 +699,7 @@ export function setObservedTopLevel(
         return;
     }
     s.lastObservedAt = now;
-    s.lines = buildLines(actions, undefined, 0);
+    s.lines = buildLines(nodes, undefined, 0);
     applyReadCompletions(s.lines, s.readCompletedPaths);
     s.hasContent = true;
     bump(s);
@@ -565,7 +707,7 @@ export function setObservedTopLevel(
 
 export function markReadComplete(path: string, actionPath: ActionPath): void {
     const s = ensure(path);
-    s.readCompletedPaths.set(actionPathKey(actionPath), actionPath);
+    s.readCompletedPaths.set(ActionPath.key(actionPath), actionPath);
     if (applyReadCompletions(s.lines, s.readCompletedPaths)) bump(s);
 }
 
@@ -579,18 +721,25 @@ export function markPlannedAdd(
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
         if (
-            line.pending === true
-            && line.actionPath?.kind === "action"
-            && actionPathEquals(line.actionPath, actionPath)
-            && line.variant === "body"
+            line.pending === true &&
+            line.actionPath?.kind === "action" &&
+            ActionPath.equals(line.actionPath, actionPath) &&
+            line.variant === "body"
         ) {
             return;
         }
     }
     const insertAt = insertionIndexForPath(s.lines, actionPath);
-    const depth = actionPathDepth(actionPath);
+    const depth = ActionPath.depth(actionPath);
     const newLines: PreviewLine[] = [];
-    appendActionLines(newLines, desired, actionPath, depth, false);
+    appendActionLines(
+        newLines,
+        { kind: "action", action: desired },
+        ActionPath.containingList(actionPath),
+        ActionPath.index(actionPath),
+        depth,
+        false
+    );
     for (let i = 0; i < newLines.length; i++) {
         newLines[i].diffState = "add";
     }
@@ -671,7 +820,7 @@ export function applyComplete(
         const startIdx = findActionStartIndex(s.lines, actionPath);
         if (startIdx < 0) return;
         let ghostIdx = -1;
-        const ghostId = `${actionPathKey(actionPath)}:ghost`;
+        const ghostId = `${ActionPath.key(actionPath)}:ghost`;
         for (let i = startIdx + 1; i < s.lines.length; i++) {
             if (s.lines[i].id === ghostId) {
                 ghostIdx = i;
@@ -701,7 +850,7 @@ export function applyComplete(
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
             if (line.actionPath === undefined) continue;
-            if (!isPathWithinAction(line.actionPath, actionPath)) continue;
+            if (!ActionTreePath.isWithinAction(line.actionPath, actionPath)) continue;
             if (line.pending !== true) continue;
             if (firstAdded < 0) firstAdded = i;
             lastAdded = i;
@@ -743,9 +892,9 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
         if (
-            line.actionPath?.kind === "action"
-            && actionPathEquals(line.actionPath, actionPath)
-            && line.variant === "body"
+            line.actionPath?.kind === "action" &&
+            ActionPath.equals(line.actionPath, actionPath) &&
+            line.variant === "body"
         ) {
             bodyIdx = i;
             break;
@@ -757,9 +906,9 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
     for (let i = bodyIdx + 1; i < s.lines.length; i++) {
         const line = s.lines[i];
         if (
-            line.actionPath?.kind === "action"
-            && actionPathEquals(line.actionPath, actionPath)
-            && line.variant === "ghost"
+            line.actionPath?.kind === "action" &&
+            ActionPath.equals(line.actionPath, actionPath) &&
+            line.variant === "ghost"
         ) {
             ghostIdx = i;
             break;
@@ -784,9 +933,10 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
         if (
-            line.actionPath?.kind !== "action"
-            || !actionPathEquals(line.actionPath, actionPath)
-        ) continue;
+            line.actionPath?.kind !== "action" ||
+            !ActionPath.equals(line.actionPath, actionPath)
+        )
+            continue;
         if (line.variant !== "else" && line.variant !== "close") continue;
         if (line.pending === true) setPending(line, false);
         line.diffState = undefined;
@@ -803,19 +953,19 @@ export function effectiveFocusActionPath(
 ): ActionPath | null {
     const s = states[keyForFile(path)];
     if (s === undefined) return null;
-    let probe = nearestActionPath(actionPath);
+    let probe = ActionTreePath.nearestAction(actionPath);
     while (probe !== null) {
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
             if (
-                line.actionPath?.kind === "action"
-                && actionPathEquals(line.actionPath, probe)
-                && line.variant === "body"
+                line.actionPath?.kind === "action" &&
+                ActionPath.equals(line.actionPath, probe) &&
+                line.variant === "body"
             ) {
                 return probe;
             }
         }
-        probe = parentActionPath(probe);
+        probe = ActionTreePath.parentAction(probe);
     }
     return null;
 }
@@ -823,7 +973,7 @@ export function effectiveFocusActionPath(
 export function previewLineIdForPath(path: string, actionPath: ActionTreePath): string {
     const effective = effectiveFocusActionPath(path, actionPath);
     if (effective === null) {
-        const nearest = nearestActionPath(actionPath);
+        const nearest = ActionTreePath.nearestAction(actionPath);
         return computeLineId({ actionPath: nearest ?? actionPath, variant: "body" });
     }
     const s = states[keyForFile(path)];
@@ -832,7 +982,7 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
             const line = s.lines[i];
             if (
                 line.actionPath?.kind === "action" &&
-                actionPathEquals(line.actionPath, effective) &&
+                ActionPath.equals(line.actionPath, effective) &&
                 line.variant === "body" &&
                 line.pending === true
             ) {
@@ -842,9 +992,9 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
             if (
-                line.actionPath?.kind === "action"
-                && actionPathEquals(line.actionPath, effective)
-                && line.variant === "body"
+                line.actionPath?.kind === "action" &&
+                ActionPath.equals(line.actionPath, effective) &&
+                line.variant === "body"
             ) {
                 return line.id;
             }
@@ -853,13 +1003,10 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
     return computeLineId({ actionPath: effective, variant: "body" });
 }
 
-export function finalizeFromSource(
-    path: string,
-    actions: ReadonlyArray<Action>
-): void {
+export function finalizeFromSource(path: string, actions: ReadonlyArray<Action>): void {
     const s = ensure(path);
     const out: PreviewLine[] = [];
-    appendActions(out, actions, undefined, 0, false);
+    appendActions(out, nodesFromActions(actions), undefined, 0, false);
     for (let i = 0; i < out.length; i++) {
         out[i].completed = true;
         out[i].diffState = undefined;
@@ -887,13 +1034,12 @@ export function getLiveSummary(path: string): DiffSummary | null {
 export function setCurrent(path: string, actionPath: ActionTreePath | null): void {
     const s = ensure(path);
     if (
-        (s.currentPath === null && actionPath === null)
-        || (
-            s.currentPath !== null
-            && actionPath !== null
-            && actionTreePathEquals(s.currentPath, actionPath)
-        )
-    ) return;
+        (s.currentPath === null && actionPath === null) ||
+        (s.currentPath !== null &&
+            actionPath !== null &&
+            ActionTreePath.equals(s.currentPath, actionPath))
+    )
+        return;
     s.currentPath = actionPath;
     markGuiDirty();
 }
@@ -915,7 +1061,7 @@ export function markMatch(path: string, actionPath: ActionPath): void {
     let changed = false;
     for (let i = 0; i < s.lines.length; i++) {
         const linePath = s.lines[i].actionPath;
-        if (linePath?.kind === "action" && actionPathEquals(linePath, actionPath)) {
+        if (linePath?.kind === "action" && ActionPath.equals(linePath, actionPath)) {
             s.lines[i].completed = true;
             s.lines[i].diffState = undefined;
             changed = true;

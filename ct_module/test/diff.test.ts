@@ -5,12 +5,17 @@ import {
     baselineActionListFromSlots,
     diffActionList,
 } from "../src/housingSync/actions/diff";
-import type {
-    ActionListOperation,
-    ObservedActionSlot,
-} from "../src/housingSync/types";
+import type { ActionListOperation } from "../src/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 
-import { changeVar, conditional, message, observedSlot as obs, playSound, random } from "./utils";
+import {
+    changeVar,
+    conditional,
+    message,
+    observedSlot as obs,
+    playSound,
+    random,
+} from "./utils";
 
 function ops(observed: ObservedActionSlot[], desired: Action[]): ActionListOperation[] {
     return diffActionList(baselineActionListFromSlots(observed), desired).operations;
@@ -59,7 +64,14 @@ describe("diffActionList — adds / deletes", () => {
         // unparseable slots show up as observed with action: null. The
         // differ should clear them to free room for the desired list.
         const observed: ObservedActionSlot[] = [
-            { index: 0, slotId: 0, slot: null as never, action: null },
+            {
+                index: 0,
+                slotId: 0,
+                slot: null as never,
+                action: null,
+                hydrated: false,
+                truncatedFields: [],
+            },
         ];
         const result = ops(observed, []);
         expect(kindCounts(result)).toMatchObject({ delete: 1 });
@@ -83,13 +95,14 @@ describe("diffActionList — edits", () => {
         // observed reads strings from lore; desired is parsed from source
         // as numbers/typed objects. The diff engine must treat them as
         // equal so the importer doesn't loop trying to apply no-op edits.
-        const observed = [
+        const observed: ObservedActionSlot[] = [
             obs(
                 0,
                 playSound({
                     volume: "0.7" as unknown as number,
                     pitch: "1.0" as unknown as number,
-                    location: "Invokers Location" as unknown as ActionPlaySound["location"],
+                    location:
+                        "Invokers Location" as unknown as ActionPlaySound["location"],
                 })
             ),
         ];
@@ -109,7 +122,9 @@ describe("diffActionList — edits", () => {
         const result = ops(observed, desired);
         const edit = result.find((op) => op.kind === "edit");
         expect(edit).toBeDefined();
-        expect((edit as Extract<ActionListOperation, { kind: "edit" }>).noteOnly).toBe(true);
+        expect((edit as Extract<ActionListOperation, { kind: "edit" }>).noteOnly).toBe(
+            true
+        );
     });
 
     test("scalar change + note change emits non-noteOnly edit", () => {
@@ -117,8 +132,7 @@ describe("diffActionList — edits", () => {
         const desired = [playSound({ volume: 0.9, note: "new" })];
         const result = ops(observed, desired);
         const edit = result.find((op) => op.kind === "edit") as
-            | Extract<ActionListOperation, { kind: "edit" }>
-            | undefined;
+            Extract<ActionListOperation, { kind: "edit" }> | undefined;
         expect(edit).toBeDefined();
         expect(edit!.noteOnly).toBe(false);
         expect(edit!.noteDiffers).toBe(true);
@@ -128,14 +142,11 @@ describe("diffActionList — edits", () => {
         const observed = [
             obs(0, conditional({ ifActions: [message("old")], elseActions: [] })),
         ];
-        const desired = [
-            conditional({ ifActions: [message("new")], elseActions: [] }),
-        ];
+        const desired = [conditional({ ifActions: [message("new")], elseActions: [] })];
 
         const result = ops(observed, desired);
         const edit = result.find((op) => op.kind === "edit") as
-            | Extract<ActionListOperation, { kind: "edit" }>
-            | undefined;
+            Extract<ActionListOperation, { kind: "edit" }> | undefined;
 
         expect(edit).toBeDefined();
         expect(edit!.childListDiffs).toHaveLength(1);
@@ -152,9 +163,7 @@ describe("diffActionList — edits", () => {
                 value: String(index + 1),
             })
         );
-        const observed = [
-            obs(0, conditional({ ifActions: actions, elseActions: [] })),
-        ];
+        const observed = [obs(0, conditional({ ifActions: actions, elseActions: [] }))];
         const desired = [
             conditional({
                 ifActions: [...actions.slice(23), ...actions.slice(0, 23)],
@@ -164,8 +173,7 @@ describe("diffActionList — edits", () => {
 
         const result = ops(observed, desired);
         const edit = result.find((op) => op.kind === "edit") as
-            | Extract<ActionListOperation, { kind: "edit" }>
-            | undefined;
+            Extract<ActionListOperation, { kind: "edit" }> | undefined;
         const childListMoves = edit?.childListDiffs[0].diff.operations.filter(
             (op) => op.kind === "move"
         );
@@ -180,13 +188,14 @@ describe("diffActionList — edits", () => {
 
         const result = ops(observed, desired);
         const edit = result.find((op) => op.kind === "edit") as
-            | Extract<ActionListOperation, { kind: "edit" }>
-            | undefined;
+            Extract<ActionListOperation, { kind: "edit" }> | undefined;
 
         expect(edit).toBeDefined();
         expect(edit!.childListDiffs).toHaveLength(1);
         expect(edit!.childListDiffs[0].prop).toBe("actions");
-        expect(edit!.childListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
+        expect(
+            edit!.childListDiffs[0].diff.operations.some((op) => op.kind === "add")
+        ).toBe(true);
     });
 
     test("child list replacement cost keeps duplicate parent matches paired with the closest body", () => {
@@ -206,22 +215,28 @@ describe("diffActionList — edits", () => {
         ];
 
         const result = ops(observed, desired);
-        const edits = result.filter((op): op is Extract<ActionListOperation, { kind: "edit" }> =>
-            op.kind === "edit"
+        const edits = result.filter(
+            (op): op is Extract<ActionListOperation, { kind: "edit" }> =>
+                op.kind === "edit"
         );
         const keepEdit = edits.find((op) => op.entryId === 1);
         const replaceEdit = edits.find((op) => op.entryId === 0);
 
         expect(keepEdit?.desiredIndex).toBe(2);
-        expect(keepEdit?.childListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
+        expect(
+            keepEdit?.childListDiffs[0].diff.operations.some((op) => op.kind === "add")
+        ).toBe(true);
         expect(replaceEdit?.desiredIndex).toBe(3);
     });
 
     test("completed trusted child action data does not emit fake edits", () => {
-        const observed = [
+        const observed: ObservedActionSlot[] = [
             {
-                ...obs(0, conditional({ ifActions: [message("trusted")], elseActions: [] })),
-                childListReadState: "shallow" as const,
+                ...obs(
+                    0,
+                    conditional({ ifActions: [message("trusted")], elseActions: [] })
+                ),
+                hydrated: true,
                 childListSummaries: { ifActions: ["MESSAGE"] },
             },
         ];
@@ -250,7 +265,10 @@ describe("diffActionList — moves", () => {
             changeVar({ key: `x${index + 1}`, value: String(index + 1) })
         );
         const desired = [...actions.slice(23), ...actions.slice(0, 23)];
-        const result = ops(actions.map((action, index) => obs(index, action)), desired);
+        const result = ops(
+            actions.map((action, index) => obs(index, action)),
+            desired
+        );
         const moves = result.filter((op) => op.kind === "move");
 
         expect(kindCounts(result)).toMatchObject({ edit: 0, add: 0, delete: 0 });

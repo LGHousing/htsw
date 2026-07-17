@@ -1,7 +1,7 @@
 import type { Action, ImportableRegion } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import {
     ItemCaptureRegistry,
     type InventorySnapshot,
@@ -10,7 +10,6 @@ import type { ProgressHandler } from "../../housingSync/progress/types";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
@@ -63,7 +62,7 @@ async function readRegionActionList(
 
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
-    const observed = await readActionList(ctx, { kind: "deep" }, {
+    const actions = await readActionListFully(ctx, {
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -72,7 +71,6 @@ async function readRegionActionList(
               }
             : {}),
     });
-    const actions = observedSlotsToActions(observed);
     return actions.length === 0 ? undefined : actions;
 }
 
@@ -121,7 +119,13 @@ async function exportRegionWithSharedState(
     };
 
     if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         return;
     }
 
@@ -188,7 +192,10 @@ export const readRegions = makeReadHouse<RegionListEntry>({
                 onReadProgress,
             },
             // capturesActionItems guarantees a non-null snapshot here.
-            { itemCaptures: state.itemCaptures, inventorySnapshot: state.inventorySnapshot! }
+            {
+                itemCaptures: state.itemCaptures,
+                inventorySnapshot: state.inventorySnapshot!,
+            }
         );
     },
 });

@@ -1,4 +1,11 @@
-import type { Action, Condition, Importable, ImportableGroup, ImportableItem, ImportableTeam } from "htsw/types";
+import type {
+    Action,
+    Condition,
+    Importable,
+    ImportableGroup,
+    ImportableItem,
+    ImportableTeam,
+} from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
@@ -28,7 +35,10 @@ function collectTeamAndGroupFromCondition(
 ): void {
     if (condition.type === "REQUIRE_TEAM" && typeof condition.team === "string") {
         teams.push(condition.team);
-    } else if (condition.type === "REQUIRE_GROUP" && typeof condition.group === "string") {
+    } else if (
+        condition.type === "REQUIRE_GROUP" &&
+        typeof condition.group === "string"
+    ) {
         groups.push(condition.group);
     } else if (
         condition.type === "COMPARE_VAR" &&
@@ -53,14 +63,12 @@ function collectFromActions(
             const value = (action as unknown as Record<string, unknown>)[field.prop];
             if (field.kind === "item") {
                 if (typeof value === "string") names.push(value);
-            } else if (field.kind === "childList" && Array.isArray(value)) {
-                if (field.prop === "conditions") {
-                    for (const condition of value as Condition[]) {
-                        collectFromCondition(condition, names);
-                    }
-                } else {
-                    collectFromActions(value as Action[], names);
+            } else if (field.kind === "conditionList" && Array.isArray(value)) {
+                for (const condition of value as Condition[]) {
+                    collectFromCondition(condition, names);
                 }
+            } else if (field.kind === "actionList" && Array.isArray(value)) {
+                collectFromActions(value as Action[], names);
             }
         }
     }
@@ -90,10 +98,10 @@ function collectTeamAndGroupFromActions(
         if (fields === undefined) continue;
         for (const label in fields) {
             const field = fields[label];
-            if (field.kind !== "childList") continue;
+            if (field.kind !== "actionList" && field.kind !== "conditionList") continue;
             const value = (action as unknown as Record<string, unknown>)[field.prop];
             if (!Array.isArray(value)) continue;
-            if (field.prop === "conditions") {
+            if (field.kind === "conditionList") {
                 for (const condition of value as Condition[]) {
                     collectTeamAndGroupFromCondition(condition, teams, groups);
                 }

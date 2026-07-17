@@ -7,7 +7,7 @@ import type {
     ActionSendMessage,
 } from "htsw/types";
 
-import type { ObservedActionSlot } from "../src/housingSync/types";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 
 // `index` is set explicitly because ObservedActionSlot tracks slot identity
 // (slotId, slot ref) — it isn't just the position in an array. Desired uses
@@ -16,7 +16,14 @@ export function observedSlot(
     index: number,
     action: NonNullable<ObservedActionSlot["action"]>
 ): ObservedActionSlot {
-    return { index, slotId: index, slot: null as never, action };
+    return {
+        index,
+        slotId: index,
+        slot: null as never,
+        action,
+        hydrated: true,
+        truncatedFields: [],
+    };
 }
 
 // Action builders take a partial override plus an optional `note` (which
@@ -24,7 +31,9 @@ export function observedSlot(
 // language/src/types/actions.ts:294).
 type ActionOverride<T extends Action> = Partial<Omit<T, "type">> & { note?: string };
 
-export const playSound = (over: ActionOverride<ActionPlaySound> = {}): ActionPlaySound => ({
+export const playSound = (
+    over: ActionOverride<ActionPlaySound> = {}
+): ActionPlaySound => ({
     type: "PLAY_SOUND",
     sound: "random.anvil_land",
     ...(over as Partial<ActionPlaySound>),
@@ -61,9 +70,7 @@ export const conditional = (
     ...(over as Partial<ActionConditional>),
 });
 
-export const random = (
-    over: ActionOverride<ActionRandom> = {}
-): ActionRandom => ({
+export const random = (over: ActionOverride<ActionRandom> = {}): ActionRandom => ({
     type: "RANDOM",
     actions: [],
     ...(over as Partial<ActionRandom>),

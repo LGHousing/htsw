@@ -3,11 +3,11 @@ import { describe, expect, test } from "vitest";
 import { COST, hydrationEntryUnits } from "../src/housingSync/progress/costs";
 import { createHydrationEntryAccount } from "../src/housingSync/progress/hydrationAccount";
 import type { ProgressPayload } from "../src/housingSync/progress/types";
+import type { ActionHydrationWork } from "../src/housingSync/actions/hydration/plan";
 import type {
-    ActionHydrationWork,
     ChildListsToRead,
     ObservedActionSlot,
-} from "../src/housingSync/types";
+} from "../src/housingSync/observedActions";
 
 import { conditional, message, observedSlot } from "./utils";
 
@@ -19,7 +19,11 @@ function workFor(childLists: ChildListsToRead): ActionHydrationWork {
     };
 }
 
-function payload(completedUnits: number, totalUnits: number, phase: ProgressPayload["phase"] = "reading"): ProgressPayload {
+function payload(
+    completedUnits: number,
+    totalUnits: number,
+    phase: ProgressPayload["phase"] = "reading"
+): ProgressPayload {
     return {
         phase,
         completedUnits,
@@ -88,7 +92,8 @@ describe("hydration entry account", () => {
             slotId: 0,
             slot: null as never,
             action: null,
-            childListReadState: "none",
+            hydrated: false,
+            truncatedFields: [],
             childListSummaries: {},
             childListsToRead: new Set(),
         };

@@ -18,11 +18,7 @@ import type {
 } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import {
-    clickGoBack,
-    readBooleanValue,
-    readStringValue,
-} from "../menus/menuUtils";
+import { clickGoBack, readBooleanValue, readStringValue } from "../menus/menuUtils";
 import { waitForMenu } from "../menus/menuWait";
 import {
     dropNotSetLocationIfOptional,
@@ -34,8 +30,10 @@ import {
     looksTruncated,
     parseLocationField,
 } from "../fields/loreParsing";
-import type { ActionScalarFieldToRead, Observed, UiFieldKind } from "../types";
-import type { ActionReadArgs } from "./specs";
+import type { UiFieldKind } from "../fields/loreSpecs";
+import type { Observed } from "../observedActions";
+import type { ActionScalarFieldToRead } from "./hydration/plan";
+import type { ActionReadArgs } from "./io";
 
 export function refreshTruncatedScalarFields(
     ctx: TaskContext,
@@ -91,9 +89,8 @@ export async function readOpenConditional({
     if (childListsToRead.has("conditions")) {
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
-        base.conditions = read === undefined
-            ? []
-            : await read.readConditions("conditions");
+        base.conditions =
+            read === undefined ? [] : await read.readConditions("conditions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
@@ -103,9 +100,8 @@ export async function readOpenConditional({
     if (childListsToRead.has("ifActions")) {
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
-        base.ifActions = read === undefined
-            ? []
-            : await read.readChildActions("ifActions");
+        base.ifActions =
+            read === undefined ? [] : await read.readChildActions("ifActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
@@ -113,9 +109,8 @@ export async function readOpenConditional({
     if (childListsToRead.has("elseActions")) {
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
-        base.elseActions = read === undefined
-            ? []
-            : await read.readChildActions("elseActions");
+        base.elseActions =
+            read === undefined ? [] : await read.readChildActions("elseActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
@@ -127,8 +122,7 @@ export async function readOpenTitle({
     ctx,
     current,
 }: ActionReadArgs<ActionTitle>): Promise<Observed<ActionTitle>> {
-    const base: Observed<ActionTitle> =
-        current ?? { type: "TITLE", title: "" };
+    const base: Observed<ActionTitle> = current ?? { type: "TITLE", title: "" };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -148,8 +142,10 @@ export async function readOpenActionBar({
     ctx,
     current,
 }: ActionReadArgs<ActionActionBar>): Promise<Observed<ActionActionBar>> {
-    const base: Observed<ActionActionBar> =
-        current ?? { type: "ACTION_BAR", message: "" };
+    const base: Observed<ActionActionBar> = current ?? {
+        type: "ACTION_BAR",
+        message: "",
+    };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -163,8 +159,10 @@ export async function readOpenTeleport({
     ctx,
     current,
 }: ActionReadArgs<ActionTeleport>): Promise<Observed<ActionTeleport>> {
-    const base: Observed<ActionTeleport> =
-        current ?? { type: "TELEPORT", location: { type: "Current Location" } };
+    const base: Observed<ActionTeleport> = current ?? {
+        type: "TELEPORT",
+        location: { type: "Current Location" },
+    };
     refreshLocationFromEditor(ctx, base, getActionFieldLabel("TELEPORT", "location"));
     return base;
 }
@@ -173,8 +171,7 @@ export async function readOpenFailParkour({
     ctx,
     current,
 }: ActionReadArgs<ActionFailParkour>): Promise<Observed<ActionFailParkour>> {
-    const base: Observed<ActionFailParkour> =
-        current ?? { type: "FAIL_PARKOUR" };
+    const base: Observed<ActionFailParkour> = current ?? { type: "FAIL_PARKOUR" };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -188,8 +185,10 @@ export async function readOpenPlaySound({
     ctx,
     current,
 }: ActionReadArgs<ActionPlaySound>): Promise<Observed<ActionPlaySound>> {
-    const base: Observed<ActionPlaySound> =
-        current ?? { type: "PLAY_SOUND", sound: "random.orb" };
+    const base: Observed<ActionPlaySound> = current ?? {
+        type: "PLAY_SOUND",
+        sound: "random.orb",
+    };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -216,9 +215,15 @@ export async function readOpenSetCompassTarget({
     ctx,
     current,
 }: ActionReadArgs<ActionSetCompassTarget>): Promise<Observed<ActionSetCompassTarget>> {
-    const base: Observed<ActionSetCompassTarget> =
-        current ?? { type: "SET_COMPASS_TARGET", location: { type: "Current Location" } };
-    refreshLocationFromEditor(ctx, base, getActionFieldLabel("SET_COMPASS_TARGET", "location"));
+    const base: Observed<ActionSetCompassTarget> = current ?? {
+        type: "SET_COMPASS_TARGET",
+        location: { type: "Current Location" },
+    };
+    refreshLocationFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("SET_COMPASS_TARGET", "location")
+    );
     return base;
 }
 
@@ -240,8 +245,7 @@ export async function readOpenFunction({
     ctx,
     current,
 }: ActionReadArgs<ActionFunction>): Promise<Observed<ActionFunction>> {
-    const base: Observed<ActionFunction> =
-        current ?? { type: "FUNCTION", function: "" };
+    const base: Observed<ActionFunction> = current ?? { type: "FUNCTION", function: "" };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -254,9 +258,13 @@ export async function readOpenFunction({
 export async function readOpenApplyInventoryLayout({
     ctx,
     current,
-}: ActionReadArgs<ActionApplyInventoryLayout>): Promise<Observed<ActionApplyInventoryLayout>> {
-    const base: Observed<ActionApplyInventoryLayout> =
-        current ?? { type: "APPLY_INVENTORY_LAYOUT", layout: "" };
+}: ActionReadArgs<ActionApplyInventoryLayout>): Promise<
+    Observed<ActionApplyInventoryLayout>
+> {
+    const base: Observed<ActionApplyInventoryLayout> = current ?? {
+        type: "APPLY_INVENTORY_LAYOUT",
+        layout: "",
+    };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -270,8 +278,7 @@ export async function readOpenSetMenu({
     ctx,
     current,
 }: ActionReadArgs<ActionDisplayMenu>): Promise<Observed<ActionDisplayMenu>> {
-    const base: Observed<ActionDisplayMenu> =
-        current ?? { type: "SET_MENU", menu: "" };
+    const base: Observed<ActionDisplayMenu> = current ?? { type: "SET_MENU", menu: "" };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -285,13 +292,8 @@ export async function readOpenDropItem({
     ctx,
     current,
 }: ActionReadArgs<ActionDropItem>): Promise<Observed<ActionDropItem>> {
-    const base: Observed<ActionDropItem> =
-        current ?? { type: "DROP_ITEM", itemName: "" };
-    refreshLocationFromEditor(
-        ctx,
-        base,
-        getActionFieldLabel("DROP_ITEM", "location")
-    );
+    const base: Observed<ActionDropItem> = current ?? { type: "DROP_ITEM", itemName: "" };
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("DROP_ITEM", "location"));
     return base;
 }
 
@@ -299,8 +301,7 @@ export async function readOpenPause({
     ctx,
     current,
 }: ActionReadArgs<ActionPauseExecution>): Promise<Observed<ActionPauseExecution>> {
-    const base: Observed<ActionPauseExecution> =
-        current ?? { type: "PAUSE", ticks: 0 };
+    const base: Observed<ActionPauseExecution> = current ?? { type: "PAUSE", ticks: 0 };
     refreshStringFieldFromEditor(
         ctx,
         base,
@@ -314,13 +315,12 @@ export async function readOpenLaunch({
     ctx,
     current,
 }: ActionReadArgs<ActionLaunch>): Promise<Observed<ActionLaunch>> {
-    const base: Observed<ActionLaunch> =
-        current ?? { type: "LAUNCH", location: { type: "Current Location" }, strength: 0 };
-    refreshLocationFromEditor(
-        ctx,
-        base,
-        getActionFieldLabel("LAUNCH", "location")
-    );
+    const base: Observed<ActionLaunch> = current ?? {
+        type: "LAUNCH",
+        location: { type: "Current Location" },
+        strength: 0,
+    };
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("LAUNCH", "location"));
     refreshStringFieldFromEditor(
         ctx,
         base,

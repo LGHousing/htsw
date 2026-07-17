@@ -4,7 +4,7 @@ import type { ImportSession } from "../../importables/imports";
 import type { ImportableTrustPlan } from "../../importCache";
 import { readCachedActionList } from "../../importCache/actionLists";
 import TaskContext from "../../tasks/context";
-import type { ActionListTrust } from "../types";
+import type { ActionListTrust } from "./applyTrust";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
 import {
@@ -69,10 +69,7 @@ export async function prepareActionListSync(
             session: target.session,
             listPath: target.listPath,
             progressScope: target.progressScope,
-            baselineCurrent: getBaselineActionList(
-                target.trustPlan,
-                target.basePath
-            ),
+            baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
             trust: getActionListTrust(target.trustPlan, target.basePath),
         }),
         target

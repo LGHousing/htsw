@@ -52,10 +52,7 @@ import {
     readStringValue,
 } from "../menus/menuUtils";
 import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
-import {
-    normalizeActionCompare,
-    normalizeConditionCompare,
-} from "../fields/compare";
+import { normalizeActionCompare, normalizeConditionCompare } from "../fields/compare";
 import {
     getActionFieldCycleOptions,
     getActionFieldDefault,
@@ -63,10 +60,10 @@ import {
 } from "../fields/actionMappings";
 import { removedFormatting } from "../../utils/helpers";
 import { normalizeSoundKey } from "../fields/sounds";
-import type { Observed } from "../types";
+import type { Observed } from "../observedActions";
 import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
-import type { WriteActionOptions } from "./specs";
+import type { WriteActionOptions } from "./io";
 
 function actionDefault<T>(type: Action["type"], prop: string): T {
     return getActionFieldDefault(type, prop) as T;
@@ -206,13 +203,17 @@ export async function writeConditional(
     }
 }
 
-export async function writeSetGroup(ctx: TaskContext, action: ActionSetGroup): Promise<void> {
+export async function writeSetGroup(
+    ctx: TaskContext,
+    action: ActionSetGroup
+): Promise<void> {
     await setSelectValue(ctx, getActionFieldLabel("SET_GROUP", "group"), action.group);
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_GROUP", "demotionProtection")),
-        action.demotionProtection ?? actionDefault<boolean>("SET_GROUP", "demotionProtection")
+        action.demotionProtection ??
+            actionDefault<boolean>("SET_GROUP", "demotionProtection")
     );
 }
 
@@ -248,7 +249,10 @@ export async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise
     );
 }
 
-export async function writeActionBar(ctx: TaskContext, action: ActionActionBar): Promise<void> {
+export async function writeActionBar(
+    ctx: TaskContext,
+    action: ActionActionBar
+): Promise<void> {
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("ACTION_BAR", "message")),
@@ -323,7 +327,13 @@ export async function writeRemoveItem(
         await setItemValue(
             ctx,
             getActionFieldLabel("REMOVE_ITEM", "itemName"),
-            await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
+            await resolveImportableItem(
+                ctx,
+                itemRegistry,
+                action,
+                action.itemName,
+                "action"
+            )
         );
     }
 }
@@ -410,7 +420,9 @@ function isAdvancedVarOperation(value: string): boolean {
     return (ADVANCED_VAR_OPERATIONS as readonly string[]).indexOf(value) !== -1;
 }
 
-function isAlreadySelectedOptionSlot(slot: { getItem(): { getLore(): string[] } }): boolean {
+function isAlreadySelectedOptionSlot(slot: {
+    getItem(): { getLore(): string[] };
+}): boolean {
     return slot
         .getItem()
         .getLore()
@@ -463,7 +475,10 @@ async function setChangeVarOperation(ctx: TaskContext, operation: string): Promi
     await selectOpenOption(ctx, operationLabel, operation);
 }
 
-export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promise<void> {
+export async function writeChangeVar(
+    ctx: TaskContext,
+    action: ActionChangeVar
+): Promise<void> {
     if (action.holder) {
         await setCycleValue(
             ctx,
@@ -504,7 +519,10 @@ export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar):
     );
 }
 
-export async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<void> {
+export async function writeTeleport(
+    ctx: TaskContext,
+    action: ActionTeleport
+): Promise<void> {
     const locationLabel = getActionFieldLabel("TELEPORT", "location");
     await setLocationValue(ctx, locationLabel, action.location);
 
@@ -537,7 +555,9 @@ export async function writePlaySound(
 ): Promise<void> {
     const soundLabel = getActionFieldLabel("PLAY_SOUND", "sound");
     const desiredSound = normalizeSoundKey(action.sound) ?? action.sound;
-    const editorSound = normalizeSoundKey(readStringValue(ctx.getMenuItemSlot(soundLabel)));
+    const editorSound = normalizeSoundKey(
+        readStringValue(ctx.getMenuItemSlot(soundLabel))
+    );
     if (editorSound !== desiredSound) {
         await openSubmenu(ctx, soundLabel);
         const customSoundSlot = findMenuOptionByLore(ctx, "Click to edit!");
@@ -632,7 +652,10 @@ export async function writeRandom(
     await clickGoBack(ctx);
 }
 
-export async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<void> {
+export async function writeFunction(
+    ctx: TaskContext,
+    action: ActionFunction
+): Promise<void> {
     await setStringOrPaginatedOptionValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("FUNCTION", "function")),
@@ -673,7 +696,10 @@ export async function writeEnchantHeldItem(
     );
 }
 
-export async function writePause(ctx: TaskContext, action: ActionPauseExecution): Promise<void> {
+export async function writePause(
+    ctx: TaskContext,
+    action: ActionPauseExecution
+): Promise<void> {
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("PAUSE", "ticks")),
@@ -681,7 +707,10 @@ export async function writePause(ctx: TaskContext, action: ActionPauseExecution)
     );
 }
 
-export async function writeSetTeam(ctx: TaskContext, action: ActionSetTeam): Promise<void> {
+export async function writeSetTeam(
+    ctx: TaskContext,
+    action: ActionSetTeam
+): Promise<void> {
     await setSelectValue(ctx, getActionFieldLabel("SET_TEAM", "team"), action.team);
 }
 
@@ -724,13 +753,19 @@ export async function writeDropItem(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "despawnDurationTicks")),
-        String(action.despawnDurationTicks ?? actionDefault<number>("DROP_ITEM", "despawnDurationTicks"))
+        String(
+            action.despawnDurationTicks ??
+                actionDefault<number>("DROP_ITEM", "despawnDurationTicks")
+        )
     );
 
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "pickupDelayTicks")),
-        String(action.pickupDelayTicks ?? actionDefault<number>("DROP_ITEM", "pickupDelayTicks"))
+        String(
+            action.pickupDelayTicks ??
+                actionDefault<number>("DROP_ITEM", "pickupDelayTicks")
+        )
     );
 
     await setBooleanValue(
@@ -742,7 +777,8 @@ export async function writeDropItem(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "inventoryFallback")),
-        action.inventoryFallback ?? actionDefault<boolean>("DROP_ITEM", "inventoryFallback")
+        action.inventoryFallback ??
+            actionDefault<boolean>("DROP_ITEM", "inventoryFallback")
     );
 }
 
@@ -802,7 +838,9 @@ export async function writeToggleNametagDisplay(
 ): Promise<void> {
     await setBooleanValue(
         ctx,
-        ctx.getMenuItemSlot(getActionFieldLabel("TOGGLE_NAMETAG_DISPLAY", "displayNametag")),
+        ctx.getMenuItemSlot(
+            getActionFieldLabel("TOGGLE_NAMETAG_DISPLAY", "displayNametag")
+        ),
         action.displayNametag
     );
 }

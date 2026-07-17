@@ -2,19 +2,13 @@ import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../../importables/imports";
-import type {
-    ActionListDiff,
-    ActionListTrust,
-    Observed,
-    ObservedActionSlot,
-} from "../types";
+import type { ActionListTrust } from "./applyTrust";
+import type { ActionListDiff } from "./diff/types";
+import type { ObservedActionSlot } from "../observedActions";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
-import {
-    baselineActionListFromSlots,
-    diffActionList,
-} from "./diff";
-import { canonicalizeActionItemName, readActionList } from "./readList";
-import { getChildListFields } from "../fields/actionMappings";
+import { baselineActionListFromSlots, diffActionList } from "./diff";
+import { hydrateActionListScan } from "./hydration/run";
+import { canonicalizeActionItemName, scanActionList } from "./readList";
 import {
     actionListDiffApplyUnits,
     editUnitsWithChildLists,
@@ -47,34 +41,36 @@ export async function prereadActionList(
     desired: Action[],
     options: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
-    const phaseUnits = estimateActionListPhaseUnits(
-        desired,
-        options.baselineCurrent
-    );
+    const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
         options.session.events === undefined
             ? undefined
-            : (event) => options.session.events?.emit({
-                  kind: "progress",
-                  scope: progressScope,
-                  progress: event,
-              });
-    const observed = await readActionList(ctx,
+            : (event) =>
+                  options.session.events?.emit({
+                      kind: "progress",
+                      scope: progressScope,
+                      progress: event,
+                  });
+    const readOptions = {
+        itemRegistry: options.session.items,
+        progress,
+        phaseUnits,
+        listPath: options.listPath,
+        events: options.session.events,
+        itemCaptures: options.session.itemCaptures,
+    };
+    const scan = await scanActionList(
+        ctx,
         {
             kind: "sync",
             desired,
             trust: options.trust,
         },
-        {
-            itemRegistry: options.session.items,
-            progress,
-            phaseUnits,
-            listPath: options.listPath,
-            events: options.session.events,
-            itemCaptures: options.session.itemCaptures,
-        }
+        readOptions
     );
+    await hydrateActionListScan(ctx, scan, readOptions);
+    const observed = scan.slots;
     for (const entry of observed) {
         if (entry.action !== null) {
             canonicalizeActionItemName(entry.action, options.session.items);
@@ -116,6 +112,8 @@ export function createKnownActionListPlan(
     const observed = current.map((action, index) => ({
         index,
         action: JSON.parse(JSON.stringify(action)) as Action,
+        hydrated: true,
+        truncatedFields: [],
     }));
     for (const entry of observed) {
         canonicalizeActionItemName(entry.action, options.session.items);
@@ -132,42 +130,4 @@ export function createKnownActionListPlan(
         1
     );
     return { desired, observed, diff, phaseUnits };
-}
-
-/**
- * Whether a current snapshot is fully read: no null slots and
- * every child list (conditions / child action bodies) hydrated. A shallow
- * snapshot holds nulls for un-read child lists; persisting one would cache a
- * half-known list as truth.
- */
-export function actionsFullyHydrated(
-    actions: ReadonlyArray<Action | Observed<Action> | null>
-): boolean {
-    for (const action of actions) {
-        if (action === null) return false;
-        for (const field of getChildListFields(action.type)) {
-            const childList = (action as Record<string, unknown>)[field.prop];
-            if (!Array.isArray(childList)) continue;
-            if (field.prop === "conditions") {
-                for (const condition of childList) {
-                    if (condition === null) return false;
-                }
-            } else if (!actionsFullyHydrated(childList as Array<Action | null>)) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-/**
- * Observed slots as a plain action list, or null when any slot or child list
- * is still unhydrated (persisting one would cache a half-known list as truth).
- */
-export function fullyHydratedActionsFromSlots(
-    slots: readonly ObservedActionSlot[]
-): Action[] | null {
-    const actions = slots.map((slot) => slot.action);
-    if (!actionsFullyHydrated(actions)) return null;
-    return actions as unknown as Action[];
 }

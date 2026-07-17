@@ -1,6 +1,7 @@
-import type { Action, Importable } from "htsw/types";
+import type { Importable } from "htsw/types";
 
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
+import type { ObservedNode } from "../../housingSync/observedActions";
 import {
     getCurrentPath,
     markReadComplete,
@@ -28,7 +29,7 @@ export function createExportLivePreview(
 ): ExportLivePreview {
     let paths: string[] = [];
     let activeIndex: number | null = null;
-    const latestSnapshots: Array<ReadonlyArray<Action | null> | null> = [];
+    const latestSnapshots: Array<readonly ObservedNode[] | null> = [];
 
     const activePath = (): string | null =>
         activeIndex === null ? null : (paths[activeIndex] ?? null);
@@ -43,8 +44,8 @@ export function createExportLivePreview(
             } else if (event.kind === "childListReadStarted") {
                 setCurrent(path, event.path);
             } else if (event.kind === "observedSnapshot") {
-                latestSnapshots[index] = event.actions;
-                setObservedTopLevel(path, event.actions);
+                latestSnapshots[index] = event.nodes;
+                setObservedTopLevel(path, event.nodes);
             } else if (event.kind === "actionReadCompleted") {
                 if (event.hydrated) {
                     const snapshot = latestSnapshots[index];

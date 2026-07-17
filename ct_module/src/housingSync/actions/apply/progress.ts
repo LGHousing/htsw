@@ -1,20 +1,13 @@
 import type { Action } from "htsw/types";
 
-import type {
-    ActionListDiff,
-    ActionListOperation,
-} from "../../types";
+import type { ActionListDiff, ActionListOperation } from "../diff/types";
 import {
     type DiffSummary,
     type SyncEventHandler,
     type PlannedOp,
     type ProgressScope,
 } from "../../syncEvents";
-import {
-    actionPathForIndex,
-    type ActionListPath,
-    type ActionPath,
-} from "../../actionPath";
+import { type ActionListPath, ActionPath } from "../../actionPath";
 import {
     actionOperationApplyUnits,
     editUnitsWithChildLists,
@@ -35,7 +28,7 @@ export function emitDiffPlanned(
     for (const op of diff.operations) {
         const idx = desiredIndexForOp(op);
         if (idx >= 0) {
-            const srcPath = actionPathForIndex(listPath, idx);
+            const srcPath = ActionPath.at(listPath, idx);
             const actionType = actionTypeForOp(op);
             if (actionType === null) continue;
             if (op.kind === "add") {
@@ -67,7 +60,7 @@ export function emitDiffPlanned(
                 });
             }
         } else if (op.kind === "delete") {
-            const obsPath = actionPathForIndex(listPath, op.fromIndex);
+            const obsPath = ActionPath.at(listPath, op.fromIndex);
             operations.push({
                 op: "delete",
                 path: obsPath,
@@ -85,7 +78,7 @@ export function emitDiffPlanned(
     }
     const matches: ActionPath[] = [];
     for (let i = 0; i < desired.length; i++) {
-        if (!touched.has(i)) matches.push(actionPathForIndex(listPath, i));
+        if (!touched.has(i)) matches.push(ActionPath.at(listPath, i));
     }
     events.emit({
         kind: "diffPlanned",
@@ -160,14 +153,14 @@ export function fieldsChangedForEdit(
     return fields;
 }
 
-export function operationApplyUnits(op: ActionListOperation, desiredLength: number): number {
+export function operationApplyUnits(
+    op: ActionListOperation,
+    desiredLength: number
+): number {
     return actionOperationApplyUnits(op, editUnitsWithChildLists, desiredLength);
 }
 
-function summarizeDiff(
-    diff: ActionListDiff,
-    desiredLength: number
-): DiffSummary {
+function summarizeDiff(diff: ActionListDiff, desiredLength: number): DiffSummary {
     let edits = 0;
     let moves = 0;
     let adds = 0;

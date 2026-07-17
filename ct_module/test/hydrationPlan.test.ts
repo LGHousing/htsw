@@ -2,42 +2,52 @@ import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
 import { applyActionListTrust } from "../src/housingSync/actions/applyTrust";
+import { matchObservedToDesired } from "../src/housingSync/actions/diff/childListMatching";
 import {
     createActionHydrationPlan,
-    matchObservedToDesired,
-} from "../src/housingSync/actions/childListMatching";
+    fullyHydratedActionsFromSlots,
+} from "../src/housingSync/actions/hydration/plan";
 import type {
-    ChildListName,
+    ChildListSummaries,
     ChildListsToRead,
     ObservedActionSlot,
-} from "../src/housingSync/types";
+} from "../src/housingSync/observedActions";
 
 function observed(
     index: number,
-    childListSummaries: Partial<Record<ChildListName, string[]>>,
+    childListSummaries: ChildListSummaries,
     fields: Partial<NonNullable<ObservedActionSlot["action"]>> = {}
 ): ObservedActionSlot {
+    const summaries: ChildListSummaries = {
+        conditions: [],
+        ifActions: [],
+        elseActions: [],
+        ...childListSummaries,
+    };
     const childListsToRead: ChildListsToRead = new Set();
     for (const prop of ["conditions", "ifActions", "elseActions", "actions"] as const) {
-        if ((childListSummaries[prop] ?? []).length > 0) {
+        if ((summaries[prop] ?? []).length > 0) {
             childListsToRead.add(prop);
         }
     }
+
+    const action: Record<string, unknown> = {
+        type: "CONDITIONAL",
+        matchAny: false,
+    };
+    for (const prop of ["conditions", "ifActions", "elseActions"] as const) {
+        if (summaries[prop]?.length === 0) action[prop] = [];
+    }
+    Object.assign(action, fields);
 
     return {
         index,
         slotId: index,
         slot: null as never,
-        action: {
-            type: "CONDITIONAL",
-            matchAny: false,
-            conditions: [],
-            ifActions: [],
-            elseActions: [],
-            ...fields,
-        } as NonNullable<ObservedActionSlot["action"]>,
-        childListReadState: "shallow",
-        childListSummaries,
+        action: action as NonNullable<ObservedActionSlot["action"]>,
+        hydrated: childListsToRead.size === 0,
+        truncatedFields: [],
+        childListSummaries: summaries,
         childListsToRead,
     };
 }
@@ -86,8 +96,13 @@ describe("createActionHydrationPlan", () => {
         // entries, so the matcher should pair them.
         const observedActions = Array.from({ length: 20 }, (_, index) =>
             observed(index, {
-                conditions: [index === 8 || index === 14 ? "REQUIRE_ITEM" : "REQUIRE_TEAM"],
-                ifActions: Array.from({ length: index === 14 ? 2 : 1 }, () => "CHANGE_VAR"),
+                conditions: [
+                    index === 8 || index === 14 ? "REQUIRE_ITEM" : "REQUIRE_TEAM",
+                ],
+                ifActions: Array.from(
+                    { length: index === 14 ? 2 : 1 },
+                    () => "CHANGE_VAR"
+                ),
                 elseActions: [],
             })
         );
@@ -112,7 +127,9 @@ describe("createActionHydrationPlan", () => {
     test("hydrates only the props that have non-empty summaries", () => {
         const entry = observed(0, { conditions: ["REQUIRE_ITEM"], elseActions: [] });
         const result = plan([entry], [desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])]);
-        const props = Array.from(result.get(entry)?.childListsToRead ?? new Set<string>()).sort();
+        const props = Array.from(
+            result.get(entry)?.childListsToRead ?? new Set<string>()
+        ).sort();
         expect(props).toEqual(["conditions"]);
     });
 
@@ -151,11 +168,13 @@ describe("createActionHydrationPlan", () => {
     });
 
     test("trusted child paths copy cached data into observed and skip housing hydration", () => {
-        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const entry = observed(0, { ifActions: ["MESSAGE"] });
         const desiredList = [desired([], ["MESSAGE"])];
         const matches = matchObservedToDesired([entry], desiredList);
         const result = createActionHydrationPlan(matches);
         const cachedActions = [{ type: "MESSAGE", message: "trusted" }] as Action[];
+
+        expect(fullyHydratedActionsFromSlots([entry])).toBeNull();
 
         applyActionListTrust(matches, result, {
             basePath: "actions",
@@ -166,12 +185,14 @@ describe("createActionHydrationPlan", () => {
         });
 
         expect(result.has(entry)).toBe(false);
-        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions)
-            .toEqual(cachedActions);
+        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions).toEqual(
+            cachedActions
+        );
+        expect(entry.hydrated).toBe(true);
     });
 
     test("trusted child paths downgrade when shallow shape disagrees", () => {
-        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const entry = observed(0, { ifActions: ["MESSAGE"] });
         const desiredList = [desired([], ["CHANGE_VAR"])];
         const matches = matchObservedToDesired([entry], desiredList);
         const result = createActionHydrationPlan(matches);
@@ -182,12 +203,18 @@ describe("createActionHydrationPlan", () => {
             trustedChildLists: new Map([
                 [
                     "actions[0].ifActions",
-                    { kind: "actions", actions: [{ type: "MESSAGE", message: "trusted" }] as Action[] },
+                    {
+                        kind: "actions",
+                        actions: [{ type: "MESSAGE", message: "trusted" }] as Action[],
+                    },
                 ],
             ]),
         });
 
         expect(result.get(entry)?.childListsToRead.has("ifActions")).toBe(true);
-        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions).toEqual([null]);
+        expect(
+            (entry.action as { ifActions?: unknown[] } | null)?.ifActions
+        ).toBeUndefined();
+        expect(entry.hydrated).toBe(false);
     });
 });

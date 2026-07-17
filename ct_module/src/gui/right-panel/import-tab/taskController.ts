@@ -28,9 +28,7 @@ import {
     removeFromQueueKey,
     type ImportQueueItem,
 } from "./queue";
-import {
-    parseImportJsonBlocking,
-} from "../../parsing/parses";
+import { parseImportJsonBlocking } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
@@ -42,10 +40,7 @@ import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
-import type {
-    SyncEventHandler,
-    SyncEvent,
-} from "../../../housingSync/syncEvents";
+import type { SyncEventHandler, SyncEvent } from "../../../housingSync/syncEvents";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
@@ -53,7 +48,11 @@ import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
+import {
+    gmcOnImportStart,
+    playImportSuccessSound,
+    waitForCreativeMode,
+} from "../../../housingSync/sideEffects";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import {
     applyComplete,
@@ -213,7 +212,7 @@ function createSyncEventHandler(args: {
             setFocusLineId(activeViewPath, null);
         },
         observedSnapshot: (e) => {
-            if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.actions);
+            if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.nodes);
         },
         actionReadCompleted: () => {},
         blockActionHeaderApplied: (e) => {
@@ -282,12 +281,19 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
     for (const item of queue) {
         const cached = parseImportJsonBlocking(item.sourcePath);
         if (cached.parsed === null) {
-            ChatLib.chat(`&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`);
+            ChatLib.chat(
+                `&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`
+            );
             continue;
         }
         let group = groups.get(item.sourcePath);
         if (group === undefined) {
-            group = { parsed: cached.parsed, orderedIds: [], seen: new Set<string>(), addAll: false };
+            group = {
+                parsed: cached.parsed,
+                orderedIds: [],
+                seen: new Set<string>(),
+                addAll: false,
+            };
             groups.set(item.sourcePath, group);
         }
         if (item.kind === "importJson") {
@@ -349,7 +355,9 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
 
 export function startImport(explicit?: readonly ImportQueueItem[]): void {
     if (TaskManager.isBusy()) {
-        ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first.");
+        ChatLib.chat(
+            "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
+        );
         return;
     }
     const batches = buildBatches(explicit);
@@ -384,10 +392,12 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     for (let i = 1; i < batches.length; i++) {
         rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    setTaskProgress(createTaskProgress({
-        totalUnits: 1,
-        rows,
-    }));
+    setTaskProgress(
+        createTaskProgress({
+            totalUnits: 1,
+            rows,
+        })
+    );
     setActiveTaskPath(batches[0].sourcePath);
 
     // A command import (`explicit`) gets reflected into the visible queue so
@@ -403,7 +413,9 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
 
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
-    const sessionItemKeys: string[] = (explicit ?? getQueue().filter(isImportQueueItem)).map(queueItemKey);
+    const sessionItemKeys: string[] = (
+        explicit ?? getQueue().filter(isImportQueueItem)
+    ).map(queueItemKey);
     const startedAt = Date.now();
 
     runHousingSyncTask("import", async (ctx) => {
@@ -422,7 +434,9 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 setHousingUuid(housingUuid);
             }
             if (!(await waitForCreativeMode(ctx))) {
-                ChatLib.chat("&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot.");
+                ChatLib.chat(
+                    "&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot."
+                );
             }
             for (const batch of batches) {
                 const events = createSyncEventHandler({
@@ -439,7 +453,10 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     parsed: batch.parsed,
                     events,
                     onImportableAutoAdded: (importable) => {
-                        const queueItem = makeImportableQueueItem(importable, batch.sourcePath);
+                        const queueItem = makeImportableQueueItem(
+                            importable,
+                            batch.sourcePath
+                        );
                         addSessionQueueItem(queueItem);
                         // Track it with this session's keys so the
                         // post-success cleanup removes it like any other

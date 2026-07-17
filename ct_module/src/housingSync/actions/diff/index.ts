@@ -3,28 +3,29 @@ import type { Action, Condition } from "htsw/types";
 import {
     ACTION_MAPPINGS,
     getActionScalarLoreFields,
-} from "../fields/actionMappings";
+    getChildListFields,
+} from "../../fields/actionMappings";
 import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
     scalarFieldDiffers,
-} from "../fields/compare";
-import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
+} from "../../fields/compare";
+import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
 import {
     baselineConditionListFromConditions,
     diffConditionList,
-} from "./conditions/diff";
+} from "../conditions/diff";
 import type {
     ActionListDiff,
     ActionListOperation,
-    CurrentActionListEntry,
     ChildListDiff,
-    ChildListName,
-    Observed,
-    ObservedActionSlot,
-    UiFieldKind,
-} from "../types";
+    CurrentActionListEntry,
+} from "./types";
+import type { ChildActionListName, ChildListName } from "../../actionPath";
+import type { Observed, ObservedActionSlot } from "../../observedActions";
+import type { UiFieldKind } from "../../fields/loreSpecs";
+import { isChildListFieldKind } from "../../fields/loreSpecs";
 
 type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
@@ -54,13 +55,14 @@ const NOTE_ONLY_COST = 1;
 
 // How many server interactions it takes to change a field of each kind.
 const FIELD_KIND_COST: Record<string, number> = {
-    boolean: 1,   // one click to toggle
-    cycle: 2,     // ~2 clicks, cycling the shortest direction
-    select: 2,    // open the submenu, click the option
+    boolean: 1, // one click to toggle
+    cycle: 2, // ~2 clicks, cycling the shortest direction
+    select: 2, // open the submenu, click the option
     location: 2,
-    value: 2,     // click the field, then type the value
-    item: 2,      // click the field, then click the item
-    childList: 50, // syncs a whole child list, far more work than any scalar
+    value: 2, // click the field, then type the value
+    item: 2, // click the field, then click the item
+    actionList: 50,
+    conditionList: 50,
 };
 
 // Fixed overhead for opening an action editor and going back (only paid if any field differs)
@@ -97,7 +99,7 @@ function splitLoreFields(type: Action["type"]): {
     const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "childList") {
+        if (isChildListFieldKind(field.kind)) {
             childListNames.push(field.prop as ChildListName);
         } else {
             scalarProps.push({ prop: field.prop, kind: field.kind });
@@ -127,7 +129,7 @@ function conditionCost(observed: Condition, desired: Condition): number {
     const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "childList") continue;
+        if (isChildListFieldKind(field.kind)) continue;
         scalarProps.push({ prop: field.prop, kind: field.kind });
     }
 
@@ -259,7 +261,8 @@ function indexOfExactActionAtDesiredIndex(
 ): number {
     return indexOfAction(
         current,
-        (entry) => entry.index === desired.index && actionsEqual(entry.action, desired.action)
+        (entry) =>
+            entry.index === desired.index && actionsEqual(entry.action, desired.action)
     );
 }
 
@@ -277,7 +280,8 @@ function indexOfNoteOnlyActionAtDesiredIndex(
     return indexOfAction(
         current,
         (entry) =>
-            entry.index === desired.index && actionOnlyNoteDiffers(desired.action, entry.action)
+            entry.index === desired.index &&
+            actionOnlyNoteDiffers(desired.action, entry.action)
     );
 }
 
@@ -368,7 +372,10 @@ function matchActions(
 
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        let currentIndex = indexOfExactActionAtDesiredIndex(unmatchedCurrent, desiredEntry);
+        let currentIndex = indexOfExactActionAtDesiredIndex(
+            unmatchedCurrent,
+            desiredEntry
+        );
         if (currentIndex === -1) {
             currentIndex = indexOfExactActionAtAnyIndex(unmatchedCurrent, desiredEntry);
         }
@@ -391,9 +398,15 @@ function matchActions(
     // Pass 2: Note-only matching with same position preference.
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        let currentIndex = indexOfNoteOnlyActionAtDesiredIndex(unmatchedCurrent, desiredEntry);
+        let currentIndex = indexOfNoteOnlyActionAtDesiredIndex(
+            unmatchedCurrent,
+            desiredEntry
+        );
         if (currentIndex === -1) {
-            currentIndex = indexOfNoteOnlyActionAtAnyIndex(unmatchedCurrent, desiredEntry);
+            currentIndex = indexOfNoteOnlyActionAtAnyIndex(
+                unmatchedCurrent,
+                desiredEntry
+            );
         }
         if (currentIndex === -1) {
             continue;
@@ -450,7 +463,9 @@ function matchActions(
 
         // Cost-based greedy matching for remaining unpinned actions.
         const remainingCurrentBucket = currentBucket.filter((e) => !usedCurrent.has(e));
-        const remainingDesiredBucket = desiredBucket.filter((e) => !usedDesired.has(e.index));
+        const remainingDesiredBucket = desiredBucket.filter(
+            (e) => !usedDesired.has(e.index)
+        );
 
         if (remainingCurrentBucket.length > 0 && remainingDesiredBucket.length > 0) {
             const candidates: Array<{
@@ -562,7 +577,7 @@ export function baselineActionListFromActions(
 }
 
 function childActionListDiff(
-    prop: "ifActions" | "elseActions" | "actions",
+    prop: ChildActionListName,
     observed: unknown,
     desired: unknown
 ): ChildListDiff | null {
@@ -570,7 +585,10 @@ function childActionListDiff(
         ? (observed as Array<Observed<Action> | null>)
         : [];
     const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
-    const diff = diffChildActionList(baselineActionListFromActions(observedList), desiredList);
+    const diff = diffChildActionList(
+        baselineActionListFromActions(observedList),
+        desiredList
+    );
     if (diff.operations.length === 0) return null;
     return { prop, diff };
 }
@@ -599,27 +617,21 @@ function getChildListDiffs(
     if (observed.type !== desired.type) return [];
 
     const out: ChildListDiff[] = [];
-    if (observed.type === "CONDITIONAL" && desired.type === "CONDITIONAL") {
-        const conditions = childConditionListDiff(observed.conditions, desired.conditions);
-        if (conditions !== null) out.push(conditions);
-
-        const ifActions = childActionListDiff("ifActions", observed.ifActions, desired.ifActions);
-        if (ifActions !== null) out.push(ifActions);
-
-        const elseActions = childActionListDiff(
-            "elseActions",
-            observed.elseActions,
-            desired.elseActions
-        );
-        if (elseActions !== null) out.push(elseActions);
-    } else if (observed.type === "RANDOM" && desired.type === "RANDOM") {
-        const actions = childActionListDiff("actions", observed.actions, desired.actions);
-        if (actions !== null) out.push(actions);
+    for (const field of getChildListFields(observed.type)) {
+        const observedList = getFieldValue(observed, field.prop);
+        const desiredList = getFieldValue(desired, field.prop);
+        const diff =
+            field.kind === "conditionList"
+                ? childConditionListDiff(observedList, desiredList)
+                : childActionListDiff(field.prop, observedList, desiredList);
+        if (diff !== null) out.push(diff);
     }
     return out;
 }
 
-function createEditOperation(match: ActionMatch): Extract<ActionListOperation, { kind: "edit" }> {
+function createEditOperation(
+    match: ActionMatch
+): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
     return {
         kind: "edit",
@@ -630,13 +642,13 @@ function createEditOperation(match: ActionMatch): Extract<ActionListOperation, {
         desired: match.desired,
         noteOnly,
         noteDiffers: match.current.action.note !== match.desired.note,
-        childListDiffs: noteOnly
-            ? []
-            : getChildListDiffs(match.current, match.desired),
+        childListDiffs: noteOnly ? [] : getChildListDiffs(match.current, match.desired),
     };
 }
 
-function createChildListEditOperation(match: ActionMatch): Extract<ActionListOperation, { kind: "edit" }> {
+function createChildListEditOperation(
+    match: ActionMatch
+): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
     return {
         kind: "edit",

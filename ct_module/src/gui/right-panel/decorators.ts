@@ -10,12 +10,12 @@ import {
 } from "../code-view/sourceDiff";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
 import { tokenizeHtsl } from "./syntax";
-import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
-import {
-    actionPathEquals,
-    actionPathKey,
-    isPathWithinAction,
-} from "../../housingSync/actionPath";
+import type {
+    LineDecorations,
+    LineDecorator,
+    RenderableLine,
+} from "../code-view/lineTypes";
+import { ActionPath, ActionTreePath } from "../../housingSync/actionPath";
 import {
     effectiveFocusActionPath,
     getCurrentPath,
@@ -30,7 +30,10 @@ const COLOR_GHOST_GRAY = 0xff444444 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
-export function diffDecorator(path: string | null, importJsonPath?: string | null): LineDecorator {
+export function diffDecorator(
+    path: string | null,
+    importJsonPath?: string | null
+): LineDecorator {
     function ghostRows(ghosts: readonly SourceDiffGhost[]) {
         const rows: { line: RenderableLine; decorations: LineDecorations }[] = [];
         for (let i = 0; i < ghosts.length; i++) {
@@ -74,7 +77,7 @@ export function diffDecorator(path: string | null, importJsonPath?: string | nul
             const extraLinesBefore = before === undefined ? undefined : ghostRows(before);
             if (line.actionPath === undefined) return { extraLinesBefore };
             if (line.actionPath.kind !== "action") return { extraLinesBefore };
-            const actionPathKeyValue = actionPathKey(line.actionPath);
+            const actionPathKeyValue = ActionPath.key(line.actionPath);
             const state = overlay.states.get(actionPathKeyValue);
             if (state === undefined) return { extraLinesBefore };
             if (state === "edit") {
@@ -134,20 +137,20 @@ export function progressDecorator(path: string | null): LineDecorator {
             let inFocusRange = false;
             if (focusPath !== null && line.actionPath !== undefined) {
                 inFocusRange = isApplyPhase
-                    ? isBody
-                        && line.actionPath.kind === "action"
-                        && actionPathEquals(line.actionPath, focusPath)
-                    : isPathWithinAction(line.actionPath, focusPath);
+                    ? isBody &&
+                      line.actionPath.kind === "action" &&
+                      ActionPath.equals(line.actionPath, focusPath)
+                    : ActionTreePath.isWithinAction(line.actionPath, focusPath);
             }
 
             const isCursorTarget = isApplyPhase
                 ? isBody
-                : (isBody || isConsolidatedPlaceholder);
+                : isBody || isConsolidatedPlaceholder;
             const isFocused =
-                focusPath !== null
-                && line.actionPath?.kind === "action"
-                && actionPathEquals(focusPath, line.actionPath)
-                && isCursorTarget;
+                focusPath !== null &&
+                line.actionPath?.kind === "action" &&
+                ActionPath.equals(focusPath, line.actionPath) &&
+                isCursorTarget;
 
             const focusRowBg =
                 inFocusRange && !isApplyPhase ? COLOR_READ_FOCUS_ROW_BG : undefined;

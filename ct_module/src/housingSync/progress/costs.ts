@@ -1,15 +1,14 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
+import type { ActionHydrationWork, ActionHydrationPlan } from "../actions/hydration/plan";
 import type {
-    ActionHydrationWork,
-    ActionHydrationPlan,
     ActionListDiff,
     ActionListOperation,
     ConditionListDiff,
-    ChildListName,
-    ObservedActionSlot,
-    UiFieldKind,
-} from "../types";
+} from "../actions/diff/types";
+import type { ChildListName } from "../actionPath";
+import type { ObservedActionSlot } from "../observedActions";
+import type { UiFieldKind } from "../fields/loreSpecs";
 import type { PhaseUnits } from "./types";
 export type { PhaseUnits };
 import { baselineActionListFromActions, diffActionList } from "../actions/diff";
@@ -101,7 +100,9 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
     }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
-    if (kind === "childList") return COST.menuClickWait;
+    if (kind === "actionList" || kind === "conditionList") {
+        return COST.menuClickWait;
+    }
     return COST.menuClickWait;
 }
 
@@ -166,11 +167,7 @@ export function hydrationEntryUnits(
 
     let total = COST.menuClickWait + COST.goBackWait;
     work.childListsToRead.forEach((prop) => {
-        total += childListReadUnits(
-            entry,
-            prop,
-            includeSpeculativeChildRowScalarHydrate
-        );
+        total += childListReadUnits(entry, prop, includeSpeculativeChildRowScalarHydrate);
     });
     total += work.itemFieldsToCapture.length * ITEM_CAPTURE_FIELD_UNITS;
     return total;
@@ -227,9 +224,9 @@ function actionAddShellUnits(): number {
 }
 
 function conditionScalarFieldWriteUnits(condition: Condition): number {
-    const normalized = normalizeConditionCompare(condition) as
-        | { [key: string]: unknown }
-        | null;
+    const normalized = normalizeConditionCompare(condition) as {
+        [key: string]: unknown;
+    } | null;
     if (normalized === null) return 0;
     const kinds = new Map<string, UiFieldKind>();
     const fields = getConditionScalarLoreFields(condition.type);
@@ -517,7 +514,7 @@ export function estimateActionListPhaseUnits(
         // No cache: we don't know what's in housing yet, so the read and
         // hydrate costs are unknowable upfront. They get filled in with
         // exact values from observed `childListSummaries` once the read
-        // pass finishes (readList.ts:hydrateActionDetails). The UI's
+        // pass finishes (hydration/run.ts:hydrateActionDetails). The UI's
         // never-jump-up ETA guard masks the one-time totalUnits step at
         // the read→hydrate transition.
         return {
@@ -593,7 +590,9 @@ function baselineAwareApplyUnits(
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-export function editUnitsWithChildLists(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+export function editUnitsWithChildLists(
+    op: Extract<ActionListOperation, { kind: "edit" }>
+): number {
     let total = scalarFieldEditUnitsForOp(op);
 
     for (let i = 0; i < op.childListDiffs.length; i++) {
@@ -621,7 +620,7 @@ function childConditionBaseline(
 }
 
 function childConditionDesired(action: Action): Condition[] {
-    return action.type === "CONDITIONAL" ? action.conditions ?? [] : [];
+    return action.type === "CONDITIONAL" ? (action.conditions ?? []) : [];
 }
 
 function childActionBaseline(
@@ -695,7 +694,8 @@ function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
         if (action.type === "CONDITIONAL") {
             lists += exactKnownChildListUnits(action.ifActions);
             lists += exactKnownChildListUnits(action.elseActions);
-            if ((action.conditions?.length ?? 0) > 0) lists += childListUnits(action.conditions!.length);
+            if ((action.conditions?.length ?? 0) > 0)
+                lists += childListUnits(action.conditions!.length);
         } else if (action.type === "RANDOM") {
             lists += exactKnownChildListUnits(action.actions);
         }
@@ -705,7 +705,9 @@ function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
 }
 
 function exactKnownChildListUnits(actions: readonly Action[] | undefined): number {
-    return actions === undefined || actions.length === 0 ? 0 : childListUnits(actions.length);
+    return actions === undefined || actions.length === 0
+        ? 0
+        : childListUnits(actions.length);
 }
 
 export function estimateImportableReadUnits(importable: Importable): number {
@@ -810,9 +812,7 @@ export function estimateImportableCost(
     }
     if (importable.type === "COMMAND") {
         const settingsUnits =
-            fieldKindEditUnits("cycle") +
-            COST.signInput +
-            fieldKindEditUnits("boolean");
+            fieldKindEditUnits("cycle") + COST.signInput + fieldKindEditUnits("boolean");
         return (
             COST.commandMenuWait +
             actionListCost(importable.actions ?? [], get("actions"), trustedBaseline) +
@@ -832,8 +832,16 @@ export function estimateImportableCost(
         return (
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
-            actionListCost(importable.onEnterActions ?? [], get("onEnterActions"), trustedBaseline) +
-            actionListCost(importable.onExitActions ?? [], get("onExitActions"), trustedBaseline) +
+            actionListCost(
+                importable.onEnterActions ?? [],
+                get("onEnterActions"),
+                trustedBaseline
+            ) +
+            actionListCost(
+                importable.onExitActions ?? [],
+                get("onExitActions"),
+                trustedBaseline
+            ) +
             COST.cacheWrite
         );
     }

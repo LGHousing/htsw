@@ -4,7 +4,7 @@ import type { SyncEvent } from "../syncEvents";
 import type { TaskProgress } from "../progress/types";
 import { currentMsPerUnit } from "../progress/eta";
 import { createJsonlTrace } from "../../trace/jsonl";
-import { actionTreePathKey } from "../actionPath";
+import { ActionTreePath } from "../actionPath";
 
 const progressTrace = createJsonlTrace("./htsw/progress-trace.jsonl");
 const TICK_INTERVAL_MS = 100;
@@ -81,7 +81,7 @@ export function traceProgressEvent(
     const scope = event.kind === "progress" ? event.scope.kind : "";
     const path =
         event.kind === "progress" && event.scope.kind === "childList"
-            ? actionTreePathKey(event.scope.path)
+            ? ActionTreePath.key(event.scope.path)
             : "";
     const msPerUnit = currentMsPerUnit();
     const remaining = Math.max(0, after.totalUnits - after.completedUnits);

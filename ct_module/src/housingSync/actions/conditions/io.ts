@@ -28,7 +28,7 @@ import {
     writeCompareDamage,
 } from "./writers";
 
-export type ConditionSpec<T extends Condition> = {
+export type ConditionIo<T extends Condition> = {
     displayName: string;
     read?: (ctx: TaskContext) => Promise<T>;
     write?: (
@@ -39,14 +39,14 @@ export type ConditionSpec<T extends Condition> = {
     ) => Promise<void>;
 };
 
-type ConditionSpecMap = {
-    [K in Condition["type"]]: ConditionSpec<Extract<Condition, { type: K }>>;
+type ConditionIoMap = {
+    [K in Condition["type"]]: ConditionIo<Extract<Condition, { type: K }>>;
 };
 
-export function getConditionSpec<T extends Condition["type"]>(
+export function getConditionIo<T extends Condition["type"]>(
     type: T
-): ConditionSpec<Extract<Condition, { type: T }>> {
-    return CONDITION_SPECS[type] as ConditionSpec<Extract<Condition, { type: T }>>;
+): ConditionIo<Extract<Condition, { type: T }>> {
+    return CONDITION_IO[type] as ConditionIo<Extract<Condition, { type: T }>>;
 }
 
 export function isConditionListItemInverted(slot: ItemSlot): boolean {
@@ -56,7 +56,7 @@ export function isConditionListItemInverted(slot: ItemSlot): boolean {
         .some((line) => removedFormatting(line).trim() === "Inverted");
 }
 
-const CONDITION_SPECS = {
+const CONDITION_IO = {
     REQUIRE_GROUP: {
         displayName: CONDITION_MAPPINGS.REQUIRE_GROUP.displayName,
         read: readRequireGroup,
@@ -142,7 +142,7 @@ const CONDITION_SPECS = {
         displayName: CONDITION_MAPPINGS.COMPARE_DAMAGE.displayName,
         write: writeCompareDamage,
     },
-} satisfies ConditionSpecMap;
+} satisfies ConditionIoMap;
 
 export async function writeOpenCondition(
     ctx: TaskContext,
@@ -154,7 +154,7 @@ export async function writeOpenCondition(
         return;
     }
 
-    const spec = getConditionSpec(condition.type);
+    const spec = getConditionIo(condition.type);
     let resolvedCurrent = current;
 
     if (resolvedCurrent === undefined && spec.read) {

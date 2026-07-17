@@ -2,84 +2,92 @@ import { describe, expect, test } from "vitest";
 import type { Action } from "htsw/types";
 
 import {
-    actionAtPath,
-    actionListForAction,
-    actionPathDepth,
-    actionPathEquals,
-    actionPathForIndex,
-    actionPathFromParts,
-    actionPathKey,
-    actionTreePathEquals,
-    actionTreePathKey,
-    childActionListPath,
-    conditionListPath,
-    isPathWithinAction,
-    nearestActionPath,
-    parentActionPath,
-    rootActionListPath,
+    ActionPath,
+    ActionListPath,
+    ActionTreePath,
+    ConditionListPath,
 } from "../src/housingSync/actionPath";
 
 describe("action paths", () => {
     test("builds typed nested action and list paths", () => {
-        const root = rootActionListPath();
-        const parent = actionPathForIndex(root, 5);
-        const ifActions = childActionListPath(parent, "ifActions");
-        const child = actionPathForIndex(ifActions, 2);
+        const root = ActionListPath.root();
+        const parent = ActionPath.at(root, 5);
+        const ifActions = ActionListPath.childOf(parent, "ifActions");
+        const child = ActionPath.at(ifActions, 2);
 
-        expect(actionPathKey(parent)).toBe("5");
-        expect(actionTreePathKey(root)).toBe("");
-        expect(actionTreePathKey(ifActions)).toBe("5.ifActions");
-        expect(actionPathKey(child)).toBe("5.ifActions.2");
-        expect(actionPathDepth(child)).toBe(1);
-        expect(actionListForAction(child)).toEqual(ifActions);
-        expect(parentActionPath(child)).toEqual(parent);
-        expect(parentActionPath(ifActions)).toEqual(parent);
+        expect(ActionPath.key(parent)).toBe("5");
+        expect(ActionTreePath.key(root)).toBe("");
+        expect(ActionTreePath.key(ifActions)).toBe("5.ifActions");
+        expect(ActionPath.key(child)).toBe("5.ifActions.2");
+        expect(ActionPath.depth(child)).toBe(1);
+        expect(ActionPath.containingList(child)).toEqual(ifActions);
+        expect(ActionTreePath.parentAction(child)).toEqual(parent);
+        expect(ActionTreePath.parentAction(ifActions)).toEqual(parent);
     });
 
     test("keeps condition lists distinct from action lists", () => {
-        const parent = actionPathForIndex(undefined, 1);
-        const conditions = conditionListPath(parent);
+        const parent = ActionPath.at(undefined, 1);
+        const conditions = ConditionListPath.of(parent, "conditions");
 
-        expect(actionTreePathKey(conditions)).toBe("1.conditions");
-        expect(nearestActionPath(conditions)).toEqual(parent);
-        expect(actionTreePathEquals(conditions, conditionListPath(parent))).toBe(true);
-        expect(actionTreePathEquals(conditions, childActionListPath(parent, "actions"))).toBe(false);
+        expect(ActionTreePath.key(conditions)).toBe("1.conditions");
+        expect(ActionTreePath.nearestAction(conditions)).toEqual(parent);
+        expect(
+            ActionTreePath.equals(conditions, ConditionListPath.of(parent, "conditions"))
+        ).toBe(true);
+        expect(
+            ActionTreePath.equals(conditions, ActionListPath.childOf(parent, "actions"))
+        ).toBe(false);
     });
 
     test("checks subtree membership by parts instead of string prefixes", () => {
-        const parent = actionPathFromParts([1]);
-        const child = actionPathFromParts([1, "ifActions", 0]);
-        const lookalike = actionPathFromParts([10]);
+        const parent = ActionPath.fromParts([1]);
+        const child = ActionPath.fromParts([1, "ifActions", 0]);
+        const lookalike = ActionPath.fromParts([10]);
 
-        expect(isPathWithinAction(child, parent)).toBe(true);
-        expect(isPathWithinAction(conditionListPath(parent), parent)).toBe(true);
-        expect(isPathWithinAction(lookalike, parent)).toBe(false);
-        expect(actionPathEquals(parent, actionPathFromParts([1]))).toBe(true);
+        expect(ActionTreePath.isWithinAction(child, parent)).toBe(true);
+        expect(
+            ActionTreePath.isWithinAction(
+                ConditionListPath.of(parent, "conditions"),
+                parent
+            )
+        ).toBe(true);
+        expect(ActionTreePath.isWithinAction(lookalike, parent)).toBe(false);
+        expect(ActionPath.equals(parent, ActionPath.fromParts([1]))).toBe(true);
     });
 
     test("resolves actions without parsing a serialized key", () => {
-        const actions: Action[] = [{
-            type: "CONDITIONAL",
-            matchAny: false,
-            conditions: [],
-            ifActions: [{
-                type: "RANDOM",
-                actions: [{ type: "EXIT" }],
-            }],
-            elseActions: [],
-        }];
+        const actions: Action[] = [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [],
+                ifActions: [
+                    {
+                        type: "RANDOM",
+                        actions: [{ type: "EXIT" }],
+                    },
+                ],
+                elseActions: [],
+            },
+        ];
 
-        expect(actionAtPath(actions, actionPathFromParts([0]))?.type).toBe("CONDITIONAL");
-        expect(actionAtPath(actions, actionPathFromParts([0, "ifActions", 0]))?.type).toBe("RANDOM");
-        expect(actionAtPath(
-            actions,
-            actionPathFromParts([0, "ifActions", 0, "actions", 0])
-        )?.type).toBe("EXIT");
+        expect(ActionPath.resolve(actions, ActionPath.fromParts([0]))?.type).toBe(
+            "CONDITIONAL"
+        );
+        expect(
+            ActionPath.resolve(actions, ActionPath.fromParts([0, "ifActions", 0]))?.type
+        ).toBe("RANDOM");
+        expect(
+            ActionPath.resolve(
+                actions,
+                ActionPath.fromParts([0, "ifActions", 0, "actions", 0])
+            )?.type
+        ).toBe("EXIT");
     });
 
     test("rejects malformed part sequences", () => {
-        expect(() => actionPathFromParts([])).toThrow();
-        expect(() => actionPathFromParts([0, "ifActions"])).toThrow();
-        expect(() => actionPathFromParts([0, 1, 2])).toThrow();
+        expect(() => ActionPath.fromParts([])).toThrow();
+        expect(() => ActionPath.fromParts([0, "ifActions"])).toThrow();
+        expect(() => ActionPath.fromParts([0, 1, 2])).toThrow();
     });
 });

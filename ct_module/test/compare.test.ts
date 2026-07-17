@@ -13,7 +13,7 @@ import {
     scalarFieldDiffers,
 } from "../src/housingSync/fields/compare";
 import { getActionScalarLoreFields } from "../src/housingSync/fields/actionMappings";
-import type { Observed } from "../src/housingSync/types";
+import type { Observed } from "../src/housingSync/observedActions";
 
 import { changeVar, message, playSound } from "./utils";
 
@@ -102,14 +102,18 @@ describe("normalizeActionCompare — value-kind numeric coercion", () => {
     });
 
     test("large variable integers compare as exact text", () => {
-        expect(actionsCompareEqual(
-            changeVar({ value: "4466842338629" }),
-            changeVar({ value: "9999999999999" })
-        )).toBe(false);
-        expect(actionsCompareEqual(
-            changeVar({ value: "10000000000000" }),
-            changeVar({ value: "10000000000001" })
-        )).toBe(false);
+        expect(
+            actionsCompareEqual(
+                changeVar({ value: "4466842338629" }),
+                changeVar({ value: "9999999999999" })
+            )
+        ).toBe(false);
+        expect(
+            actionsCompareEqual(
+                changeVar({ value: "10000000000000" }),
+                changeVar({ value: "10000000000001" })
+            )
+        ).toBe(false);
     });
 
     test("variable integers above JS safe precision do not collapse", () => {
@@ -261,7 +265,9 @@ describe("scalarFieldDiffers — scalar field comparison", () => {
     test("equal actions report no scalar change", () => {
         const observed = playSound({ volume: 0.7, pitch: 1.0 });
         const desired = playSound({ volume: 0.7, pitch: 1.0 });
-        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(
+            false
+        );
         expect(scalarFieldDiffers(observed, desired, observed.type, "pitch")).toBe(false);
     });
 
@@ -276,9 +282,13 @@ describe("scalarFieldDiffers — scalar field comparison", () => {
             pitch: 1.0,
             location: { type: "Invokers Location" },
         });
-        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(
+            false
+        );
         expect(scalarFieldDiffers(observed, desired, observed.type, "pitch")).toBe(false);
-        expect(scalarFieldDiffers(observed, desired, observed.type, "location")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "location")).toBe(
+            false
+        );
     });
 
     test("real differences report a scalar change", () => {
@@ -292,7 +302,8 @@ describe("scalarFieldDiffers — scalar field comparison", () => {
     test("childList fields are excluded from the scalar prop list", () => {
         const props = getActionScalarLoreFields("CONDITIONAL");
         for (const p of props) {
-            expect(p.kind).not.toBe("childList");
+            expect(p.kind).not.toBe("actionList");
+            expect(p.kind).not.toBe("conditionList");
         }
     });
 });

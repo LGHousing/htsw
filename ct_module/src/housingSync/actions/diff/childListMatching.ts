@@ -1,13 +1,9 @@
 import type { Action, Condition } from "htsw/types";
 
-import { getActionLoreFields, getChildListFields } from "../fields/actionMappings";
-import type {
-    ActionHydrationPlan,
-    ChildListName,
-    ChildListsToRead,
-    ObservedActionSlot,
-} from "../types";
-import { createActionHydrationWork } from "./hydrationPlan";
+import { getActionLoreFields, getChildListFields } from "../../fields/actionMappings";
+import type { ChildListName } from "../../actionPath";
+import type { ObservedActionSlot } from "../../observedActions";
+import { isChildListFieldKind } from "../../fields/loreSpecs";
 
 const CHILD_LIST_COST_WEIGHT = 20;
 const SCALAR_FIELD_COST_WEIGHT = 2;
@@ -18,19 +14,6 @@ export type DesiredActionEntry = {
     index: number;
     action: Action;
 };
-
-export function createActionHydrationPlan(
-    matches: Map<ObservedActionSlot, DesiredActionEntry>
-): ActionHydrationPlan {
-    const plan: ActionHydrationPlan = new Map();
-    for (const observed of matches.keys()) {
-        const childListsToRead = getChildListsNeedingHydration(observed);
-        if (childListsToRead.size > 0) {
-            plan.set(observed, createActionHydrationWork(childListsToRead));
-        }
-    }
-    return plan;
-}
 
 /**
  * Pair each observed child-list-bearing action with the desired action it
@@ -67,7 +50,16 @@ export function matchObservedToDesired(
             (entry) =>
                 entry.action !== null &&
                 entry.action.type === type &&
-                getChildListsNeedingHydration(entry).size > 0
+                (entry.childListsToRead !== undefined
+                    ? entry.childListsToRead.size > 0
+                    : getChildListFields(entry.action.type).some(
+                          (field) =>
+                              (
+                                  entry.childListSummaries?.[
+                                      field.prop as ChildListName
+                                  ] ?? []
+                              ).length > 0
+                      ))
         );
         if (observedBucket.length === 0) continue;
 
@@ -106,25 +98,6 @@ export function matchObservedToDesired(
     return matches;
 }
 
-function getChildListsNeedingHydration(
-    entry: ObservedActionSlot
-): ChildListsToRead {
-    if (entry.childListsToRead !== undefined) {
-        return new Set(entry.childListsToRead);
-    }
-
-    const childLists: ChildListsToRead = new Set();
-    if (entry.action === null) return childLists;
-
-    for (const field of getChildListFields(entry.action.type)) {
-        const prop = field.prop as ChildListName;
-        if ((entry.childListSummaries?.[prop] ?? []).length > 0) {
-            childLists.add(prop);
-        }
-    }
-    return childLists;
-}
-
 function shallowChildListOwnerCost(
     observed: ObservedActionSlot,
     desired: DesiredActionEntry
@@ -139,7 +112,7 @@ function shallowChildListOwnerCost(
 
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "childList") {
+        if (isChildListFieldKind(field.kind)) {
             const prop = field.prop as ChildListName;
             const observedTypes = observed.childListSummaries?.[prop] ?? [];
             const desiredTypes = desiredChildListTypes(desired.action, prop);
@@ -178,7 +151,10 @@ function sequenceTypeCost(
 export function desiredChildListTypes(action: Action, prop: ChildListName): string[] {
     const value = (action as Record<string, unknown>)[prop];
     if (!Array.isArray(value)) return [];
-    if (prop === "conditions") {
+    const field = getChildListFields(action.type).find(
+        (candidate) => candidate.prop === prop
+    );
+    if (field?.kind === "conditionList") {
         return (value as Condition[]).map((condition) => condition.type);
     }
     return (value as Action[]).map((childAction) => childAction.type);

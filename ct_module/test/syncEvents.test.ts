@@ -1,28 +1,29 @@
 import { describe, expect, test } from "vitest";
 
 import { applyActionListPlan } from "../src/housingSync/actions/apply";
-import {
-    type SyncEvent,
-    type SyncEventHandler,
-} from "../src/housingSync/syncEvents";
-import {
-    actionPathForIndex,
-    childActionListPath,
-} from "../src/housingSync/actionPath";
-import type { ActionListDiff } from "../src/housingSync/types";
+import { type SyncEvent, type SyncEventHandler } from "../src/housingSync/syncEvents";
+import { ActionPath, ActionListPath } from "../src/housingSync/actionPath";
+import type { ActionListDiff } from "../src/housingSync/actions/diff/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
 import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/itemDependencies";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
-import type { ImportableFunction, ImportableGroup, ImportableItem, ImportableTeam } from "htsw/types";
+import type {
+    ImportableFunction,
+    ImportableGroup,
+    ImportableItem,
+    ImportableTeam,
+} from "htsw/types";
 
 function recordingHandler(): SyncEventHandler & { events: SyncEvent[] } {
     const events: SyncEvent[] = [];
     return {
         events,
-        emit: (event) => { events.push(event); },
+        emit: (event) => {
+            events.push(event);
+        },
     };
 }
 
@@ -56,28 +57,19 @@ function sessionWith(handler: SyncEventHandler): ImportSession {
 describe("applyActionListPlan — top-level-only terminal events", () => {
     test("top-level empty-diff apply emits listSyncCompleted", async () => {
         const handler = recordingHandler();
-        await applyActionListPlan(
-            null as never,
-            emptyPlan(),
-            { session: sessionWith(handler) }
-        );
+        await applyActionListPlan(null as never, emptyPlan(), {
+            session: sessionWith(handler),
+        });
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).toContain("listSyncCompleted");
     });
 
     test("child-list empty-diff apply does NOT emit listSyncCompleted", async () => {
         const handler = recordingHandler();
-        await applyActionListPlan(
-            null as never,
-            emptyPlan(),
-            {
-                session: sessionWith(handler),
-                listPath: childActionListPath(
-                    actionPathForIndex(undefined, 5),
-                    "ifActions"
-                ),
-            }
-        );
+        await applyActionListPlan(null as never, emptyPlan(), {
+            session: sessionWith(handler),
+            listPath: ActionListPath.childOf(ActionPath.at(undefined, 5), "ifActions"),
+        });
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).not.toContain("listSyncCompleted");
         expect(kinds).not.toContain("finalizeSource");

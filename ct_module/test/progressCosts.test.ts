@@ -11,9 +11,14 @@ import {
     COST,
 } from "../src/housingSync/progress/costs";
 import type {
+    ActionHydrationPlan,
+    ActionHydrationWork,
+} from "../src/housingSync/actions/hydration/plan";
+import type {
     ActionListOperation,
     ConditionListOperation,
-} from "../src/housingSync/types";
+} from "../src/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 
 import { conditional, message, observedSlot } from "./utils";
 
@@ -58,9 +63,7 @@ describe("progress cost estimates", () => {
         const emptySlot = estimateImportableCost(menuWith([]));
         // Entering and leaving a slot's action editor costs two menu waits —
         // far more than the single click the old estimate charged.
-        expect(emptySlot).toBeGreaterThanOrEqual(
-            COST.menuClickWait + COST.goBackWait
-        );
+        expect(emptySlot).toBeGreaterThanOrEqual(COST.menuClickWait + COST.goBackWait);
 
         const withChildren = estimateImportableCost(
             menuWith([conditional({ ifActions: [message("a"), message("b")] })])
@@ -78,8 +81,10 @@ describe("progress cost estimates", () => {
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
             COST.commandMenuWait +
                 COST.menuClickWait +
-                (COST.menuClickWait + COST.goBackWait +
-                    COST.menuClickWait + COST.goBackWait) +
+                (COST.menuClickWait +
+                    COST.goBackWait +
+                    COST.menuClickWait +
+                    COST.goBackWait) +
                 COST.goBackWait +
                 COST.menuClickWait +
                 COST.goBackWait +
@@ -88,16 +93,16 @@ describe("progress cost estimates", () => {
     });
 
     test("exact hydration plan pricing excludes speculative child-row scalar reads", () => {
-        const entry = {
+        const entry: ObservedActionSlot = {
             ...observedSlot(0, conditional()),
             childListSummaries: { ifActions: ["MESSAGE"] },
         };
-        const work = {
-        childListsToRead: new Set(["ifActions"] as const),
+        const work: ActionHydrationWork = {
+            childListsToRead: new Set(["ifActions"] as const),
             scalarFieldsToRead: [],
             itemFieldsToCapture: [],
         };
-        const plan = new Map([[entry, work]]);
+        const plan: ActionHydrationPlan = new Map([[entry, work]]);
 
         expect(exactHydrationPlanUnits(plan)).toBeCloseTo(
             COST.menuClickWait * 2 + COST.goBackWait * 2

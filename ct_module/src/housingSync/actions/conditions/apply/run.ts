@@ -1,16 +1,10 @@
 import type TaskContext from "../../../../tasks/context";
-import {
-    clickGoBack,
-    setListItemNote,
-} from "../../../menus/menuUtils";
+import { clickGoBack, setListItemNote } from "../../../menus/menuUtils";
 import { timedWaitForMenu } from "../../../menus/menuWait";
 import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
-import type {
-    ConditionListDiff,
-    ConditionListOperation,
-    ObservedConditionSlot,
-} from "../../../types";
+import type { ConditionListDiff, ConditionListOperation } from "../../diff/types";
+import type { ObservedConditionSlot } from "../../../observedActions";
 import {
     conditionListDiffApplyUnits,
     conditionOperationUnits,
@@ -18,15 +12,13 @@ import {
 } from "../../../progress/costs";
 import type { PhaseUnits } from "../../../progress/types";
 import { traceConditionOp } from "../../../trace/progressTrace";
-import { writeOpenCondition } from "../specs";
+import { writeOpenCondition } from "../io";
 import {
     addConditionToOpenConditionList,
     deleteObservedCondition,
     setOpenConditionInverted,
 } from "./conditionOps";
-import type {
-    ApplyConditionListOptions,
-} from "./types";
+import type { ApplyConditionListOptions } from "./types";
 
 type LiveConditionListEntry = {
     entryId: number;

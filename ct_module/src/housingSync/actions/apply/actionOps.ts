@@ -22,7 +22,7 @@ import {
     appendConditionsToOpenConditionList,
 } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
-import { getActionSpec, writeOpenAction } from "../specs";
+import { getActionIo, writeOpenAction } from "../io";
 
 type ImportActionCallbacks = {
     onActionAdded?: () => void;
@@ -42,7 +42,7 @@ export async function addAction(
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    const spec = getActionSpec(action.type);
+    const spec = getActionIo(action.type);
     const displayName = spec.displayName;
 
     await clickAddActionOption(ctx, action.type, displayName);

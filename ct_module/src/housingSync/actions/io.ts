@@ -3,10 +3,7 @@ import type { Action } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import { ACTION_MAPPINGS } from "../fields/actionMappings";
-import type {
-    ChildListsToRead,
-    Observed,
-} from "../types";
+import type { ChildListsToRead, Observed } from "../observedActions";
 import type { ActionApplyContext } from "../context/actionApplyContext";
 import type { ActionReadContext } from "../context/actionReadContext";
 import {
@@ -74,7 +71,7 @@ export type ActionReadArgs<T extends Action> = {
     current?: Observed<T>;
 };
 
-type ActionSpec<T extends Action = Action> = {
+type ActionIo<T extends Action = Action> = {
     displayName: string;
     read?: (args: ActionReadArgs<T>) => Promise<Observed<T>>;
     write?: (
@@ -84,17 +81,17 @@ type ActionSpec<T extends Action = Action> = {
     ) => Promise<void>;
 };
 
-type ActionSpecMap = {
-    [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
+type ActionIoMap = {
+    [K in Action["type"]]: ActionIo<Extract<Action, { type: K }>>;
 };
 
-export function getActionSpec<T extends Action["type"]>(
+export function getActionIo<T extends Action["type"]>(
     type: T
-): ActionSpec<Extract<Action, { type: T }>> {
-    return ACTION_SPECS[type] as ActionSpec<Extract<Action, { type: T }>>;
+): ActionIo<Extract<Action, { type: T }>> {
+    return ACTION_IO[type] as ActionIo<Extract<Action, { type: T }>>;
 }
 
-const ACTION_SPECS = {
+const ACTION_IO = {
     CONDITIONAL: {
         displayName: ACTION_MAPPINGS.CONDITIONAL.displayName,
         read: readOpenConditional,
@@ -265,14 +262,14 @@ const ACTION_SPECS = {
     CANCEL_EVENT: {
         displayName: ACTION_MAPPINGS.CANCEL_EVENT.displayName,
     },
-} satisfies ActionSpecMap;
+} satisfies ActionIoMap;
 
 export async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
     opts: WriteActionOptions<Action>
 ): Promise<void> {
-    const spec = getActionSpec(desired.type);
+    const spec = getActionIo(desired.type);
     let resolvedCurrent = opts.current;
 
     if (resolvedCurrent === undefined && spec.read) {

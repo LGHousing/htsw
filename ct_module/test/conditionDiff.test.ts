@@ -6,10 +6,8 @@ import {
     currentConditionListFromSlots,
     diffConditionList,
 } from "../src/housingSync/actions/conditions/diff";
-import type {
-    ConditionListOperation,
-    ObservedConditionSlot,
-} from "../src/housingSync/types";
+import type { ConditionListOperation } from "../src/housingSync/actions/diff/types";
+import type { ObservedConditionSlot } from "../src/housingSync/observedActions";
 
 function obs(index: number, condition: Condition | null): ObservedConditionSlot {
     return { index, slotId: index, slot: null as never, condition };
@@ -51,10 +49,8 @@ function baselineOps(
     observed: Array<Condition | null>,
     desired: Condition[]
 ): ConditionListOperation[] {
-    return diffConditionList(
-        baselineConditionListFromConditions(observed),
-        desired
-    ).operations;
+    return diffConditionList(baselineConditionListFromConditions(observed), desired)
+        .operations;
 }
 
 function kindCounts(opsList: ConditionListOperation[]): Record<string, number> {
@@ -89,15 +85,17 @@ describe("diffConditionList", () => {
             [sneaking({ note: "new" })]
         );
         expect(kindCounts(result)).toMatchObject({ edit: 1 });
-        expect((result[0] as Extract<ConditionListOperation, { kind: "edit" }>).noteOnly)
-            .toBe(true);
+        expect(
+            (result[0] as Extract<ConditionListOperation, { kind: "edit" }>).noteOnly
+        ).toBe(true);
     });
 
     test("same-type field changes are edits", () => {
         const result = ops([obs(0, health("10"))], [health("15")]);
         expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0 });
-        expect((result[0] as Extract<ConditionListOperation, { kind: "edit" }>).noteOnly)
-            .toBe(false);
+        expect(
+            (result[0] as Extract<ConditionListOperation, { kind: "edit" }>).noteOnly
+        ).toBe(false);
     });
 
     test("inverted changes are edits", () => {

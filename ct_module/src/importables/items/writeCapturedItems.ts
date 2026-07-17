@@ -6,8 +6,7 @@ import {
     type ItemCaptureRegistry,
     portableItemSnbt,
 } from "../../housingSync/itemCapture";
-import { readActionList } from "../../housingSync/actions/readList";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
+import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
@@ -26,10 +25,7 @@ async function readOpenActionList(
     ctx: TaskContext,
     registry: ItemCaptureRegistry
 ): Promise<Action[]> {
-    const observed = await readActionList(ctx, { kind: "deep" }, {
-        itemCaptures: registry,
-    });
-    return observedSlotsToActions(observed);
+    return readActionListFully(ctx, { itemCaptures: registry });
 }
 
 async function readClickActions(
@@ -76,11 +72,7 @@ function actionPath(snbtPath: string, side: "left" | "right"): string {
     return snbtPath.replace(/\.snbt$/i, `_${side}.htsl`);
 }
 
-function writeActions(
-    ctx: TaskContext,
-    path: string,
-    actions: readonly Action[]
-): void {
+function writeActions(ctx: TaskContext, path: string, actions: readonly Action[]): void {
     const printed = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diagnostic of printed.diagnostics) {
         ctx.displayMessage(`&7[export] &e${diagnostic.message}`);
@@ -95,7 +87,7 @@ export async function writeCapturedItems(
     registry: ItemCaptureRegistry,
     rootDir: string,
     importJsonPath: string,
-    newExportTargetImportJson?: string,
+    newExportTargetImportJson?: string
 ): Promise<number> {
     if (registry.newEntries().length === 0) return 0;
 

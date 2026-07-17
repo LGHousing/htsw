@@ -1,7 +1,7 @@
 import type { Action, ImportableNpc } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import {
     ItemCaptureRegistry,
     type InventorySnapshot,
@@ -9,7 +9,6 @@ import {
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import type { HtslExportTarget } from "../../project/paths";
@@ -59,11 +58,7 @@ async function readNpcActionList(
         await openNpcRightClickActions(ctx, entry, npcLookup);
     }
 
-    return await readOpenNpcActionList(
-        ctx,
-        itemCaptures,
-        onReadProgress
-    );
+    return await readOpenNpcActionList(ctx, itemCaptures, onReadProgress);
 }
 
 async function readOpenNpcActionList(
@@ -71,7 +66,7 @@ async function readOpenNpcActionList(
     itemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler
 ): Promise<Action[]> {
-    const observed = await readActionList(ctx, { kind: "deep" }, {
+    return readActionListFully(ctx, {
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -80,7 +75,6 @@ async function readOpenNpcActionList(
               }
             : {}),
     });
-    return observedSlotsToActions(observed);
 }
 
 function writeActionFile(
@@ -152,7 +146,13 @@ export async function exportNpcWithSharedState(
     const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
 
     if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         ctx.displayMessage(
             `&aRead NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
         );

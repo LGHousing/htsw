@@ -2,21 +2,23 @@ import type { Action, ActionChangeVar } from "htsw/types";
 
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import {
-    parseHolderField,
-    parseLoreFields,
-    readListItemNote,
-} from "./loreParsing";
-import type { ActionLoreSpec, UiFieldKind } from "../types";
+import { parseHolderField, parseLoreFields, readListItemNote } from "./loreParsing";
+import type { ActionLoreSpec, UiFieldKind } from "./loreSpecs";
+import { isChildListFieldKind } from "./loreSpecs";
+import type {
+    ChildActionListName,
+    ChildConditionListName,
+    ChildListName,
+} from "../actionPath";
 
 export const ACTION_MAPPINGS = {
     CONDITIONAL: {
         displayName: "Conditional",
         loreFields: {
             "Match Any Condition": { prop: "matchAny", kind: "boolean", default: false },
-            Conditions: { prop: "conditions", kind: "childList" },
-            "If Actions": { prop: "ifActions", kind: "childList" },
-            "Else Actions": { prop: "elseActions", kind: "childList" },
+            Conditions: { prop: "conditions", kind: "conditionList" },
+            "If Actions": { prop: "ifActions", kind: "actionList" },
+            "Else Actions": { prop: "elseActions", kind: "actionList" },
         },
     },
 
@@ -148,7 +150,12 @@ export const ACTION_MAPPINGS = {
     CHANGE_VAR: {
         displayName: "Change Variable",
         loreFields: {
-            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"], default: "Player" },
+            Holder: {
+                prop: "holder",
+                kind: "cycle",
+                options: ["Player", "Global", "Team"],
+                default: "Player",
+            },
             Variable: { prop: "key", kind: "value" },
             Operation: { prop: "op", kind: "select", default: "Increment" },
             Value: { prop: "value", kind: "value" },
@@ -195,7 +202,11 @@ export const ACTION_MAPPINGS = {
     SET_GAMEMODE: {
         displayName: "Set Gamemode",
         loreFields: {
-            Gamemode: { prop: "gamemode", kind: "cycle", options: ["Adventure", "Survival", "Creative"] },
+            Gamemode: {
+                prop: "gamemode",
+                kind: "cycle",
+                options: ["Adventure", "Survival", "Creative"],
+            },
         },
     },
 
@@ -218,7 +229,7 @@ export const ACTION_MAPPINGS = {
     RANDOM: {
         displayName: "Random Action",
         loreFields: {
-            Actions: { prop: "actions", kind: "childList" },
+            Actions: { prop: "actions", kind: "actionList" },
         },
     },
 
@@ -374,7 +385,10 @@ export const ACTION_MAPPINGS = {
 
 export function getActionLoreFields(
     type: Action["type"]
-): Record<string, { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean }> {
+): Record<
+    string,
+    { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean }
+> {
     return ACTION_MAPPINGS[type].loreFields;
 }
 
@@ -399,14 +413,28 @@ export function getActionFieldNumeric(type: string, prop: string): boolean {
 function getActionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] } | undefined {
+):
+    | {
+          prop: string;
+          kind: UiFieldKind;
+          default?: unknown;
+          numeric?: boolean;
+          options?: readonly string[];
+      }
+    | undefined {
     const mapping = (
         ACTION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] }
+                      {
+                          prop: string;
+                          kind: UiFieldKind;
+                          default?: unknown;
+                          numeric?: boolean;
+                          options?: readonly string[];
+                      }
                   >;
               }
             | undefined
@@ -420,7 +448,10 @@ function getActionFieldSpec(
     return undefined;
 }
 
-export function getActionFieldCycleOptions(type: string, prop: string): readonly string[] {
+export function getActionFieldCycleOptions(
+    type: string,
+    prop: string
+): readonly string[] {
     const spec = getActionFieldSpec(type, prop);
     if (spec?.options === undefined) {
         throw new Error(`No cycle options declared for action ${type}.${prop}`);
@@ -450,15 +481,21 @@ export function getActionFieldLabel<T extends Action["type"]>(
     throw new Error(`No GUI label found for ${type}.${String(prop)} in ACTION_MAPPINGS`);
 }
 
-export function getChildListFields(
-    type: Action["type"]
-): { label: string; prop: string }[] {
+export type ActionChildListField =
+    | { label: string; prop: ChildActionListName; kind: "actionList" }
+    | { label: string; prop: ChildConditionListName; kind: "conditionList" };
+
+export function getChildListFields(type: Action["type"]): ActionChildListField[] {
     const loreFields = getActionLoreFields(type);
-    const result: { label: string; prop: string }[] = [];
+    const result: ActionChildListField[] = [];
     for (const label in loreFields) {
-        if (loreFields[label].kind === "childList") {
-            result.push({ label, prop: loreFields[label].prop });
-        }
+        const field = loreFields[label];
+        if (!isChildListFieldKind(field.kind)) continue;
+        result.push({
+            label,
+            prop: field.prop as ChildListName,
+            kind: field.kind,
+        } as ActionChildListField);
     }
     return result;
 }
@@ -470,7 +507,7 @@ export function getActionScalarLoreFields(
     const result: { label: string; prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind !== "childList") {
+        if (!isChildListFieldKind(field.kind)) {
             result.push({ label, prop: field.prop, kind: field.kind });
         }
     }
@@ -522,9 +559,10 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
     }
 
     if (action.type === "CHANGE_VAR") {
-        (action as ActionChangeVar).holder =
-            parseHolderField(slot, (action as Record<string, unknown>).holder) ??
-            { type: "Player" };
+        (action as ActionChangeVar).holder = parseHolderField(
+            slot,
+            (action as Record<string, unknown>).holder
+        ) ?? { type: "Player" };
     }
 
     dropNotSetLocationIfOptional(action);

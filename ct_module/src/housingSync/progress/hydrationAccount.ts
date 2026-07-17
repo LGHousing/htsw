@@ -1,8 +1,6 @@
-import type {
-    ActionHydrationWork,
-    ChildListName,
-    ObservedActionSlot,
-} from "../types";
+import type { ActionHydrationWork } from "../actions/hydration/plan";
+import type { ChildListName } from "../actionPath";
+import type { ObservedActionSlot } from "../observedActions";
 import type { ProgressPayload } from "./types";
 import { childListReadUnits, COST, ITEM_CAPTURE_FIELD_UNITS } from "./costs";
 
@@ -64,11 +62,7 @@ export function createHydrationEntryAccount(
     work.childListsToRead.forEach((prop) => {
         booked.set(
             prop,
-            childListReadUnits(
-                entry,
-                prop,
-                includeSpeculativeChildRowScalarHydrate
-            )
+            childListReadUnits(entry, prop, includeSpeculativeChildRowScalarHydrate)
         );
     });
     let activeProp: ChildListName | null = null;

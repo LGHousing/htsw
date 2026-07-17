@@ -21,18 +21,15 @@ import {
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
 import { createExportLivePreview } from "../src/gui/export/livePreview";
-import {
-    actionPathEquals,
-    actionPathFromParts,
-    type ActionPathPart,
-} from "../src/housingSync/actionPath";
+import { type ActionPathPart, ActionPath } from "../src/housingSync/actionPath";
+import type { ObservedNode } from "../src/housingSync/observedActions";
 
 import { conditional, message } from "./utils";
 
 const PATH = "./test.htsl";
 
 function p(...parts: ActionPathPart[]) {
-    return actionPathFromParts(parts);
+    return ActionPath.fromParts(parts);
 }
 
 function ids(): string[] {
@@ -40,16 +37,35 @@ function ids(): string[] {
 }
 
 function bodyAt(...parts: ActionPathPart[]): PreviewLine | undefined {
-    const path = actionPathFromParts(parts);
-    return previewLinesForFile(PATH).find((line) =>
-        line.variant === "body"
-        && line.actionPath?.kind === "action"
-        && actionPathEquals(line.actionPath, path)
+    const path = ActionPath.fromParts(parts);
+    return previewLinesForFile(PATH).find(
+        (line) =>
+            line.variant === "body" &&
+            line.actionPath?.kind === "action" &&
+            ActionPath.equals(line.actionPath, path)
     );
 }
 
 function func(actions: Action[]): Importable {
     return { type: "FUNCTION", name: "test", actions };
+}
+
+function nodes(...actions: Action[]): ObservedNode[] {
+    return actions.map((action) => ({ kind: "action", action }));
+}
+
+function conditionalSummary(actionCount: number): ObservedNode {
+    return {
+        kind: "partial",
+        type: "CONDITIONAL",
+        action: conditional({}),
+        childLists: {
+            ifActions: {
+                state: "summary",
+                types: Array(actionCount).fill("MESSAGE"),
+            },
+        },
+    };
 }
 
 beforeEach(() => {
@@ -68,19 +84,23 @@ describe("primeWithCache + previewLinesForFile", () => {
     });
 
     test("CONDITIONAL renders head + close with stable ids", () => {
-        primeWithCache(PATH, func([
-            conditional({ ifActions: [message("child")], elseActions: [] }),
-        ]));
+        primeWithCache(
+            PATH,
+            func([conditional({ ifActions: [message("child")], elseActions: [] })])
+        );
         expect(ids()).toEqual(["0:body", "0.ifActions.0:body", "0:close"]);
     });
 
     test("CONDITIONAL with else renders body, :else, close", () => {
-        primeWithCache(PATH, func([
-            conditional({
-                ifActions: [message("a")],
-                elseActions: [message("b")],
-            }),
-        ]));
+        primeWithCache(
+            PATH,
+            func([
+                conditional({
+                    ifActions: [message("a")],
+                    elseActions: [message("b")],
+                }),
+            ])
+        );
         expect(ids()).toEqual([
             "0:body",
             "0.ifActions.0:body",
@@ -91,11 +111,14 @@ describe("primeWithCache + previewLinesForFile", () => {
     });
 
     test("child CONDITIONAL preserves dotted paths", () => {
-        primeWithCache(PATH, func([
-            conditional({
-                ifActions: [conditional({ ifActions: [message("deep")] })],
-            }),
-        ]));
+        primeWithCache(
+            PATH,
+            func([
+                conditional({
+                    ifActions: [conditional({ ifActions: [message("deep")] })],
+                }),
+            ])
+        );
         expect(ids()).toContain("0.ifActions.0.ifActions.0:body");
     });
 });
@@ -103,18 +126,14 @@ describe("primeWithCache + previewLinesForFile", () => {
 describe("setObservedTopLevel", () => {
     test("replaces line list with observed actions", () => {
         primeWithCache(PATH, func([message("old")]));
-        setObservedTopLevel(PATH, [message("a"), message("b")]);
+        setObservedTopLevel(PATH, nodes(message("a"), message("b")));
         expect(ids()).toEqual(["0:body", "1:body"]);
     });
 
     test("null child entries render as a collapsed placeholder", () => {
-        const cond = conditional({
-            // Three slots, none hydrated yet.
-            ifActions: [null, null, null] as unknown as Action[],
-        });
-        setObservedTopLevel(PATH, [cond]);
-        const line = previewLinesForFile(PATH).find((l) =>
-            l.id === "0.ifActions:placeholder"
+        setObservedTopLevel(PATH, [conditionalSummary(3)]);
+        const line = previewLinesForFile(PATH).find(
+            (l) => l.id === "0.ifActions:placeholder"
         );
         expect(line).toBeDefined();
         expect(line!.variant).toBe("placeholder");
@@ -123,9 +142,9 @@ describe("setObservedTopLevel", () => {
     });
 
     test("preserves completed reads across later snapshots", () => {
-        setObservedTopLevel(PATH, [message("a"), message("b")]);
+        setObservedTopLevel(PATH, nodes(message("a"), message("b")));
         markReadComplete(PATH, p(0));
-        setObservedTopLevel(PATH, [message("updated"), message("b")], {
+        setObservedTopLevel(PATH, nodes(message("updated"), message("b")), {
             force: true,
         });
 
@@ -134,9 +153,7 @@ describe("setObservedTopLevel", () => {
     });
 
     test("does not complete unresolved placeholders with their parent", () => {
-        setObservedTopLevel(PATH, [
-            conditional({ ifActions: [null] as unknown as Action[] }),
-        ]);
+        setObservedTopLevel(PATH, [conditionalSummary(1)]);
         markReadComplete(PATH, p(0));
 
         const placeholder = previewLinesForFile(PATH).find(
@@ -156,11 +173,7 @@ describe("export live preview", () => {
 
         preview.events.emit({
             kind: "observedSnapshot",
-            actions: [
-                conditional({
-                    ifActions: [null, null] as unknown as Action[],
-                }),
-            ],
+            nodes: [conditionalSummary(2)],
         });
         expect(previewLinesForFile(path!)).toEqual(
             expect.arrayContaining([
@@ -180,7 +193,7 @@ describe("export live preview", () => {
 
         preview.events.emit({
             kind: "observedSnapshot",
-            actions: [conditional({ ifActions: [message("hydrated")] })],
+            nodes: nodes(conditional({ ifActions: [message("hydrated")] })),
         });
         preview.events.emit({
             kind: "actionReadCompleted",
@@ -207,7 +220,7 @@ describe("export live preview", () => {
 
         preview.events.emit({
             kind: "observedSnapshot",
-            actions: [message("ready"), message("pending")],
+            nodes: nodes(message("ready"), message("pending")),
         });
         preview.events.emit({
             kind: "actionReadCompleted",
@@ -216,12 +229,20 @@ describe("export live preview", () => {
         });
 
         const lines = previewLinesForFile(path);
-        expect(lines.find((line) =>
-            line.actionPath?.kind === "action" && actionPathEquals(line.actionPath, p(0))
-        )?.completed).toBe(true);
-        expect(lines.find((line) =>
-            line.actionPath?.kind === "action" && actionPathEquals(line.actionPath, p(1))
-        )?.completed).toBeUndefined();
+        expect(
+            lines.find(
+                (line) =>
+                    line.actionPath?.kind === "action" &&
+                    ActionPath.equals(line.actionPath, p(0))
+            )?.completed
+        ).toBe(true);
+        expect(
+            lines.find(
+                (line) =>
+                    line.actionPath?.kind === "action" &&
+                    ActionPath.equals(line.actionPath, p(1))
+            )?.completed
+        ).toBeUndefined();
         preview.clear();
     });
 });
@@ -243,11 +264,7 @@ describe("markPlannedAdd", () => {
         markPlannedAdd(PATH, p(0), message("a"), 0);
         markPlannedAdd(PATH, p(1), message("b"), 1);
         markPlannedAdd(PATH, p(2), message("c"), 2);
-        expect(ids()).toEqual([
-            "pending:0:body",
-            "pending:1:body",
-            "pending:2:body",
-        ]);
+        expect(ids()).toEqual(["pending:0:body", "pending:1:body", "pending:2:body"]);
     });
 
     test("re-firing planAdd for the same path is a no-op", () => {
@@ -259,12 +276,7 @@ describe("markPlannedAdd", () => {
 
     test("adds a CONDITIONAL with child content as one contiguous prefixed block", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(
-            PATH,
-            p(0),
-            conditional({ ifActions: [message("child")] }),
-            0
-        );
+        markPlannedAdd(PATH, p(0), conditional({ ifActions: [message("child")] }), 0);
         expect(ids()).toEqual([
             "pending:0:body",
             "pending:0.ifActions.0:body",
@@ -301,9 +313,7 @@ describe("markPlannedDelete", () => {
     });
 
     test("marks every line of a CONDITIONAL subtree as delete", () => {
-        primeWithCache(PATH, func([
-            conditional({ ifActions: [message("child")] }),
-        ]));
+        primeWithCache(PATH, func([conditional({ ifActions: [message("child")] })]));
         markPlannedDelete(PATH, p(0));
         for (const line of previewLinesForFile(PATH)) {
             expect(line.diffState).toBe("delete");
@@ -337,12 +347,7 @@ describe("applyComplete(add)", () => {
         // prefix without affecting the parent. Parent applyComplete then
         // strips its own prefix without touching the already-stripped child.
         primeWithCache(PATH, func([]));
-        markPlannedAdd(
-            PATH,
-            p(0),
-            conditional({ ifActions: [message("child")] }),
-            0
-        );
+        markPlannedAdd(PATH, p(0), conditional({ ifActions: [message("child")] }), 0);
         applyComplete(PATH, p(0, "ifActions", 0), "add", "add");
         applyComplete(PATH, p(0), "add", "add");
         expect(ids()).toEqual(["0:body", "0.ifActions.0:body", "0:close"]);
@@ -355,9 +360,7 @@ describe("applyComplete(add)", () => {
 
 describe("applyComplete(delete)", () => {
     test("removes the line and its subtree", () => {
-        primeWithCache(PATH, func([
-            conditional({ ifActions: [message("child")] }),
-        ]));
+        primeWithCache(PATH, func([conditional({ ifActions: [message("child")] })]));
         applyComplete(PATH, p(0), "delete", "delete");
         expect(previewLinesForFile(PATH)).toEqual([]);
     });
@@ -401,9 +404,7 @@ describe("applyComplete(move)", () => {
 
 describe("markHeadApplied", () => {
     test("flips CONDITIONAL head + close to completed without finishing child", () => {
-        primeWithCache(PATH, func([
-            conditional({ ifActions: [message("child")] }),
-        ]));
+        primeWithCache(PATH, func([conditional({ ifActions: [message("child")] })]));
         markHeadApplied(PATH, p(0));
         expect(bodyAt(0)?.completed).toBe(true);
         const close = previewLinesForFile(PATH).find((l) => l.id === "0:close");
@@ -414,12 +415,7 @@ describe("markHeadApplied", () => {
 
     test("handles a pending-add CONDITIONAL by stripping the prefix", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(
-            PATH,
-            p(0),
-            conditional({ ifActions: [message("child")] }),
-            0
-        );
+        markPlannedAdd(PATH, p(0), conditional({ ifActions: [message("child")] }), 0);
         markHeadApplied(PATH, p(0));
         const after = ids();
         expect(after).toContain("0:body");
@@ -430,12 +426,7 @@ describe("markHeadApplied", () => {
 
     test("promotes a ghost when planEdit happened before markHeadApplied", () => {
         primeWithCache(PATH, func([conditional({})]));
-        markPlannedEdit(
-            PATH,
-            p(0),
-            conditional({}),
-            conditional({ matchAny: true })
-        );
+        markPlannedEdit(PATH, p(0), conditional({}), conditional({ matchAny: true }));
         markHeadApplied(PATH, p(0));
         // Ghost is gone; body carries forward.
         expect(ids().filter((id) => id.indexOf("ghost") >= 0)).toEqual([]);
@@ -447,7 +438,7 @@ describe("finalizeFromSource", () => {
     test("rebuilds the line list from the source tree, all completed", () => {
         // Start in a messy intermediate state — some pending-add lines,
         // some diff states still set.
-        setObservedTopLevel(PATH, [message("a")]);
+        setObservedTopLevel(PATH, nodes(message("a")));
         markPlannedAdd(PATH, p(1), message("b"), 1);
 
         finalizeFromSource(PATH, [message("a"), message("b")]);

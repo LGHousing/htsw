@@ -1,19 +1,17 @@
 import type { ImportableCommand } from "htsw/types";
 import * as htsw from "htsw";
 
+import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
 import {
-    type DeferredActionListRead,
-    hydrateDeferredActionList,
-    readActionList,
-    readActionListDeferred,
-} from "../../housingSync/actions/readList";
+    completeActionListScan,
+    readActionListFully,
+} from "../../housingSync/actions/hydration/run";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
@@ -29,7 +27,7 @@ import {
 import { listAllCommandNames, resetCommandNameSession } from "./listCommands";
 
 type PendingCommandRead = {
-    deferred: DeferredActionListRead;
+    scan: ActionListScan;
     settings: {
         mode: ImportableCommand["mode"];
         requiredPriority: ImportableCommand["requiredPriority"];
@@ -44,7 +42,7 @@ async function readCommand(
     onReadProgress?: ProgressHandler
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
-    const observed = await readActionList(ctx, { kind: "deep" }, {
+    const actions = await readActionListFully(ctx, {
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -53,7 +51,6 @@ async function readCommand(
               }
             : {}),
     });
-    const actions = observedSlotsToActions(observed);
 
     await openCommandSettings(ctx, name);
     const settings = readOpenCommandSettings(ctx);
@@ -80,17 +77,21 @@ async function scanCommand(
     events: SyncEventHandler | undefined
 ): Promise<PendingCommandRead> {
     await openExistingCommandActionsEditor(ctx, name);
-    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
-        itemCaptures: state.itemCaptures,
-        exactHydrationEstimate: true,
-        events,
-        ...(onReadProgress !== undefined
-            ? {
-                  progress: onReadProgress,
-                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
-              }
-            : {}),
-    });
+    const scan = await scanActionList(
+        ctx,
+        { kind: "full" },
+        {
+            itemCaptures: state.itemCaptures,
+            exactHydrationEstimate: true,
+            events,
+            ...(onReadProgress !== undefined
+                ? {
+                      progress: onReadProgress,
+                      phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+                  }
+                : {}),
+        }
+    );
 
     await openCommandSettings(ctx, name);
     const settings = readOpenCommandSettings(ctx);
@@ -99,7 +100,7 @@ async function scanCommand(
     }
 
     return {
-        deferred,
+        scan,
         settings: {
             mode: settings.mode,
             requiredPriority: settings.requiredPriority,
@@ -117,7 +118,7 @@ async function hydrateCommand(
     events: SyncEventHandler | undefined
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
-    await hydrateDeferredActionList(ctx, pending.deferred, {
+    const actions = await completeActionListScan(ctx, pending.scan, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,
@@ -133,7 +134,7 @@ async function hydrateCommand(
     return {
         type: "COMMAND",
         name,
-        actions: observedSlotsToActions(pending.deferred.observed),
+        actions,
         mode: pending.settings.mode,
         requiredPriority: pending.settings.requiredPriority,
         listed: pending.settings.listed,
@@ -151,7 +152,13 @@ async function writeCommandResult(
     }
 ): Promise<void> {
     if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         return;
     }
 

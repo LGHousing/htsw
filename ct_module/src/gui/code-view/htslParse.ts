@@ -1,20 +1,14 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import {
-    SourceMap,
-    parseActionsResult,
-    type SourceFile,
-    type SpanTable,
-} from "htsw";
+import { SourceMap, parseActionsResult, type SourceFile, type SpanTable } from "htsw";
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { getMtimeMs } from "../lib/java";
 import {
-    actionPathForIndex,
-    childActionListPath,
-    type ActionPath,
+    ActionPath,
     type ChildActionListName,
+    ActionListPath,
 } from "../../housingSync/actionPath";
 
 export type HtslLine = {
@@ -60,7 +54,6 @@ export function actionLineRange(
 
 const parseCache = new Map<string, ParsedFile>();
 
-
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
     const cached = parseCache.get(path);
@@ -99,9 +92,9 @@ function collectChildActionPaths(action: Action, basePath: ActionPath): ActionPa
         prop: ChildActionListName
     ): void {
         if (actions === undefined) return;
-        const listPath = childActionListPath(basePath, prop);
+        const listPath = ActionListPath.childOf(basePath, prop);
         for (let i = 0; i < actions.length; i++) {
-            const path = actionPathForIndex(listPath, i);
+            const path = ActionPath.at(listPath, i);
             out.push(path);
             const childPaths = collectChildActionPaths(actions[i], path);
             for (let j = 0; j < childPaths.length; j++) out.push(childPaths[j]);
@@ -121,12 +114,19 @@ function isStructuralLine(text: string): boolean {
 }
 
 function actionToLines(action: Action, actionIndex: number): HtslLine[] {
-    const basePath = actionPathForIndex(undefined, actionIndex);
+    const basePath = ActionPath.at(undefined, actionIndex);
     let src: string;
     try {
         src = htsw.htsl.printAction(action);
     } catch (err) {
-        return [{ actionIndex, actionPath: basePath, depth: 0, text: `// <print failed: ${err}>` }];
+        return [
+            {
+                actionIndex,
+                actionPath: basePath,
+                depth: 0,
+                text: `// <print failed: ${err}>`,
+            },
+        ];
     }
     const out: HtslLine[] = [];
     const raw = src.split("\n");
@@ -143,7 +143,11 @@ function actionToLines(action: Action, actionIndex: number): HtslLine[] {
         }
         const text = line.substring(j);
         let actionPath = basePath;
-        if (depth > 0 && !isStructuralLine(text) && childActionCursor < childActionPaths.length) {
+        if (
+            depth > 0 &&
+            !isStructuralLine(text) &&
+            childActionCursor < childActionPaths.length
+        ) {
             actionPath = childActionPaths[childActionCursor];
             childActionCursor++;
         }

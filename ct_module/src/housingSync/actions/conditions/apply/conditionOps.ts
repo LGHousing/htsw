@@ -14,7 +14,7 @@ import { ItemSlot, MouseButton } from "../../../../tasks/specifics/slots";
 import { removedFormatting } from "../../../../utils/helpers";
 import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
-import { getConditionSpec, writeOpenCondition } from "../specs";
+import { getConditionIo, writeOpenCondition } from "../io";
 
 function getInvertSlot(ctx: TaskContext): ItemSlot {
     return ctx.getMenuItemSlot((slot) => {
@@ -47,7 +47,7 @@ export async function addConditionToOpenConditionList(
     ctx.getMenuItemSlot("Add Condition").click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    const spec = getConditionSpec(condition.type);
+    const spec = getConditionIo(condition.type);
     const slot = ctx.getMenuItemSlot(spec.displayName);
 
     if (isLimitExceeded(slot, "condition")) {

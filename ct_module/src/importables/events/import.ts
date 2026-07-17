@@ -4,11 +4,11 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
+import { type ActionListPlan } from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
-    type ActionListPlan,
-} from "../../housingSync/actions/plan";
+} from "../../housingSync/actions/hydration/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";

@@ -1,4 +1,4 @@
-import type { Action, Condition, Importable } from "htsw/types";
+import type { Action, Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
@@ -7,17 +7,16 @@ import { readImportableCache } from "./cache";
 import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
 import { readCachedActionList } from "./actionLists";
-import {
-    houseLockEntryFor,
-    readHouseLock,
-    type HouseLock,
-} from "./houseLock";
+import type {
+    TrustedChildListPath,
+    TrustedChildListSnapshot,
+} from "../housingSync/actions/applyTrust";
+import { houseLockEntryFor, readHouseLock, type HouseLock } from "./houseLock";
 
-export type TrustedChildListPath = string;
-
-export type TrustedChildListSnapshot =
-    | { kind: "actions"; actions: readonly Action[] }
-    | { kind: "conditions"; conditions: readonly Condition[] };
+export type {
+    TrustedChildListPath,
+    TrustedChildListSnapshot,
+} from "../housingSync/actions/applyTrust";
 
 export type ImportableTrustPlan = {
     importable: Importable;
@@ -62,12 +61,20 @@ export function buildTrustPlan(
         const identity = importableIdentity(importable);
         const entry = readImportableCache(housingUuid, importable.type, identity);
         const trustedChildListPaths = new Set<TrustedChildListPath>();
-        const trustedChildLists = new Map<TrustedChildListPath, TrustedChildListSnapshot>();
+        const trustedChildLists = new Map<
+            TrustedChildListPath,
+            TrustedChildListSnapshot
+        >();
 
         let sourceHash: string | null = null;
         let wholeImportableTrusted = false;
 
-        const lockEntry = lockEntryForImportable(lock, housingUuid, importable.type, identity);
+        const lockEntry = lockEntryForImportable(
+            lock,
+            housingUuid,
+            importable.type,
+            identity
+        );
         const entryHash = entry === null ? null : cacheEntryHash(entry);
         const cacheMatchesLock = lockEntry === null || entryHash === lockEntry.hash;
         const trustAllowed = trustMode && cacheMatchesLock;
@@ -81,7 +88,10 @@ export function buildTrustPlan(
 
             if (!wholeImportableTrusted) {
                 const cachedLists = cacheEntryListHashes(entry);
-                const remapped = trustedChildListPathsForImportable(importable, cachedLists);
+                const remapped = trustedChildListPathsForImportable(
+                    importable,
+                    cachedLists
+                );
                 remapped.forEach((path) => trustedChildListPaths.add(path));
                 const snapshots = trustedChildListSnapshotsForImportable(
                     importable,

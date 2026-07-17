@@ -4,11 +4,11 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
+import { type ActionListPlan } from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
-    type ActionListPlan,
-} from "../../housingSync/actions/plan";
+} from "../../housingSync/actions/hydration/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type { ImportableTrustPlan } from "../../importCache";
@@ -51,7 +51,10 @@ export async function prereadImportableFunction(
     session: ImportSession,
     trustPlan?: ImportableTrustPlan
 ): Promise<FunctionImportPlan> {
-    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
+    const setup = createSetupStepEmitter(
+        session.events,
+        countReferencedShells(importable) + 1
+    );
 
     await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -72,9 +75,19 @@ export async function prereadImportableFunction(
         },
     });
 
-    if (actionsSync.kind === "skipped" && actionsSync.reason === "trusted" && settingsTrusted) {
+    if (
+        actionsSync.kind === "skipped" &&
+        actionsSync.reason === "trusted" &&
+        settingsTrusted
+    ) {
         setup(`skipped ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan: null };
+        return {
+            kind: "FUNCTION",
+            importable,
+            trustPlan,
+            actionsPlan: null,
+            settingsPlan: null,
+        };
     }
 
     if (actionsSync.kind === "skipped" && actionsSync.reason === "trusted") {
@@ -85,7 +98,13 @@ export async function prereadImportableFunction(
                 ? `settings-only ${importable.name}`
                 : `skipped ${importable.name}`
         );
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan };
+        return {
+            kind: "FUNCTION",
+            importable,
+            trustPlan,
+            actionsPlan: null,
+            settingsPlan,
+        };
     }
 
     // Icon-only entry: no `actions` declared in import.json. NEVER diff/sync
@@ -106,17 +125,28 @@ export async function prereadImportableFunction(
                 ? `settings-only ${importable.name}`
                 : `skipped ${importable.name}`
         );
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan };
+        return {
+            kind: "FUNCTION",
+            importable,
+            trustPlan,
+            actionsPlan: null,
+            settingsPlan,
+        };
     }
 
     if (actionsSync.kind !== "planned") {
-        throw new Error(`Unexpected action-list sync skip for function ${importable.name}.`);
+        throw new Error(
+            `Unexpected action-list sync skip for function ${importable.name}.`
+        );
     }
 
     let settingsPlan: FunctionSettingsPlan | null = null;
     if (!settingsTrusted) {
         if (actionsEditorOpened) {
-            settingsPlan = await readFunctionSettingsPlanAfterActionEditor(ctx, importable);
+            settingsPlan = await readFunctionSettingsPlanAfterActionEditor(
+                ctx,
+                importable
+            );
         } else {
             await openFunctionList(ctx);
             settingsPlan = await readFunctionSettingsPlan(ctx, importable);
@@ -155,10 +185,7 @@ export async function applyImportableFunctionPlan(
 }
 
 async function openFunctionList(ctx: TaskContext): Promise<void> {
-    await ctx.expectAfter(
-        () => ctx.runCommand("/functions"),
-        functionListOpened()
-    );
+    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
 }
 
 async function readFunctionSettingsPlanAfterActionEditor(
@@ -191,19 +218,11 @@ async function readFunctionSettingsPlan(
     }
 }
 
-function functionSettingsPlanNeedsApply(
-    plan: FunctionSettingsPlan | null
-): boolean {
-    return plan !== null && (
-        plan.iconNeedsApply ||
-        plan.automaticExecution.needsApply
-    );
+function functionSettingsPlanNeedsApply(plan: FunctionSettingsPlan | null): boolean {
+    return plan !== null && (plan.iconNeedsApply || plan.automaticExecution.needsApply);
 }
 
-async function functionImportStep<T>(
-    label: string,
-    run: () => Promise<T>
-): Promise<T> {
+async function functionImportStep<T>(label: string, run: () => Promise<T>): Promise<T> {
     try {
         return await run();
     } catch (error) {
@@ -235,9 +254,7 @@ export function reconstructPartialFunction(
     };
 }
 
-export function reconstructObservedFunction(
-    plan: FunctionImportPlan
-): Importable | null {
+export function reconstructObservedFunction(plan: FunctionImportPlan): Importable | null {
     if (plan.actionsPlan === null) return null;
     const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
     if (actions === null) return null;

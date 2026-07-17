@@ -21,9 +21,7 @@ import {
     type ImportSession,
 } from "../importables/imports";
 import { listAllFunctionNames } from "../importables/functions/listFunctions";
-import {
-    resetFunctionNameSession,
-} from "../importables/functions/listFunctions";
+import { resetFunctionNameSession } from "../importables/functions/listFunctions";
 import {
     listAllCommandNames,
     resetCommandNameSession,
@@ -33,16 +31,13 @@ import { deleteTeam } from "../importables/teams/listTeams";
 import { deleteGroup } from "../importables/groups/listGroups";
 import { createNpcLookupCache } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
-import {
-    listAllMenuNames,
-    resetMenuNameSession,
-} from "../importables/menus/listMenus";
+import { listAllMenuNames, resetMenuNameSession } from "../importables/menus/listMenus";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type {
     ActionListOperation,
     ConditionListOperation,
     ChildListDiff,
-} from "../housingSync/types";
+} from "../housingSync/actions/diff/types";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_TIMEOUT_MS,
@@ -54,14 +49,8 @@ import {
     restoreInventoryToSnapshot,
     snapshotInventory,
 } from "../housingSync/itemCapture";
-import {
-    gmcOnImportStart,
-    waitForCreativeMode,
-} from "../housingSync/sideEffects";
-import {
-    getTaskTracePath,
-    setTaskTraceEnabled,
-} from "../housingSync/trace/taskTrace";
+import { gmcOnImportStart, waitForCreativeMode } from "../housingSync/sideEffects";
+import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
 import { projectItemsFromParsedImportJson } from "../importables/exportContext";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
 import { coverageForFixtures, emitCoverageReport } from "./report";
@@ -72,10 +61,7 @@ type FixtureResult = {
     failures: string[];
 };
 
-export async function runLiveTestSuite(
-    ctx: TaskContext,
-    slice?: string
-): Promise<void> {
+export async function runLiveTestSuite(ctx: TaskContext, slice?: string): Promise<void> {
     const fixtures = loadTestFixtures(slice);
     if (fixtures.length === 0) {
         ctx.displayMessage("&c[htsw test] no fixtures matched.");
@@ -91,7 +77,9 @@ export async function runLiveTestSuite(
     try {
         gmcOnImportStart();
         if (!(await waitForCreativeMode(ctx))) {
-            ctx.displayMessage("&e[htsw test] Still not in creative after /gmc; region and item tests may fail.");
+            ctx.displayMessage(
+                "&e[htsw test] Still not in creative after /gmc; region and item tests may fail."
+            );
         }
 
         const housingUuid = await getCurrentHousingUuid(ctx);
@@ -298,7 +286,13 @@ async function deepReadVerifyFixture(
                 failures.push(
                     `${type} ${identity}: deep-read cache differs from source (keys: ${diffKeys.join(", ")})`
                 );
-                appendHashDiffDetail(type, identity, items[i], entry.importable, diffKeys);
+                appendHashDiffDetail(
+                    type,
+                    identity,
+                    items[i],
+                    entry.importable,
+                    diffKeys
+                );
                 ctx.displayMessage(
                     `&7[htsw test] full canonical diff → &f${HASH_DIFF_LOG}`
                 );
@@ -340,7 +334,9 @@ async function trustModeVerifyFixture(
         const plan = await prereadImportable(ctx, menu, session);
         const residuals = residualPlanOperations(plan);
         for (let j = 0; j < residuals.length; j++) {
-            failures.push(`menu ${menu.name}: trusted re-import wants to write ${residuals[j]}`);
+            failures.push(
+                `menu ${menu.name}: trusted re-import wants to write ${residuals[j]}`
+            );
         }
 
         if (menu.slots.length === 0) continue;
@@ -427,14 +423,20 @@ async function expectSingleMenuSlotOp(
             failures.push(`menu ${mutated.name}: item change produced no item write`);
         }
         if (op.syncActions !== undefined) {
-            failures.push(`menu ${mutated.name}: item change also rewrote the slot's actions`);
+            failures.push(
+                `menu ${mutated.name}: item change also rewrote the slot's actions`
+            );
         }
     } else {
         if (op.syncActions === undefined) {
-            failures.push(`menu ${mutated.name}: actions change produced no action write`);
+            failures.push(
+                `menu ${mutated.name}: actions change produced no action write`
+            );
         }
         if (op.setItem !== undefined) {
-            failures.push(`menu ${mutated.name}: actions change also rewrote the slot's item`);
+            failures.push(
+                `menu ${mutated.name}: actions change also rewrote the slot's item`
+            );
         }
     }
     return failures;
@@ -517,9 +519,7 @@ function appendHashDiffDetail(
     }
 }
 
-function createFixtureItemCaptures(
-    fixture: ParsedTestFixture
-): ItemCaptureRegistry {
+function createFixtureItemCaptures(fixture: ParsedTestFixture): ItemCaptureRegistry {
     const captures = new ItemCaptureRegistry();
     const importables = fixture.parsed.value;
     for (let i = 0; i < importables.length; i++) {
@@ -555,24 +555,27 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
                 failures.push("bounds differ");
             }
             const enterFailures = actionPlanFailures("onEnterActions", plan.enterPlan);
-            for (let i = 0; i < enterFailures.length; i++) failures.push(enterFailures[i]);
+            for (let i = 0; i < enterFailures.length; i++)
+                failures.push(enterFailures[i]);
             const exitFailures = actionPlanFailures("onExitActions", plan.exitPlan);
             for (let i = 0; i < exitFailures.length; i++) failures.push(exitFailures[i]);
             return failures;
         }
         case "MENU": {
-            const diff = (plan as {
-                diff: {
-                    setSize: number | null;
-                    ops: Array<{
-                        slot: number;
-                        setItem?: unknown;
-                        syncActions?: Action[];
-                        clear?: boolean;
-                        itemCompare?: { read: string; desired: string };
-                    }>;
-                };
-            }).diff;
+            const diff = (
+                plan as {
+                    diff: {
+                        setSize: number | null;
+                        ops: Array<{
+                            slot: number;
+                            setItem?: unknown;
+                            syncActions?: Action[];
+                            clear?: boolean;
+                            itemCompare?: { read: string; desired: string };
+                        }>;
+                    };
+                }
+            ).diff;
             const failures: string[] = [];
             if (diff.setSize !== null) failures.push(`size differs: ${diff.setSize}`);
             for (const op of diff.ops) {
@@ -586,9 +589,13 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
                     );
                 }
                 if (op.syncActions !== undefined) {
-                    parts.push(`actions differ (desired: ${op.syncActions.map((a) => a.type).join(", ")})`);
+                    parts.push(
+                        `actions differ (desired: ${op.syncActions.map((a) => a.type).join(", ")})`
+                    );
                 }
-                failures.push(`slot ${op.slot}: ${parts.length > 0 ? parts.join("; ") : "?"}`);
+                failures.push(
+                    `slot ${op.slot}: ${parts.length > 0 ? parts.join("; ") : "?"}`
+                );
             }
             return failures;
         }
@@ -597,11 +604,13 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
         case "NPC": {
             const failures: string[] = [];
             if (!plan.nameHandled) failures.push("name differs");
-            if (!plan.leftClickRedirectHandled) failures.push("leftClickRedirect differs");
+            if (!plan.leftClickRedirectHandled)
+                failures.push("leftClickRedirect differs");
             const leftFailures = actionPlanFailures("leftClickActions", plan.leftPlan);
             for (let i = 0; i < leftFailures.length; i++) failures.push(leftFailures[i]);
             const rightFailures = actionPlanFailures("rightClickActions", plan.rightPlan);
-            for (let i = 0; i < rightFailures.length; i++) failures.push(rightFailures[i]);
+            for (let i = 0; i < rightFailures.length; i++)
+                failures.push(rightFailures[i]);
             return failures;
         }
         case "TEAM": {
@@ -655,7 +664,9 @@ function actionPlanFailures(
     if (plan === null || plan.diff.operations.length === 0) return [];
     const failures = [`${label} has ${plan.diff.operations.length} residual op(s)`];
     for (let i = 0; i < plan.diff.operations.length; i++) {
-        failures.push(`${label} ${i + 1}: ${actionOperationSummary(plan.diff.operations[i])}`);
+        failures.push(
+            `${label} ${i + 1}: ${actionOperationSummary(plan.diff.operations[i])}`
+        );
     }
     return failures;
 }
@@ -715,10 +726,7 @@ function conditionOpSummary(op: ConditionListOperation): string {
 // Field-level diff of read-back (baseline) vs desired condition, for residual
 // reporting: shows exactly which property fails to round-trip (read≠write).
 function conditionFieldDiff(baseline: Condition, desired: Condition): string {
-    const keys = new Set<string>([
-        ...Object.keys(baseline),
-        ...Object.keys(desired),
-    ]);
+    const keys = new Set<string>([...Object.keys(baseline), ...Object.keys(desired)]);
     const diffs: string[] = [];
     keys.forEach((key) => {
         const b = JSON.stringify((baseline as Record<string, unknown>)[key]);
@@ -848,7 +856,9 @@ async function assertHouseStartsEmpty(ctx: TaskContext): Promise<boolean> {
     ctx.displayMessage(
         `&c[htsw test] refusing to run: this house is not empty (${problems.join(", ")}).`
     );
-    ctx.displayMessage("&7[htsw test] Use an empty throwaway house for live importer tests.");
+    ctx.displayMessage(
+        "&7[htsw test] Use an empty throwaway house for live importer tests."
+    );
     return false;
 }
 
@@ -857,9 +867,7 @@ async function assertHouseStartsEmpty(ctx: TaskContext): Promise<boolean> {
 const DEFAULT_HOUSE_COMMANDS = ["stuck", "clear"];
 
 function withoutDefaultCommands(names: string[]): string[] {
-    return names.filter(
-        (name) => DEFAULT_HOUSE_COMMANDS.indexOf(name.toLowerCase()) < 0
-    );
+    return names.filter((name) => DEFAULT_HOUSE_COMMANDS.indexOf(name.toLowerCase()) < 0);
 }
 
 async function readHouseState(ctx: TaskContext): Promise<{

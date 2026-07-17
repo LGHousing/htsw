@@ -1,7 +1,13 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { Action } from "htsw/types";
-import type { Diagnostic, DiagnosticLevel, ImportablesParseResult, SourceFile, SpanTable } from "htsw";
+import type {
+    Diagnostic,
+    DiagnosticLevel,
+    ImportablesParseResult,
+    SourceFile,
+    SpanTable,
+} from "htsw";
 
 import { getMtimeMs, pathExists } from "../lib/java";
 import { shortPath } from "../lib/pathDisplay";
@@ -14,16 +20,18 @@ import {
 } from "./htslParse";
 import { getSelectedParsedResult } from "../parsing/selectedParse";
 import { getParseAt } from "../parsing/parses";
-import { tokenizeHtsl, tokenizeJson, tokenizeSnbt, type SyntaxToken } from "../right-panel/syntax";
-import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
-import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
 import {
-    actionPathForIndex,
-    actionPathKey,
-    childActionListPath,
-    type ActionListPath,
-    type ActionPath,
-} from "../../housingSync/actionPath";
+    tokenizeHtsl,
+    tokenizeJson,
+    tokenizeSnbt,
+    type SyntaxToken,
+} from "../right-panel/syntax";
+import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
+import {
+    normalizeDiagnosticSpans,
+    type DiagnosticLineSpan,
+} from "../../diagnostics/spans";
+import { ActionListPath, ActionPath } from "../../housingSync/actionPath";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
@@ -93,8 +101,14 @@ function normalizedPath(path: string): string {
     return path.split("\\").join("/").toLowerCase();
 }
 
-function parsedForContext(importJsonPath: string | null | undefined): ImportablesParseResult | null {
-    if (importJsonPath !== null && importJsonPath !== undefined && importJsonPath !== "") {
+function parsedForContext(
+    importJsonPath: string | null | undefined
+): ImportablesParseResult | null {
+    if (
+        importJsonPath !== null &&
+        importJsonPath !== undefined &&
+        importJsonPath !== ""
+    ) {
         return getParseAt(importJsonPath)?.parsed ?? null;
     }
     return getSelectedParsedResult();
@@ -129,7 +143,8 @@ function diagnosticIndexForFile(
                 info.diagnostics.push(span.rootDiagnostic);
             }
             const rootLevel = span.rootDiagnostic.level;
-            if (rootLevel === "bug" || rootLevel === "error") info.background = DIAG_ERROR_BG;
+            if (rootLevel === "bug" || rootLevel === "error")
+                info.background = DIAG_ERROR_BG;
             else if (rootLevel === "warning" && info.background !== DIAG_ERROR_BG) {
                 info.background = DIAG_WARN_BG;
             }
@@ -159,8 +174,10 @@ export function tokensWithDiagnosticSpans(
         const cuts = [tokenStart, tokenEnd];
         for (let j = 0; j < spans.length; j++) {
             const span = spans[j];
-            if (span.startColumn > tokenStart && span.startColumn < tokenEnd) cuts.push(span.startColumn);
-            if (span.endColumn > tokenStart && span.endColumn < tokenEnd) cuts.push(span.endColumn);
+            if (span.startColumn > tokenStart && span.startColumn < tokenEnd)
+                cuts.push(span.startColumn);
+            if (span.endColumn > tokenStart && span.endColumn < tokenEnd)
+                cuts.push(span.endColumn);
         }
         cuts.sort((a, b) => a - b);
         const uniqueCuts: number[] = [];
@@ -181,11 +198,12 @@ export function tokensWithDiagnosticSpans(
                 color: token.color,
                 fieldProp: token.fieldProp,
                 linkTarget: token.linkTarget,
-                underlineColor: winner === undefined
-                    ? undefined
-                    : winner.kind === "secondary"
-                      ? DIAG_SECONDARY
-                      : DIAG_UNDERLINE[winner.level],
+                underlineColor:
+                    winner === undefined
+                        ? undefined
+                        : winner.kind === "secondary"
+                          ? DIAG_SECONDARY
+                          : DIAG_UNDERLINE[winner.level],
             });
         }
         tokenStart = tokenEnd;
@@ -206,7 +224,9 @@ function decorateLineDiagnostics(
 }
 
 function endsWith(s: string, suffix: string): boolean {
-    return s.length >= suffix.length && s.lastIndexOf(suffix) === s.length - suffix.length;
+    return (
+        s.length >= suffix.length && s.lastIndexOf(suffix) === s.length - suffix.length
+    );
 }
 
 function plainTokens(text: string, color: number): TokenSpan[] {
@@ -241,7 +261,6 @@ type HtslCacheEntry = {
 };
 const htslCache = new Map<string, HtslCacheEntry>();
 
-
 function htslRenderableLines(
     path: string,
     importJsonPath: string | null | undefined
@@ -251,9 +270,9 @@ function htslRenderableLines(
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = htslCache.get(path);
     if (
-        cached !== undefined
-        && cached.mtime === mtime
-        && cached.parsedRef === parsedRef
+        cached !== undefined &&
+        cached.mtime === mtime &&
+        cached.parsedRef === parsedRef
     ) {
         return cached.lines;
     }
@@ -265,13 +284,7 @@ function htslRenderableLines(
         ];
         const errLines = result.parseError.split("\n");
         for (let i = 0; i < errLines.length; i++) {
-            out.push(
-                syntheticLine(
-                    `__parse_err_${i}`,
-                    errLines[i],
-                    COLOR_ERROR
-                )
-            );
+            out.push(syntheticLine(`__parse_err_${i}`, errLines[i], COLOR_ERROR));
         }
         htslCache.set(path, { mtime, parsedRef, lines: out });
         return out;
@@ -291,13 +304,10 @@ function htslRenderableLines(
         const lineText = indentedText(ln);
         // Main's HtslLine has no fieldSpans yet — bucket B (printActionSpans) lands separately.
         // Pass undefined so tokens carry text + color but no per-field metadata.
-        const tokens: TokenSpan[] = attachFieldSpans(
-            tokenizeHtsl(lineText),
-            undefined
-        );
+        const tokens: TokenSpan[] = attachFieldSpans(tokenizeHtsl(lineText), undefined);
         let id: string;
         if (ln.actionPath !== undefined) {
-            const pathKey = actionPathKey(ln.actionPath);
+            const pathKey = ActionPath.key(ln.actionPath);
             const seenAt = seenPaths[pathKey];
             if (seenAt === undefined) {
                 seenPaths[pathKey] = i;
@@ -316,13 +326,16 @@ function htslRenderableLines(
             tokens,
             actionPath: ln.actionPath,
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
+        decorateLineDiagnostics(
+            renderableLine,
+            diagnostics.byLine.get(lineNum),
+            diagnostics.parsed
+        );
         out.push(renderableLine);
     }
     htslCache.set(path, { mtime, parsedRef, lines: out });
     return out;
 }
-
 
 function readPlainLines(path: string): string[] {
     const mtime = getMtimeMs(path);
@@ -368,7 +381,11 @@ function plainTextRenderableLines(
             depth: 0,
             tokens: plainTokens(lines[i], COLOR_PLAIN),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
+        decorateLineDiagnostics(
+            renderableLine,
+            diagnostics.byLine.get(lineNum),
+            diagnostics.parsed
+        );
         out.push(renderableLine);
     }
     return out;
@@ -386,7 +403,9 @@ function jsonStringValue(tokenText: string): string | null {
 
 function looksLikeSourceFileRef(value: string): boolean {
     const lower = value.toLowerCase();
-    return endsWith(lower, ".json") || endsWith(lower, ".htsl") || endsWith(lower, ".snbt");
+    return (
+        endsWith(lower, ".json") || endsWith(lower, ".htsl") || endsWith(lower, ".snbt")
+    );
 }
 
 function addJsonFileLinks(sourcePath: string, tokens: TokenSpan[]): TokenSpan[] {
@@ -408,7 +427,11 @@ function jsonRenderableLines(
     const parsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = jsonCache.get(path);
-    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+    if (
+        cached !== undefined &&
+        cached.mtime === mtime &&
+        cached.parsedRef === parsedRef
+    ) {
         return cached.lines;
     }
 
@@ -426,7 +449,11 @@ function jsonRenderableLines(
                 attachFieldSpans(tokenizeJson(lines[i]), undefined)
             ),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
+        decorateLineDiagnostics(
+            renderableLine,
+            diagnostics.byLine.get(lineNum),
+            diagnostics.parsed
+        );
         out.push(renderableLine);
     }
     jsonCache.set(path, { mtime, parsedRef, lines: out });
@@ -443,7 +470,11 @@ function snbtRenderableLines(
     const parsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = snbtCache.get(path);
-    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+    if (
+        cached !== undefined &&
+        cached.mtime === mtime &&
+        cached.parsedRef === parsedRef
+    ) {
         return cached.lines;
     }
 
@@ -458,7 +489,11 @@ function snbtRenderableLines(
             depth: 0,
             tokens: attachFieldSpans(tokenizeSnbt(lines[i]), undefined),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
+        decorateLineDiagnostics(
+            renderableLine,
+            diagnostics.byLine.get(lineNum),
+            diagnostics.parsed
+        );
         out.push(renderableLine);
     }
     snbtCache.set(path, { mtime, parsedRef, lines: out });
@@ -494,7 +529,7 @@ function collectActionLineRanges(
         for (let i = 0; i < list.length; i++) {
             const a = list[i];
             if (a === null || a === undefined) continue;
-            const actionPath = actionPathForIndex(listPath, i);
+            const actionPath = ActionPath.at(listPath, i);
             const range = actionLineRange(file, spans, a);
             if (range === null) continue;
             out.push({
@@ -504,10 +539,22 @@ function collectActionLineRanges(
                 depth,
             });
             if (a.type === "CONDITIONAL") {
-                visit(a.ifActions ?? [], childActionListPath(actionPath, "ifActions"), depth + 1);
-                visit(a.elseActions ?? [], childActionListPath(actionPath, "elseActions"), depth + 1);
+                visit(
+                    a.ifActions ?? [],
+                    ActionListPath.childOf(actionPath, "ifActions"),
+                    depth + 1
+                );
+                visit(
+                    a.elseActions ?? [],
+                    ActionListPath.childOf(actionPath, "elseActions"),
+                    depth + 1
+                );
             } else if (a.type === "RANDOM") {
-                visit(a.actions ?? [], childActionListPath(actionPath, "actions"), depth + 1);
+                visit(
+                    a.actions ?? [],
+                    ActionListPath.childOf(actionPath, "actions"),
+                    depth + 1
+                );
             }
         }
     }
@@ -543,10 +590,7 @@ function pathPerLine(
     return paths;
 }
 
-function depthPerLine(
-    lineCount: number,
-    ranges: readonly ActionLineRange[]
-): number[] {
+function depthPerLine(lineCount: number, ranges: readonly ActionLineRange[]): number[] {
     const depths: number[] = new Array(lineCount);
     for (let i = 0; i < lineCount; i++) depths[i] = 0;
     for (let r = 0; r < ranges.length; r++) {
@@ -562,7 +606,10 @@ function depthPerLine(
     return depths;
 }
 
-const htslRawCache = new Map<string, { mtime: number; parsedRef: object | null; lines: RenderableLine[] }>();
+const htslRawCache = new Map<
+    string,
+    { mtime: number; parsedRef: object | null; lines: RenderableLine[] }
+>();
 
 function htslRawRenderableLines(
     path: string,
@@ -572,7 +619,11 @@ function htslRawRenderableLines(
     const projectParsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = projectParsed === null ? null : projectParsed;
     const cached = htslRawCache.get(path);
-    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+    if (
+        cached !== undefined &&
+        cached.mtime === mtime &&
+        cached.parsedRef === parsedRef
+    ) {
         return cached.lines;
     }
 
@@ -597,7 +648,7 @@ function htslRawRenderableLines(
         const actionPath = linePaths[i];
         let id: string;
         if (actionPath !== undefined) {
-            const pathKey = actionPathKey(actionPath);
+            const pathKey = ActionPath.key(actionPath);
             const seenAt = seenPaths[pathKey];
             if (seenAt === undefined) {
                 seenPaths[pathKey] = i;
@@ -616,7 +667,11 @@ function htslRawRenderableLines(
             tokens,
             actionPath,
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
+        decorateLineDiagnostics(
+            renderableLine,
+            diagnostics.byLine.get(lineNum),
+            diagnostics.parsed
+        );
         out.push(renderableLine);
     }
     htslRawCache.set(path, { mtime, parsedRef, lines: out });
