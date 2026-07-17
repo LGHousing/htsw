@@ -92,28 +92,39 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
 
         // Re-push the tree when diagnostics change so the error/warning badges
         // track the editor live, like VS Code's explorer. Debounced because
-        // diagnostics fire on every keystroke-parse; skipped while hidden.
-        let diagTimer: ReturnType<typeof setTimeout> | undefined;
+        // diagnostics fire on every keystroke-parse.
+        let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+        let refreshPending = false;
+        const refreshProjectTree = () => {
+            void handleProjectMessage(view.webview, { type: "requestProjectTree" });
+        };
+        const debounceRefresh = (delay: number) => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                refreshTimer = undefined;
+                if (!view.visible) {
+                    refreshPending = true;
+                    return;
+                }
+                refreshProjectTree();
+            }, delay);
+        };
         const diagSub = vscode.languages.onDidChangeDiagnostics(() => {
-            if (diagTimer) clearTimeout(diagTimer);
-            diagTimer = setTimeout(() => {
-                if (!view.visible) return;
-                void handleProjectMessage(view.webview, { type: "requestProjectTree" });
-            }, 750);
+            debounceRefresh(750);
         });
-        let gitTimer: ReturnType<typeof setTimeout> | undefined;
         const gitSub = await onDidChangeGitStatus(() => {
-            if (gitTimer) clearTimeout(gitTimer);
-            gitTimer = setTimeout(() => {
-                if (!view.visible) return;
-                void handleProjectMessage(view.webview, { type: "requestProjectTree" });
-            }, 500);
+            debounceRefresh(500);
+        });
+        const visibilitySub = view.onDidChangeVisibility(() => {
+            if (!view.visible || !refreshPending) return;
+            refreshPending = false;
+            refreshProjectTree();
         });
         view.onDidDispose(() => {
-            if (diagTimer) clearTimeout(diagTimer);
-            if (gitTimer) clearTimeout(gitTimer);
+            if (refreshTimer) clearTimeout(refreshTimer);
             diagSub.dispose();
             gitSub.dispose();
+            visibilitySub.dispose();
             if (this.webview === view.webview) this.webview = undefined;
         });
     }
