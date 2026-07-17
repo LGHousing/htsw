@@ -174,6 +174,35 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("parses player time as an unquoted integer", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": "playerTime 18000\n",
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+        expect(result.value[0]).toMatchObject({ type: "SET_PLAYER_TIME" });
+        const action = result.value[0];
+        if (action.type !== "SET_PLAYER_TIME") throw new Error("Expected SET_PLAYER_TIME action");
+        expect(action.time).toBe(18000);
+        expect(htsw.htsl.printActions(result.value)).toBe("playerTime 18000\n");
+    });
+
+    it("rejects player times outside the Housing range", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": "playerTime 24000\n",
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(errorMessages(result)).toContain("Value must be less than or equal to 23999");
+    });
+
     it("compare-placeholder accepts string placeholders with == ", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

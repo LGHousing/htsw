@@ -231,7 +231,7 @@ function printActionHead(
         case "SET_MENU":
             return `displayMenu ${quoteName(action.menu)}`;
         case "SET_PLAYER_TIME":
-            return `playerTime ${quoteString(action.time)}`;
+            return `playerTime ${action.time}`;
         case "SET_PLAYER_WEATHER":
             return `playerWeather ${quoteString(action.weather)}`;
         case "SET_TEAM":

@@ -204,7 +204,7 @@ export type ActionSetPlayerWeather = {
 
 export type ActionSetPlayerTime = {
     type: "SET_PLAYER_TIME";
-    time: string;
+    time: number;
 };
 
 export type ActionToggleNametagDisplay = {
