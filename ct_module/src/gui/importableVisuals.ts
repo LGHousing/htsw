@@ -23,6 +23,8 @@ const IMPORTABLE_TYPE_VISUALS: {
     COMMAND: { icon: Icons.command, color: 0xffe8e06a | 0 },
 };
 
+const DEFAULT_FUNCTION_ICON_ITEM = "minecraft:map";
+
 export const IMPORTABLE_TYPE_COLORS: { [K in Importable["type"]]: number } = {
     FUNCTION: IMPORTABLE_TYPE_VISUALS.FUNCTION.color,
     EVENT: IMPORTABLE_TYPE_VISUALS.EVENT.color,
@@ -100,13 +102,11 @@ export function ImportableIcon(props: {
         props.functionIcon ??
         (props.importable?.type === "FUNCTION" ? props.importable.icon : undefined);
     if (props.type === "FUNCTION") {
-        return functionIcon === undefined
-            ? false
-            : McItem({
-                  item: functionIcon.item,
-                  count: functionIcon.count ?? 1,
-                  style: props.style,
-              });
+        return McItem({
+            item: functionIcon?.item ?? DEFAULT_FUNCTION_ICON_ITEM,
+            count: functionIcon?.count ?? 1,
+            style: props.style,
+        });
     }
 
     if (props.type === "ITEM" && props.importable !== undefined && props.importable !== null) {
