@@ -114,9 +114,7 @@ async function exportAllNpcsInner(
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed: ${error}`
-            );
+            ctx.displayMessage(`&7[export] &eInventory restore failed: ${error}`);
         }
         return { total: 0, succeeded: 0, failed: 0 };
     }
@@ -172,14 +170,16 @@ async function exportAllNpcsInner(
                     },
                     { itemCaptures, inventorySnapshot, npcLookup }
                 );
-                const identity = npcPosIdentity(liveEntry.pos);
-                const cached = readImportableCache(lockHousingUuid, "NPC", identity);
-                if (cached !== null) {
-                    upsertHouseLockImportable(
-                        importJsonPath,
-                        lockHousingUuid,
-                        cached.importable
-                    );
+                if (!readOnly) {
+                    const identity = npcPosIdentity(liveEntry.pos);
+                    const cached = readImportableCache(lockHousingUuid, "NPC", identity);
+                    if (cached !== null) {
+                        upsertHouseLockImportable(
+                            importJsonPath,
+                            lockHousingUuid,
+                            cached.importable
+                        );
+                    }
                 }
                 succeeded++;
                 sink?.itemFinished?.(i);
@@ -189,9 +189,7 @@ async function exportAllNpcsInner(
                 }
                 failed++;
                 sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(
-                    `&c[export-all] failed on NPC '${label}': ${error}`
-                );
+                ctx.displayMessage(`&c[export-all] failed on NPC '${label}': ${error}`);
             }
         }
     } finally {

@@ -65,8 +65,21 @@ export type ReadHouseSpec<Entry> = {
         state: BatchState,
         onReadProgress: ProgressHandler | undefined
     ) => Promise<void>;
-    scanOne?: (ctx: TaskContext, entry: Entry, options: ReadOptions, state: BatchState, onReadProgress: ProgressHandler | undefined) => Promise<unknown>;
-    hydrateOne?: (ctx: TaskContext, entry: Entry, pending: unknown, options: ReadOptions, state: BatchState, onReadProgress: ProgressHandler | undefined) => Promise<void>;
+    scanOne?: (
+        ctx: TaskContext,
+        entry: Entry,
+        options: ReadOptions,
+        state: BatchState,
+        onReadProgress: ProgressHandler | undefined
+    ) => Promise<unknown>;
+    hydrateOne?: (
+        ctx: TaskContext,
+        entry: Entry,
+        pending: unknown,
+        options: ReadOptions,
+        state: BatchState,
+        onReadProgress: ProgressHandler | undefined
+    ) => Promise<void>;
     // Diagnostic messages emitted after the loop in both export and read modes,
     // before the summary line (e.g. item-capture hints).
     afterLoop?: (ctx: TaskContext, state: BatchState) => void;
@@ -94,7 +107,8 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         const state: BatchState = {
             itemCaptures: new ItemCaptureRegistry(),
             writtenItems: new Set<string>(),
-            inventorySnapshot: spec.capturesActionItems === true ? snapshotInventory() : null,
+            inventorySnapshot:
+                spec.capturesActionItems === true ? snapshotInventory() : null,
         };
         const projectItems = options.projectItems ?? [];
         for (let i = 0; i < projectItems.length; i++) {
@@ -157,36 +171,90 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                 displayName: spec.displayName,
                 progress: options.progress,
                 processOne: async (ctx, name, onReadProgress) => {
-                    const entry = byName !== null ? byName.get(name) : (name as unknown as Entry);
+                    const entry =
+                        byName !== null ? byName.get(name) : (name as unknown as Entry);
                     if (entry === undefined) {
                         throw new Error(
                             `No ${spec.noun} named "${name}" exists in this housing.`
                         );
                     }
                     await spec.readOne(ctx, entry, options, state, onReadProgress);
-                    const cached = readImportableCache(lockHousingUuid, spec.type, name);
-                    if (cached !== null) {
-                        upsertHouseLockImportable(
-                            options.importJsonPath,
+                    if (!readOnly) {
+                        const cached = readImportableCache(
                             lockHousingUuid,
-                            cached.importable
+                            spec.type,
+                            name
                         );
+                        if (cached !== null) {
+                            upsertHouseLockImportable(
+                                options.importJsonPath,
+                                lockHousingUuid,
+                                cached.importable
+                            );
+                        }
                     }
                 },
-                ...(spec.scanOne === undefined || spec.hydrateOne === undefined ? {} : {
-                    scanOne: async (ctx: TaskContext, name: string, onReadProgress: ProgressHandler | undefined) => {
-                        const entry = byName !== null ? byName.get(name) : (name as unknown as Entry);
-                        if (entry === undefined) throw new Error(`No ${spec.noun} named "${name}" exists in this housing.`);
-                        return spec.scanOne!(ctx, entry, options, state, onReadProgress);
-                    },
-                    hydrateOne: async (ctx: TaskContext, name: string, pending: unknown, onReadProgress: ProgressHandler | undefined) => {
-                        const entry = byName !== null ? byName.get(name) : (name as unknown as Entry);
-                        if (entry === undefined) throw new Error(`No ${spec.noun} named "${name}" exists in this housing.`);
-                        await spec.hydrateOne!(ctx, entry, pending, options, state, onReadProgress);
-                        const cached = readImportableCache(lockHousingUuid, spec.type, name);
-                        if (cached !== null) upsertHouseLockImportable(options.importJsonPath, lockHousingUuid, cached.importable);
-                    },
-                }),
+                ...(spec.scanOne === undefined || spec.hydrateOne === undefined
+                    ? {}
+                    : {
+                          scanOne: async (
+                              ctx: TaskContext,
+                              name: string,
+                              onReadProgress: ProgressHandler | undefined
+                          ) => {
+                              const entry =
+                                  byName !== null
+                                      ? byName.get(name)
+                                      : (name as unknown as Entry);
+                              if (entry === undefined)
+                                  throw new Error(
+                                      `No ${spec.noun} named "${name}" exists in this housing.`
+                                  );
+                              return spec.scanOne!(
+                                  ctx,
+                                  entry,
+                                  options,
+                                  state,
+                                  onReadProgress
+                              );
+                          },
+                          hydrateOne: async (
+                              ctx: TaskContext,
+                              name: string,
+                              pending: unknown,
+                              onReadProgress: ProgressHandler | undefined
+                          ) => {
+                              const entry =
+                                  byName !== null
+                                      ? byName.get(name)
+                                      : (name as unknown as Entry);
+                              if (entry === undefined)
+                                  throw new Error(
+                                      `No ${spec.noun} named "${name}" exists in this housing.`
+                                  );
+                              await spec.hydrateOne!(
+                                  ctx,
+                                  entry,
+                                  pending,
+                                  options,
+                                  state,
+                                  onReadProgress
+                              );
+                              if (!readOnly) {
+                                  const cached = readImportableCache(
+                                      lockHousingUuid,
+                                      spec.type,
+                                      name
+                                  );
+                                  if (cached !== null)
+                                      upsertHouseLockImportable(
+                                          options.importJsonPath,
+                                          lockHousingUuid,
+                                          cached.importable
+                                      );
+                              }
+                          },
+                      }),
             });
             succeeded = result.succeeded;
             failed = result.failed;
