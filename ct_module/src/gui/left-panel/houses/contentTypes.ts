@@ -95,7 +95,12 @@ export type HouseContentType = {
     // as verified knowledge (slow; explicit) — the export driver in read-only
     // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
     deepRead?: (onlyNames?: string[]) => void;
-    rowActions?: { label: string; icon: IconName; run: (name: string) => void }[];
+    rowActions?: {
+        label: string;
+        icon: IconName;
+        run: (name: string) => void;
+        opensEditor?: boolean;
+    }[];
     remove?: (name: string) => void;
     // Present only for types that can be written into the loaded import.json.
     // Export reads the live housing menu, so the view still gates it on standing
@@ -153,6 +158,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => ChatLib.command(`function edit ${name}`),
+                opensEditor: true,
             },
         ],
         remove: (name) => ChatLib.command(`function delete ${name}`),
@@ -177,6 +183,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => ChatLib.command(`menu edit ${name}`),
+                opensEditor: true,
             },
         ],
         export: exportHook({ type: "MENU", label: "menu", read: readMenus }),
@@ -195,6 +202,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => ChatLib.command(`region edit ${name}`),
+                opensEditor: true,
             },
         ],
         remove: (name) => ChatLib.command(`region delete ${name}`),
@@ -215,6 +223,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => ChatLib.command(`command edit ${name}`),
+                opensEditor: true,
             },
         ],
         remove: (name) => ChatLib.command(`command delete ${name}`),
@@ -237,6 +246,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => runMenuTask("open event", (ctx) => openEventEditor(ctx, name)),
+                opensEditor: true,
             },
         ],
         export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
@@ -255,6 +265,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => runMenuTask("open team", (ctx) => openManageTeam(ctx, name)),
+                opensEditor: true,
             },
         ],
         remove: (name) => ChatLib.command(`team delete ${name}`),
@@ -277,6 +288,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                 label: "Edit",
                 icon: Icons.pencil,
                 run: (name) => runMenuTask("open group", (ctx) => openEditGroup(ctx, name)),
+                opensEditor: true,
             },
         ],
         export: exportHook({ type: "GROUP", label: "group", read: readGroups }),
@@ -303,6 +315,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
                     runMenuTask("open NPC editor", (ctx) =>
                         openNpcEditorForPos(ctx, parseNpcPosIdentity(name))
                     ),
+                opensEditor: true,
             },
             {
                 label: "Teleport",
@@ -321,3 +334,10 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] =
     (Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]).map(
         (type) => HOUSE_CONTENT_BY_TYPE[type]
     );
+
+export function houseContentTypeFor(type: Importable["type"]): HouseContentType | null {
+    for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
+        if (HOUSE_CONTENT_TYPES[i].type === type) return HOUSE_CONTENT_TYPES[i];
+    }
+    return null;
+}

@@ -88,6 +88,7 @@ import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Bounds, Importable, MenuSlot } from "htsw/types";
 import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
 import { ImportableIcon } from "../../importableVisuals";
+import { houseContentTypeFor } from "../houses/contentTypes";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -533,11 +534,41 @@ function openInViewAction(path: string, importJsonPath?: string | null): MenuAct
     };
 }
 
+function openInHousingAction(imp: Importable): MenuAction | null {
+    const uuid = getHousingUuid();
+    if (uuid === null) return null;
+    const contentType = houseContentTypeFor(imp.type);
+    if (contentType === null) return null;
+    const identity = importableIdentity(imp);
+    const houseItems = contentType.items(uuid);
+    let present = false;
+    for (let i = 0; i < houseItems.length; i++) {
+        if (houseItems[i].name === identity) {
+            present = true;
+            break;
+        }
+    }
+    if (!present) return null;
+    const actions = contentType.rowActions ?? [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        if (!action.opensEditor) continue;
+        return {
+            label: "Open in Housing",
+            icon: Icons.house,
+            onClick: () => action.run(identity),
+        };
+    }
+    return null;
+}
+
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
+    const housingAction = openInHousingAction(imp);
     const extras: MenuAction[] = [
         openInViewAction(target, parent.fullPath),
+        ...(housingAction !== null ? [housingAction] : []),
         {
             label: "Rename",
             onClick: () => {
