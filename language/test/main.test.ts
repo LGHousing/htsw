@@ -269,6 +269,25 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("playerTime accepts only bare tick values", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "playerTime 100",
+                    "playerTime %var.global/clock%",
+                    "playerTime \"%var.global/clock 0%\"",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+        const errors = result.diagnostics.filter((it) => it.level === "error");
+
+        expect(result.value[0]).toMatchObject({ type: "SET_PLAYER_TIME", time: 100 });
+        expect(errors).toHaveLength(2);
+    });
+
     it("parseActionsResult accepts literal percent signs inside strings", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

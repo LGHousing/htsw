@@ -351,7 +351,7 @@ export const ACTION_MAPPINGS = {
     SET_PLAYER_TIME: {
         displayName: "Set Player Time",
         loreFields: {
-            Time: { prop: "time", kind: "value" },
+            Time: { prop: "time", kind: "value", numeric: true },
         },
     },
 

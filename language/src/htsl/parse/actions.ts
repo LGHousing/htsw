@@ -489,7 +489,7 @@ function parseActionSetPlayerWeather(p: Parser, note: Note): Action {
 
 function parseActionSetPlayerTime(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_PLAYER_TIME", note, (action) => {
-        setField(p, action, "time", p.parseString);
+        setField(p, action, "time", () => p.parseBoundedNumber(0, 23999));
     });
 }
 

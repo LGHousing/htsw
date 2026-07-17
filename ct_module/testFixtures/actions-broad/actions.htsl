@@ -34,5 +34,5 @@ dropItem "htsw_test_item_action" House_Spawn_Location true false false false 600
 changeVelocity 0 1 0
 launchTarget House_Spawn_Location 1
 playerWeather "Sunny"
-playerTime "1000"
+playerTime 1000
 displayNametag false

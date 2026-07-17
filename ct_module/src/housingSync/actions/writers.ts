@@ -105,42 +105,16 @@ function conditionListsEqual(
     return true;
 }
 
-const PLAYER_TIME_PRESETS = [
-    "Reset to World Time",
-    "Sunrise (0)",
-    "Noon (6,000)",
-    "Sunset (12,000)",
-    "Midnight (18,000)",
-];
-
-function playerTimePreset(value: string): string | null {
-    const normalized = value.trim().toLowerCase();
-    for (let i = 0; i < PLAYER_TIME_PRESETS.length; i++) {
-        const preset = PLAYER_TIME_PRESETS[i];
-        if (preset.toLowerCase() === normalized) return preset;
-    }
-    return null;
-}
-
-async function setPlayerTimeValue(ctx: TaskContext, value: string): Promise<void> {
+async function setPlayerTimeValue(ctx: TaskContext, value: number): Promise<void> {
     const slotName = getActionFieldLabel("SET_PLAYER_TIME", "time");
     const current = readStringValue(ctx.getMenuItemSlot(slotName));
-    if (current === value) return;
+    const time = value.toString();
+    if (current === time) return;
 
     await openSubmenu(ctx, slotName);
-    const preset = playerTimePreset(value);
-    if (preset !== null) {
-        const optionSlot = await getSlotPaginate(ctx, preset);
-        optionSlot.click();
-        await waitForMenu(ctx);
-        if (ctx.tryGetMenuItemSlot(slotName) !== null) return;
-        await clickGoBack(ctx);
-        return;
-    }
-
     const customSlot = await getSlotPaginate(ctx, "Custom Time");
     customSlot.click();
-    await enterValue(ctx, value);
+    await enterValue(ctx, time);
     await waitForMenu(ctx);
 }
 
