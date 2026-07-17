@@ -8,12 +8,15 @@ import {
     COLOR_BUTTON_PRIMARY_HOVER,
 } from "../../lib/theme";
 import { isParseInProgress } from "../../state";
+import { TaskManager } from "../../../tasks/manager";
 import { getQueueLength } from "./queue";
 import { startImport } from "./taskController";
 
 export function importControl(): Element {
-    const importDisabled = (): boolean => getQueueLength() === 0 || isParseInProgress();
+    const importDisabled = (): boolean =>
+        TaskManager.isBusy() || getQueueLength() === 0 || isParseInProgress();
     const importTooltip = (): string => {
+        if (TaskManager.isBusy()) return "Another task is already running.";
         if (isParseInProgress()) return "Project is still loading. Import will be available when it finishes.";
         if (getQueueLength() === 0) return "No changes queued to import.";
         return "";
