@@ -1,6 +1,6 @@
 {
     "name": "htsw-ct-module",
-    "version": "0.9.5",
+    "version": "0.9.6",
     "description": "HTSL but we don't take no Ls",
     "main": "dist/src/index.js",
     "types": "dist/src/index.d.ts",
