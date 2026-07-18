@@ -21,7 +21,6 @@ import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
 import { getExportDestinationStatus } from "../../export/destinationStatus";
 import {
-    addToExportSelection,
     clearExportSelection,
     getExportSelection,
     isInExportSelection,
@@ -413,6 +412,8 @@ type HouseLinkState =
     | "matches-knowledge"
     | "differs-from-knowledge";
 
+type HouseRow = { item: HouseImportable; state: HouseLinkState };
+
 // House-side wording for the shared link-status icons. The Projects page
 // maps the same keys with file-side phrasing — keep these answering "what does
 // this house row mean?", not "what import/export action will run?".
@@ -654,13 +655,16 @@ function confirmDestructiveExport(
 function exportActionBar(
     t: HouseContentType,
     uuid: string,
-    items: HouseImportable[]
+    items: HouseImportable[],
+    shownRows: HouseRow[]
 ): Element {
     const selected = getExportSelection().filter(
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
-    const totalCount = items.length;
+    const shownItems = shownRows.map((row) => row.item);
+    const shownCount = shownItems.length;
+    const houseCount = items.length;
     const labels = new Map<string, string>();
     for (const item of items) {
         if (item.label !== undefined) labels.set(item.name, item.label);
@@ -669,18 +673,17 @@ function exportActionBar(
     // Missing = house items whose identity isn't already in the loaded
     // import.json. Same comparison itemRow uses.
     const exportedSet = exportedIdentities(t.type);
-    const inProjectItems = items.filter((item) => exportedSet.has(item.name));
-    const unselectedInProjectCount = inProjectItems.filter(
-        (item) => !isInExportSelection(uuid, t.type, item.name)
-    ).length;
-    const missingNames = t
-        .items(uuid)
+    const missingNames = shownItems
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
     const destination = getExportDestinationStatus();
     const hasDest = destination.kind === "ready";
-    const hasItems = totalCount > 0;
-    const canExportItems = hasDest && hasItems;
+    const canExportPrimary = hasDest && (selectedCount > 0 || shownCount > 0);
+    const canOpenExportMenu = hasDest && shownCount > 0;
+    const noShownItemsTooltip =
+        houseCount === 0
+            ? `No ${t.label.toLowerCase()} in this house`
+            : `No ${t.label.toLowerCase()} match the current filters`;
     return Col({
         style: { gap: 4, padding: { side: "right", value: 8 } },
         children: [
@@ -689,61 +692,25 @@ function exportActionBar(
                 children: [
                     Button({
                         children: [
-                            Text({
-                                text: "Select in project",
-                                color:
-                                    unselectedInProjectCount > 0
-                                        ? undefined
-                                        : COLOR_TEXT_FAINT,
-                            }),
-                        ],
-                        style: {
-                            height: { kind: "grow" },
-                            background: COLOR_BUTTON,
-                            hoverBackground:
-                                unselectedInProjectCount > 0
-                                    ? COLOR_BUTTON_HOVER
-                                    : COLOR_BUTTON,
-                        },
-                        tooltip:
-                            inProjectItems.length === 0
-                                ? `No ${t.label.toLowerCase()} from this house are in the project`
-                                : unselectedInProjectCount === 0
-                                  ? "All in-project items are already selected"
-                                  : undefined,
-                        tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: unselectedInProjectCount === 0,
-                        onClick: () => {
-                            addToExportSelection(
-                                inProjectItems.map((item) => ({
-                                    uuid,
-                                    type: t.type,
-                                    name: item.name,
-                                }))
-                            );
-                        },
-                    }),
-                    Button({
-                        children: [
                             Icon({
                                 name: Icons.fileUp,
-                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
+                                color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
                             }),
                             Text({
                                 text:
                                     selectedCount > 0
                                         ? `Export Selected (${selectedCount})`
-                                        : `Export All (${totalCount})`,
-                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
+                                        : `Export All (${shownCount})`,
+                                color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
                             }),
                         ],
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
-                            background: canExportItems
+                            background: canExportPrimary
                                 ? COLOR_BUTTON_PRIMARY
                                 : COLOR_BUTTON,
-                            hoverBackground: canExportItems
+                            hoverBackground: canExportPrimary
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
@@ -751,13 +718,13 @@ function exportActionBar(
                             ? destination.kind === "missing"
                                 ? "The selected export project is missing"
                                 : "Choose an export project first"
-                            : !hasItems
-                              ? `No ${t.label.toLowerCase()} in this house`
+                            : selectedCount === 0 && shownCount === 0
+                              ? noShownItemsTooltip
                               : undefined,
                         tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !canExportItems,
+                        disabled: !canExportPrimary,
                         onClick: () => {
-                            if (!canExportItems) return;
+                            if (!canExportPrimary) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             if (selectedCount > 0) {
@@ -779,11 +746,11 @@ function exportActionBar(
                                         )
                                 );
                             } else {
-                                const names = items.map((i) => i.name);
+                                const names = shownItems.map((i) => i.name);
                                 confirmDestructiveExport(
                                     t,
                                     names,
-                                    () => exp.all(labels),
+                                    () => exp.selected(names, () => {}, labels),
                                     (remaining) =>
                                         exp.selected(remaining.slice(), () => {}, labels)
                                 );
@@ -813,7 +780,7 @@ function exportActionBar(
                         children: [
                             Icon({
                                 name: Icons.chevronUp,
-                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
+                                color: canOpenExportMenu ? undefined : COLOR_TEXT_FAINT,
                                 style: {
                                     width: { kind: "px", value: 12 },
                                     height: { kind: "px", value: 12 },
@@ -823,10 +790,10 @@ function exportActionBar(
                         style: {
                             width: { kind: "px", value: 22 },
                             height: { kind: "grow" },
-                            background: canExportItems
+                            background: canOpenExportMenu
                                 ? COLOR_BUTTON_PRIMARY
                                 : COLOR_BUTTON,
-                            hoverBackground: canExportItems
+                            hoverBackground: canOpenExportMenu
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
@@ -834,15 +801,15 @@ function exportActionBar(
                             ? destination.kind === "missing"
                                 ? "The selected export project is missing"
                                 : "Choose an export project first"
-                            : !hasItems
-                              ? `No ${t.label.toLowerCase()} in this house`
+                            : shownCount === 0
+                              ? noShownItemsTooltip
                               : undefined,
                         tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !canExportItems,
+                        disabled: !canOpenExportMenu,
                         // Anchor to the caret's rect (not the cursor) so the menu
                         // right-aligns under the button and drops up consistently.
                         onClick: (rect: Rect) => {
-                            if (!canExportItems) return;
+                            if (!canOpenExportMenu) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             // The yellow "differs" rows: in your file but the
@@ -850,20 +817,13 @@ function exportActionBar(
                             // rows render their status so the count matches what
                             // you see. Export pulls the house version over local,
                             // so it always routes through the overwrite confirm.
-                            const trusted = isHouseTrusted(uuid);
-                            const sourceMap = sourceImportablesByType(t.type);
                             const unreadNames: string[] = [];
                             const differingNames: string[] = [];
-                            for (const i of t.items(uuid)) {
-                                const state = houseLinkStateFor(
-                                    uuid,
-                                    i,
-                                    sourceMap,
-                                    trusted
-                                );
-                                if (state === "unread") unreadNames.push(i.name);
-                                if (state === "differs-from-knowledge")
-                                    differingNames.push(i.name);
+                            for (const row of shownRows) {
+                                if (row.state === "unread") unreadNames.push(row.item.name);
+                                if (row.state === "differs-from-knowledge") {
+                                    differingNames.push(row.item.name);
+                                }
                             }
                             const actions: MenuAction[] = [
                                 {
@@ -924,17 +884,17 @@ function exportActionBar(
                                     },
                                 },
                                 {
-                                    label: `Export all (${totalCount})`,
-                                    disabled: totalCount === 0,
+                                    label: `Export all (${shownCount})`,
+                                    disabled: shownCount === 0,
                                     onClick: () => {
-                                        if (totalCount === 0) return;
-                                        const names = t.items(uuid).map((i) => i.name);
+                                        if (shownCount === 0) return;
+                                        const names = shownItems.map((i) => i.name);
                                         confirmDestructiveExport(
                                             t,
                                             names,
-                                            () => exp.all(),
+                                            () => exp.selected(names, () => {}, labels),
                                             (remaining) =>
-                                                exp.selected(remaining.slice(), () => {})
+                                                exp.selected(remaining.slice(), () => {}, labels)
                                         );
                                     },
                                 },
@@ -942,11 +902,11 @@ function exportActionBar(
                             if (deepRead !== undefined) {
                                 actions.push({ kind: "separator" });
                                 actions.push({
-                                    label: `Read all into knowledge (${totalCount})`,
+                                    label: `Read all into knowledge (${houseCount})`,
                                     icon: Icons.scanEye,
-                                    disabled: totalCount === 0,
+                                    disabled: houseCount === 0,
                                     onClick: () => {
-                                        if (totalCount > 0) deepRead();
+                                        if (houseCount > 0) deepRead();
                                     },
                                 });
                             }
@@ -1019,6 +979,7 @@ export function typeBrowserSection(
             }
             const scanned = t.scanned(uuid);
             const items = scanned ? t.items(uuid) : [];
+            const shown: HouseRow[] = [];
             // Keep the search bar (with the rescan button) present whenever you
             // can scan or there's something to search, so the button doesn't
             // vanish in the not-scanned / empty states.
@@ -1058,7 +1019,6 @@ export function typeBrowserSection(
                 const sourceMap = sourceImportablesByType(t.type);
                 const trusted = isHouseTrusted(uuid);
                 const statusActive = selectedHouseStatuses.size > 0;
-                const shown: { item: HouseImportable; state: HouseLinkState }[] = [];
                 for (let i = 0; i < items.length; i++) {
                     const item = items[i];
                     if (
@@ -1110,7 +1070,7 @@ export function typeBrowserSection(
                 }
             }
             if (canExport) {
-                out.push(exportActionBar(t, uuid, items));
+                out.push(exportActionBar(t, uuid, items, shown));
             } else if (t.export !== undefined) {
                 out.push(
                     Row({
@@ -1121,23 +1081,6 @@ export function typeBrowserSection(
                             height: { kind: "px", value: SIZE_ROW_H },
                         },
                         children: [
-                            Button({
-                                children: [
-                                    Text({
-                                        text: "Select in project",
-                                        color: COLOR_TEXT_FAINT,
-                                    }),
-                                ],
-                                style: {
-                                    height: { kind: "grow" },
-                                    background: COLOR_BUTTON,
-                                    hoverBackground: COLOR_BUTTON,
-                                },
-                                tooltip: "Stand in this house to select for export",
-                                tooltipColor: COLOR_TEXT_DIM,
-                                disabled: true,
-                                onClick: () => {},
-                            }),
                             Icon({
                                 name: Icons.house,
                                 color: COLOR_TEXT_FAINT,

@@ -43,27 +43,6 @@ export function toggleExportSelection(item: ExportSelectionItem): boolean {
     return true;
 }
 
-export function addToExportSelection(newItems: readonly ExportSelectionItem[]): number {
-    const additions: ExportSelectionItem[] = [];
-    for (let i = 0; i < newItems.length; i++) {
-        const item = newItems[i];
-        if (
-            !isInExportSelection(item.uuid, item.type, item.name) &&
-            !additions.some(
-                (added) =>
-                    keyOf(added.uuid, added.type, added.name) ===
-                    keyOf(item.uuid, item.type, item.name)
-            )
-        ) {
-            additions.push(item);
-        }
-    }
-    if (additions.length === 0) return 0;
-    items = items.concat(additions);
-    markGuiDirty();
-    return additions.length;
-}
-
 export function clearExportSelection(): void {
     if (items.length === 0) return;
     items = [];

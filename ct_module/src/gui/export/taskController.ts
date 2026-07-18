@@ -24,8 +24,7 @@ export function startExport(
     spec: ExportSpec,
     names?: readonly string[],
     onSuccess?: () => void,
-    labels?: ReadonlyMap<string, string>,
-    options?: { skipExisting?: boolean }
+    labels?: ReadonlyMap<string, string>
 ): void {
     closeAllPopovers();
     const destination = getExportDestinationStatus();
@@ -71,7 +70,6 @@ export function startExport(
                 ? { newExportTargetImportJson: newExportTarget }
                 : {}),
             names,
-            skipExisting: options?.skipExisting,
             progress: createExportProgressSink(
                 spec.type,
                 importJsonPath,
