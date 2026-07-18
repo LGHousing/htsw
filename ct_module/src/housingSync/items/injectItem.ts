@@ -8,7 +8,7 @@ import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../menus/packets";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
-import { isUnspawnableItem } from "./unspawnableItems";
+import { isUnspawnableItem } from "htsw";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and similar, rightmost, out of the way — matches BHTSL)
 

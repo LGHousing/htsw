@@ -1,4 +1,5 @@
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
+import { isUnspawnableItem } from "htsw";
 
 import {
     clickGoBack,
@@ -8,7 +9,6 @@ import {
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { setItemValue } from "../../housingSync/items/injectItem";
 import { parseLoreKeyValueLine } from "../../housingSync/fields/loreParsing";
-import { isUnspawnableItem } from "../../housingSync/items/unspawnableItems";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";

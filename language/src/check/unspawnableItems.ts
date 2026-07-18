@@ -1,8 +1,8 @@
 /**
  * Minecraft items a normal Hypixel Housing player cannot creative-spawn.
  * The importer injects items via creative inventory (for icons, GIVE_ITEM,
- * etc.); these never land, so we detect them up front and skip rather than
- * open a picker and fail the whole import.
+ * etc.); these never land, so the check passes reject them up front — and the
+ * importer's runtime guards skip them — rather than fail mid-import.
  *
  * Verified by a full sweep of all 336 1.8.9 item ids in a live Housing
  * (2026-07-09): each id was creative-spawned and the slot read back; exactly

@@ -18,6 +18,7 @@ export * from "./long";
 export * from "./importjson/metadata";
 export * from "./importablePaths";
 export * from "./diagnosticAttribution";
+export { isUnspawnableItem } from "./check/unspawnableItems";
 
 export * as types from "./types";
 export * as helpers from "./helpers"
