@@ -4,7 +4,7 @@ import { Element } from "../../lib/layout";
 import { Container, Scroll } from "../../lib/components";
 import { type LinkStatusKey } from "../../cache-status";
 import {
-    ALL_LINK_STATUSES,
+    PROJECT_LINK_STATUSES,
     checkboxRow,
     statusFilterRows,
     popoverWidthForLabels,
@@ -50,12 +50,12 @@ function toggleStatus(key: LinkStatusKey): void {
 
 export const FILTER_POPOVER_HEIGHT = Math.min(
     320,
-    (ALL_IMPORTABLE_TYPES.length + ALL_LINK_STATUSES.length) * 20 + 5 + 6
+    (ALL_IMPORTABLE_TYPES.length + PROJECT_LINK_STATUSES.length) * 20 + 5 + 6
 );
 
 export function filterPopoverWidth(): number {
     const labels = (ALL_IMPORTABLE_TYPES as string[]).concat(
-        ALL_LINK_STATUSES.map((s) => s.label)
+        PROJECT_LINK_STATUSES.map((s) => s.label)
     );
     return popoverWidthForLabels(labels);
 }
@@ -78,7 +78,9 @@ export function filterPopoverContent(): Element {
                 style: { height: { kind: "px", value: 3 }, background: FILTER_ROW_HOVER_BG },
                 children: [],
             }));
-            return rows.concat(statusFilterRows(selectedStatuses, toggleStatus));
+            return rows.concat(
+                statusFilterRows(PROJECT_LINK_STATUSES, selectedStatuses, toggleStatus)
+            );
         },
     });
 }

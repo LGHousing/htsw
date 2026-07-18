@@ -11,10 +11,12 @@ export const FILTER_ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 const FILTER_ROW_BG = 0xff2d333d | 0;
 export const FILTER_ROW_HOVER_BG = 0xff3a4350 | 0;
 
-export const ALL_LINK_STATUSES: { key: LinkStatusKey; label: string }[] = [
+export type LinkStatusOption = { key: LinkStatusKey; label: string };
+
+export const PROJECT_LINK_STATUSES: LinkStatusOption[] = [
     { key: "matches", label: "Matches house" },
     { key: "differs", label: "Differs from house" },
-    { key: "present", label: "In house, not compared" },
+    { key: "present", label: "In house, not read" },
     { key: "oneSided", label: "Not in house" },
     { key: "unknown", label: "Unknown" },
 ];
@@ -55,17 +57,18 @@ export function checkboxRow(
 }
 
 export function statusFilterRows(
+    statuses: LinkStatusOption[],
     selected: Set<LinkStatusKey>,
     toggle: (key: LinkStatusKey) => void
 ): Element[] {
-    return ALL_LINK_STATUSES.map((s) =>
+    return statuses.map((s) =>
         checkboxRow(selected.has(s.key), () => toggle(s.key), linkStatusIcon(s.key, s.label), s.label)
     );
 }
 
 // Widest label + the row frame: 6px marker + two 6px gaps + the "[x]" checkbox
 // inside the row's 6px side padding, plus the Scroll's 4px padding and reserved
-// scrollbar track. Sizing to fit keeps a long label ("In house, not compared")
+// scrollbar track. Sizing to fit keeps a long label
 // from painting under the checkbox.
 export function popoverWidthForLabels(labels: string[]): number {
     let maxLabel = 0;
@@ -78,19 +81,22 @@ export function popoverWidthForLabels(labels: string[]): number {
     return desired < 140 ? 140 : desired;
 }
 
-export const STATUS_FILTER_POPOVER_HEIGHT = ALL_LINK_STATUSES.length * 20 + 6;
+export function statusFilterPopoverHeight(statuses: LinkStatusOption[]): number {
+    return statuses.length * 20 + 6;
+}
 
-export function statusFilterPopoverWidth(): number {
-    return popoverWidthForLabels(ALL_LINK_STATUSES.map((s) => s.label));
+export function statusFilterPopoverWidth(statuses: LinkStatusOption[]): number {
+    return popoverWidthForLabels(statuses.map((s) => s.label));
 }
 
 export function statusFilterPopoverContent(
+    statuses: LinkStatusOption[],
     selected: Set<LinkStatusKey>,
     toggle: (key: LinkStatusKey) => void
 ): Element {
     return Scroll({
         id: "status-filter-popover-scroll",
         style: { padding: 4, gap: 2 },
-        children: () => statusFilterRows(selected, toggle),
+        children: () => statusFilterRows(statuses, selected, toggle),
     });
 }

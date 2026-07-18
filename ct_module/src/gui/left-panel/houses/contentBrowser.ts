@@ -55,10 +55,11 @@ import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
 import {
     optionRow,
     statusFilterPopoverContent,
+    statusFilterPopoverHeight,
     statusFilterPopoverWidth,
-    STATUS_FILTER_POPOVER_HEIGHT,
     FILTER_ACTIVE_BG,
     FILTER_ACTIVE_HOVER_BG,
+    type LinkStatusOption,
 } from "../statusFilter";
 import type { Importable } from "htsw/types";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
@@ -78,8 +79,14 @@ let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
 const SCAN_BUTTON_W = 22;
 
-// Status narrowing for the shown type. The type tabs already scope by type, so
-// this page only offers the status half of the Projects filter.
+const HOUSE_LINK_STATUSES: LinkStatusOption[] = [
+    { key: "matches", label: "Matches project" },
+    { key: "differs", label: "Differs from project" },
+    { key: "present", label: "In project, not read" },
+    { key: "oneSided", label: "Not in project" },
+    { key: "unknown", label: "Unknown" },
+];
+
 const selectedHouseStatuses: Set<LinkStatusKey> = new Set();
 
 function toggleHouseStatus(key: LinkStatusKey): void {
@@ -274,11 +281,12 @@ function houseStatusFilterButton(): Element {
                 key: "houses-status-filter",
                 anchor: rect,
                 content: statusFilterPopoverContent(
+                    HOUSE_LINK_STATUSES,
                     selectedHouseStatuses,
                     toggleHouseStatus
                 ),
-                width: statusFilterPopoverWidth(),
-                height: STATUS_FILTER_POPOVER_HEIGHT,
+                width: statusFilterPopoverWidth(HOUSE_LINK_STATUSES),
+                height: statusFilterPopoverHeight(HOUSE_LINK_STATUSES),
             });
         }
     );
