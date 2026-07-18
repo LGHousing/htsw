@@ -75,6 +75,10 @@ import {
 import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
 import { detectHousingUuid } from "../importCache/housingId";
+import {
+    getHousingPresence,
+    resetHousingPresence,
+} from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
@@ -110,7 +114,7 @@ import {
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { openBoundProjectForHouse } from "./boundProject";
-import { canShowHousingFrame, type HousingPresence } from "./overlayVisibility";
+import { canShowHousingFrame } from "./overlayVisibility";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -142,7 +146,7 @@ function frameVisible(): boolean {
     // persisted UUID, which lingers in lobbies. A running Housing task is
     // allowed through while that verdict is still unknown because task
     // serialization prevents the idle presence probe from running alongside it.
-    if (!canShowHousingFrame(housingPresence, isTaskRunning())) return false;
+    if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return getTaskProgress() !== null && getImportCachedBounds() !== null;
 }
@@ -155,7 +159,7 @@ function inventoryToolbarBounds(): Rect {
 }
 
 function inventoryToolbarVisible(): boolean {
-    if (!enabled || !getShowInventoryButtons() || housingPresence !== "in") return false;
+    if (!enabled || !getShowInventoryButtons() || getHousingPresence() !== "in") return false;
     return (
         getOpenContainerBounds() !== null &&
         getContainerBounds() === null &&
@@ -174,17 +178,8 @@ function anyHtswPanelVisible(): boolean {
     return frameVisible() || inventoryToolbarVisible();
 }
 
-// Housing presence + UUID auto-fetch. `/wtfmap` is the only live "are we in a
-// house right now" signal, but it costs a chat round-trip, so we run it at
-// most once per server: when a container is open and presence is still
-// "unknown". The verdict latches —
-//   - a UUID → "in" (and we keep the UUID for cache lookups);
-//   - "Unknown command" (not in a house — `/wtfmap` is housing-only) → "out".
-// A "Sending you to <server>..." transport resets presence to "unknown" (and
-// zeroes the cooldown) so the next container open re-checks the new server.
-// The persisted UUID is deliberately NOT the gate: it survives into lobbies,
-// so the overlay keys on `housingPresence` instead.
-let housingPresence: HousingPresence = "unknown";
+// Probe once per server while presence is unknown. Server transport resets the
+// verdict and cooldown so the next container open checks the new server.
 let lastDebugSampleAt = 0;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
@@ -192,14 +187,11 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 
 function maybeAutoFetchHousingUuid(): void {
     if (uuidFetchInFlight) return;
-    if (housingPresence !== "unknown") return;
+    if (getHousingPresence() !== "unknown") return;
     if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
     const task = TaskManager.tryRun(async (ctx) => {
         const uuid = await detectHousingUuid(ctx);
-        if (uuid === null) {
-            housingPresence = "out";
-        } else {
-            housingPresence = "in";
+        if (uuid !== null) {
             setHousingUuid(uuid);
             openBoundProjectForHouse(uuid);
         }
@@ -397,7 +389,7 @@ export function initHtswGui(): void {
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
         setHousingUuid(null);
-        housingPresence = "unknown";
+        resetHousingPresence();
         lastUuidFetchAt = 0;
     }).setCriteria("${*}");
 

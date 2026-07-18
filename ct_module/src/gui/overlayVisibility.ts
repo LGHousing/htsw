@@ -1,4 +1,4 @@
-export type HousingPresence = "unknown" | "in" | "out";
+import type { HousingPresence } from "../importCache/housingPresence";
 
 export function canShowHousingFrame(
     presence: HousingPresence,
