@@ -128,6 +128,7 @@ export async function importSelectedImportables(
             selection.sourcePath
         );
     const items = createItemRegistry(parsed.value, parsed.gcx);
+    items.cachedHousingUuid = selection.housingUuid;
 
     const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
         parsed.value,

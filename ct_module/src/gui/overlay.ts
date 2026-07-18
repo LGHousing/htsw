@@ -141,10 +141,8 @@ function frameBounds(): Rect {
 
 function frameVisible(): boolean {
     if (!enabled) return false;
-    // Idle containers require the live /wtfmap verdict rather than the
-    // persisted UUID, which lingers in lobbies. A running Housing task is
-    // allowed through while that verdict is still unknown because task
-    // serialization prevents the idle presence probe from running alongside it.
+    // A running Housing sync task can only drive menus inside a house, so show
+    // the frame during any task regardless of the cached presence verdict.
     if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return getTaskProgress() !== null && getImportCachedBounds() !== null;
@@ -390,6 +388,12 @@ export function initHtswGui(): void {
         resetHousingPresence();
         lastUuidFetchAt = 0;
     }).setCriteria("${*}");
+
+    register("worldLoad", () => {
+        setHousingUuid(null);
+        resetHousingPresence();
+        lastUuidFetchAt = 0;
+    });
 
     // Single fullscreen panel; the element tree (RootTree) wraps around the
     // container + chat cutouts. paintBackground=false because the tree paints

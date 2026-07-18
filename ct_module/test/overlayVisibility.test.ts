@@ -11,8 +11,8 @@ describe("Housing overlay visibility", () => {
         expect(canShowHousingFrame("unknown", false)).toBe(false);
     });
 
-    test("keeps confirmed non-Housing containers hidden during a task", () => {
-        expect(canShowHousingFrame("out", true)).toBe(false);
+    test("shows a running task despite a stale out verdict", () => {
+        expect(canShowHousingFrame("out", true)).toBe(true);
     });
 
     test("shows confirmed Housing containers while idle", () => {

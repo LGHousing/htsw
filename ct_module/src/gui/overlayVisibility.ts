@@ -4,5 +4,5 @@ export function canShowHousingFrame(
     presence: HousingPresence,
     taskRunning: boolean
 ): boolean {
-    return presence === "in" || (presence === "unknown" && taskRunning);
+    return presence === "in" || taskRunning;
 }
