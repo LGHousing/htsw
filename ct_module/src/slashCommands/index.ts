@@ -70,7 +70,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "export",
         summary: "Export live Housing content",
         run: commandExport,
-        usage: "export itemactions <path|import.json>",
+        usage: "export <type> [path]",
     },
     {
         name: "saveitem",

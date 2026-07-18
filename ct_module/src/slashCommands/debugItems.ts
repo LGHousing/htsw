@@ -11,6 +11,7 @@ export function saveItem(args: string[]): void {
         ChatLib.chat("&cUsage: /htsw saveitem <path>");
         ChatLib.chat("&7  Saves your held item as .snbt under the projects folder.");
         ChatLib.chat("&7  Use folder/name to save inside a folder.");
+        ChatLib.chat("&7  Use /htsw export item to add the held item and its actions to a project.");
         return;
     }
 

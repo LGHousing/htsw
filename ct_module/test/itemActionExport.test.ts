@@ -1,24 +1,16 @@
 import { describe, expect, test } from "vitest";
 
 import {
-    itemActionSummaryHasActions,
-    itemActionPaths,
     itemIdFromNbt,
     itemNbtHasInteractData,
 } from "../src/importables/items/exportLogic";
+import { actionPath, actionReference } from "../src/importables/items/clickActionsExport";
+import { declaredItemActionCandidates } from "../src/importables/items/export";
 
 describe("item action export logic", () => {
-    test("builds canonical left and right output paths", () => {
-        expect(itemActionPaths("./exports", "§aMagic Wand!")).toEqual({
-            left: "./exports/_00a7aMagic_Wand_0021_left.htsl",
-            right: "./exports/_00a7aMagic_Wand_0021_right.htsl",
-        });
-    });
-
-    test("recognizes empty and populated action summaries", () => {
-        expect(itemActionSummaryHasActions(["§7Actions:", "§8- None"])).toBe(false);
-        expect(itemActionSummaryHasActions(["other", "§7Actions:", "§a- Send a Message"])).toBe(true);
-        expect(itemActionSummaryHasActions(["§7No summary"])).toBe(false);
+    test("derives action paths and references beside the item", () => {
+        expect(actionPath("./items/wand.snbt", "left")).toBe("./items/wand_left.htsl");
+        expect(actionReference("items/wand.snbt", "right")).toBe("items/wand_right.htsl");
     });
 
     test("finds interact_data without depending on its encrypted value type", () => {
@@ -39,5 +31,38 @@ describe("item action export logic", () => {
         };
         expect(itemNbtHasInteractData(nbt)).toBe(true);
         expect(itemIdFromNbt(nbt)).toBe("minecraft:book");
+        const plain = { type: "compound" as const, value: { id: nbt.value.id } };
+        const commandBlockNbt = {
+            ...nbt,
+            value: {
+                ...nbt.value,
+                id: { type: "string" as const, value: "minecraft:command_block" },
+            },
+        };
+        const selection = declaredItemActionCandidates({
+            importJsonPath: "./import.json",
+            rootDir: ".",
+            names: ["wand"],
+            projectItems: [
+                { type: "ITEM", name: "wand", nbt },
+                { type: "ITEM", name: "plain", nbt: plain },
+                { type: "ITEM", name: "blocked", nbt: commandBlockNbt },
+            ],
+        });
+        expect(selection.candidates.map((item) => item.name)).toEqual(["wand"]);
+        expect(selection.unspawnable).toEqual([]);
+
+        const all = declaredItemActionCandidates({
+            importJsonPath: "./import.json",
+            rootDir: ".",
+            projectItems: [
+                { type: "ITEM", name: "wand", nbt },
+                { type: "ITEM", name: "blocked", nbt: commandBlockNbt },
+            ],
+        });
+        expect(all.candidates.map((item) => item.name)).toEqual(["wand"]);
+        expect(all.unspawnable.map(({ item, itemId }) => [item.name, itemId])).toEqual([
+            ["blocked", "minecraft:command_block"],
+        ]);
     });
 });

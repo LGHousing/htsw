@@ -16,9 +16,10 @@ import {
 import { printExportHelp } from "./exportHelp";
 import { runExportWithDestination } from "./exportTask";
 import {
-    exportHeldItemActions,
-    exportManifestItemActions,
+    exportDeclaredItemActions,
+    exportHeldItem,
 } from "../importables/items/export";
+import { createExportProgressSink } from "../gui/export/progressSink";
 
 export function commandExport(args: string[]): void {
     if (args.length === 0) {
@@ -37,14 +38,16 @@ export function commandExport(args: string[]): void {
         return;
     }
 
-    if (tokens[0] === "itemactions") {
-        const path = pathArgument(tokens, 1);
-        if (path === undefined) {
-            ChatLib.chat("&cUsage: /htsw export itemactions <path|import.json>");
-            return;
-        }
-        const batch = path.toLowerCase().endsWith(".json");
-        runExportWithDestination(path, batch ? exportManifestItemActions : exportHeldItemActions);
+    if (tokens[0] === "item" || tokens[0] === "itemactions") {
+        const read = tokens[0] === "item" ? exportHeldItem : exportDeclaredItemActions;
+        runExportWithDestination(pathArgument(tokens, 1), async (ctx, destination) => {
+            await read(ctx, {
+                importJsonPath: destination.importJsonPath,
+                rootDir: destination.rootDir,
+                projectItems: destination.projectItems,
+                progress: createExportProgressSink("ITEM", destination.importJsonPath),
+            });
+        });
         return;
     }
 

@@ -1,58 +1,34 @@
-import type { Action, ImportableItem } from "htsw/types";
-import * as htsw from "htsw";
+import type { ImportableItem } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { readActionListFully } from "../../housingSync/actions/hydration/run";
-import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
-import { closeOpenScreen } from "../../housingSync/sideEffects";
-import { menuOpened } from "../../housingSync/menus/menuWaiters";
-import { importJsonTargetForSectionEntry } from "../../project/paths";
-import { updateImportableField } from "../../project/importJsonMutations";
+import {
+    ItemCaptureRegistry,
+    snbtFromItem,
+} from "../../housingSync/itemCapture";
 import { isUnspawnableItem } from "../../housingSync/items/unspawnableItems";
-import { getItemFromNbt } from "../../utils/nbt";
-import { ensureParentDirs } from "../../utils/filesystem";
-import { removedFormatting } from "../../utils/helpers";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
-import type { ProgressHandler } from "../../housingSync/progress/types";
-import { itemEditorOpened } from "../waiters";
-import { createExportProgressSink } from "../../gui/export/progressSink";
-import type { ExportDestination } from "../../slashCommands/exportDestination";
+import { importJsonTargetForSectionEntry } from "../../project/paths";
+import {
+    resolveImportableFile,
+    updateImportableField,
+} from "../../project/importJsonMutations";
+import type { ReadFn, ReadOptions, ReadResult } from "../read";
+import type TaskContext from "../../tasks/context";
+import { isTaskCancelled } from "../../tasks/manager";
+import { getItemFromNbt } from "../../utils/nbt";
+import { removedFormatting } from "../../utils/helpers";
 import {
     injectHeldItem,
     restoreHeldItemInjectionSlot,
     snapshotHeldItemInjectionSlot,
 } from "./heldItem";
-import {
-    itemActionSummaryHasActions,
-    itemActionPaths,
-    itemIdFromNbt,
-    itemNbtHasInteractData,
-} from "./exportLogic";
+import { itemIdFromNbt, itemNbtHasInteractData } from "./exportLogic";
+import { actionPath, readHeldClickActions, writeActions } from "./clickActionsExport";
 import { writeCapturedItems } from "./writeCapturedItems";
-import { isTaskCancelled } from "../../tasks/manager";
 
-type Side = "left" | "right";
-
-async function pace(ctx: TaskContext): Promise<void> {
-    for (let i = 0; i < 4; i++) await ctx.waitFor("tick");
-}
-
-function itemActionsOpened() {
-    return menuOpened({
-        kind: "menuClickWait",
-        label: "Waiting for Item Actions",
-        title: "Item Actions",
-        items: ["Left Click Actions", "Right Click Actions", "Go Back"],
-    });
-}
-
-function actionEditorOpened() {
-    return menuOpened({
-        kind: "menuClickWait",
-        label: "Waiting for item action list",
-        title: "Edit Actions",
-        items: ["Add Action", "Copy Actions", "Go Back"],
-    });
+function seededRegistry(items: readonly ImportableItem[] | undefined): ItemCaptureRegistry {
+    const registry = new ItemCaptureRegistry();
+    for (const item of items ?? []) registry.seed(item.name, item.nbt);
+    return registry;
 }
 
 function relativePath(fromJsonPath: string, targetPath: string): string {
@@ -62,163 +38,116 @@ function relativePath(fromJsonPath: string, targetPath: string): string {
     return String(from.relativize(target).toString()).split("\\").join("/");
 }
 
-function writeActions(ctx: TaskContext, path: string, actions: readonly Action[]): void {
-    const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
-    for (let i = 0; i < diagnostics.length; i++) {
-        ctx.displayMessage(`&7[export] &e${diagnostics[i].message}`);
+export function declaredItemActionCandidates(options: ReadOptions): {
+    candidates: ImportableItem[];
+    unspawnable: Array<{ item: ImportableItem; itemId: string }>;
+} {
+    const names = options.names === undefined ? null : new Set(options.names);
+    const candidates: ImportableItem[] = [];
+    const unspawnable: Array<{ item: ImportableItem; itemId: string }> = [];
+    for (const item of options.projectItems ?? []) {
+        if (!itemNbtHasInteractData(item.nbt) || (names !== null && !names.has(item.name))) continue;
+        const itemId = itemIdFromNbt(item.nbt);
+        if (itemId !== null && isUnspawnableItem(itemId)) {
+            unspawnable.push({ item, itemId });
+        } else {
+            candidates.push(item);
+        }
     }
-    ensureParentDirs(path);
-    FileLib.write(path, source, true);
-    ctx.displayMessage(`&7  -> ${path}`);
+    return { candidates, unspawnable };
 }
 
-async function readSide(
-    ctx: TaskContext,
-    side: Side,
-    itemCaptures: ItemCaptureRegistry,
-    onProgress?: ProgressHandler
-): Promise<Action[] | undefined> {
-    const label = side === "left" ? "Left Click Actions" : "Right Click Actions";
-    const slot = ctx.getMenuItemSlot(label);
-    if (!itemActionSummaryHasActions(slot.getItem().getLore())) return undefined;
+export const exportHeldItem: ReadFn = async (ctx, options) => {
+    const slotId = selectedHotbarSlot();
+    const stack = Player.getInventory()?.getStackInSlot(slotId);
+    if (stack === null || stack === undefined) {
+        throw new Error("Please hold the item you wish to export!");
+    }
+    const snbt = snbtFromItem(stack, { pretty: false });
+    if (snbt === null) throw new Error("Could not read the held item's NBT.");
 
-    await ctx.expectAfter(() => slot.click(), actionEditorOpened());
-    await pace(ctx);
-    return await readActionListFully(ctx, {
-        itemCaptures,
-        ...(onProgress === undefined
-            ? {}
-            : {
-                  progress: onProgress,
-                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
-              }),
-    });
-}
-
-async function openHeldItemActions(ctx: TaskContext): Promise<void> {
-    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
-    await pace(ctx);
-    const editActions = ctx.getMenuItemSlot((slot) =>
-        slot.getSlotId() === 34 && removedFormatting(slot.getItem().getName()) === "Edit Actions"
+    const registry = seededRegistry(options.projectItems);
+    const name = registry.register(snbt, removedFormatting(stack.getName()).trim() || "item", slotId);
+    if (!registry.needsWrite(name)) {
+        ctx.displayMessage(`&7[export] Held item is already declared as '${name}'.`);
+        return { total: 1, succeeded: 1, failed: 0 };
+    }
+    await writeCapturedItems(
+        ctx,
+        registry,
+        options.rootDir,
+        options.importJsonPath,
+        options.newExportTargetImportJson
     );
-    await ctx.expectAfter(() => editActions.click(), itemActionsOpened());
-    await pace(ctx);
-}
+    return { total: 1, succeeded: 1, failed: 0 };
+};
 
-async function exportOpenHeldItem(
+async function exportDeclaredItem(
     ctx: TaskContext,
-    name: string,
-    outputDir: string,
-    itemCaptures: ItemCaptureRegistry,
-    onProgress?: ProgressHandler
-): Promise<{ leftPath?: string; rightPath?: string }> {
-    await openHeldItemActions(ctx);
-    const paths = itemActionPaths(outputDir, name);
-    const result: { leftPath?: string; rightPath?: string } = {};
-    try {
-        const left = await readSide(ctx, "left", itemCaptures, onProgress);
-        if (left !== undefined) {
-            result.leftPath = paths.left;
-            writeActions(ctx, result.leftPath, left);
-            await closeOpenScreen(ctx);
-            await openHeldItemActions(ctx);
-        }
-
-        const right = await readSide(ctx, "right", itemCaptures, onProgress);
-        if (right !== undefined) {
-            result.rightPath = paths.right;
-            writeActions(ctx, result.rightPath, right);
-        }
-        return result;
-    } finally {
-        await closeOpenScreen(ctx);
-    }
-}
-
-export async function exportHeldItemActions(
-    ctx: TaskContext,
-    destination: ExportDestination
+    options: ReadOptions,
+    item: ImportableItem,
+    registry: ItemCaptureRegistry
 ): Promise<void> {
-    const slot = Player.getInventory()?.getStackInSlot(selectedHotbarSlot());
-    if (slot === null || slot === undefined) {
-        throw new Error("Please hold the item you wish to edit!");
+    const snbtPath = resolveImportableFile(options.importJsonPath, "items", item.name);
+    await injectHeldItem(ctx, getItemFromNbt(item.nbt));
+    const actions = await readHeldClickActions(ctx, registry);
+    const declaringJson = importJsonTargetForSectionEntry(options.importJsonPath, "items", item.name);
+
+    for (const side of ["left", "right"] as const) {
+        const sideActions = actions[side];
+        if (sideActions === undefined) continue;
+        const path = actionPath(snbtPath, side);
+        writeActions(ctx, path, sideActions);
+        const field = side === "left" ? "leftClickActions" : "rightClickActions";
+        if (!updateImportableField(declaringJson, "items", item.name, field, relativePath(declaringJson, path))) {
+            throw new Error(`Could not attach ${field} to '${item.name}'.`);
+        }
     }
-    const name = removedFormatting(slot.getName()).trim() || "item";
-    const captures = new ItemCaptureRegistry();
-    for (let i = 0; i < destination.projectItems.length; i++) {
-        captures.seed(destination.projectItems[i].name, destination.projectItems[i].nbt);
-    }
-    const files = await exportOpenHeldItem(ctx, name, destination.rootDir, captures);
-    writeCapturedItems(ctx, captures, destination.rootDir, destination.importJsonPath);
-    const count = Number(files.leftPath !== undefined) + Number(files.rightPath !== undefined);
-    ctx.displayMessage(`&aExported ${count} action file${count === 1 ? "" : "s"} for held item '${name}'.`);
 }
 
-export async function exportManifestItemActions(
-    ctx: TaskContext,
-    destination: ExportDestination
-): Promise<void> {
-    const candidates = destination.projectItems.filter((item) => itemNbtHasInteractData(item.nbt));
-    const progress = createExportProgressSink("ITEM", destination.importJsonPath);
-    const captures = new ItemCaptureRegistry();
-    for (let i = 0; i < destination.projectItems.length; i++) {
-        captures.seed(destination.projectItems[i].name, destination.projectItems[i].nbt);
-    }
+export const exportDeclaredItemActions: ReadFn = async (ctx, options): Promise<ReadResult> => {
+    const selection = declaredItemActionCandidates(options);
+    const { candidates } = selection;
+    const progress = options.progress;
+    const registry = seededRegistry(options.projectItems);
     const snapshot = snapshotHeldItemInjectionSlot();
-    let exported = 0;
-    let skipped = 0;
+    let succeeded = 0;
     let failed = 0;
-    progress.start(candidates.map((item) => item.name));
+    for (const skipped of selection.unspawnable) {
+        ctx.displayMessage(
+            `&7[export] Skipping unspawnable item '${skipped.item.name}' (${skipped.itemId}).`
+        );
+    }
+    progress?.start(candidates.map((item) => item.name));
     try {
         for (let i = 0; i < candidates.length; i++) {
-            const item: ImportableItem = candidates[i];
-            progress.item(i, item.name);
+            const item = candidates[i];
             ctx.checkCancelled();
-            const itemId = itemIdFromNbt(item.nbt);
-            if (itemId !== null && isUnspawnableItem(itemId)) {
-                skipped++;
-                ctx.displayMessage(`&7[export] &eSkipping unspawnable item '${item.name}' (${itemId}).`);
-                continue;
-            }
-
+            progress?.item(i, item.name);
             try {
-                await injectHeldItem(ctx, getItemFromNbt(item.nbt));
-                const files = await exportOpenHeldItem(
-                    ctx,
-                    item.name,
-                    destination.rootDir,
-                    captures,
-                    (payload) => progress.itemProgress?.(i, payload)
-                );
-                const declaringJson = importJsonTargetForSectionEntry(
-                    destination.importJsonPath,
-                    "items",
-                    item.name
-                );
-                if (files.leftPath !== undefined) {
-                    const updated = updateImportableField(declaringJson, "items", item.name, "leftClickActions", relativePath(declaringJson, files.leftPath));
-                    if (!updated) throw new Error(`Could not attach leftClickActions to '${item.name}'.`);
-                }
-                if (files.rightPath !== undefined) {
-                    const updated = updateImportableField(declaringJson, "items", item.name, "rightClickActions", relativePath(declaringJson, files.rightPath));
-                    if (!updated) throw new Error(`Could not attach rightClickActions to '${item.name}'.`);
-                }
-                exported++;
+                await exportDeclaredItem(ctx, options, item, registry);
+                succeeded++;
+                progress?.itemFinished?.(i);
             } catch (error) {
                 if (isTaskCancelled(error)) throw error;
                 failed++;
-                progress.itemFailed?.(i, String(error));
+                progress?.itemFailed?.(i, String(error));
                 ctx.displayMessage(`&c[export] failed on item '${item.name}': ${error}`);
             }
         }
     } finally {
-        progress.done();
+        progress?.done();
         try {
-            writeCapturedItems(ctx, captures, destination.rootDir, destination.importJsonPath);
+            await writeCapturedItems(
+                ctx,
+                registry,
+                options.rootDir,
+                options.importJsonPath,
+                options.newExportTargetImportJson
+            );
         } finally {
             await restoreHeldItemInjectionSlot(ctx, snapshot);
         }
     }
-    ctx.displayMessage(`&aExported item actions for ${exported} item${exported === 1 ? "" : "s"}${skipped > 0 ? `; skipped ${skipped}` : ""}${failed > 0 ? `; failed ${failed}` : ""}.`);
-    ctx.displayMessage(`&7  -> ${destination.importJsonPath}`);
-}
+    return { total: candidates.length, succeeded, failed };
+};
