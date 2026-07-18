@@ -388,23 +388,6 @@ function itemRowMenu(
     return actions;
 }
 
-// Identities of this type already present in the selected export destination,
-// so a row can show whether it's already been written there. Empty until the
-// destination has been parsed off-frame (requestParse never blocks render), so
-// the dots light up a beat after a big destination is selected rather than
-// freezing the client on selection.
-function exportedIdentities(type: HouseContentType["type"]): Set<string> {
-    const out = new Set<string>();
-    const dest = getExportImportJsonPath();
-    if (dest.trim() === "") return out;
-    const parse = requestParse(dest);
-    if (parse === null || parse.parsed === null) return out;
-    for (const imp of parse.parsed.value) {
-        if (imp.type === type) out.add(importableIdentity(imp));
-    }
-    return out;
-}
-
 type HouseLinkState =
     | "house-only"
     | "exists-in-house"
@@ -670,16 +653,11 @@ function exportActionBar(
         if (item.label !== undefined) labels.set(item.name, item.label);
     }
     const deepRead = t.deepRead;
-    // Missing = house items whose identity isn't already in the loaded
-    // import.json. Same comparison itemRow uses.
-    const exportedSet = exportedIdentities(t.type);
-    const missingNames = shownItems
-        .filter((i) => !exportedSet.has(i.name))
-        .map((i) => i.name);
     const destination = getExportDestinationStatus();
     const hasDest = destination.kind === "ready";
     const canExportPrimary = hasDest && (selectedCount > 0 || shownCount > 0);
-    const canOpenExportMenu = hasDest && shownCount > 0;
+    const canReadPrimary =
+        deepRead !== undefined && hasDest && (selectedCount > 0 || shownCount > 0);
     const noShownItemsTooltip =
         houseCount === 0
             ? `No ${t.label.toLowerCase()} in this house`
@@ -690,6 +668,49 @@ function exportActionBar(
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
+                    deepRead !== undefined &&
+                        Button({
+                            children: [
+                                Icon({
+                                    name: Icons.scanEye,
+                                    color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
+                                }),
+                                Text({
+                                    text:
+                                        selectedCount > 0
+                                            ? `Read Selected (${selectedCount})`
+                                            : `Read All (${shownCount})`,
+                                    color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
+                                }),
+                            ],
+                            style: {
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: canReadPrimary
+                                    ? COLOR_BUTTON_HOVER
+                                    : COLOR_BUTTON,
+                            },
+                            tooltip: !hasDest
+                                ? destination.kind === "missing"
+                                    ? "The selected export project is missing"
+                                    : "Choose an export project first"
+                                : selectedCount === 0 && shownCount === 0
+                                  ? noShownItemsTooltip
+                                  : "Read into knowledge",
+                            tooltipColor: canReadPrimary
+                                ? COLOR_TEXT_DIM
+                                : COLOR_TEXT_FAINT,
+                            disabled: !canReadPrimary,
+                            onClick: () => {
+                                if (!canReadPrimary) return;
+                                deepRead(
+                                    selectedCount > 0
+                                        ? selected.map((it) => it.name)
+                                        : shownItems.map((it) => it.name)
+                                );
+                            },
+                        }),
                     Button({
                         children: [
                             Icon({
@@ -755,165 +776,6 @@ function exportActionBar(
                                         exp.selected(remaining.slice(), () => {}, labels)
                                 );
                             }
-                        },
-                    }),
-                    deepRead !== undefined &&
-                        selectedCount > 0 &&
-                        Button({
-                            children: [
-                                Icon({ name: Icons.scanEye }),
-                                Text({ text: `Read (${selectedCount})` }),
-                            ],
-                            style: {
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: COLOR_BUTTON_HOVER,
-                            },
-                            tooltip: "Read selected into knowledge",
-                            tooltipColor: COLOR_TEXT_DIM,
-                            onClick: () => deepRead(selected.map((it) => it.name)),
-                        }),
-                    Button({
-                        // Explicit 12px icon via children: the `icon:` shorthand
-                        // defaults to 16px, which overflows a ~22px button (inner
-                        // ~14px after padding) and reads as cut off / off-center.
-                        children: [
-                            Icon({
-                                name: Icons.chevronUp,
-                                color: canOpenExportMenu ? undefined : COLOR_TEXT_FAINT,
-                                style: {
-                                    width: { kind: "px", value: 12 },
-                                    height: { kind: "px", value: 12 },
-                                },
-                            }),
-                        ],
-                        style: {
-                            width: { kind: "px", value: 22 },
-                            height: { kind: "grow" },
-                            background: canOpenExportMenu
-                                ? COLOR_BUTTON_PRIMARY
-                                : COLOR_BUTTON,
-                            hoverBackground: canOpenExportMenu
-                                ? COLOR_BUTTON_PRIMARY_HOVER
-                                : COLOR_BUTTON,
-                        },
-                        tooltip: !hasDest
-                            ? destination.kind === "missing"
-                                ? "The selected export project is missing"
-                                : "Choose an export project first"
-                            : shownCount === 0
-                              ? noShownItemsTooltip
-                              : undefined,
-                        tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !canOpenExportMenu,
-                        // Anchor to the caret's rect (not the cursor) so the menu
-                        // right-aligns under the button and drops up consistently.
-                        onClick: (rect: Rect) => {
-                            if (!canOpenExportMenu) return;
-                            if (t.export === undefined) return;
-                            const exp = t.export;
-                            // The yellow "differs" rows: in your file but the
-                            // house version has diverged. Computed exactly as the
-                            // rows render their status so the count matches what
-                            // you see. Export pulls the house version over local,
-                            // so it always routes through the overwrite confirm.
-                            const unreadNames: string[] = [];
-                            const differingNames: string[] = [];
-                            for (const row of shownRows) {
-                                if (row.state === "unread") unreadNames.push(row.item.name);
-                                if (row.state === "differs-from-knowledge") {
-                                    differingNames.push(row.item.name);
-                                }
-                            }
-                            const actions: MenuAction[] = [
-                                {
-                                    // Missing names aren't in your file, so
-                                    // they are not compared against Knowledge — no confirm.
-                                    label: `Export missing (${missingNames.length})`,
-                                    disabled: missingNames.length === 0,
-                                    onClick: () => {
-                                        if (missingNames.length > 0) {
-                                            exp.selected(missingNames, () =>
-                                                clearExportSelection()
-                                            );
-                                        }
-                                    },
-                                },
-                                {
-                                    label: `Export unread (${unreadNames.length})`,
-                                    disabled: unreadNames.length === 0,
-                                    onClick: () => {
-                                        if (unreadNames.length > 0) {
-                                            confirmDestructiveExport(
-                                                t,
-                                                unreadNames,
-                                                () =>
-                                                    exp.selected(
-                                                        unreadNames,
-                                                        clearExportSelection
-                                                    ),
-                                                (remaining) =>
-                                                    exp.selected(
-                                                        remaining.slice(),
-                                                        clearExportSelection
-                                                    )
-                                            );
-                                        }
-                                    },
-                                },
-                                {
-                                    label: `Export differing (${differingNames.length})`,
-                                    disabled: differingNames.length === 0,
-                                    onClick: () => {
-                                        if (differingNames.length > 0) {
-                                            confirmDestructiveExport(
-                                                t,
-                                                differingNames,
-                                                () =>
-                                                    exp.selected(
-                                                        differingNames,
-                                                        clearExportSelection
-                                                    ),
-                                                (remaining) =>
-                                                    exp.selected(
-                                                        remaining.slice(),
-                                                        clearExportSelection
-                                                    )
-                                            );
-                                        }
-                                    },
-                                },
-                                {
-                                    label: `Export all (${shownCount})`,
-                                    disabled: shownCount === 0,
-                                    onClick: () => {
-                                        if (shownCount === 0) return;
-                                        const names = shownItems.map((i) => i.name);
-                                        confirmDestructiveExport(
-                                            t,
-                                            names,
-                                            () => exp.selected(names, () => {}, labels),
-                                            (remaining) =>
-                                                exp.selected(remaining.slice(), () => {}, labels)
-                                        );
-                                    },
-                                },
-                            ];
-                            if (deepRead !== undefined) {
-                                actions.push({ kind: "separator" });
-                                actions.push({
-                                    label: `Read all into knowledge (${houseCount})`,
-                                    icon: Icons.scanEye,
-                                    disabled: houseCount === 0,
-                                    onClick: () => {
-                                        if (houseCount > 0) deepRead();
-                                    },
-                                });
-                            }
-                            openMenu(rect.x + rect.w, rect.y, actions, {
-                                key: "houses-export-menu",
-                                trigger: rect,
-                            });
                         },
                     }),
                     selectedCount > 0 &&
