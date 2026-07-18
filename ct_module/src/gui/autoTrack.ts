@@ -25,8 +25,7 @@ import {
 } from "./right-panel/import-tab/queue";
 
 export function needsModifiedQueue(imp: Importable): boolean {
-    const status = statusForImportable(imp);
-    return status === "modified" || status === "unknown";
+    return statusForImportable(imp) === "modified";
 }
 
 export function queueModifiedImportables(
