@@ -15,10 +15,7 @@ import {
 } from "./exportArgs";
 import { printExportHelp } from "./exportHelp";
 import { runExportWithDestination } from "./exportTask";
-import {
-    exportDeclaredItemActions,
-    exportHeldItem,
-} from "../importables/items/export";
+import { exportHeldItem } from "../importables/items/export";
 import { createExportProgressSink } from "../gui/export/progressSink";
 
 export function commandExport(args: string[]): void {
@@ -38,10 +35,9 @@ export function commandExport(args: string[]): void {
         return;
     }
 
-    if (tokens[0] === "item" || tokens[0] === "itemactions") {
-        const read = tokens[0] === "item" ? exportHeldItem : exportDeclaredItemActions;
+    if (tokens[0] === "item") {
         runExportWithDestination(pathArgument(tokens, 1), async (ctx, destination) => {
-            await read(ctx, {
+            await exportHeldItem(ctx, {
                 importJsonPath: destination.importJsonPath,
                 rootDir: destination.rootDir,
                 projectItems: destination.projectItems,

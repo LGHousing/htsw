@@ -19,8 +19,6 @@ export function printExportHelp(): void {
     ChatLib.chat("&7  Reads an existing NPC by position and writes left/right .htsl + import.json metadata.");
     ChatLib.chat("&f/htsw export item [path]");
     ChatLib.chat("&7  Exports your held item and its click actions into the target project.");
-    ChatLib.chat("&f/htsw export itemactions [path]");
-    ChatLib.chat("&7  Backfills click actions for interactable items already declared in the target project.");
 
     for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
         const spec = HOUSE_EXPORT_TYPES[i];
