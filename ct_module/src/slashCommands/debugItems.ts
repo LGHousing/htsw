@@ -1,60 +1,8 @@
 import { isInCreativeMode } from "../housingSync/sideEffects";
-import { snbtFromItem } from "../housingSync/itemCapture";
 import { resolveModuleRelativePath } from "../project/paths";
-import { ensureParentDirs } from "../utils/filesystem";
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
 import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
-
-export function saveItem(args: string[]): void {
-    if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Saves your held item as .snbt under the projects folder.");
-        ChatLib.chat("&7  Use folder/name to save inside a folder.");
-        return;
-    }
-
-    const parsed = parseCommandArgs(args);
-    if (!parsed.ok) {
-        ChatLib.chat(`&c[htsw] ${parsed.error}`);
-        return;
-    }
-    if (parsed.args.length !== 1) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Quote paths that contain spaces.");
-        return;
-    }
-
-    const rawPath = parsed.args[0].trim();
-    if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] saveitem path cannot be empty.");
-        return;
-    }
-
-    const held = Player.getHeldItem();
-    if (held === null || held === undefined) {
-        ChatLib.chat("&c[htsw] You're not holding an item.");
-        return;
-    }
-
-    const snbt = snbtFromItem(held, { pretty: true });
-    if (snbt === null) {
-        ChatLib.chat("&c[htsw] Could not read NBT from held item.");
-        return;
-    }
-
-    let path = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    if (!path.toLowerCase().endsWith(".snbt")) path += ".snbt";
-
-    try {
-        ensureParentDirs(path);
-        FileLib.write(path, snbt, true);
-        ChatLib.chat("&a[htsw] Saved item");
-        ChatLib.chat(`&7  -> ${path}`);
-    } catch (err) {
-        ChatLib.chat(`&c[htsw] saveitem failed: ${err}`);
-    }
-}
 
 function javaPath(path: string): any {
     return Java.type("java.nio.file.Paths").get(String(path));

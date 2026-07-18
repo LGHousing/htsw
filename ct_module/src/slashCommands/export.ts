@@ -15,8 +15,10 @@ import {
 } from "./exportArgs";
 import { printExportHelp } from "./exportHelp";
 import { runExportWithDestination } from "./exportTask";
+import { exportHeldItem } from "../importables/items/export";
+import { createExportProgressSink } from "../gui/export/progressSink";
 
-function commandExport(args: string[]): void {
+export function commandExport(args: string[]): void {
     if (args.length === 0) {
         printExportHelp();
         return;
@@ -30,6 +32,18 @@ function commandExport(args: string[]): void {
         } else {
             ChatLib.chat("&7[htsw] No import/export task is running.");
         }
+        return;
+    }
+
+    if (tokens[0] === "item") {
+        runExportWithDestination(pathArgument(tokens, 1), async (ctx, destination) => {
+            await exportHeldItem(ctx, {
+                importJsonPath: destination.importJsonPath,
+                rootDir: destination.rootDir,
+                projectItems: destination.projectItems,
+                progress: createExportProgressSink("ITEM", destination.importJsonPath),
+            });
+        });
         return;
     }
 

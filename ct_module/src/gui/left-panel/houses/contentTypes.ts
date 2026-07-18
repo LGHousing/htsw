@@ -67,6 +67,7 @@ import {
     openNpcEditorForPos,
     teleportToNpc,
 } from "../../../importables/npcs/listNpcs";
+import { exportHeldItem } from "../../../importables/items/export";
 
 // House readers come from the shared export registry, so this browser and the
 // /export slash command can never disagree on which types export or how. A GUI
@@ -108,6 +109,7 @@ export type HouseContentType = {
     export?: {
         selected: (names: string[], onDone: () => void, labels?: ReadonlyMap<string, string>) => void;
     };
+    standaloneAction?: { label: string; run: () => void };
 };
 
 function exportHook(spec: ExportSpec): HouseContentType["export"] {
@@ -330,6 +332,21 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] =
     (Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]).map(
         (type) => HOUSE_CONTENT_BY_TYPE[type]
     );
+
+HOUSE_CONTENT_TYPES.push({
+    type: "ITEM",
+    label: "Items",
+    icon: Icons.package,
+    items: () => [],
+    scanned: () => true,
+    scan: () => {},
+    scanInFlight: () => false,
+    scanNames: false,
+    standaloneAction: {
+        label: "Export held item",
+        run: () => startExport({ type: "ITEM", label: "held item", read: exportHeldItem }),
+    },
+});
 
 export function houseContentTypeFor(type: Importable["type"]): HouseContentType | null {
     for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {

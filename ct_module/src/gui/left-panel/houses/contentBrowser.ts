@@ -968,6 +968,23 @@ export function typeBrowserSection(
                     children: tabStrip,
                 }),
             ];
+            if (t.standaloneAction !== undefined) {
+                out.push(
+                    Button({
+                        children: [
+                            Icon({ name: Icons.fileUp }),
+                            Text({ text: t.standaloneAction.label }),
+                        ],
+                        style: {
+                            height: { kind: "px", value: 20 },
+                            background: COLOR_BUTTON_PRIMARY,
+                            hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                        },
+                        onClick: t.standaloneAction.run,
+                    })
+                );
+                return out;
+            }
             if (uuid === null) {
                 out.push(
                     Text({

@@ -33,8 +33,8 @@ export function importableLinkStatus(
 ): { key: LinkStatusKey; tooltip: string } {
     const uuid = getHousingUuid();
     if (uuid === null) return { key: "unknown", tooltip: "No house detected" };
-    // Items have no house-side listing to scan (not in
-    // HOUSE_CONTENT_TYPES) — an item exists only where an action or menu
+    // Items have no house-side listing to scan; their content-type entry is
+    // export-only and has no rows. An item exists only where an action or menu
     // references it. Presence can't be answered for these, so fall back to the
     // import baseline: does your file still match what was last imported?
     if (HOUSE_READERS[imp.type] === null) {
