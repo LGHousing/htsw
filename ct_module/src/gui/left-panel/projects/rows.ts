@@ -96,6 +96,8 @@ import { readExportProjectContext } from "../../../importables/exportContext";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
+import { HOUSE_READERS } from "../../../importables/houseReaders";
+import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -659,6 +661,67 @@ function reExportImportableAction(parent: ResultImport, imp: Importable): MenuAc
     };
 }
 
+function deepReadSpecs(importables: readonly Importable[]): DeepReadSpec[] {
+    const namesByType = new Map<Importable["type"], string[]>();
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        if (HOUSE_READERS[imp.type] === null) continue;
+        const names = namesByType.get(imp.type) ?? [];
+        names.push(importableIdentity(imp));
+        namesByType.set(imp.type, names);
+    }
+    const specs: DeepReadSpec[] = [];
+    namesByType.forEach((names, type) => {
+        const read = HOUSE_READERS[type];
+        if (read === null) return;
+        specs.push({ type, label: type.toLowerCase(), read, names });
+    });
+    return specs;
+}
+
+function subtreeImportables(node: IncludeNode): Importable[] {
+    if (node.reference === true) return [];
+    const importables = node.importables.slice();
+    for (let i = 0; i < node.includes.length; i++) {
+        importables.push(...subtreeImportables(node.includes[i]));
+    }
+    return importables;
+}
+
+function deepReadableCount(importables: readonly Importable[]): number {
+    let count = 0;
+    for (let i = 0; i < importables.length; i++) {
+        if (HOUSE_READERS[importables[i].type] !== null) count++;
+    }
+    return count;
+}
+
+function runProjectDeepRead(
+    parent: ResultImport,
+    importJsonPath: string,
+    importables: readonly Importable[]
+): void {
+    const housingUuid = getHousingUuid();
+    if (housingUuid === null) return;
+    startDeepRead(deepReadSpecs(importables), {
+        housingUuid,
+        importJsonPath,
+        parsed: parent.parse,
+        summaryLabel: "declared importable",
+        onSuccess: bumpTreeRevision,
+    });
+}
+
+function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
+    if (HOUSE_READERS[imp.type] === null) return null;
+    return {
+        label: "Read from house",
+        icon: Icons.scanEye,
+        disabled: () => getHousingUuid() === null,
+        onClick: () => runProjectDeepRead(parent, parent.fullPath, [imp]),
+    };
+}
+
 function runSingleImportableReExport(parent: ResultImport, imp: Importable): void {
     if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", ACCENT_WARN);
@@ -698,6 +761,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     const item = makeImportableQueueItem(imp, parent.fullPath);
     const housingAction = openInHousingAction(imp);
     const reExport = reExportImportableAction(parent, imp);
+    const deepRead = readImportableAction(parent, imp);
     const actions: MenuAction[] = [
         {
             label: isInQueue(queueItemKey(item)) ? "Remove from queue" : "Queue for import",
@@ -705,6 +769,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
             onClick: () => toggleQueue(item),
         },
         ...(reExport !== null ? [reExport] : []),
+        ...(deepRead !== null ? [deepRead] : []),
         { kind: "separator" },
         openInViewAction(target, parent.fullPath),
         ...(housingAction !== null ? [housingAction] : []),
@@ -1152,6 +1217,16 @@ export function resultRow(
                       subtreeHouseExportCount(includeTreeOf(r))
                   ),
               },
+              {
+                  label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
+                  icon: Icons.scanEye,
+                  disabled: () => getHousingUuid() === null,
+                  onClick: () => runProjectDeepRead(
+                      r,
+                      r.fullPath,
+                      subtreeImportables(includeTreeOf(r))
+                  ),
+              },
               { kind: "separator" },
               openInViewAction(r.fullPath, importJsonPath),
               { kind: "separator" },
@@ -1277,6 +1352,7 @@ export function includeGroupRow(
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
     const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
     const count = subtreeHouseExportCount(node);
+    const declaredImportables = subtreeImportables(node);
     const actions: MenuAction[] = [
         {
             label: "Queue all for import",
@@ -1293,6 +1369,12 @@ export function includeGroupRow(
             icon: Icons.refreshCw,
             disabled: () => getHousingUuid() === null,
             onClick: () => confirmProjectReExport(parent, fullPath, count),
+        },
+        {
+            label: `Read from house (${deepReadableCount(declaredImportables)})`,
+            icon: Icons.scanEye,
+            disabled: () => getHousingUuid() === null,
+            onClick: () => runProjectDeepRead(parent, fullPath, declaredImportables),
         },
         { kind: "separator" },
         openInViewAction(fullPath, parent.fullPath),
