@@ -58,7 +58,7 @@ import {
 } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
+import { autoTrackRefresh, needsModifiedQueue, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeHouseExportCount, subtreeImportableCount } from "./includeTree";
 import {
@@ -679,6 +679,24 @@ function deepReadSpecs(importables: readonly Importable[]): DeepReadSpec[] {
     return specs;
 }
 
+function hasModifiedForQueue(importables: readonly Importable[]): boolean {
+    for (let i = 0; i < importables.length; i++) {
+        if (needsModifiedQueue(importables[i])) return true;
+    }
+    return false;
+}
+
+function queueModifiedAction(importables: readonly Importable[], onClick: () => void): MenuAction[] {
+    if (!hasModifiedForQueue(importables)) return [];
+    return [
+        {
+            label: "Queue modified for import",
+            icon: Icons.listChecks,
+            onClick,
+        },
+    ];
+}
+
 function subtreeImportables(node: IncludeNode): Importable[] {
     if (node.reference === true) return [];
     const importables = node.importables.slice();
@@ -1200,13 +1218,10 @@ export function resultRow(
                       queueImportJsonSubtree(r, includeTreeOf(r));
                   },
               },
-              {
-                  label: "Queue modified for import",
-                  icon: Icons.listChecks,
-                  onClick: () => {
-                      queueModifiedFromPath(r.fullPath);
-                  },
-              },
+              ...queueModifiedAction(
+                  subtreeImportables(includeTreeOf(r)),
+                  () => queueModifiedFromPath(r.fullPath)
+              ),
               {
                   label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
                   icon: Icons.refreshCw,
@@ -1359,11 +1374,10 @@ export function includeGroupRow(
             icon: Icons.listPlus,
             onClick: () => queueImportJsonSubtree(parent, node),
         },
-        {
-            label: "Queue modified for import",
-            icon: Icons.listChecks,
-            onClick: () => queueModifiedSubtree(parent, node),
-        },
+        ...queueModifiedAction(
+            declaredImportables,
+            () => queueModifiedSubtree(parent, node)
+        ),
         {
             label: `Re-export from house (${count})`,
             icon: Icons.refreshCw,
