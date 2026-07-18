@@ -25,6 +25,27 @@ class ItemFileLoader implements htsw.FileLoader {
     }
 }
 
+class FunctionFileLoader implements htsw.FileLoader {
+    fileExists(path: string): boolean {
+        return path === "/project/import.json";
+    }
+
+    readFile(path: string): string {
+        if (path === "/project/import.json") {
+            return JSON.stringify({ functions: [{ name: "Test Function", icon: { item: "minecraft:mob_spawner", count: 1 } }] });
+        }
+        throw new Error(`File not found: ${path}`);
+    }
+
+    getParentPath(path: string): string {
+        return path.slice(0, path.lastIndexOf("/"));
+    }
+
+    resolvePath(base: string, other: string): string {
+        return `${base}/${other}`;
+    }
+}
+
 function errorsFor(snbt: string): string[] {
     const sourceMap = new htsw.SourceMap(new ItemFileLoader(snbt));
     return htsw
@@ -48,5 +69,29 @@ describe("Housing interaction data validation", () => {
             '{id: "minecraft:stone", Count: 1b, tag: {ExtraAttributes: {id: "example"}}}';
 
         expect(errorsFor(snbt)).toEqual([]);
+    });
+});
+
+describe("unspawnable item validation", () => {
+    it("rejects an unspawnable item import", () => {
+        expect(errorsFor('{id: "minecraft:mob_spawner", Count: 1b}')).toEqual([
+            "Hypixel refuses to spawn this item, so it can't be imported."
+        ]);
+    });
+
+    it("allows a spawnable item import", () => {
+        expect(errorsFor('{id: "minecraft:stone", Count: 1b}')).toEqual([]);
+    });
+
+    it("rejects an unspawnable function icon", () => {
+        const sourceMap = new htsw.SourceMap(new FunctionFileLoader());
+        const errors = htsw
+            .parseImportablesResult(sourceMap, "/project/import.json")
+            .diagnostics.filter((diagnostic) => diagnostic.level === "error")
+            .map((diagnostic) => diagnostic.message);
+
+        expect(errors).toEqual([
+            "Hypixel refuses to spawn this item, so it can't be used as an icon."
+        ]);
     });
 });

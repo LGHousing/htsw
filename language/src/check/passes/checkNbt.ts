@@ -4,6 +4,7 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import type { Tag, TagCompound } from "../../nbt";
 import type { Importable } from "../../types";
+import { isUnspawnableItem } from "../unspawnableItems";
 
 export function checkNbt(gcx: GlobalCtxt, importables: Importable[] = gcx.importables) {
     for (const importable of importables) {
@@ -77,6 +78,13 @@ function checkTagId(gcx: GlobalCtxt, tag: TagCompound) {
                 .addPrimarySpan(gcx.spans.get(tagId))
         );
         return;
+    }
+
+    if (isUnspawnableItem(id)) {
+        gcx.addDiagnostic(
+            Diagnostic.error("Hypixel refuses to spawn this item, so it can't be imported.")
+                .addPrimarySpan(gcx.spans.get(tagId))
+        );
     }
 }
 

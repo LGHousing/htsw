@@ -6,6 +6,7 @@ import { contentFilePath, getFileName, parseOption } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
 import { parseSnbt as parseSnbtImpl } from "../../nbt/parse";
 import type { Tag } from "../../nbt/types";
+import { isUnspawnableItem } from "../../check/unspawnableItems";
 
 export function parseHtsl(p: Parser): Action[] {
     const path = p.parseString();
@@ -65,7 +66,15 @@ function parseMinecraftItemId(p: Parser): string {
 
     if (namespace === "minecraft") {
         for (let i = 0; i < MINECRAFT_ITEMS.length; i++) {
-            if (MINECRAFT_ITEMS[i].name === name) return `minecraft:${name}`;
+            if (MINECRAFT_ITEMS[i].name === name) {
+                if (isUnspawnableItem(name)) {
+                    p.gcx.addDiagnostic(
+                        Diagnostic.error("Hypixel refuses to spawn this item, so it can't be used as an icon.")
+                            .addPrimarySpan(p.span())
+                    );
+                }
+                return `minecraft:${name}`;
+            }
         }
     }
 
