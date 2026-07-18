@@ -3,10 +3,7 @@
 import type { Importable } from "htsw/types";
 
 import { getNewExportTarget } from "../state";
-import {
-    getParseAt,
-    markParseStale,
-} from "../parsing/parses";
+import { getParseAt, markParseStale } from "../parsing/parses";
 import type { ReadFn } from "../../importables/read";
 import { exportProjectContextFromParsedImportJson } from "../../importables/exportContext";
 import { TaskManager } from "../../tasks/manager";
@@ -27,16 +24,25 @@ export function startExport(
     spec: ExportSpec,
     names?: readonly string[],
     onSuccess?: () => void,
-    labels?: ReadonlyMap<string, string>
+    labels?: ReadonlyMap<string, string>,
+    options?: { skipExisting?: boolean }
 ): void {
     closeAllPopovers();
     const destination = getExportDestinationStatus();
     if (destination.kind === "none") {
-        showToast("Export stopped — choose or create an export project first", 0xffe85c5c, 8000);
+        showToast(
+            "Export stopped — choose or create an export project first",
+            0xffe85c5c,
+            8000
+        );
         return;
     }
     if (destination.kind === "missing") {
-        showToast("Export stopped — the selected project no longer exists", 0xffe85c5c, 8000);
+        showToast(
+            "Export stopped — the selected project no longer exists",
+            0xffe85c5c,
+            8000
+        );
         ChatLib.chat("&c[htsw] Export stopped: the selected project no longer exists.");
         ChatLib.chat(`&7  ${destination.path}`);
         ChatLib.chat("&7Choose another project from Houses → Export project.");
@@ -65,33 +71,41 @@ export function startExport(
                 ? { newExportTargetImportJson: newExportTarget }
                 : {}),
             names,
-            progress: createExportProgressSink(spec.type, importJsonPath, "export", labels),
+            skipExisting: options?.skipExisting,
+            progress: createExportProgressSink(
+                spec.type,
+                importJsonPath,
+                "export",
+                labels
+            ),
         });
-    }).then((result) => {
-        if (result === undefined) return;
-        markParseStale(importJsonPath);
-        if (result.failed > 0) {
+    })
+        .then((result) => {
+            if (result === undefined) return;
+            markParseStale(importJsonPath);
+            if (result.failed > 0) {
+                showToast(
+                    `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
+                    0xffe85c5c,
+                    8000
+                );
+                return;
+            }
+            if (result.total === 0) {
+                showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
+                return;
+            }
             showToast(
-                `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
-                0xffe85c5c,
-                8000
+                count === null
+                    ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
+                    : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+                0xff5cb85c
             );
-            return;
-        }
-        if (result.total === 0) {
-            showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
-            return;
-        }
-        showToast(
-            count === null
-                ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
-                : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
-            0xff5cb85c
-        );
-        if (onSuccess !== undefined) onSuccess();
-    }).catch((err: unknown) => {
-        showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
-    });
+            if (onSuccess !== undefined) onSuccess();
+        })
+        .catch((err: unknown) => {
+            showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
+        });
 }
 
 function importJsonDir(path: string): string {

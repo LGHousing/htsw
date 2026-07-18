@@ -1,14 +1,19 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Element, Rect } from "../../lib/layout";
-import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
+import {
+    Button,
+    Col,
+    Container,
+    Icon,
+    Input,
+    Row,
+    Scroll,
+    Text,
+} from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
-import {
-    getExportImportJsonPath,
-    getHousingUuid,
-    isHouseTrusted,
-} from "../../state";
+import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "../../state";
 import { GLYPH_DOT } from "../../lib/theme";
 import { requestParse } from "../../parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
@@ -16,11 +21,13 @@ import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
 import { getExportDestinationStatus } from "../../export/destinationStatus";
 import {
+    addToExportSelection,
     clearExportSelection,
     getExportSelection,
     isInExportSelection,
     toggleExportSelection,
 } from "./exportSelection";
+import { showToast } from "../../toast";
 import { importableIdentity } from "../../../importables/identity";
 import {
     COLOR_BUTTON,
@@ -89,7 +96,13 @@ const HOUSE_SORT_FIELDS: { id: HouseSortId; label: string }[] = [
 ];
 // Actionable-first when sorting by status: rows that differ from your files
 // come before matches and the rest.
-const STATUS_SORT_ORDER: LinkStatusKey[] = ["differs", "matches", "present", "oneSided", "unknown"];
+const STATUS_SORT_ORDER: LinkStatusKey[] = [
+    "differs",
+    "matches",
+    "present",
+    "oneSided",
+    "unknown",
+];
 const DEFAULT_HOUSE_SORT: { id: HouseSortId; direction: HouseSortDir } = {
     id: "alphabetical",
     direction: "ASC",
@@ -100,7 +113,10 @@ let houseSort: { id: HouseSortId; direction: HouseSortDir } = {
 };
 
 function isHouseSortDefault(): boolean {
-    return houseSort.id === DEFAULT_HOUSE_SORT.id && houseSort.direction === DEFAULT_HOUSE_SORT.direction;
+    return (
+        houseSort.id === DEFAULT_HOUSE_SORT.id &&
+        houseSort.direction === DEFAULT_HOUSE_SORT.direction
+    );
 }
 
 function selectHouseSort(id: HouseSortId): void {
@@ -130,7 +146,8 @@ function compareHouseRows(
 
 function activeType(): HouseContentType {
     for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
-        if (HOUSE_CONTENT_TYPES[i].type === activeContentType) return HOUSE_CONTENT_TYPES[i];
+        if (HOUSE_CONTENT_TYPES[i].type === activeContentType)
+            return HOUSE_CONTENT_TYPES[i];
     }
     return HOUSE_CONTENT_TYPES[0];
 }
@@ -222,34 +239,50 @@ function barControlButton(
                 name: iconName,
                 tooltip,
                 tooltipColor: COLOR_TEXT_DIM,
-                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
             }),
         ],
     });
 }
 
 function houseSortButton(): Element {
-    return barControlButton(Icons.arrowUpDown, () => !isHouseSortDefault(), "Sort", (rect) => {
-        togglePopover({
-            key: "houses-sort",
-            anchor: rect,
-            content: houseSortPopoverContent(),
-            width: 140,
-            height: HOUSE_SORT_FIELDS.length * 20 + 6,
-        });
-    });
+    return barControlButton(
+        Icons.arrowUpDown,
+        () => !isHouseSortDefault(),
+        "Sort",
+        (rect) => {
+            togglePopover({
+                key: "houses-sort",
+                anchor: rect,
+                content: houseSortPopoverContent(),
+                width: 140,
+                height: HOUSE_SORT_FIELDS.length * 20 + 6,
+            });
+        }
+    );
 }
 
 function houseStatusFilterButton(): Element {
-    return barControlButton(Icons.filter, () => selectedHouseStatuses.size > 0, "Filter by status", (rect) => {
-        togglePopover({
-            key: "houses-status-filter",
-            anchor: rect,
-            content: statusFilterPopoverContent(selectedHouseStatuses, toggleHouseStatus),
-            width: statusFilterPopoverWidth(),
-            height: STATUS_FILTER_POPOVER_HEIGHT,
-        });
-    });
+    return barControlButton(
+        Icons.filter,
+        () => selectedHouseStatuses.size > 0,
+        "Filter by status",
+        (rect) => {
+            togglePopover({
+                key: "houses-status-filter",
+                anchor: rect,
+                content: statusFilterPopoverContent(
+                    selectedHouseStatuses,
+                    toggleHouseStatus
+                ),
+                width: statusFilterPopoverWidth(),
+                height: STATUS_FILTER_POPOVER_HEIGHT,
+            });
+        }
+    );
 }
 
 function houseSortPopoverContent(): Element {
@@ -297,7 +330,10 @@ function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): 
 // The source file (htsl/.snbt/json) for an importable in the selected
 // import.json, or null if it isn't in your file. Called on right-click, not per
 // frame, so re-resolving through the (cached) parse is fine.
-function sourcePathForImportable(type: HouseContentType["type"], name: string): string | null {
+function sourcePathForImportable(
+    type: HouseContentType["type"],
+    name: string
+): string | null {
     const dest = getExportImportJsonPath();
     if (dest.trim() === "") return null;
     const parse = requestParse(dest);
@@ -310,7 +346,12 @@ function sourcePathForImportable(type: HouseContentType["type"], name: string): 
     return null;
 }
 
-function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport: boolean): MenuAction[] {
+function itemRowMenu(
+    t: HouseContentType,
+    uuid: string,
+    name: string,
+    canExport: boolean
+): MenuAction[] {
     const actions: MenuAction[] = [];
     // Reuse the existing View-tab diff (source vs cached house content) rather
     // than building a diff here — only when the importable is in your file.
@@ -339,7 +380,11 @@ function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport:
     }
     if (t.remove !== undefined) {
         actions.push({ kind: "separator" });
-        actions.push({ label: "Delete", icon: Icons.trash2, onClick: () => t.remove?.(name) });
+        actions.push({
+            label: "Delete",
+            icon: Icons.trash2,
+            onClick: () => t.remove?.(name),
+        });
     }
     return actions;
 }
@@ -397,7 +442,9 @@ function loadedSourceImportablesByType(
     return out;
 }
 
-function sourceImportablesByType(type: HouseContentType["type"]): Map<string, Importable> {
+function sourceImportablesByType(
+    type: HouseContentType["type"]
+): Map<string, Importable> {
     return loadedSourceImportablesByType(type) ?? new Map<string, Importable>();
 }
 
@@ -477,7 +524,8 @@ function itemRow(
                       return;
                   }
                   if (info.button !== 0) return;
-                  if (canExport) toggleExportSelection({ uuid, type: t.type, name: item.name });
+                  if (canExport)
+                      toggleExportSelection({ uuid, type: t.type, name: item.name });
               }
             : undefined,
         children: [
@@ -526,12 +574,14 @@ function itemRow(
                 tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
-            ...(
-                interactive
-                    ? (t.rowActions ?? []).map((a) => itemRowActionButton(a, item.name))
-                    : []
+            ...(interactive
+                ? (t.rowActions ?? []).map((a) => itemRowActionButton(a, item.name))
+                : []),
+            linkStatusIcon(
+                HOUSE_LINK_VISUAL[state].key,
+                HOUSE_LINK_VISUAL[state].tooltip,
+                12
             ),
-            linkStatusIcon(HOUSE_LINK_VISUAL[state].key, HOUSE_LINK_VISUAL[state].tooltip, 12),
         ],
     });
 }
@@ -552,11 +602,12 @@ function namesAlreadyInDestination(
 function confirmDestructiveExport(
     t: HouseContentType,
     names: readonly string[],
-    run: () => void
+    runOverwrite: () => void,
+    runReduced: (names: readonly string[]) => void
 ): void {
     const existing = namesAlreadyInDestination(t, names);
     if (existing !== null && existing.length === 0) {
-        run();
+        runOverwrite();
         return;
     }
     if (existing === null) {
@@ -568,7 +619,7 @@ function confirmDestructiveExport(
             ],
             confirmLabel: "Export anyway",
             danger: true,
-            onConfirm: run,
+            onConfirm: runOverwrite,
         });
         return;
     }
@@ -583,11 +634,28 @@ function confirmDestructiveExport(
         lines,
         confirmLabel: "Export anyway",
         danger: true,
-        onConfirm: run,
+        onConfirm: runOverwrite,
+        extraLabel: `Skip ${existing.length} already exported`,
+        onExtra: () => {
+            const existingSet = new Set(existing);
+            const remaining = names.filter((name) => !existingSet.has(name));
+            if (remaining.length === 0) {
+                showToast(
+                    `Nothing to export — all ${existing.length} already exported`,
+                    0xffe5bc4b
+                );
+                return;
+            }
+            runReduced(remaining);
+        },
     });
 }
 
-function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportable[]): Element {
+function exportActionBar(
+    t: HouseContentType,
+    uuid: string,
+    items: HouseImportable[]
+): Element {
     const selected = getExportSelection().filter(
         (it) => it.uuid === uuid && it.type === t.type
     );
@@ -601,6 +669,10 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
     // Missing = house items whose identity isn't already in the loaded
     // import.json. Same comparison itemRow uses.
     const exportedSet = exportedIdentities(t.type);
+    const inProjectItems = items.filter((item) => exportedSet.has(item.name));
+    const unselectedInProjectCount = inProjectItems.filter(
+        (item) => !isInExportSelection(uuid, t.type, item.name)
+    ).length;
     const missingNames = t
         .items(uuid)
         .filter((i) => !exportedSet.has(i.name))
@@ -615,6 +687,42 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
+                    Button({
+                        children: [
+                            Text({
+                                text: "Select in project",
+                                color:
+                                    unselectedInProjectCount > 0
+                                        ? undefined
+                                        : COLOR_TEXT_FAINT,
+                            }),
+                        ],
+                        style: {
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground:
+                                unselectedInProjectCount > 0
+                                    ? COLOR_BUTTON_HOVER
+                                    : COLOR_BUTTON,
+                        },
+                        tooltip:
+                            inProjectItems.length === 0
+                                ? `No ${t.label.toLowerCase()} from this house are in the project`
+                                : unselectedInProjectCount === 0
+                                  ? "All in-project items are already selected"
+                                  : undefined,
+                        tooltipColor: COLOR_TEXT_FAINT,
+                        disabled: unselectedInProjectCount === 0,
+                        onClick: () => {
+                            addToExportSelection(
+                                inProjectItems.map((item) => ({
+                                    uuid,
+                                    type: t.type,
+                                    name: item.name,
+                                }))
+                            );
+                        },
+                    }),
                     Button({
                         children: [
                             Icon({
@@ -632,7 +740,9 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
-                            background: canExportItems ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            background: canExportItems
+                                ? COLOR_BUTTON_PRIMARY
+                                : COLOR_BUTTON,
                             hoverBackground: canExportItems
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
@@ -652,12 +762,31 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                             const exp = t.export;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                confirmDestructiveExport(t, names, () =>
-                                    exp.selected(names, () => clearExportSelection(), labels)
+                                confirmDestructiveExport(
+                                    t,
+                                    names,
+                                    () =>
+                                        exp.selected(
+                                            names,
+                                            () => clearExportSelection(),
+                                            labels
+                                        ),
+                                    (remaining) =>
+                                        exp.selected(
+                                            remaining.slice(),
+                                            () => clearExportSelection(),
+                                            labels
+                                        )
                                 );
                             } else {
                                 const names = items.map((i) => i.name);
-                                confirmDestructiveExport(t, names, () => exp.all(labels));
+                                confirmDestructiveExport(
+                                    t,
+                                    names,
+                                    () => exp.all(labels),
+                                    (remaining) =>
+                                        exp.selected(remaining.slice(), () => {}, labels)
+                                );
                             }
                         },
                     }),
@@ -675,8 +804,7 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                             },
                             tooltip: "Read selected into knowledge",
                             tooltipColor: COLOR_TEXT_DIM,
-                            onClick: () =>
-                                deepRead(selected.map((it) => it.name)),
+                            onClick: () => deepRead(selected.map((it) => it.name)),
                         }),
                     Button({
                         // Explicit 12px icon via children: the `icon:` shorthand
@@ -695,7 +823,9 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                         style: {
                             width: { kind: "px", value: 22 },
                             height: { kind: "grow" },
-                            background: canExportItems ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            background: canExportItems
+                                ? COLOR_BUTTON_PRIMARY
+                                : COLOR_BUTTON,
                             hoverBackground: canExportItems
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
@@ -725,9 +855,15 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                             const unreadNames: string[] = [];
                             const differingNames: string[] = [];
                             for (const i of t.items(uuid)) {
-                                const state = houseLinkStateFor(uuid, i, sourceMap, trusted);
+                                const state = houseLinkStateFor(
+                                    uuid,
+                                    i,
+                                    sourceMap,
+                                    trusted
+                                );
                                 if (state === "unread") unreadNames.push(i.name);
-                                if (state === "differs-from-knowledge") differingNames.push(i.name);
+                                if (state === "differs-from-knowledge")
+                                    differingNames.push(i.name);
                             }
                             const actions: MenuAction[] = [
                                 {
@@ -748,10 +884,19 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     disabled: unreadNames.length === 0,
                                     onClick: () => {
                                         if (unreadNames.length > 0) {
-                                            confirmDestructiveExport(t, unreadNames, () =>
-                                                exp.selected(unreadNames, () =>
-                                                    clearExportSelection()
-                                                )
+                                            confirmDestructiveExport(
+                                                t,
+                                                unreadNames,
+                                                () =>
+                                                    exp.selected(
+                                                        unreadNames,
+                                                        clearExportSelection
+                                                    ),
+                                                (remaining) =>
+                                                    exp.selected(
+                                                        remaining.slice(),
+                                                        clearExportSelection
+                                                    )
                                             );
                                         }
                                     },
@@ -761,10 +906,19 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     disabled: differingNames.length === 0,
                                     onClick: () => {
                                         if (differingNames.length > 0) {
-                                            confirmDestructiveExport(t, differingNames, () =>
-                                                exp.selected(differingNames, () =>
-                                                    clearExportSelection()
-                                                )
+                                            confirmDestructiveExport(
+                                                t,
+                                                differingNames,
+                                                () =>
+                                                    exp.selected(
+                                                        differingNames,
+                                                        clearExportSelection
+                                                    ),
+                                                (remaining) =>
+                                                    exp.selected(
+                                                        remaining.slice(),
+                                                        clearExportSelection
+                                                    )
                                             );
                                         }
                                     },
@@ -775,7 +929,13 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     onClick: () => {
                                         if (totalCount === 0) return;
                                         const names = t.items(uuid).map((i) => i.name);
-                                        confirmDestructiveExport(t, names, () => exp.all());
+                                        confirmDestructiveExport(
+                                            t,
+                                            names,
+                                            () => exp.all(),
+                                            (remaining) =>
+                                                exp.selected(remaining.slice(), () => {})
+                                        );
                                     },
                                 },
                             ];
@@ -821,7 +981,10 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
     });
 }
 
-export function typeBrowserSection(getViewedUuid: () => string | null, availW: number): Element {
+export function typeBrowserSection(
+    getViewedUuid: () => string | null,
+    availW: number
+): Element {
     return Col({
         style: { gap: 4, height: { kind: "grow" } },
         children: () => {
@@ -906,7 +1069,10 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                         continue;
                     }
                     const state = houseLinkStateFor(uuid, item, sourceMap, trusted);
-                    if (statusActive && !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[state].key)) {
+                    if (
+                        statusActive &&
+                        !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[state].key)
+                    ) {
                         continue;
                     }
                     shown.push({ item, state });
@@ -930,8 +1096,15 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                             id: "houses-type-scroll",
                             style: { height: { kind: "grow" }, gap: 1 },
                             children: shown.map((s) =>
-                                itemRow(t, uuid, s.item, inCurrentHouse, canExport, s.state)
-                            )
+                                itemRow(
+                                    t,
+                                    uuid,
+                                    s.item,
+                                    inCurrentHouse,
+                                    canExport,
+                                    s.state
+                                )
+                            ),
                         })
                     );
                 }
@@ -948,6 +1121,23 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                             height: { kind: "px", value: SIZE_ROW_H },
                         },
                         children: [
+                            Button({
+                                children: [
+                                    Text({
+                                        text: "Select in project",
+                                        color: COLOR_TEXT_FAINT,
+                                    }),
+                                ],
+                                style: {
+                                    height: { kind: "grow" },
+                                    background: COLOR_BUTTON,
+                                    hoverBackground: COLOR_BUTTON,
+                                },
+                                tooltip: "Stand in this house to select for export",
+                                tooltipColor: COLOR_TEXT_DIM,
+                                disabled: true,
+                                onClick: () => {},
+                            }),
                             Icon({
                                 name: Icons.house,
                                 color: COLOR_TEXT_FAINT,
