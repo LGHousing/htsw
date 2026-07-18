@@ -5,7 +5,7 @@ import {
     Element,
     Rect,
 } from "../../lib/layout";
-import { Container, Icon, McItem, Text } from "../../lib/components";
+import { Button, Container, Icon, McItem, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "./renameImportablePopover";
@@ -54,12 +54,13 @@ import {
     makeImportableQueueItem,
     queueItemKey,
     removeFromQueueKey,
+    toggleQueue,
 } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
+import { composeFileMenu } from "../../menus/fileMenu";
+import { autoTrackRefresh, needsModifiedQueue, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
-import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
+import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeHouseExportCount, subtreeImportableCount } from "./includeTree";
 import {
     showInExplorer,
     openInVSCode,
@@ -89,6 +90,14 @@ import type { Bounds, Importable, MenuSlot } from "htsw/types";
 import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
+import { exportBatch, exportExisting } from "../../../importables/exportBatch";
+import { type HouseExportTypeName } from "../../../importables/houseExportTypes";
+import { readExportProjectContext } from "../../../importables/exportContext";
+import { runHousingSyncTask } from "../../../housingSync/taskRunner";
+import { TaskManager } from "../../../tasks/manager";
+import { showToast } from "../../toast";
+import { HOUSE_READERS } from "../../../importables/houseReaders";
+import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -495,14 +504,15 @@ function confirmDeleteIncludedProject(parentImportJsonPath: string, includedImpo
 
 function fsActions(fullPath: string): MenuAction[] {
     return [
-        { label: revealInFilesLabel(), onClick: () => showInExplorer(fullPath) },
+        { label: revealInFilesLabel(), icon: Icons.folderOpen, onClick: () => showInExplorer(fullPath) },
         {
             label: "Copy path",
+            icon: Icons.copy,
             onClick: () => {
                 if (setClipboardString(fullPath)) ChatLib.chat("&a[htsw] Copied path.");
             },
         },
-        { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
+        { label: "Open with VSCode", icon: Icons.codeXml, onClick: () => openInVSCode(fullPath) },
     ];
 }
 
@@ -562,15 +572,229 @@ function openInHousingAction(imp: Importable): MenuAction | null {
     return null;
 }
 
+function importableExportType(type: Importable["type"]): HouseExportTypeName | null {
+    if (
+        type === "FUNCTION" || type === "EVENT" || type === "MENU" ||
+        type === "REGION" || type === "COMMAND" || type === "TEAM" || type === "GROUP"
+    ) return type;
+    return null;
+}
+
+function projectBindingWarning(parent: ResultImport): string[] {
+    const bound = parent.parse?.importJson.houseUuid ?? null;
+    const current = getHousingUuid();
+    return bound !== null && current !== null && bound !== current
+        ? ["You are standing in a different house than this project is bound to."]
+        : [];
+}
+
+function finishProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+    markParseStale(parent.fullPath);
+    requestParse(parent.fullPath);
+    bumpTreeRevision();
+    showToast(
+        `Re-exported ${count} declared${count === 1 ? " importable" : " importables"} → ${shortPath(importJsonPath)}`,
+        ACCENT_SUCCESS
+    );
+}
+
+function runProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+    if (TaskManager.isBusy()) {
+        showToast("A task is already running — wait for it to finish", ACCENT_WARN);
+        return;
+    }
+    runHousingSyncTask("export", (ctx) =>
+        exportExisting(ctx, readExportProjectContext({
+            rootDir: projectDirOf(importJsonPath),
+            importJsonPath,
+        }))
+    ).then((result) => {
+        if (result === undefined) return;
+        if (result.failed > 0) {
+            markParseStale(parent.fullPath);
+            requestParse(parent.fullPath);
+            bumpTreeRevision();
+            showToast(
+                `Re-export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
+                ACCENT_DANGER,
+                8000
+            );
+            return;
+        }
+        finishProjectReExport(parent, importJsonPath, count);
+    }).catch((err: unknown) => {
+        showToast(`Re-export failed: ${err}`, ACCENT_DANGER, 8000);
+    });
+}
+
+function confirmProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+    openConfirmPopover({
+        title: `Re-export ${count} declared from the house?`,
+        lines: [
+            `Overwrites the local file${count === 1 ? "" : "s"} with the house version${count === 1 ? "" : "s"}.`,
+            ...projectBindingWarning(parent),
+        ],
+        confirmLabel: "Re-export",
+        danger: true,
+        onConfirm: () => runProjectReExport(parent, importJsonPath, count),
+    });
+}
+
+function reExportImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
+    if (imp.type === "ITEM") return null;
+    return {
+        label: "Re-export from house",
+        icon: Icons.refreshCw,
+        disabled: () => getHousingUuid() === null,
+        onClick: () => {
+            openConfirmPopover({
+                title: "Re-export 1 declared from the house?",
+                lines: [
+                    "Overwrites the local file with the house version.",
+                    ...projectBindingWarning(parent),
+                ],
+                confirmLabel: "Re-export",
+                danger: true,
+                onConfirm: () => runSingleImportableReExport(parent, imp),
+            });
+        },
+    };
+}
+
+function deepReadSpecs(importables: readonly Importable[]): DeepReadSpec[] {
+    const namesByType = new Map<Importable["type"], string[]>();
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        if (HOUSE_READERS[imp.type] === null) continue;
+        const names = namesByType.get(imp.type) ?? [];
+        names.push(importableIdentity(imp));
+        namesByType.set(imp.type, names);
+    }
+    const specs: DeepReadSpec[] = [];
+    namesByType.forEach((names, type) => {
+        const read = HOUSE_READERS[type];
+        if (read === null) return;
+        specs.push({ type, label: type.toLowerCase(), read, names });
+    });
+    return specs;
+}
+
+function hasModifiedForQueue(importables: readonly Importable[]): boolean {
+    for (let i = 0; i < importables.length; i++) {
+        if (needsModifiedQueue(importables[i])) return true;
+    }
+    return false;
+}
+
+function queueModifiedAction(importables: readonly Importable[], onClick: () => void): MenuAction[] {
+    if (!hasModifiedForQueue(importables)) return [];
+    return [
+        {
+            label: "Queue modified for import",
+            icon: Icons.listChecks,
+            onClick,
+        },
+    ];
+}
+
+function subtreeImportables(node: IncludeNode): Importable[] {
+    if (node.reference === true) return [];
+    const importables = node.importables.slice();
+    for (let i = 0; i < node.includes.length; i++) {
+        importables.push(...subtreeImportables(node.includes[i]));
+    }
+    return importables;
+}
+
+function deepReadableCount(importables: readonly Importable[]): number {
+    let count = 0;
+    for (let i = 0; i < importables.length; i++) {
+        if (HOUSE_READERS[importables[i].type] !== null) count++;
+    }
+    return count;
+}
+
+function runProjectDeepRead(
+    parent: ResultImport,
+    importJsonPath: string,
+    importables: readonly Importable[]
+): void {
+    const housingUuid = getHousingUuid();
+    if (housingUuid === null) return;
+    startDeepRead(deepReadSpecs(importables), {
+        housingUuid,
+        importJsonPath,
+        parsed: parent.parse,
+        summaryLabel: "declared importable",
+        onSuccess: bumpTreeRevision,
+    });
+}
+
+function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
+    if (HOUSE_READERS[imp.type] === null) return null;
+    return {
+        label: "Read from house",
+        icon: Icons.scanEye,
+        disabled: () => getHousingUuid() === null,
+        onClick: () => runProjectDeepRead(parent, parent.fullPath, [imp]),
+    };
+}
+
+function runSingleImportableReExport(parent: ResultImport, imp: Importable): void {
+    if (TaskManager.isBusy()) {
+        showToast("A task is already running — wait for it to finish", ACCENT_WARN);
+        return;
+    }
+    const destination = readExportProjectContext({
+        rootDir: projectDirOf(parent.fullPath),
+        importJsonPath: parent.fullPath,
+    });
+    runHousingSyncTask("export", (ctx) => {
+        if (imp.type === "NPC") {
+            return exportBatch(ctx, destination, {
+                type: "NPC",
+                entries: [{ name: imp.name, pos: imp.pos }],
+            });
+        }
+        const type = importableExportType(imp.type);
+        if (type === null) return Promise.resolve({ total: 0, succeeded: 0, failed: 0 });
+        return exportBatch(ctx, destination, {
+            type,
+            names: [importableIdentity(imp)],
+        });
+    }).then((result) => {
+        if (result === undefined) return;
+        if (result.failed > 0) {
+            showToast(`Re-export failed for ${importableLabel(imp)}`, ACCENT_DANGER, 8000);
+            return;
+        }
+        finishProjectReExport(parent, parent.fullPath, 1);
+    }).catch((err: unknown) => {
+        showToast(`Re-export failed: ${err}`, ACCENT_DANGER, 8000);
+    });
+}
+
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
     const housingAction = openInHousingAction(imp);
-    const extras: MenuAction[] = [
+    const reExport = reExportImportableAction(parent, imp);
+    const deepRead = readImportableAction(parent, imp);
+    const actions: MenuAction[] = [
+        {
+            label: isInQueue(queueItemKey(item)) ? "Remove from queue" : "Queue for import",
+            icon: Icons.listPlus,
+            onClick: () => toggleQueue(item),
+        },
+        ...(reExport !== null ? [reExport] : []),
+        ...(deepRead !== null ? [deepRead] : []),
+        { kind: "separator" },
         openInViewAction(target, parent.fullPath),
         ...(housingAction !== null ? [housingAction] : []),
+        { kind: "separator" },
         {
             label: "Rename",
+            icon: Icons.pencil,
             onClick: () => {
                 openRenameImportablePopover(
                     { x: 0, y: 0, w: 0, h: 0 },
@@ -585,11 +809,12 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
             ? [
                   {
                       label: "Move to…",
-                      icon: Icons.folder,
+                      icon: Icons.folderInput,
                       onClick: () => openMoveDestinationPicker(parent, imp, lastMenuX, lastMenuY),
                   } as MenuAction,
               ]
             : []),
+        ...fsActions(target),
         { kind: "separator" },
         {
             label: "Delete from project…",
@@ -597,7 +822,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
             onClick: () => confirmDeleteImportable(parent, imp),
         },
     ];
-    return composeImportableMenu(extras, target, item);
+    return actions;
 }
 
 function collectSubtreeImportables(node: IncludeNode, out: Importable[]): void {
@@ -788,6 +1013,35 @@ function rowSlot(w: number): Element {
     });
 }
 
+function rowMenuButton(actions: MenuAction[], key: string): Element {
+    return Button({
+        style: {
+            width: { kind: "px", value: 16 },
+            height: { kind: "grow" },
+            padding: 0,
+            background: 0x00000000,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        tooltip: "More actions",
+        onClick: (rect, info) => {
+            if (info.button !== 0 || info.isDoubleClickSecond) return;
+            lastMenuX = rect.x + rect.w;
+            lastMenuY = rect.y;
+            openMenu(rect.x + rect.w, rect.y, actions, {
+                key: `project-row:${key}`,
+                trigger: rect,
+            });
+        },
+        children: [
+            Icon({
+                name: Icons.ellipsisVertical,
+                color: COLOR_TEXT_FAINT,
+                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+            }),
+        ],
+    });
+}
+
 function rowHandler(
     actions: MenuAction[],
     defaultLeftAction?: () => void
@@ -957,21 +1211,43 @@ export function resultRow(
         : [];
     const fileExtras: MenuAction[] = isImport && r.type === "import"
         ? [
-              openInViewAction(r.fullPath, importJsonPath),
               {
-                  label: "Queue all importables",
+                  label: "Queue all for import",
+                  icon: Icons.listPlus,
                   onClick: () => {
                       queueImportJsonSubtree(r, includeTreeOf(r));
                   },
               },
+              ...queueModifiedAction(
+                  subtreeImportables(includeTreeOf(r)),
+                  () => queueModifiedFromPath(r.fullPath)
+              ),
               {
-                  label: "Queue all modified",
-                  onClick: () => {
-                      queueModifiedFromPath(r.fullPath);
-                  },
+                  label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
+                  icon: Icons.refreshCw,
+                  disabled: () => getHousingUuid() === null,
+                  onClick: () => confirmProjectReExport(
+                      r,
+                      r.fullPath,
+                      subtreeHouseExportCount(includeTreeOf(r))
+                  ),
               },
               {
+                  label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
+                  icon: Icons.scanEye,
+                  disabled: () => getHousingUuid() === null,
+                  onClick: () => runProjectDeepRead(
+                      r,
+                      r.fullPath,
+                      subtreeImportables(includeTreeOf(r))
+                  ),
+              },
+              { kind: "separator" },
+              openInViewAction(r.fullPath, importJsonPath),
+              { kind: "separator" },
+              {
                   label: isAutoTrackSource(r.fullPath) ? "Auto-Track: ON" : "Auto-Track: OFF",
+                  icon: Icons.radar,
                   onClick: () => {
                       const nowOn = toggleAutoTrackSource(r.fullPath);
                       if (nowOn === null) {
@@ -984,20 +1260,22 @@ export function resultRow(
               acceptHouseLockMenuAction(r.fullPath),
               {
                   label: "Open project in VSCode",
+                  icon: Icons.folderCode,
                   onClick: () => {
                       openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
               },
+              ...fsActions(r.fullPath),
+              ...extraActions,
               { kind: "separator" },
               {
                   label: "Delete project folder…",
                   icon: Icons.trash2,
                   onClick: () => confirmDeleteProject(r.fullPath),
               },
-              ...extraActions,
           ]
         : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
-    const actions = composeFileMenu(fileExtras, r.fullPath, importJsonPath);
+    const actions = isImport ? fileExtras : composeFileMenu(fileExtras, r.fullPath, importJsonPath);
     return Container({
         style: {
             direction: "row",
@@ -1031,6 +1309,7 @@ export function resultRow(
             isImport && autoTrackIndicator(r.fullPath),
             isImport && isAutoTrackSource(r.fullPath) && rowSlot(INNER_GAP),
             isImport && houseBindControl(r.fullPath),
+            isImport && rowMenuButton(actions, `import-json:${r.fullPath}`),
         ],
     });
 }
@@ -1087,23 +1366,41 @@ export function includeGroupRow(
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
     const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
-    const actions = composeFileMenu([
-        openInViewAction(fullPath, parent.fullPath),
+    const count = subtreeHouseExportCount(node);
+    const declaredImportables = subtreeImportables(node);
+    const actions: MenuAction[] = [
         {
-            label: "Queue all importables",
+            label: "Queue all for import",
+            icon: Icons.listPlus,
             onClick: () => queueImportJsonSubtree(parent, node),
         },
+        ...queueModifiedAction(
+            declaredImportables,
+            () => queueModifiedSubtree(parent, node)
+        ),
         {
-            label: "Queue all modified",
-            onClick: () => queueModifiedSubtree(parent, node),
+            label: `Re-export from house (${count})`,
+            icon: Icons.refreshCw,
+            disabled: () => getHousingUuid() === null,
+            onClick: () => confirmProjectReExport(parent, fullPath, count),
         },
+        {
+            label: `Read from house (${deepReadableCount(declaredImportables)})`,
+            icon: Icons.scanEye,
+            disabled: () => getHousingUuid() === null,
+            onClick: () => runProjectDeepRead(parent, fullPath, declaredImportables),
+        },
+        { kind: "separator" },
+        openInViewAction(fullPath, parent.fullPath),
+        { kind: "separator" },
+        ...fsActions(fullPath),
         { kind: "separator" },
         {
             label: "Delete project folder…",
             icon: Icons.trash2,
             onClick: () => confirmDeleteIncludedProject(canonicalPath(parentNodePath), fullPath),
         },
-    ], fullPath, parent.fullPath);
+    ];
     return Container({
         style: {
             direction: "row",
@@ -1136,6 +1433,7 @@ export function includeGroupRow(
                 text: String(subtreeImportableCount(node)),
                 color: COLOR_TEXT_FAINT,
             }),
+            rowMenuButton(actions, `include:${fullPath}`),
         ],
     });
 }
@@ -1190,6 +1488,7 @@ function includeReferenceRow(
                     text: String(subtreeImportableCount(home)),
                     color: COLOR_TEXT_FAINT,
                 }),
+            rowMenuButton(actions, `include-reference:${fullPath}:${parentNodePath}`),
         ],
     });
 }
@@ -1316,6 +1615,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                     else importableExpansion.add(expKey);
                     bumpTreeRevision();
                 }),
+            rowMenuButton(importableActions(parent, imp), `importable:${expKey}`),
         ],
     });
 }
@@ -1572,5 +1872,5 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
 }
 
 export function standaloneCloseAction(s: SourceFile): MenuAction[] {
-    return [{ label: "Close", onClick: () => removeSource(s.fullPath) }];
+    return [{ label: "Close", icon: Icons.x, onClick: () => removeSource(s.fullPath) }];
 }

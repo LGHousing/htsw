@@ -24,14 +24,18 @@ import {
     queueItemKey,
 } from "./right-panel/import-tab/queue";
 
+export function needsModifiedQueue(imp: Importable): boolean {
+    const status = statusForImportable(imp);
+    return status === "modified" || status === "unknown";
+}
+
 export function queueModifiedImportables(
     sourcePath: string,
     importables: readonly Importable[]
 ): void {
     const canonicalSourcePath = canonicalPath(sourcePath);
     for (const imp of importables) {
-        const status = statusForImportable(imp);
-        if (status === "modified" || status === "unknown") {
+        if (needsModifiedQueue(imp)) {
             const item = makeImportableQueueItem(imp, canonicalSourcePath);
             const added = addToQueue(item);
             if (!added && !isInQueue(queueItemKey(item))) continue;

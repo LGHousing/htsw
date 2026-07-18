@@ -13,7 +13,6 @@ import {
     queueItemsForPath,
     removeFromQueueKey,
     toggleQueue,
-    type QueueItem,
 } from "../right-panel/import-tab/queue";
 
 function isImportJsonPath(filePath: string): boolean {
@@ -22,7 +21,6 @@ function isImportJsonPath(filePath: string): boolean {
     const base = slash < 0 ? normalized : normalized.substring(slash + 1);
     return base === "import.json";
 }
-
 /**
  * Build the queue-control entry for a file path that maps to one or more
  * concrete importables.
@@ -88,37 +86,4 @@ export function composeFileMenu(
 ): MenuAction[] {
     if (specific.length === 0) return genericFileActions(filePath, importJsonPath);
     return specific.concat([{ kind: "separator" }], genericFileActions(filePath, importJsonPath));
-}
-
-/**
- * Variant of `composeFileMenu` for callers that already have a fully-
- * resolved `QueueItem` in hand (a Projects row, say). Skips
- * the path-based scan and uses the item directly so the toggle is
- * unambiguous even when the file is referenced by several importables.
- */
-export function composeImportableMenu(
-    specific: MenuAction[],
-    filePath: string,
-    item: QueueItem
-): MenuAction[] {
-    const queued = isInQueue(queueItemKey(item));
-    const queueAction: MenuAction = {
-        label: queued ? "Remove from queue" : "Add to queue",
-        onClick: () => {
-            toggleQueue(item);
-        },
-    };
-    const generics: MenuAction[] = [
-        queueAction,
-        { label: revealInFilesLabel(), onClick: () => showInExplorer(filePath) },
-        {
-            label: "Copy path",
-            onClick: () => {
-                if (setClipboardString(filePath)) ChatLib.chat("&a[htsw] Copied path.");
-            },
-        },
-        { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
-    ];
-    if (specific.length === 0) return generics;
-    return specific.concat([{ kind: "separator" }], generics);
 }
