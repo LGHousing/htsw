@@ -67,6 +67,19 @@ type HtswSubcommand = {
 
 const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
     {
+        name: "import",
+        summary: "Import an import.json or .htsl file",
+        run: commandImport,
+        usage: "import <import.json|actions.htsl>",
+    },
+    {
+        name: "simulator",
+        summary: "Simulate a project locally",
+        run: commandSimulator,
+        aliases: ["sim"],
+        usage: "simulator [start [path] | restart | stop]",
+    },
+    {
         name: "export",
         summary: "Export live Housing content",
         run: commandExport,
@@ -204,10 +217,6 @@ function commandDebug(args: string[]): void {
 
 export function registerSlashCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
-    register("command", (...args) => commandImport(args)).setName("import");
-    register("command", (...args) => commandSimulator(args))
-        .setName("simulator")
-        .setAliases("sim");
     registerExportSlashCommand();
 }
 
@@ -243,8 +252,6 @@ function printHtswHelp(): void {
     const subtitle = `&fCreated by @sndyx, @j_sse, and @callanftw`;
     ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
     ChatLib.chat("");
-    ChatLib.chat("&f/import &7- Import an import.json or .htsl file");
-    ChatLib.chat("&f/simulator &7- Simulate a project locally");
     for (let i = 0; i < HTSW_SUBCOMMANDS.length; i++) {
         const command = HTSW_SUBCOMMANDS[i];
         if (command.hidden === true) continue;
@@ -474,15 +481,15 @@ function commandImport(args: string[]) {
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
-        ChatLib.chat("&f/import <import.json|actions.htsl>");
-        ChatLib.chat("&f/import raw <actions.htsl> &7- Append into the open action menu");
+        ChatLib.chat("&f/htsw import <import.json|actions.htsl>");
+        ChatLib.chat("&f/htsw import raw <actions.htsl> &7- Append into the open action menu");
         ChatLib.chat(`&7${chatSeparator()}`);
         return;
     }
 
     const rawMode = isRawImportToken(args[0]);
     if (rawMode && args.length === 1) {
-        ChatLib.chat("&cUsage: /import raw <actions.htsl>");
+        ChatLib.chat("&cUsage: /htsw import raw <actions.htsl>");
         return;
     }
 
@@ -579,7 +586,7 @@ function commandSimulator(args: string[]) {
         const title = `&e&lHTSW &fSimulator Runtime &f&l${moduleVersion()}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
-        ChatLib.chat("&f/simulator [start [path] | restart | stop ]");
+        ChatLib.chat("&f/htsw simulator [start [path] | restart | stop]");
         ChatLib.chat("");
         ChatLib.chat("&7While a simulation is active:");
         ChatLib.chat("&f/function run <function> &7- Run a function");

@@ -50,7 +50,7 @@ export async function resolveImportableItem(
         throw Diagnostic.error(
             `Cannot set item "${itemName}" for ${owner.type}: it has click actions but its interact_data isn't cached at ${cachePath}. ` +
                 `Declare the item as a top-level importable in the same import.json so it imports first, ` +
-                `or run /import on it before whatever ${kind} references it.`
+                `or import it before whatever ${kind} references it.`
         );
     }
     const interactDataSnbt = String(FileLib.read(cachePath));
