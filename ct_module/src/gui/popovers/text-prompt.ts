@@ -15,6 +15,7 @@ export type TextPromptOptions = {
     placeholder?: string;
     prefill?: string;
     submitLabel?: string;
+    onEmptySubmit?: () => void;
     /** Popover width; widen when the hint lines need the room. Defaults to 240. */
     width?: number;
     /** Called with the trimmed, non-empty value after the prompt closes. */
@@ -34,7 +35,10 @@ function closeSelf(): void {
 
 function submit(): void {
     const trimmed = draft.trim();
-    if (trimmed.length === 0) return;
+    if (trimmed.length === 0) {
+        options?.onEmptySubmit?.();
+        return;
+    }
     const opts = options;
     draft = "";
     options = null;

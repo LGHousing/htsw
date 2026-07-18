@@ -2,7 +2,6 @@ import {
     moveImportableEntry as moveImportableEntryWithFs,
     removeImportableEntry as removeImportableEntryWithFs,
     renameImportableEntry as renameImportableEntryWithFs,
-    resolveImportableFile as resolveImportableFileWithFs,
     setHouseUuidKey as setHouseUuidKeyWithFs,
     updateImportableField as updateImportableFieldWithFs,
     upsertImportableEntry as upsertImportableEntryWithFs,
@@ -13,14 +12,6 @@ import {
 import { ctProjectFs } from "./projectFs";
 
 export type { MoveImportableResult, Section };
-
-export function resolveImportableFile(
-    entryPath: string,
-    section: Section,
-    identity: string
-): string {
-    return resolveImportableFileWithFs(ctProjectFs, entryPath, section, identity);
-}
 
 export function upsertImportableEntry(
     importJsonPath: string,

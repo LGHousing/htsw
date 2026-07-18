@@ -6,8 +6,13 @@ import type { ProgressHandler } from "../../housingSync/progress/types";
 import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { resolveImportableFile, upsertImportableEntry } from "../../project/importJsonMutations";
-import { canonicalSlug, parentDirOf, sectionFolderImportJson } from "../../project/paths";
+import { upsertImportableEntry } from "../../project/importJsonMutations";
+import {
+    canonicalSlug,
+    importJsonTargetForSectionEntry,
+    parentDirOf,
+    sectionFolderImportJson,
+} from "../../project/paths";
 import { menuExportReferencesExist } from "../../project/paths";
 import { makeReadHouse } from "../readHouse";
 import { listAllMenuNames } from "./listMenus";
@@ -26,6 +31,7 @@ type ExportMenuOptions = {
      * items go to `<rootDir>/items/<name>.snbt`.
      */
     rootDir: string;
+    newExportTargetImportJson?: string;
     onReadProgress?: ProgressHandler;
     // Read-only (deep read): cache the menu, write no files.
     readOnly?: { housingUuid: string };
@@ -61,15 +67,13 @@ async function exportMenu(
     const { name } = options;
     const { actionItemCaptures, slotItemCaptures, writtenItems } = shared;
 
-    // A menu already declared in an INCLUDED file updates in place: the
-    // entry is upserted into its declaring import.json, and since every
-    // slot ref is relative to the file declaring it, the slot htsl/snbt
-    // files move under that file's folder too. A NEW menu goes to the
-    // project's menus/import.json when that section folder is included.
     const sectionJson = sectionFolderImportJson(options.importJsonPath, "menus");
-    const declared = resolveImportableFile(options.importJsonPath, "menus", name);
-    const importJsonPath =
-        declared !== options.importJsonPath ? declared : (sectionJson ?? options.importJsonPath);
+    const importJsonPath = importJsonTargetForSectionEntry(
+        options.importJsonPath,
+        "menus",
+        name,
+        options.newExportTargetImportJson
+    );
     const rootDir =
         importJsonPath === options.importJsonPath ? options.rootDir : parentDirOf(importJsonPath);
     // Inside the menus section folder the per-menu folder sits directly
@@ -203,6 +207,7 @@ export const readMenus = makeReadHouse<string>({
                 name,
                 importJsonPath: options.importJsonPath,
                 rootDir: options.rootDir,
+                newExportTargetImportJson: options.newExportTargetImportJson,
                 readOnly: options.readOnly,
                 onReadProgress,
             },

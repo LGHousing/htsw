@@ -15,6 +15,10 @@ export function printExportHelp(): void {
         ChatLib.chat(`&f/export ${spec.token} <name> [path]`);
         ChatLib.chat(`&7  ${spec.help.named}`);
     }
+    ChatLib.chat("&f/export chest <name> [path]");
+    ChatLib.chat(
+        "&7  Exports the open chest as a menu and writes its items as .snbt files."
+    );
     ChatLib.chat("&f/export npc <name> <x> <y> <z> [path]");
     ChatLib.chat("&7  Reads an existing NPC by position and writes left/right .htsl + import.json metadata.");
     ChatLib.chat("&f/htsw export item [path]");
