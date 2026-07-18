@@ -52,7 +52,7 @@ import {
 } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
-import { saveItem, giveItem, clearInv } from "./debugItems";
+import { giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 
@@ -71,12 +71,6 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Export live Housing content",
         run: commandExport,
         usage: "export <type> [path]",
-    },
-    {
-        name: "saveitem",
-        summary: "Save held item as .snbt",
-        run: saveItem,
-        usage: "saveitem <path>",
     },
     {
         name: "giveitem",

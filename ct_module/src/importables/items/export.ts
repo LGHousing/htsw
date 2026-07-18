@@ -2,6 +2,7 @@ import type { ImportableItem } from "htsw/types";
 
 import {
     ItemCaptureRegistry,
+    portableItemSnbt,
     snbtFromItem,
 } from "../../housingSync/itemCapture";
 import { isUnspawnableItem } from "../../housingSync/items/unspawnableItems";
@@ -102,6 +103,12 @@ async function exportDeclaredItem(
         if (!updateImportableField(declaringJson, "items", item.name, field, relativePath(declaringJson, path))) {
             throw new Error(`Could not attach ${field} to '${item.name}'.`);
         }
+    }
+
+    const raw = FileLib.read(snbtPath);
+    if (raw !== null) {
+        FileLib.write(snbtPath, portableItemSnbt(String(raw)), true);
+        ctx.displayMessage(`&7  -> ${snbtPath}`);
     }
 }
 
