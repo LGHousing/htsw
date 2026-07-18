@@ -1,5 +1,6 @@
 import TaskContext from "../tasks/context";
 import { removedFormatting } from "../utils/helpers";
+import { reportHousingPresence } from "./housingPresence";
 
 /**
  * Run `/wtfmap` and classify the reply:
@@ -27,10 +28,15 @@ export async function detectHousingUuid(ctx: TaskContext): Promise<string | null
         "Waiting for /wtfmap reply"
     ).then(([msg]) => removedFormatting(msg));
 
-    if (!message.startsWith("You are currently playing on")) return null;
+    if (!message.startsWith("You are currently playing on")) {
+        reportHousingPresence("out");
+        return null;
+    }
 
     // "You are currently playing on " is 29 chars; UUIDs are 36 chars long.
-    return message.substring(29, 65);
+    const uuid = message.substring(29, 65);
+    reportHousingPresence("in");
+    return uuid;
 }
 
 /**
