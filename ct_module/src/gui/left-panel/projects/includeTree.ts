@@ -47,6 +47,17 @@ export function subtreeImportableCount(node: IncludeNode): number {
     return n;
 }
 
+export function subtreeHouseExportCount(node: IncludeNode): number {
+    let count = 0;
+    for (let i = 0; i < node.importables.length; i++) {
+        if (node.importables[i].type !== "ITEM") count++;
+    }
+    for (let i = 0; i < node.includes.length; i++) {
+        count += subtreeHouseExportCount(node.includes[i]);
+    }
+    return count;
+}
+
 /** The full ("home") node for a file, skipping reference leaves. */
 export function findIncludeNode(root: IncludeNode, targetPath: string): IncludeNode | null {
     if (root.reference !== true && canonicalPath(root.path) === targetPath) return root;
