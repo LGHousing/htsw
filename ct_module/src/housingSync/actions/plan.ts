@@ -8,7 +8,11 @@ import type { ObservedActionSlot } from "../observedActions";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { hydrateActionListScan } from "./hydration/run";
-import { canonicalizeActionItemName, scanActionList } from "./readList";
+import {
+    canonicalizeActionItemName,
+    emitObservedSnapshot,
+    scanActionList,
+} from "./readList";
 import {
     actionListDiffApplyUnits,
     editUnitsWithChildLists,
@@ -31,6 +35,7 @@ export type ActionListApplyOptions = {
 export type ActionListPrereadOptions = ActionListApplyOptions & {
     trust?: ActionListTrust;
     baselineCurrent?: readonly Action[];
+    trustedBaselineAfterUnchangedScan?: readonly Action[];
     conflictTarget?: ImportConflict;
 };
 
@@ -74,7 +79,28 @@ export async function prereadActionList(
         },
         readOptions
     );
-    recordActionListConflict(actionListScanHashFromSlots(scan.slots), desired, options);
+    const conflictVerdict = recordActionListConflict(
+        actionListScanHashFromSlots(scan.slots),
+        desired,
+        options
+    );
+    if (
+        conflictVerdict === "unchanged" &&
+        options.trustedBaselineAfterUnchangedScan !== undefined
+    ) {
+        phaseUnits.hydrating = 0;
+        const plan = knownActionListPlan(
+            desired,
+            options.trustedBaselineAfterUnchangedScan,
+            options,
+            phaseUnits
+        );
+        if (options.listPath === undefined) {
+            emitObservedSnapshot(plan.observed, options.session.events);
+        }
+        emitPrereadCompleted(progress, plan.phaseUnits);
+        return plan;
+    }
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
@@ -86,19 +112,8 @@ export async function prereadActionList(
         canonicalizeActionItemName(action, options.session.items);
     }
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
-    const exactApplyUnits = actionListDiffApplyUnits(
-        diff,
-        editUnitsWithChildLists,
-        desired.length
-    );
-    phaseUnits.applying = Math.max(exactApplyUnits, 1);
-    progress?.({
-        phase: "hydrating",
-        completedUnits: phaseUnits.reading + phaseUnits.hydrating,
-        totalUnits: phaseUnitsTotal(phaseUnits),
-        phaseUnits,
-        sync: { completedUnits: 1, totalUnits: 1, parent: null },
-    });
+    phaseUnits.applying = exactApplyUnits(diff, desired.length);
+    emitPrereadCompleted(progress, phaseUnits);
 
     return { desired, observed, diff, phaseUnits };
 }
@@ -115,48 +130,74 @@ export function createKnownActionListPlan(
     current: readonly Action[],
     options: ActionListPrereadOptions
 ): ActionListPlan {
+    recordActionListConflict(actionListScanHashFromActions(current), desired, options);
+    const phaseUnits = estimateActionListPhaseUnits(desired, current);
+    phaseUnits.reading = 0;
+    phaseUnits.hydrating = 0;
+    return knownActionListPlan(desired, current, options, phaseUnits);
+}
+
+function knownActionListPlan(
+    desired: Action[],
+    current: readonly Action[],
+    options: ActionListPrereadOptions,
+    phaseUnits: PhaseUnits
+): ActionListPlan {
     const observed = current.map((action, index) => ({
         index,
         action: JSON.parse(JSON.stringify(action)) as Action,
         hydrated: true,
         truncatedFields: [],
     }));
-    recordActionListConflict(actionListScanHashFromActions(current), desired, options);
     for (const entry of observed) {
         canonicalizeActionItemName(entry.action, options.session.items);
     }
     for (const action of desired) {
         canonicalizeActionItemName(action, options.session.items);
     }
-    const phaseUnits = estimateActionListPhaseUnits(desired, current);
-    phaseUnits.reading = 0;
-    phaseUnits.hydrating = 0;
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
-    phaseUnits.applying = Math.max(
-        actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length),
+    phaseUnits.applying = exactApplyUnits(diff, desired.length);
+    return { desired, observed, diff, phaseUnits };
+}
+
+function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
+    return Math.max(
+        actionListDiffApplyUnits(diff, editUnitsWithChildLists, desiredLength),
         1
     );
-    return { desired, observed, diff, phaseUnits };
+}
+
+function emitPrereadCompleted(
+    progress: ProgressHandler | undefined,
+    phaseUnits: PhaseUnits
+): void {
+    progress?.({
+        phase: "hydrating",
+        completedUnits: phaseUnits.reading + phaseUnits.hydrating,
+        totalUnits: phaseUnitsTotal(phaseUnits),
+        phaseUnits,
+        sync: { completedUnits: 1, totalUnits: 1, parent: null },
+    });
 }
 
 function recordActionListConflict(
     liveHash: string,
     desired: readonly Action[],
     options: ActionListPrereadOptions
-): void {
+): ReturnType<typeof scanConflictVerdict> | null {
     const target = options.conflictTarget;
-    if (target === undefined || !options.session.trust.trustMode) return;
+    if (target === undefined || !options.session.trust.trustMode) return null;
     const trustPlan = options.session.trust.importables.get(
         importableKey(target.type, target.identity)
     );
     const lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
-    if (
-        scanConflictVerdict(
-            liveHash,
-            lockHash,
-            actionListScanHashFromActions(desired)
-        ) === "conflict"
-    ) {
+    const verdict = scanConflictVerdict(
+        liveHash,
+        lockHash,
+        actionListScanHashFromActions(desired)
+    );
+    if (verdict === "conflict") {
         options.session.conflicts.push(target);
     }
+    return verdict;
 }

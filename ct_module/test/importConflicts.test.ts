@@ -28,6 +28,45 @@ vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
 
 import { prereadActionList } from "../src/housingSync/actions/plan";
 
+function sessionWithLock(
+    importable: ImportableFunction,
+    lockedActions: ImportableFunction["actions"]
+): ImportSession {
+    return {
+        parsed: { value: [] } as never,
+        items: createItemRegistry([]),
+        housingUuid: "test-house",
+        trust: {
+            housingUuid: "test-house",
+            trustMode: true,
+            importables: new Map([
+                [
+                    `FUNCTION:${importable.name}`,
+                    {
+                        importable,
+                        identity: importable.name,
+                        entry: null,
+                        sourceHash: "",
+                        cacheHash: null,
+                        lockHash: null,
+                        lockListScanHashes: {
+                            actions: actionListScanHashFromActions(lockedActions ?? []),
+                        },
+                        cacheMatchesLock: true,
+                        trustMode: false,
+                        wholeImportableTrusted: false,
+                        trustedChildListPaths: new Set(),
+                        trustedChildLists: new Map(),
+                    },
+                ],
+            ]),
+        },
+        conflicts: [],
+        events: undefined,
+        npcLookup: createNpcLookupCache(),
+    };
+}
+
 describe("scanConflictVerdict", () => {
     it.each([
         ["live", undefined, "source", "no-baseline"],
@@ -54,41 +93,7 @@ describe("prereadActionList conflict detection", () => {
         mocks.scanActionList.mockResolvedValue({
             slots: [observedSlot(0, changeVar())],
         });
-        const session: ImportSession = {
-            parsed: { value: [] } as never,
-            items: createItemRegistry([]),
-            housingUuid: "test-house",
-            trust: {
-                housingUuid: "test-house",
-                trustMode: true,
-                importables: new Map([
-                    [
-                        "FUNCTION:Debug",
-                        {
-                            importable,
-                            identity: importable.name,
-                            entry: null,
-                            sourceHash: "",
-                            cacheHash: null,
-                            lockHash: null,
-                            lockListScanHashes: {
-                                actions: actionListScanHashFromActions([
-                                    message("baseline"),
-                                ]),
-                            },
-                            cacheMatchesLock: true,
-                            trustMode: false,
-                            wholeImportableTrusted: false,
-                            trustedChildListPaths: new Set(),
-                            trustedChildLists: new Map(),
-                        },
-                    ],
-                ]),
-            },
-            conflicts: [],
-            events: undefined,
-            npcLookup: createNpcLookupCache(),
-        };
+        const session = sessionWithLock(importable, [message("baseline")]);
 
         await prereadActionList(null as unknown as TaskContext, importable.actions!, {
             session,
@@ -102,5 +107,39 @@ describe("prereadActionList conflict detection", () => {
         expect(session.conflicts).toEqual([
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
+        expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
+
+    it("reuses the trusted baseline when the live scan still matches the lock", async () => {
+        const baseline = [message("baseline")];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("desired")],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, message("shallow live value"))],
+        });
+        const session = sessionWithLock(importable, baseline);
+
+        const plan = await prereadActionList(
+            null as unknown as TaskContext,
+            importable.actions!,
+            {
+                session,
+                baselineCurrent: baseline,
+                trustedBaselineAfterUnchangedScan: baseline,
+                conflictTarget: {
+                    type: importable.type,
+                    identity: importable.name,
+                    basePath: "actions",
+                },
+            }
+        );
+
+        expect(mocks.hydrateActionListScan).not.toHaveBeenCalled();
+        expect(plan.observed[0].action).toEqual(message("baseline"));
+        expect(plan.phaseUnits.hydrating).toBe(0);
+        expect(session.conflicts).toEqual([]);
     });
 });

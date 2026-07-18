@@ -53,10 +53,12 @@ export async function prepareActionListSync(
     if (target.current?.kind === "known-empty") {
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
     }
-    const trustedBaseline = conflictScanRequired(target)
-        ? undefined
-        : getTrustedBaselineActionList(target.trustPlan, target.basePath);
-    if (trustedBaseline !== undefined) {
+    const trustedBaseline = getTrustedBaselineActionList(
+        target.trustPlan,
+        target.basePath
+    );
+    const needsConflictScan = conflictScanRequired(target);
+    if (trustedBaseline !== undefined && !needsConflictScan) {
         return planned(
             createKnownActionListPlan(target.desired, trustedBaseline, target),
             target
@@ -71,6 +73,9 @@ export async function prepareActionListSync(
             listPath: target.listPath,
             progressScope: target.progressScope,
             baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
+            trustedBaselineAfterUnchangedScan: needsConflictScan
+                ? trustedBaseline
+                : undefined,
             trust: getActionListTrust(target.trustPlan, target.basePath),
             conflictTarget: target.conflictTarget,
         }),
