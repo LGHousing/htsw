@@ -185,6 +185,21 @@ export class Panel {
         recordPanelFrame(Date.now() - renderStart, rebuild);
     }
 
+    public clickAt(rawX: number, rawY: number, btn: number): boolean {
+        markGuiDirty();
+        const x = mcToOverlay(rawX);
+        const y = mcToOverlay(rawY);
+        if (popoverIsOpen() && claimPopoverClick(x, y)) {
+            if (tryDispatchPopoverClick(x, y, btn)) return true;
+        }
+        if (tryDispatchHoverCardClick(x, y)) return true;
+        if (!extract(this.shouldBeVisible)) return false;
+        const b = extract(this.bounds);
+        if (!pointInRect(b, x, y)) return false;
+        const laid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+        return dispatchClick(laid, x, y, btn);
+    }
+
     public register(): void {
         if (this.renderTrigger !== null) {
             throw new Error("Panel is already registered");
@@ -218,30 +233,7 @@ export class Panel {
                 event: CancellableEvent
             ) => {
                 if (event.isCanceled()) return;
-                // A click can change anything the tree shows — rebuild next paint
-                // rather than wait for the dirty backstop.
-                markGuiDirty();
-                const x = mcToOverlay(rawX);
-                const y = mcToOverlay(rawY);
-                // Popover takes priority. Only one panel should actually run the popover dispatch
-                // (since it mutates state and runs onClick once); we use a per-frame guard.
-                // Inside-popover click → dispatch + cancel + return. Outside-popover click → close
-                // stale popovers but fall through so the click still focuses inputs / hits buttons.
-                if (popoverIsOpen() && claimPopoverClick(x, y)) {
-                    if (tryDispatchPopoverClick(x, y, btn)) {
-                        cancel(event);
-                        return;
-                    }
-                }
-                if (tryDispatchHoverCardClick(x, y)) {
-                    cancel(event);
-                    return;
-                }
-                if (!extract(this.shouldBeVisible)) return;
-                const b = extract(this.bounds);
-                if (!pointInRect(b, x, y)) return;
-                const laid = layoutElement(this.root, b.x, b.y, b.w, b.h);
-                if (dispatchClick(laid, x, y, btn)) cancel(event);
+                if (this.clickAt(rawX, rawY, btn)) cancel(event);
             }
         );
     }

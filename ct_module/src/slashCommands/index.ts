@@ -15,7 +15,11 @@ import { recompile } from "./recompile";
 import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
-import { toggleHtswGui } from "../gui/overlay";
+import {
+    clickHtswOverlay,
+    scrollHtswOverlay,
+    toggleHtswGui,
+} from "../gui/overlay";
 import { resetTimingStats } from "../housingSync/progress/timing";
 import {
     getEventContainerCounts,
@@ -120,6 +124,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "gui",
         summary: "Toggle the in-game HTSW dashboard",
         run: commandGui,
+    },
+    {
+        name: "bridge",
+        summary: "Drive the HTSW overlay from local integrations",
+        run: commandBridge,
+        hidden: true,
     },
     {
         name: "update",
@@ -273,6 +283,56 @@ function commandTrace(args: string[]): void {
 function commandGui(): void {
     const nowEnabled = toggleHtswGui();
     ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+}
+
+function commandBridge(args: string[]): void {
+    const action = (args[0] ?? "").toLowerCase();
+    const point = bridgePoint(args.slice(1));
+    if (point === null) return;
+    if (action === "click") {
+        const buttonName = (args[3] ?? "left").toLowerCase();
+        const buttons: { [name: string]: number } = { left: 0, right: 1, middle: 2 };
+        const button = buttons[buttonName];
+        if (button === undefined) {
+            ChatLib.chat("&cUsage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]");
+            return;
+        }
+        clickHtswOverlay(point.x, point.y, button);
+        return;
+    }
+    if (action === "scroll") {
+        const delta = Number(args[3]);
+        if (!isFinite(delta) || delta === 0) {
+            ChatLib.chat("&cUsage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]");
+            return;
+        }
+        scrollHtswOverlay(point.x, point.y, delta);
+        return;
+    }
+    ChatLib.chat("&cUsage: /htsw bridge <click|scroll> ...");
+}
+
+function bridgePoint(args: string[]): { x: number; y: number } | null {
+    let x = Number(args[0]);
+    let y = Number(args[1]);
+    if (!isFinite(x) || !isFinite(y)) {
+        ChatLib.chat("&cHTSW bridge coordinates must be numbers.");
+        return null;
+    }
+    const space = (args[3] ?? "framebuffer").toLowerCase();
+    if (space === "framebuffer") {
+        const mc = Client.getMinecraft() as any;
+        x = Math.floor((x * Renderer.screen.getWidth()) / mc.field_71443_c);
+        y = Math.floor((y * Renderer.screen.getHeight()) / mc.field_71440_d);
+    } else if (space !== "gui") {
+        ChatLib.chat("&cHTSW bridge coordinate space must be framebuffer or gui.");
+        return null;
+    }
+    if (x < 0 || y < 0 || x >= Renderer.screen.getWidth() || y >= Renderer.screen.getHeight()) {
+        ChatLib.chat("&cHTSW bridge coordinates are outside the current screen.");
+        return null;
+    }
+    return { x, y };
 }
 
 function commandProjects(): void {

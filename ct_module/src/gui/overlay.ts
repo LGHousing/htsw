@@ -264,6 +264,18 @@ function routeWheel(mx: number, my: number, delta: number, apply: boolean): bool
     return false;
 }
 
+export function clickHtswOverlay(rawX: number, rawY: number, button: number): boolean {
+    for (let i = 0; i < activePanels.length; i++) {
+        if (activePanels[i].panel.clickAt(rawX, rawY, button)) return true;
+    }
+    if (getFocusedInput() !== null) setFocusedInput(null);
+    return false;
+}
+
+export function scrollHtswOverlay(rawX: number, rawY: number, delta: number): boolean {
+    return routeWheel(mcToOverlay(rawX), mcToOverlay(rawY), delta, true);
+}
+
 let lastWheelPollAt = 0;
 
 function pollWheel(): void {
