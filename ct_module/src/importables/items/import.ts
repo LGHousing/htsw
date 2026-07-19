@@ -95,11 +95,21 @@ function stackLanded(current: any, sent: any): boolean {
     );
 }
 
-function hotbarZeroLanded(stack: any): boolean {
-    const current = hotbarSlotStack(0);
+function slotLanded(slot: number, stack: any): boolean {
+    const current = hotbarSlotStack(slot);
     return current !== null && stackLanded(current, stack);
 }
 
+export function findEmptyHotbarSlot(): number | undefined {
+    for (let slot = 0; slot < 9; slot++) {
+        if (hotbarSlotStack(slot) === null) return slot;
+    }
+    return undefined;
+}
+
+export type HeldItemPlacement = {
+    borrowed: { selectedSlot: number; stack: any | null } | null;
+};
 
 export type ItemImportPlan = {
     kind: "ITEM";
@@ -148,9 +158,13 @@ async function importImportableItem(
 
     const uuid = cachedUuid ?? session.housingUuid;
     if (!hasItemClickActions(importable)) {
-        await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
-        setup(`gave ${importable.name}`);
-        await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        const placement = await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
+        try {
+            setup(`gave ${importable.name}`);
+            await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        } finally {
+            await restoreHeldItemPlacement(ctx, placement);
+        }
         return;
     }
 
@@ -161,47 +175,58 @@ async function importImportableItem(
     const cachePath = interactDataCachePath(uuid, actionsHash);
     const cachedInteractData = readCachedInteractData(uuid, actionsHash);
     if (cachedInteractData !== undefined) {
-        await injectHeldItem(ctx, itemWithInteractData(importable.nbt, cachedInteractData));
-        setup(`gave cached ${importable.name}`);
-        await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        const placement = await injectHeldItem(
+            ctx,
+            itemWithInteractData(importable.nbt, cachedInteractData)
+        );
+        try {
+            setup(`gave cached ${importable.name}`);
+            await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        } finally {
+            await restoreHeldItemPlacement(ctx, placement);
+        }
         return;
     }
 
     const start = chooseItemStart(uuid, importable, trustPlan);
-    await injectHeldItem(ctx, start.item);
-    setup(`injected item ${importable.name}`);
+    const placement = await injectHeldItem(ctx, start.item);
+    try {
+        setup(`injected item ${importable.name}`);
 
-    await ctx.expectAfter(
-        () => ctx.runCommand("/edit"),
-        itemEditorOpened()
-    );
-    setup(`opened item editor`);
+        await ctx.expectAfter(
+            () => ctx.runCommand("/edit"),
+            itemEditorOpened()
+        );
+        setup(`opened item editor`);
 
-    ctx.getItemSlot("Edit Actions").click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-    setup(`opened Edit Actions for ${importable.name}`);
+        ctx.getItemSlot("Edit Actions").click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+        setup(`opened Edit Actions for ${importable.name}`);
 
-    await syncItemActionLists(
-        ctx,
-        importable,
-        session,
-        trustPlan,
-        start
-    );
+        await syncItemActionLists(
+            ctx,
+            importable,
+            session,
+            trustPlan,
+            start
+        );
 
-    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
-    const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
-    if (!snbt) throw Error("Why don't we have the item?");
+        const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
+        if (!snbt) throw Error("Why don't we have the item?");
 
-    // Cache only the housing-scoped interact_data blob (keyed by action hash),
-    // not the whole snapshot — a later reference splices it onto the source item.
-    const interactData = extractInteractDataSnbt(snbt);
-    if (interactData !== null) {
-        ensureParentDirs(cachePath);
-        FileLib.write(cachePath, interactData, true);
+        // Cache only the housing-scoped interact_data blob (keyed by action hash),
+        // not the whole snapshot — a later reference splices it onto the source item.
+        const interactData = extractInteractDataSnbt(snbt);
+        if (interactData !== null) {
+            ensureParentDirs(cachePath);
+            FileLib.write(cachePath, interactData, true);
+        }
+        await tryWriteImportableCache(ctx, importable, "importer", uuid);
+    } finally {
+        await restoreHeldItemPlacement(ctx, placement);
     }
-    await tryWriteImportableCache(ctx, importable, "importer", uuid);
 }
 
 function chooseItemStart(
@@ -271,32 +296,76 @@ async function clearHotbarZero(ctx: TaskContext): Promise<void> {
     }
 }
 
-async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
+async function injectIntoHotbarSlot(
+    ctx: TaskContext,
+    slot: number,
+    stack: any
+): Promise<void> {
+    const packetSlot = slot < 9 ? slot + HOTBAR_ZERO_PACKET_SLOT : slot;
+    sendCreativeInventoryAction(ctx, packetSlot, stack);
+    const landed = await pollTicks(
+        ctx,
+        SET_SLOT_ACK_MAX_TICKS,
+        () => slotLanded(slot, stack)
+    );
+    if (!landed) {
+        const observed = summarizeItemStack(hotbarSlotStack(slot));
+        throw new Error(
+            `Hypixel did not accept this item into your hotbar. Check that its SNBT is formatted correctly ` +
+                `(slot ${slot} holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
+        );
+    }
+    await ctx.waitFor("tick");
+}
+
+export async function injectHeldItem(
+    ctx: TaskContext,
+    item: Item
+): Promise<HeldItemPlacement> {
     const stack = item.getItemStack();
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
     }
 
     await closeOpenScreen(ctx);
-    await clearHotbarZero(ctx);
-
-    sendCreativeInventoryAction(
-        ctx,
-        HOTBAR_ZERO_PACKET_SLOT,
-        stack,
-    );
-    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => hotbarZeroLanded(stack));
-    if (!landed) {
-        const observed = summarizeItemStack(hotbarSlotStack(0));
-        throw new Error(
-            `Hypixel did not accept this item into your hotbar. Check that its SNBT is formatted correctly ` +
-                `(slot 0 holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
-        );
+    const emptySlot = findEmptyHotbarSlot();
+    if (emptySlot !== undefined) {
+        await injectIntoHotbarSlot(ctx, emptySlot, stack);
+        await switchToHotbarSlot(ctx, emptySlot);
+        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+        return { borrowed: null };
     }
-    await ctx.waitFor("tick");
 
-    await switchToHotbarSlot(ctx, 0);
-    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+    const borrowed = {
+        selectedSlot: selectedHotbarSlot(),
+        stack: hotbarSlotStack(0),
+    };
+    ctx.displayMessage(
+        `&e[import] Hotbar full — borrowing the first hotbar slot for ${item.getName()}; your item will be restored.`
+    );
+    try {
+        await clearHotbarZero(ctx);
+        await injectIntoHotbarSlot(ctx, 0, stack);
+        await switchToHotbarSlot(ctx, 0);
+        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+        return { borrowed };
+    } catch (error) {
+        sendCreativeInventoryAction(ctx, HOTBAR_ZERO_PACKET_SLOT, borrowed.stack);
+        await ctx.waitFor("tick");
+        await switchToHotbarSlot(ctx, borrowed.selectedSlot);
+        throw error;
+    }
+}
+
+export async function restoreHeldItemPlacement(
+    ctx: TaskContext,
+    placement: HeldItemPlacement
+): Promise<void> {
+    if (placement.borrowed === null) return;
+    await closeOpenScreen(ctx);
+    sendCreativeInventoryAction(ctx, HOTBAR_ZERO_PACKET_SLOT, placement.borrowed.stack);
+    await ctx.waitFor("tick");
+    await switchToHotbarSlot(ctx, placement.borrowed.selectedSlot);
 }
 
 async function syncItemActionLists(
