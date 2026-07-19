@@ -17,6 +17,10 @@ import { printExportHelp } from "./exportHelp";
 import { runExportWithDestination } from "./exportTask";
 import { exportHeldItem } from "../importables/items/export";
 import { createExportProgressSink } from "../gui/export/progressSink";
+import {
+    captureOpenChest,
+    exportCapturedChest,
+} from "../importables/menus/exportChest";
 
 export function commandExport(args: string[]): void {
     if (args.length === 0) {
@@ -88,6 +92,32 @@ export function commandExport(args: string[]): void {
 
     if (tokens[0] === "existing") {
         runExportWithDestination(pathArgument(tokens, 1), exportExisting);
+        return;
+    }
+
+    if (tokens[0] === "chest") {
+        const captured = captureOpenChest();
+        if (captured === null) {
+            ChatLib.chat(
+                "&e[htsw] Open a chest first, then run this command from the HTSW overlay chat (T) while the chest is open."
+            );
+            return;
+        }
+        if (captured.slots.length === 0) {
+            ChatLib.chat("&e[htsw] The open chest has no items to export.");
+            return;
+        }
+        const name = tokens[1];
+        if (!name) {
+            ChatLib.chat("&cUsage: /export chest <name> [path]");
+            ChatLib.chat(
+                '&7  Quote multi-word names: /export chest "My Menu" my/path/'
+            );
+            return;
+        }
+        runExportWithDestination(pathArgument(tokens, 2), async (ctx, destination) => {
+            await exportCapturedChest(ctx, captured, { name, ...destination });
+        });
         return;
     }
 

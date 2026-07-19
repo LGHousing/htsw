@@ -63,6 +63,7 @@ import {
 import type { Importable } from "htsw/types";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
 import { ImportableIcon } from "../../importableVisuals";
+import { startChestExport } from "../../export/chestExport";
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
 const SCAN_DOTS = ["", ".", "..", "..."];
@@ -779,6 +780,40 @@ function exportActionBar(
                         }),
                 ],
             }),
+            t.type === "MENU" &&
+                Row({
+                    style: { height: { kind: "px", value: 20 } },
+                    children: [
+                        Button({
+                            children: [
+                                Icon({
+                                    name: Icons.packageOpen,
+                                    color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                                }),
+                                Text({
+                                    text: "Export open chest…",
+                                    color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                                }),
+                            ],
+                            style: {
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: hasDest
+                                    ? COLOR_BUTTON_HOVER
+                                    : COLOR_BUTTON,
+                            },
+                            tooltip: !hasDest
+                                ? destination.kind === "missing"
+                                    ? "The selected export project is missing"
+                                    : "Choose an export project first"
+                                : undefined,
+                            tooltipColor: COLOR_TEXT_FAINT,
+                            disabled: !hasDest,
+                            onClick: () => startChestExport(),
+                        }),
+                    ],
+                }),
         ],
     });
 }
