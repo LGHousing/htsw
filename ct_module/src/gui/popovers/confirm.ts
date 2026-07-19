@@ -24,6 +24,7 @@ const PAD = 8;
 const GAP = 4;
 const TEXT_H = 8;
 const BUTTON_ROW_H = 18;
+const BUTTON_PAD_X = 8;
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 380;
 
@@ -37,7 +38,7 @@ function fitWidth(title: string, lines: string[], buttonLabels: string[]): numbe
     }
     let buttonRowWidth = GAP * Math.max(0, buttonLabels.length - 1);
     for (let i = 0; i < buttonLabels.length; i++) {
-        buttonRowWidth += Renderer.getStringWidth(buttonLabels[i]) + 8;
+        buttonRowWidth += Renderer.getStringWidth(buttonLabels[i]) + BUTTON_PAD_X;
     }
     w = Math.max(w, buttonRowWidth);
     return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w + PAD * 2 + 4));
@@ -68,7 +69,15 @@ export function closeConfirmPopover(): void {
     closeSelf();
 }
 
-function content(opts: ConfirmOptions): Element {
+function buttonWidths(labels: string[], popoverWidth: number): number[] {
+    const widths = labels.map((label) => Renderer.getStringWidth(label) + BUTTON_PAD_X);
+    const rowWidth = popoverWidth - PAD * 2 - GAP * Math.max(0, labels.length - 1);
+    const measuredWidth = widths.reduce((sum, width) => sum + width, 0);
+    const sparePerButton = Math.max(0, rowWidth - measuredWidth) / labels.length;
+    return widths.map((width) => width + sparePerButton);
+}
+
+function content(opts: ConfirmOptions, widths: number[]): Element {
     const lines = opts.lines ?? [];
     return Col({
         style: { padding: PAD, gap: GAP },
@@ -81,7 +90,7 @@ function content(opts: ConfirmOptions): Element {
                     Button({
                         text: opts.confirmLabel ?? "Confirm",
                         style: {
-                            width: { kind: "grow" },
+                            width: { kind: "px", value: widths[0] },
                             height: { kind: "grow" },
                             background:
                                 opts.danger === true
@@ -99,7 +108,7 @@ function content(opts: ConfirmOptions): Element {
                         Button({
                             text: opts.extraLabel,
                             style: {
-                                width: { kind: "grow" },
+                                width: { kind: "px", value: widths[1] },
                                 height: { kind: "grow" },
                                 background: COLOR_BUTTON,
                                 hoverBackground: COLOR_BUTTON_HOVER,
@@ -109,7 +118,7 @@ function content(opts: ConfirmOptions): Element {
                     Button({
                         text: opts.cancelLabel ?? "Cancel",
                         style: {
-                            width: { kind: "grow" },
+                            width: { kind: "px", value: widths[widths.length - 1] },
                             height: { kind: "grow" },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
@@ -133,23 +142,29 @@ export function openConfirmPopover(opts: ConfirmOptions): void {
         action();
     };
     const extraAction = opts.onExtra;
+    const labels = [
+        opts.confirmLabel ?? "Confirm",
+        ...(opts.extraLabel !== undefined && opts.onExtra !== undefined
+            ? [opts.extraLabel]
+            : []),
+        opts.cancelLabel ?? "Cancel",
+    ];
+    const width = fitWidth(opts.title, lines, labels);
     // Mirrors content(): title text, then each line and the button row each
     // preceded by one gap, inside the Col's padding.
     const height = PAD * 2 + TEXT_H + lines.length * (GAP + TEXT_H) + GAP + BUTTON_ROW_H;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
-        content: content({
-            ...opts,
-            onConfirm: () => runAction(opts.onConfirm),
-            onExtra: extraAction === undefined ? undefined : () => runAction(extraAction),
-        }),
-        width: fitWidth(opts.title, lines, [
-            opts.confirmLabel ?? "Confirm",
-            ...(opts.extraLabel !== undefined && opts.onExtra !== undefined
-                ? [opts.extraLabel]
-                : []),
-            opts.cancelLabel ?? "Cancel",
-        ]),
+        content: content(
+            {
+                ...opts,
+                onConfirm: () => runAction(opts.onConfirm),
+                onExtra:
+                    extraAction === undefined ? undefined : () => runAction(extraAction),
+            },
+            buttonWidths(labels, width)
+        ),
+        width,
         height,
         key: "confirm",
         placement: "modal",

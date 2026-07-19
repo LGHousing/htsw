@@ -26,7 +26,6 @@ import {
     isInExportSelection,
     toggleExportSelection,
 } from "./exportSelection";
-import { showToast } from "../../toast";
 import { importableIdentity } from "../../../importables/identity";
 import {
     COLOR_BUTTON,
@@ -594,8 +593,7 @@ function namesAlreadyInDestination(
 function confirmDestructiveExport(
     t: HouseContentType,
     names: readonly string[],
-    runOverwrite: () => void,
-    runReduced: (names: readonly string[]) => void
+    runOverwrite: () => void
 ): void {
     const existing = namesAlreadyInDestination(t, names);
     if (existing !== null && existing.length === 0) {
@@ -627,19 +625,6 @@ function confirmDestructiveExport(
         confirmLabel: "Export anyway",
         danger: true,
         onConfirm: runOverwrite,
-        extraLabel: `Skip ${existing.length} already exported`,
-        onExtra: () => {
-            const existingSet = new Set(existing);
-            const remaining = names.filter((name) => !existingSet.has(name));
-            if (remaining.length === 0) {
-                showToast(
-                    `Nothing to export — all ${existing.length} already exported`,
-                    0xffe5bc4b
-                );
-                return;
-            }
-            runReduced(remaining);
-        },
     });
 }
 
@@ -758,30 +743,17 @@ function exportActionBar(
                             const exp = t.export;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                confirmDestructiveExport(
-                                    t,
-                                    names,
-                                    () =>
-                                        exp.selected(
-                                            names,
-                                            () => clearExportSelection(),
-                                            labels
-                                        ),
-                                    (remaining) =>
-                                        exp.selected(
-                                            remaining.slice(),
-                                            () => clearExportSelection(),
-                                            labels
-                                        )
+                                confirmDestructiveExport(t, names, () =>
+                                    exp.selected(
+                                        names,
+                                        () => clearExportSelection(),
+                                        labels
+                                    )
                                 );
                             } else {
                                 const names = shownItems.map((i) => i.name);
-                                confirmDestructiveExport(
-                                    t,
-                                    names,
-                                    () => exp.selected(names, () => {}, labels),
-                                    (remaining) =>
-                                        exp.selected(remaining.slice(), () => {}, labels)
+                                confirmDestructiveExport(t, names, () =>
+                                    exp.selected(names, () => {}, labels)
                                 );
                             }
                         },
