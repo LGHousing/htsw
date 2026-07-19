@@ -195,7 +195,7 @@ async function verifyFixture(
         trust: buildTrustPlan(housingUuid, ordered, false),
         conflicts: [],
         events: undefined,
-        itemCaptures,
+        actionItemRead: { mode: "verify", captures: itemCaptures },
         npcLookup: createNpcLookupCache(),
     };
 
@@ -376,7 +376,10 @@ function trustModeSessionFor(
         trust: buildTrustPlan(housingUuid, importables, true),
         conflicts: [],
         events: undefined,
-        itemCaptures: createFixtureItemCaptures(fixture),
+        actionItemRead: {
+            mode: "verify",
+            captures: createFixtureItemCaptures(fixture),
+        },
         npcLookup: createNpcLookupCache(),
     };
 }
@@ -527,7 +530,7 @@ function createFixtureItemCaptures(fixture: ParsedTestFixture): ItemCaptureRegis
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         if (importable.type !== "ITEM") continue;
-        captures.seed(importable.name, importable.nbt);
+        captures.seedNbtOnly(importable.name, importable.nbt);
     }
     return captures;
 }

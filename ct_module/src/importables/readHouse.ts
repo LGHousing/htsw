@@ -9,10 +9,20 @@ import TaskContext from "../tasks/context";
 import { writeCapturedItems } from "./items/writeCapturedItems";
 import { filterAlreadyExported } from "./exportSkip";
 import { runReadLoop, type ReadFn, type ReadOptions } from "./read";
-import { readImportableCache } from "../importCache/cache";
+import {
+    readImportableCache,
+    writeImportableCache,
+} from "../importCache/cache";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import type { Importable } from "htsw/types";
+import {
+    createExportItemCaptureRegistry,
+    readParsedImportablesForExport,
+} from "./exportContext";
+import { createItemRegistry } from "./itemRegistry";
+import { createItemDependencyIndex } from "./itemDependencyIndex";
+import { importableIdentity } from "./identity";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -22,6 +32,7 @@ import type { Importable } from "htsw/types";
 // the inventory for types whose items are pulled through it.
 export type BatchState = {
     itemCaptures: ItemCaptureRegistry;
+    menuSlotItemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
     inventorySnapshot: InventorySnapshot | null;
 };
@@ -90,6 +101,46 @@ export type ReadHouseSpec<Entry> = {
 
 const plural = (n: number): string => (n === 1 ? "" : "s");
 
+function refreshExportedItemDependencies(
+    ctx: TaskContext,
+    importJsonPath: string,
+    housingUuid: string,
+    type: Importable["type"],
+    names: ReadonlySet<string>,
+    capturedItemNames: ReadonlySet<string>
+): void {
+    if (names.size === 0) return;
+    const parsed = readParsedImportablesForExport(importJsonPath);
+    if (parsed === null) return;
+    const items = createItemRegistry(parsed.value, parsed.gcx);
+    const dependencies = createItemDependencyIndex(parsed.value, items);
+
+    for (const importable of parsed.value) {
+        const identity = importableIdentity(importable);
+        if (importable.type === type && names.has(identity)) {
+            const cached = readImportableCache(housingUuid, type, identity);
+            if (cached !== null) {
+                writeImportableCache(
+                    ctx,
+                    housingUuid,
+                    cached.importable,
+                    cached.writer,
+                    {
+                        quiet: true,
+                        itemDependencies: dependencies.snapshotOf(importable),
+                    }
+                );
+            }
+        }
+        if (importable.type === "ITEM" && capturedItemNames.has(identity)) {
+            writeImportableCache(ctx, housingUuid, importable, "exporter", {
+                quiet: true,
+                itemDependencies: dependencies.snapshotOf(importable),
+            });
+        }
+    }
+}
+
 // Turn a per-type recipe into the `ReadFn` every caller (export batch, deep
 // read, the test runner) already speaks.
 export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
@@ -105,14 +156,22 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         spec.prelude?.(ctx);
 
         const state: BatchState = {
-            itemCaptures: new ItemCaptureRegistry(),
+            itemCaptures: createExportItemCaptureRegistry(
+                importJsonPath,
+                lockHousingUuid,
+                options.projectItems
+            ),
+            menuSlotItemCaptures: new ItemCaptureRegistry(),
             writtenItems: new Set<string>(),
             inventorySnapshot:
                 spec.capturesActionItems === true ? snapshotInventory() : null,
         };
         const projectItems = options.projectItems ?? [];
         for (let i = 0; i < projectItems.length; i++) {
-            state.itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
+            state.menuSlotItemCaptures.seedNbtOnly(
+                projectItems[i].name,
+                projectItems[i].nbt
+            );
         }
 
         const restoreInventory = async (): Promise<void> => {
@@ -164,6 +223,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
 
         let succeeded = 0;
         let failed = 0;
+        const completedNames = new Set<string>();
         try {
             const result = await runReadLoop(ctx, {
                 names: exportNames,
@@ -179,6 +239,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                         );
                     }
                     await spec.readOne(ctx, entry, options, state, onReadProgress);
+                    completedNames.add(name);
                     if (!readOnly) {
                         const cached = readImportableCache(
                             lockHousingUuid,
@@ -240,6 +301,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                                   state,
                                   onReadProgress
                               );
+                              completedNames.add(name);
                               if (!readOnly) {
                                   const cached = readImportableCache(
                                       lockHousingUuid,
@@ -266,7 +328,23 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                         state.itemCaptures,
                         options.rootDir,
                         importJsonPath,
+                        lockHousingUuid,
                         options.newExportTargetImportJson
+                    );
+                }
+                if (spec.capturesActionItems === true) {
+                    const capturedItemNames = new Set(
+                        state.itemCaptures
+                            .capturedItemNames()
+                            .concat(state.menuSlotItemCaptures.capturedItemNames())
+                    );
+                    refreshExportedItemDependencies(
+                        ctx,
+                        importJsonPath,
+                        lockHousingUuid,
+                        spec.type,
+                        completedNames,
+                        capturedItemNames
                     );
                 }
             } finally {

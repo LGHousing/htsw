@@ -1,7 +1,6 @@
 import type { ImportableItem } from "htsw/types";
 
 import {
-    ItemCaptureRegistry,
     restoreInventoryToSnapshot,
     snapshotInventory,
     type InventorySnapshot,
@@ -21,6 +20,9 @@ import { readImportableCache } from "../../importCache/cache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { npcPosIdentity } from "../identity";
+import {
+    createExportItemCaptureRegistry,
+} from "../exportContext";
 import {
     createNpcLookupCache,
     findNpcByPos,
@@ -91,12 +93,12 @@ async function exportAllNpcsInner(
         options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
+    const itemCaptures = createExportItemCaptureRegistry(
+        importJsonPath,
+        lockHousingUuid,
+        options.projectItems
+    );
     const npcLookup = createNpcLookupCache();
-    const projectItems = options.projectItems ?? [];
-    for (let i = 0; i < projectItems.length; i++) {
-        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
-    }
 
     const liveEntries = await listAllNpcs(ctx, npcLookup);
     const requested =
@@ -201,6 +203,7 @@ async function exportAllNpcsInner(
                     itemCaptures,
                     rootDir,
                     importJsonPath,
+                    lockHousingUuid,
                     options.newExportTargetImportJson
                 );
             }

@@ -80,11 +80,27 @@ export function diffDecorator(
             const actionPathKeyValue = ActionPath.key(line.actionPath);
             const state = overlay.states.get(actionPathKeyValue);
             if (state === undefined) return { extraLinesBefore };
+            const itemHint = !overlay.changedItems.has(actionPathKeyValue)
+                ? {}
+                : {
+                      hoverLines: () => ["&eReferenced item changed"],
+                  };
             if (state === "edit") {
+                if (overlay.itemOnlyChanges.has(actionPathKeyValue)) {
+                    if (line.id !== `htsl:${actionPathKeyValue}`) {
+                        return { extraLinesBefore };
+                    }
+                    return {
+                        state: "edit",
+                        extraLinesBefore,
+                        ...itemHint,
+                    };
+                }
                 if (line.id !== `htsl:${actionPathKeyValue}`) return { extraLinesBefore };
                 return {
                     state: "add",
                     extraLinesBefore,
+                    ...itemHint,
                 };
             }
             if (state === "add") {

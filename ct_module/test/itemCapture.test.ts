@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+    itemInteractDataMatches,
     normalizeItemSnbtForExport,
     portableItemSnbt,
     prettySnbt,
@@ -37,5 +38,36 @@ describe("item SNBT export normalization", () => {
 
         expect(out).not.toContain("interact_data");
         expect(out).toContain('keep: "yes"');
+    });
+});
+
+describe("cached item click actions", () => {
+    const live =
+        '{id:"minecraft:stone",tag:{ExtraAttributes:{interact_data:{version:1,actions:[{type:"chat"}]}}}}';
+
+    test("recognizes an interact_data blob already stored in the cache", () => {
+        expect(
+            itemInteractDataMatches(live, {
+                kind: "cached",
+                snbt: '{actions:[{type:"chat"}],version:1}',
+            })
+        ).toBe(true);
+    });
+
+    test("rejects a changed or unknown interact_data blob", () => {
+        expect(
+            itemInteractDataMatches(live, {
+                kind: "cached",
+                snbt: '{version:1,actions:[{type:"sound"}]}',
+            })
+        ).toBe(false);
+        expect(itemInteractDataMatches(live, { kind: "uncached" })).toBe(false);
+    });
+
+    test("recognizes an item that still has no click actions", () => {
+        expect(
+            itemInteractDataMatches('{id:"minecraft:stone"}', { kind: "absent" })
+        ).toBe(true);
+        expect(itemInteractDataMatches(live, { kind: "absent" })).toBe(false);
     });
 });

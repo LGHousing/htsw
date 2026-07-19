@@ -5,6 +5,11 @@ import { importableHash, listHashes } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
 import { stableStringify } from "../utils/helpers";
+import {
+    itemDependencyIndexFor,
+    type ItemDependencyIndex,
+    type ItemDependencySnapshot,
+} from "../importables/itemDependencyIndex";
 
 export type CacheState = "current" | "modified" | "unknown";
 
@@ -168,18 +173,50 @@ export function cacheEntryListHashes(
     return hashes;
 }
 
+function validItemDependencySnapshot(
+    value: ItemDependencySnapshot | undefined
+): ItemDependencySnapshot | null | undefined {
+    if (value === undefined) return undefined;
+    const candidate = value as unknown as {
+        version?: unknown;
+        dependencies?: unknown;
+    };
+    if (candidate.version !== 1 || !Array.isArray(candidate.dependencies)) {
+        return null;
+    }
+    return value;
+}
+
+export function sameItemDependencySnapshot(
+    left: ItemDependencySnapshot | undefined,
+    right: ItemDependencySnapshot | undefined
+): boolean {
+    const validLeft = validItemDependencySnapshot(left);
+    const validRight = validItemDependencySnapshot(right);
+    if (validLeft === null || validRight === null) return false;
+    const empty: ItemDependencySnapshot = { version: 1, dependencies: [] };
+    return stableStringify(validLeft ?? empty) === stableStringify(validRight ?? empty);
+}
+
 export function buildCacheStatusRow(
     housingUuid: string,
-    importable: Importable
+    importable: Importable,
+    itemDependencies?: ItemDependencyIndex
 ): CacheStatusRow {
     const identity = importableIdentity(importable);
     const hash = memoizedImportableHash(importable);
     const entry = readImportableCache(housingUuid, importable.type, identity);
-    const state =
-        entry === null
-            ? "unknown"
-            : cacheEntryHash(entry) === hash
-              ? "current"
-              : "modified";
+    const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
+    const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
+    const state = entry === null
+        ? "unknown"
+        : cacheEntryHash(entry) !== hash ||
+            (dependencySnapshot !== undefined &&
+                !sameItemDependencySnapshot(
+                    entry.itemDependencies,
+                    dependencySnapshot
+                ))
+          ? "modified"
+          : "current";
     return { importable, identity, hash, state, entry };
 }

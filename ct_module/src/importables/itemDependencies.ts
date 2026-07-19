@@ -9,22 +9,45 @@ import type {
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
-import { clickActionsHash, interactDataCachePath } from "../importCache";
+import { interactDataCachePath } from "../importCache";
+import type { ItemDependencyIndex } from "./itemDependencyIndex";
 import type { ItemRegistry } from "./itemRegistry";
 
 type FieldSpec = { prop: string; kind: string };
 type MappingTable = Record<string, { loreFields: Record<string, FieldSpec> } | undefined>;
 
-function collectFromCondition(condition: Condition, names: string[]): void {
+export type ItemReferenceUse = {
+    owner: Action | Condition;
+    property: string;
+    itemName: string;
+    sourcePath: string | undefined;
+    actionAncestors: readonly Action[];
+};
+
+function visitConditionItemReferences(
+    condition: Condition,
+    sourcePath: string | undefined,
+    actionAncestors: readonly Action[],
+    visitor: (use: ItemReferenceUse) => void
+): void {
     const fields = (CONDITION_MAPPINGS as unknown as MappingTable)[condition.type]
         ?.loreFields;
     if (fields === undefined) return;
     for (const label in fields) {
         if (fields[label].kind !== "item") continue;
+        const property = fields[label].prop;
         const value = (condition as unknown as Record<string, unknown>)[
-            fields[label].prop
+            property
         ];
-        if (typeof value === "string") names.push(value);
+        if (typeof value === "string") {
+            visitor({
+                owner: condition,
+                property,
+                itemName: value,
+                sourcePath,
+                actionAncestors,
+            });
+        }
     }
 }
 
@@ -49,12 +72,15 @@ function collectTeamAndGroupFromCondition(
     }
 }
 
-function collectFromActions(
+function visitActionItemReferences(
     actions: readonly Action[] | undefined,
-    names: string[]
+    sourcePath: string | undefined,
+    parentActions: readonly Action[],
+    visitor: (use: ItemReferenceUse) => void
 ): void {
     if (actions === undefined) return;
     for (const action of actions) {
+        const actionAncestors = parentActions.concat(action);
         const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
             ?.loreFields;
         if (fields === undefined) continue;
@@ -62,14 +88,103 @@ function collectFromActions(
             const field = fields[label];
             const value = (action as unknown as Record<string, unknown>)[field.prop];
             if (field.kind === "item") {
-                if (typeof value === "string") names.push(value);
+                if (typeof value === "string") {
+                    visitor({
+                        owner: action,
+                        property: field.prop,
+                        itemName: value,
+                        sourcePath,
+                        actionAncestors,
+                    });
+                }
             } else if (field.kind === "conditionList" && Array.isArray(value)) {
                 for (const condition of value as Condition[]) {
-                    collectFromCondition(condition, names);
+                    visitConditionItemReferences(
+                        condition,
+                        sourcePath,
+                        actionAncestors,
+                        visitor
+                    );
                 }
             } else if (field.kind === "actionList" && Array.isArray(value)) {
-                collectFromActions(value as Action[], names);
+                visitActionItemReferences(
+                    value as Action[],
+                    sourcePath,
+                    actionAncestors,
+                    visitor
+                );
             }
+        }
+    }
+}
+
+export function visitItemReferences(
+    importable: Importable,
+    visitor: (use: ItemReferenceUse) => void
+): void {
+    switch (importable.type) {
+        case "FUNCTION":
+        case "EVENT":
+            visitActionItemReferences(
+                importable.actions,
+                importable.sourcePath,
+                [],
+                visitor
+            );
+            break;
+        case "COMMAND":
+            visitActionItemReferences(
+                importable.actions,
+                importable.actionsPath ?? importable.sourcePath,
+                [],
+                visitor
+            );
+            break;
+        case "REGION":
+            visitActionItemReferences(
+                importable.onEnterActions,
+                importable.onEnterActionsPath ?? importable.sourcePath,
+                [],
+                visitor
+            );
+            visitActionItemReferences(
+                importable.onExitActions,
+                importable.onExitActionsPath ?? importable.sourcePath,
+                [],
+                visitor
+            );
+            break;
+        case "MENU":
+            for (const slot of importable.slots) {
+                visitActionItemReferences(
+                    slot.actions,
+                    slot.actionsPath ?? importable.sourcePath,
+                    [],
+                    visitor
+                );
+            }
+            break;
+        case "ITEM":
+        case "NPC":
+            visitActionItemReferences(
+                importable.leftClickActions,
+                importable.leftClickActionsPath ?? importable.sourcePath,
+                [],
+                visitor
+            );
+            visitActionItemReferences(
+                importable.rightClickActions,
+                importable.rightClickActionsPath ?? importable.sourcePath,
+                [],
+                visitor
+            );
+            break;
+        case "TEAM":
+        case "GROUP":
+            break;
+        default: {
+            const _exhaustiveCheck: never = importable;
+            return _exhaustiveCheck;
         }
     }
 }
@@ -115,34 +230,7 @@ function collectTeamAndGroupFromActions(
 /** Every item name referenced by a `kind: "item"` field anywhere in the importable's action trees. */
 export function referencedItemNames(importable: Importable): string[] {
     const names: string[] = [];
-    switch (importable.type) {
-        case "FUNCTION":
-        case "EVENT":
-        case "COMMAND":
-            collectFromActions(importable.actions, names);
-            break;
-        case "REGION":
-            collectFromActions(importable.onEnterActions, names);
-            collectFromActions(importable.onExitActions, names);
-            break;
-        case "MENU":
-            for (const slot of importable.slots) {
-                collectFromActions(slot.actions, names);
-            }
-            break;
-        case "ITEM":
-        case "NPC":
-            collectFromActions(importable.leftClickActions, names);
-            collectFromActions(importable.rightClickActions, names);
-            break;
-        case "TEAM":
-        case "GROUP":
-            break;
-        default: {
-            const _exhaustiveCheck: never = importable;
-            return _exhaustiveCheck;
-        }
-    }
+    visitItemReferences(importable, use => names.push(use.itemName));
     return names;
 }
 
@@ -247,6 +335,7 @@ export function expandDeclaredTeamAndGroupDependencies(
  */
 export function expandClickActionItemDependencies(
     registry: ItemRegistry,
+    dependencyIndex: ItemDependencyIndex,
     selected: readonly Importable[],
     housingUuid: string
 ): { importables: Importable[]; addedItems: ImportableItem[] } {
@@ -269,11 +358,8 @@ export function expandClickActionItemDependencies(
                 (item.rightClickActions !== undefined &&
                     item.rightClickActions.length > 0);
             if (!hasClickActions) continue;
-            const actionsHash = clickActionsHash(
-                item.leftClickActions,
-                item.rightClickActions
-            );
-            if (FileLib.exists(interactDataCachePath(housingUuid, actionsHash))) {
+            const fingerprint = dependencyIndex.clickActionsFingerprint(item);
+            if (FileLib.exists(interactDataCachePath(housingUuid, fingerprint))) {
                 continue;
             }
             presentNames.add(item.name);

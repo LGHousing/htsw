@@ -66,6 +66,8 @@ type ApplyConditionList = (
         itemRegistry: ItemRegistry;
         baselineCurrent?: ReadonlyArray<Condition | null>;
         progress?: ProgressHandler;
+        itemDiff?: import("../actions/diff/itemDiffContext").ItemDiffContext;
+        itemFieldObservations?: import("../itemFieldObservations").ItemFieldObservationRecorder;
     }
 ) => Promise<unknown>;
 
@@ -170,6 +172,8 @@ export function createActionApplyContext({
                 itemRegistry: session.items,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
+                itemDiff: session.itemDiff,
+                itemFieldObservations: session.itemFieldObservations,
             });
             nextOffset =
                 offset +

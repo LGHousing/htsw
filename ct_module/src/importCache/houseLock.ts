@@ -8,6 +8,10 @@ import {
     ACTION_LIST_SCAN_HASH_VERSION,
     actionListScanHashFromActions,
 } from "../housingSync/actions/scanHash";
+import type {
+    ItemDependencySnapshot,
+    ItemDependencyTarget,
+} from "../importables/itemDependencyIndex";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -17,6 +21,7 @@ type HouseLockEntry = {
     identity: string;
     hash: string;
     listScanHashes?: Record<string, string>;
+    itemDependencies?: ItemDependencySnapshot;
 };
 
 export type HouseLock = {
@@ -84,6 +89,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
             identity?: unknown;
             hash?: unknown;
             listScanHashes?: unknown;
+            itemDependencies?: unknown;
         };
         if (
             typeof e.type !== "string" ||
@@ -103,6 +109,10 @@ function parseHouseLock(raw: string | null): HouseLock | null {
                 parsedEntry.listScanHashes = listScanHashes;
             }
         }
+        const itemDependencies = parseItemDependencySnapshot(e.itemDependencies);
+        if (itemDependencies !== undefined) {
+            parsedEntry.itemDependencies = itemDependencies;
+        }
         importables[key] = parsedEntry;
     }
 
@@ -112,6 +122,43 @@ function parseHouseLock(raw: string | null): HouseLock | null {
         ...(scanHashVersion !== undefined ? { scanHashVersion } : {}),
         importables,
     };
+}
+
+function parseItemDependencyTarget(value: unknown): ItemDependencyTarget | null {
+    if (value === null || typeof value !== "object") return null;
+    const target = value as {
+        kind?: unknown;
+        name?: unknown;
+        path?: unknown;
+    };
+    if (target.kind === "named" && typeof target.name === "string") {
+        return { kind: "named", name: target.name };
+    }
+    if (target.kind === "snbtPath" && typeof target.path === "string") {
+        return { kind: "snbtPath", path: target.path };
+    }
+    return null;
+}
+
+function parseItemDependencySnapshot(
+    value: unknown
+): ItemDependencySnapshot | undefined {
+    if (value === null || typeof value !== "object") return undefined;
+    const snapshot = value as { version?: unknown; dependencies?: unknown };
+    if (snapshot.version !== 1 || !Array.isArray(snapshot.dependencies)) {
+        return undefined;
+    }
+    const dependencies: ItemDependencySnapshot["dependencies"] = [];
+    for (const value of snapshot.dependencies) {
+        if (value === null || typeof value !== "object") return undefined;
+        const dependency = value as { target?: unknown; fingerprint?: unknown };
+        const target = parseItemDependencyTarget(dependency.target);
+        if (target === null || typeof dependency.fingerprint !== "string") {
+            return undefined;
+        }
+        dependencies.push({ target, fingerprint: dependency.fingerprint });
+    }
+    return { version: 1, dependencies };
 }
 
 function parseStringRecord(value: unknown): Record<string, string> | undefined {
@@ -161,7 +208,8 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
-    importable: Importable
+    importable: Importable,
+    itemDependencies?: ItemDependencySnapshot
 ): boolean {
     const path = houseLockPathForImportJson(importJsonPath);
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
@@ -177,6 +225,7 @@ export function upsertHouseLockImportable(
         identity,
         hash: importableHash(importable),
         listScanHashes,
+        ...(itemDependencies !== undefined ? { itemDependencies } : {}),
     };
     return writeHouseLock(path, lock);
 }

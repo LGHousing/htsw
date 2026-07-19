@@ -4,7 +4,7 @@ import type { Action, Condition } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry, getMemoizedHousingUuid } from "../../importables/itemRegistry";
 import { itemWithInteractData } from "../../utils/nbt";
-import { clickActionsHash, interactDataCachePath } from "../../importCache";
+import { interactDataCachePath } from "../../importCache";
 
 type Owner = Action | Condition;
 
@@ -42,9 +42,15 @@ export async function resolveImportableItem(
     }
 
     const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
+    const dependencyIndex = itemRegistry.itemDependencies;
+    if (dependencyIndex === undefined) {
+        throw Diagnostic.error(
+            `Cannot set item "${itemName}" for ${owner.type}: its click-action dependencies were not indexed.`
+        );
+    }
     const cachePath = interactDataCachePath(
         uuid,
-        clickActionsHash(importable.leftClickActions, importable.rightClickActions)
+        dependencyIndex.clickActionsFingerprint(importable)
     );
     if (!FileLib.exists(cachePath)) {
         throw Diagnostic.error(

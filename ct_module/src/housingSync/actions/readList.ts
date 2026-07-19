@@ -175,9 +175,12 @@ async function readActionsListPage(
 
 export async function scanActionList(
     ctx: TaskContext,
-    mode: ActionListReadMode = { kind: "full" },
-    read?: ListReadOptions
+    mode: ActionListReadMode,
+    read: ListReadOptions
 ): Promise<ActionListScan> {
+    const needsItemHydration =
+        read.itemReadMode !== "sync" ||
+        read.itemFieldObservations !== undefined;
     const progress = read?.progress;
     const events = read?.events;
     const desiredTotal = mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
@@ -200,7 +203,11 @@ export async function scanActionList(
     observed = await readPaginatedList(
         ctx,
         ACTION_LIST_CONFIG,
-        () => readActionsListPage(ctx, read?.itemCaptures !== undefined),
+        () =>
+            readActionsListPage(
+                ctx,
+                needsItemHydration
+            ),
         ({ totalEntries, pagesRead }) => {
             readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
             if (phaseUnits === undefined) return;
@@ -249,7 +256,7 @@ export async function scanActionList(
         plan = new Map();
     }
     addScalarHydrationEntries(plan, observed);
-    if (read?.itemCaptures !== undefined) {
+    if (needsItemHydration) {
         addItemCaptureEntries(plan, observed);
     }
     if (trustApplication !== undefined) {

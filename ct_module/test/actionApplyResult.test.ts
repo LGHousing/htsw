@@ -71,6 +71,7 @@ function session(): ImportSession {
         },
         conflicts: [],
         events: undefined,
+        actionItemRead: { mode: "sync" },
         npcLookup: createNpcLookupCache(),
     };
 }

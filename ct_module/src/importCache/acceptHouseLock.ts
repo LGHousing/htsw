@@ -5,6 +5,11 @@ import { importableIdentity } from "../importables/identity";
 import { importableHash } from "./hash";
 import { houseLockEntryFor, readHouseLock } from "./houseLock";
 import { writeImportableCache } from "./cache";
+import {
+    itemDependencyIndexFor,
+    type ItemDependencyIndex,
+} from "../importables/itemDependencyIndex";
+import { sameItemDependencySnapshot } from "./status";
 
 export type AcceptHouseLockResult =
     | { ok: false; reason: "missing-lock" }
@@ -20,7 +25,8 @@ export type AcceptHouseLockResult =
 export function acceptHouseLockAsCurrent(
     ctx: TaskContext,
     importJsonPath: string,
-    importables: readonly Importable[]
+    importables: readonly Importable[],
+    itemDependencies?: ItemDependencyIndex
 ): AcceptHouseLockResult {
     const lock = readHouseLock(importJsonPath);
     if (lock === null) return { ok: false, reason: "missing-lock" };
@@ -36,11 +42,29 @@ export function acceptHouseLockAsCurrent(
             importable.type,
             importableIdentity(importable)
         );
-        if (entry === null || entry.hash !== importableHash(importable)) {
+        const dependencyIndex =
+            itemDependencies ?? itemDependencyIndexFor(importable);
+        const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
+        const dependenciesMatch = dependencySnapshot === undefined
+            ? entry?.itemDependencies === undefined
+            : sameItemDependencySnapshot(
+                  entry?.itemDependencies,
+                  dependencySnapshot
+              );
+        if (
+            entry === null ||
+            entry.hash !== importableHash(importable) ||
+            !dependenciesMatch
+        ) {
             skipped++;
             continue;
         }
-        if (writeImportableCache(ctx, housingUuid, importable, "project-lock", true)) {
+        if (
+            writeImportableCache(ctx, housingUuid, importable, "project-lock", {
+                quiet: true,
+                itemDependencies: dependencySnapshot,
+            })
+        ) {
             accepted.push(importable);
         } else {
             failed++;

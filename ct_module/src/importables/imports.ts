@@ -68,6 +68,9 @@ import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
 import type { NpcLookupCache } from "./npcs/listNpcs";
 import type { ActionListApplyResult } from "../housingSync/actions/apply";
 import type { ImportConflict } from "./importConflicts";
+import type { ItemDiffContext } from "../housingSync/actions/diff/itemDiffContext";
+import type { ItemDependencyIndex } from "./itemDependencyIndex";
+import type { ItemFieldObservationRecorder } from "../housingSync/itemFieldObservations";
 
 export type ImportSession = {
     parsed: ImportablesParseResult;
@@ -76,7 +79,12 @@ export type ImportSession = {
     trust: TrustPlan;
     conflicts: ImportConflict[];
     events: SyncEventHandler | undefined;
-    itemCaptures?: ItemCaptureRegistry;
+    actionItemRead:
+        | { mode: "sync" }
+        | { mode: "verify"; captures: ItemCaptureRegistry };
+    itemDiff?: ItemDiffContext;
+    itemDependencies?: ItemDependencyIndex;
+    itemFieldObservations?: ItemFieldObservationRecorder;
     npcLookup: NpcLookupCache;
 };
 

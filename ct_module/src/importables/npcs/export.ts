@@ -67,6 +67,7 @@ async function readOpenNpcActionList(
     onReadProgress?: ProgressHandler
 ): Promise<Action[]> {
     return readActionListFully(ctx, {
+        itemReadMode: "export",
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {

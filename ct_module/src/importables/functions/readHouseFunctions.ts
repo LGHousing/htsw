@@ -54,6 +54,7 @@ async function readFunction(
     }
 
     const actions = await readActionListFully(ctx, {
+        itemReadMode: "export",
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -114,6 +115,7 @@ async function scanFunction(
         ctx,
         { kind: "full" },
         {
+            itemReadMode: "export",
             itemCaptures: state.itemCaptures,
             exactHydrationEstimate: true,
             events,
@@ -151,6 +153,7 @@ async function hydrateFunction(
     }
 
     const actions = await completeActionListScan(ctx, pending.scan, {
+        itemReadMode: "export",
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,

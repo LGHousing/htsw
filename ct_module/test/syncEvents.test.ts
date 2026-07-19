@@ -55,6 +55,7 @@ function sessionWith(handler: SyncEventHandler): ImportSession {
         },
         conflicts: [],
         events: handler,
+        actionItemRead: { mode: "sync" },
         npcLookup: createNpcLookupCache(),
     };
 }

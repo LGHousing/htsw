@@ -9,7 +9,6 @@ import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import {
-    clickActionsHash,
     interactDataCachePath,
     tryWriteImportableCache,
     type ImportableTrustPlan,
@@ -31,6 +30,7 @@ import {
     sendCreativeInventoryAction,
 } from "../../housingSync/menus/packets";
 import type { ImportSession } from "../imports";
+import type { ItemDependencyIndex } from "../itemDependencyIndex";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { itemEditorOpened } from "../waiters";
@@ -61,8 +61,8 @@ function itemShellMatchesCached(
     return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
 }
 
-function readCachedInteractData(housingUuid: string, actionsHash: string): string | undefined {
-    const path = interactDataCachePath(housingUuid, actionsHash);
+function readCachedInteractData(housingUuid: string, fingerprint: string): string | undefined {
+    const path = interactDataCachePath(housingUuid, fingerprint);
     if (!FileLib.exists(path)) return undefined;
 
     const raw = FileLib.read(path);
@@ -147,27 +147,32 @@ async function importImportableItem(
     });
 
     const uuid = cachedUuid ?? session.housingUuid;
+    const dependencyIndex = session.itemDependencies ?? session.items.itemDependencies;
+    if (dependencyIndex === undefined) {
+        throw new Error("Item click-action dependencies were not indexed.");
+    }
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
         setup(`gave ${importable.name}`);
-        await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        await tryWriteImportableCache(ctx, importable, "importer", uuid, {
+            itemDependencies: dependencyIndex.snapshotOf(importable),
+        });
         return;
     }
 
-    const actionsHash = clickActionsHash(
-        importable.leftClickActions,
-        importable.rightClickActions
-    );
-    const cachePath = interactDataCachePath(uuid, actionsHash);
-    const cachedInteractData = readCachedInteractData(uuid, actionsHash);
+    const clickFingerprint = dependencyIndex.clickActionsFingerprint(importable);
+    const cachePath = interactDataCachePath(uuid, clickFingerprint);
+    const cachedInteractData = readCachedInteractData(uuid, clickFingerprint);
     if (cachedInteractData !== undefined) {
         await injectHeldItem(ctx, itemWithInteractData(importable.nbt, cachedInteractData));
         setup(`gave cached ${importable.name}`);
-        await tryWriteImportableCache(ctx, importable, "importer", uuid);
+        await tryWriteImportableCache(ctx, importable, "importer", uuid, {
+            itemDependencies: dependencyIndex.snapshotOf(importable),
+        });
         return;
     }
 
-    const start = chooseItemStart(uuid, importable, trustPlan);
+    const start = chooseItemStart(uuid, importable, trustPlan, dependencyIndex);
     await injectHeldItem(ctx, start.item);
     setup(`injected item ${importable.name}`);
 
@@ -194,20 +199,23 @@ async function importImportableItem(
     const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
     if (!snbt) throw Error("Why don't we have the item?");
 
-    // Cache only the housing-scoped interact_data blob (keyed by action hash),
+    // Cache only the housing-scoped interact_data blob (keyed by the resolved actions),
     // not the whole snapshot — a later reference splices it onto the source item.
     const interactData = extractInteractDataSnbt(snbt);
     if (interactData !== null) {
         ensureParentDirs(cachePath);
         FileLib.write(cachePath, interactData, true);
     }
-    await tryWriteImportableCache(ctx, importable, "importer", uuid);
+    await tryWriteImportableCache(ctx, importable, "importer", uuid, {
+        itemDependencies: dependencyIndex.snapshotOf(importable),
+    });
 }
 
 function chooseItemStart(
     housingUuid: string,
     importable: ImportableItem,
-    trustPlan: ImportableTrustPlan | undefined
+    trustPlan: ImportableTrustPlan | undefined,
+    dependencyIndex: ItemDependencyIndex
 ): ItemStart {
     const cachedEntry = trustPlan?.entry;
     if (cachedEntry === undefined || cachedEntry === null) {
@@ -224,10 +232,7 @@ function chooseItemStart(
     ) {
         const cachedInteractData = readCachedInteractData(
             housingUuid,
-            clickActionsHash(
-                cachedImportable.leftClickActions,
-                cachedImportable.rightClickActions
-            )
+            dependencyIndex.clickActionsFingerprint(cachedImportable)
         );
         if (cachedInteractData !== undefined) {
             return {

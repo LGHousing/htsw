@@ -93,6 +93,7 @@ import { houseContentTypeFor } from "../houses/contentTypes";
 import { exportBatch, exportExisting } from "../../../importables/exportBatch";
 import { type HouseExportTypeName } from "../../../importables/houseExportTypes";
 import { readExportProjectContext } from "../../../importables/exportContext";
+import { itemChanges } from "../../../importables/itemChanges";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
@@ -355,12 +356,34 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
     }
     if (imp.type === "ITEM") {
         const ci = cached !== null && cached.type === "ITEM" ? cached : null;
+        if (ci === null) {
+            const fields: MetadataField[] = [
+                { key: "nbt", label: "NBT", value: "Item data" },
+            ];
+            if (importableLinkStatus(imp).key === "differs") {
+                fields.push({
+                    key: "legacyDiff",
+                    label: "Diff",
+                    value: "Previous details unavailable",
+                    diff: "changed",
+                    diffTooltip:
+                        "The older cache recorded only an item fingerprint, not its NBT or actions",
+                });
+            }
+            return fields;
+        }
+        const changes = itemChanges(imp, ci);
         return [
             {
                 key: "nbt",
                 label: "NBT",
                 value: "Item data",
-                ...(ci !== null ? valDiff(imp.nbt, ci.nbt) : undefined),
+                ...(changes.nbt.length === 0
+                    ? {}
+                    : {
+                          diff: "changed" as const,
+                          diffTooltip: changes.nbt.join(" | "),
+                      }),
             },
         ];
     }
@@ -1628,6 +1651,15 @@ export function childListRow(parent: ResultImport, imp: Importable, kind: Import
         target,
         parent.fullPath
     );
+    const cached = getCachedImportable(imp);
+    const itemChange =
+        imp.type === "ITEM" && cached?.type === "ITEM"
+            ? itemChanges(imp, cached)
+            : null;
+    const changed =
+        itemChange !== null &&
+        ((kind === "leftClickActions" && itemChange.leftClickActions) ||
+            (kind === "rightClickActions" && itemChange.rightClickActions));
     return Container({
         style: {
             direction: "row",
@@ -1642,6 +1674,18 @@ export function childListRow(parent: ResultImport, imp: Importable, kind: Import
         onClick: rowHandler(actions, () => previewSelect(target, parent.fullPath)),
         onDoubleClick: () => confirmSelect(target, parent.fullPath),
         children: [
+            changed
+                ? Text({
+                      text: DIFF_SYMBOL.changed,
+                      color: DIFF_COLOR.changed,
+                      tooltip:
+                          kind === "leftClickActions"
+                              ? "Left click actions differ from the cached house item"
+                              : "Right click actions differ from the cached house item",
+                      tooltipColor: DIFF_COLOR.changed,
+                      style: { width: { kind: "px", value: 8 } },
+                  })
+                : Text({ text: "", style: { width: { kind: "px", value: 8 } } }),
             Icon({
                 name: Icons.fileCode,
                 color: IMPORTABLE_TYPE_COLORS[imp.type],
@@ -1817,7 +1861,9 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
     const fileTarget = imp.type === "ITEM" && field.key === "nbt"
         ? importableSourceFilePath(parent, imp)
         : null;
-    const editable = !(imp.type === "NPC" && field.key === "pos");
+    const editable =
+        field.key !== "legacyDiff" &&
+        !(imp.type === "NPC" && field.key === "pos");
     const actions = fileTarget === null
         ? null
         : composeFileMenu(

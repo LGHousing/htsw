@@ -21,10 +21,28 @@ import {
     type NestedListPath,
 } from "../actionPath";
 import type { ItemCaptureRegistry } from "../itemCapture";
+import type { ItemFieldObservationRecorder } from "../itemFieldObservations";
 
-export type ListReadOptions = {
-    itemRegistry?: ItemRegistry;
-    itemCaptures?: ItemCaptureRegistry;
+export type ItemReadOptions =
+    | {
+          itemReadMode: "export";
+          itemCaptures: ItemCaptureRegistry;
+          itemRegistry?: never;
+          itemFieldObservations?: never;
+      }
+    | {
+          itemReadMode: "sync";
+          itemRegistry: ItemRegistry;
+          itemFieldObservations?: ItemFieldObservationRecorder;
+      }
+    | {
+          itemReadMode: "verify";
+          itemRegistry: ItemRegistry;
+          itemCaptures: ItemCaptureRegistry;
+          itemFieldObservations?: never;
+      };
+
+export type ListReadOptions = ItemReadOptions & {
     events?: SyncEventHandler;
     listPath?: ActionListPath;
     emitSnapshot?: () => void;
@@ -45,20 +63,19 @@ export type ActionReadContext = {
 type ReadChildActions = (
     ctx: TaskContext,
     mode: ActionListReadMode,
-    read?: ListReadOptions
+    read: ListReadOptions
 ) => Promise<ObservedActionSlot[]>;
 
 type ReadConditions = (
     ctx: TaskContext,
-    options?: ReadConditionListOptions
+    options: ReadConditionListOptions
 ) => Promise<ObservedConditionSlot[]>;
 
 export type CreateActionReadContextArgs = {
     ctx: TaskContext;
     actionPath: ActionPath;
     actionType: Action["type"];
-    itemRegistry?: ItemRegistry;
-    itemCaptures?: ItemCaptureRegistry;
+    itemRead: ItemReadOptions;
     events?: SyncEventHandler;
     emitSnapshot?: () => void;
     readChildActions: ReadChildActions;
@@ -78,8 +95,7 @@ export function createActionReadContext({
     ctx,
     actionPath,
     actionType,
-    itemRegistry,
-    itemCaptures,
+    itemRead,
     events,
     emitSnapshot,
     readChildActions,
@@ -100,8 +116,7 @@ export function createActionReadContext({
             focusChildField(path);
             const actions: Array<Observed<Action> | null> = [];
             const entries = await readChildActions(ctx, mode, {
-                itemRegistry,
-                itemCaptures,
+                ...itemRead,
                 events,
                 listPath: path,
                 emitSnapshot,
@@ -117,8 +132,7 @@ export function createActionReadContext({
             focusChildField(ConditionListPath.of(actionPath, prop));
             const conditions: Array<Condition | null> = [];
             const entries = await readConditionList(ctx, {
-                itemRegistry,
-                itemCaptures,
+                ...itemRead,
                 ...(childListProgress?.(prop as ChildListName) ?? {}),
             });
             for (const entry of entries) {

@@ -25,6 +25,7 @@ import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import type { ItemRegistry } from "../itemRegistry";
 import type { ImportSession } from "../imports";
+import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
 import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
@@ -200,7 +201,8 @@ export async function prereadImportableMenu(
             importable,
             baselineSlotsFromGrid(grid, cachedMenu),
             grid.size,
-            session.items
+            session.items,
+            session.itemDiff
         );
         await prereadMenuConflictLists(
             ctx,
@@ -213,12 +215,17 @@ export async function prereadImportableMenu(
         return { kind: "MENU", importable, trustPlan, diff };
     }
 
-    const live = await readLiveMenu(ctx);
+    const live = await readLiveMenu(ctx, {
+        itemReadMode: "sync",
+        itemRegistry: session.items,
+        itemFieldObservations: session.itemFieldObservations,
+    });
     const diff = buildMenuDiff(
         importable,
         baselineSlotsFromLive(live),
         live.size,
-        session.items
+        session.items,
+        session.itemDiff
     );
     return { kind: "MENU", importable, trustPlan, diff };
 }
@@ -301,7 +308,8 @@ function buildMenuDiff(
     importable: ImportableMenu,
     baselineSlots: BaselineMenuSlot[],
     baselineSize: number | undefined,
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    itemDiff?: ItemDiffContext
 ): MenuDiff {
     const desiredItems = importable.slots.map((slot) => getItemFromNbt(slot.nbt));
     const desiredSnapshots: MenuSlotSnapshot[] = importable.slots.map((slot, i) => ({
@@ -323,7 +331,7 @@ function buildMenuDiff(
         importable.size,
         baselineSize,
         (baselineActions, desiredActions) =>
-            actionsDiffer(baselineActions, desiredActions, itemRegistry)
+            actionsDiffer(baselineActions, desiredActions, itemRegistry, itemDiff)
     );
 
     const ops: MenuSlotOp[] = [];
@@ -367,8 +375,18 @@ function buildMenuDiff(
 function actionsDiffer(
     liveActions: Action[],
     desiredActions: Action[],
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    itemDiff?: ItemDiffContext
 ): boolean {
+    if (itemDiff?.hasActionList(desiredActions) === true) return true;
+    if (itemDiff !== undefined) {
+        const length = Math.min(liveActions.length, desiredActions.length);
+        for (let i = 0; i < length; i++) {
+            if (itemDiff.actionsDiffer(liveActions[i], desiredActions[i])) {
+                return true;
+            }
+        }
+    }
     const liveCopy = JSON.parse(JSON.stringify(liveActions)) as Action[];
     const desiredCopy = JSON.parse(JSON.stringify(desiredActions)) as Action[];
     for (const a of liveCopy) canonicalizeActionItemName(a, itemRegistry);

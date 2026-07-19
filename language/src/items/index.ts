@@ -44,19 +44,56 @@ export function resolveItemReference(
     }
 
     const resolvedPath = resolveItemPathFromOwner(gcx, ownerNode, itemName);
+    return resolveDirectSnbtItemReference(gcx, itemName, resolvedPath, ownerNode);
+}
+
+export function resolveItemReferenceFromSourcePath(
+    gcx: GlobalCtxt,
+    itemNames: ReadonlyMap<string, ImportableItem>,
+    sourcePath: string,
+    itemName: string
+): ResolvedItemReference | undefined {
+    const named = itemNames.get(itemName);
+    if (named !== undefined) {
+        return {
+            kind: "named",
+            key: itemName,
+            name: named.name,
+            importable: named,
+            nbt: named.nbt,
+        };
+    }
+
+    if (!isDirectSnbtItemReference(itemName)) {
+        return undefined;
+    }
+
+    const resolvedPath = resolveItemPathFromSourcePath(gcx, sourcePath, itemName);
+    return resolveDirectSnbtItemReference(gcx, itemName, resolvedPath);
+}
+
+function resolveDirectSnbtItemReference(
+    gcx: GlobalCtxt,
+    itemName: string,
+    resolvedPath: string,
+    ownerNode?: object
+): ResolvedItemReference | undefined {
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
-        gcx.addDiagnostic(
-            Diagnostic.error(`SNBT item file does not exist '${itemName}'`)
-                .addPrimarySpan(
-                    gcx.spans.getField(ownerNode as { itemName: string }, "itemName"),
-                    "not found"
-                )
-                .addSubDiagnostic(
-                    Diagnostic.help(
-                        "Direct item paths are resolved relative to the HTSL file that contains the item field."
-                    )
-                )
+        const diagnostic = Diagnostic.error(
+            `SNBT item file does not exist '${itemName}'`
         );
+        if (ownerNode !== undefined) {
+            diagnostic.addPrimarySpan(
+                gcx.spans.getField(ownerNode as { itemName: string }, "itemName"),
+                "not found"
+            );
+        }
+        diagnostic.addSubDiagnostic(
+            Diagnostic.help(
+                "Direct item paths are resolved relative to the HTSL file that contains the item field."
+            )
+        );
+        gcx.addDiagnostic(diagnostic);
         return undefined;
     }
 
@@ -83,6 +120,14 @@ export function resolveItemPathFromOwner(
         "itemName"
     );
     const sourceFile = gcx.sourceMap.getFileByPos(fieldSpan.start);
-    const parentPath = gcx.sourceMap.fileLoader.getParentPath(sourceFile.path);
+    return resolveItemPathFromSourcePath(gcx, sourceFile.path, itemName);
+}
+
+export function resolveItemPathFromSourcePath(
+    gcx: GlobalCtxt,
+    sourcePath: string,
+    itemName: string
+): string {
+    const parentPath = gcx.sourceMap.fileLoader.getParentPath(sourcePath);
     return gcx.sourceMap.fileLoader.resolvePath(parentPath, itemName);
 }

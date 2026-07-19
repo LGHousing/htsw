@@ -4,7 +4,10 @@ import TaskContext from "../../../tasks/context";
 import { isTaskCancelled } from "../../../tasks/manager";
 import { clickGoBack } from "../../menus/menuUtils";
 import { timedWaitForMenu } from "../../menus/menuWait";
-import { captureItemFromOpenEditorField } from "../../itemCapture";
+import {
+    captureItemFromOpenEditorField,
+    observeItemFromOpenEditorField,
+} from "../../itemCapture";
 import { refreshTruncatedScalarFields } from "../readers";
 import type { ActionHydrationPlan, ActionHydrationWork } from "./plan";
 import type { ChildListName } from "../../actionPath";
@@ -40,8 +43,8 @@ import {
 
 async function readActionList(
     ctx: TaskContext,
-    mode: ActionListReadMode = { kind: "full" },
-    read?: ListReadOptions
+    mode: ActionListReadMode,
+    read: ListReadOptions
 ): Promise<ObservedActionSlot[]> {
     const scan = await scanActionList(ctx, mode, read);
     await hydrateActionListScan(ctx, scan, read);
@@ -51,7 +54,7 @@ async function readActionList(
 export async function completeActionListScan(
     ctx: TaskContext,
     scan: ActionListScan,
-    read?: ListReadOptions
+    read: ListReadOptions
 ): Promise<Action[]> {
     await hydrateActionListScan(ctx, scan, read);
     return observedSlotsToActions(scan.slots);
@@ -59,7 +62,7 @@ export async function completeActionListScan(
 
 export async function readActionListFully(
     ctx: TaskContext,
-    read?: ListReadOptions
+    read: ListReadOptions
 ): Promise<Action[]> {
     const scan = await scanActionList(ctx, { kind: "full" }, read);
     return completeActionListScan(ctx, scan, read);
@@ -68,7 +71,7 @@ export async function readActionListFully(
 export async function hydrateActionListScan(
     ctx: TaskContext,
     scan: ActionListScan,
-    read?: ListReadOptions
+    read: ListReadOptions
 ): Promise<void> {
     const { slots, plan, isRootList } = scan;
     await hydrateActionDetails(ctx, plan, slots, isRootList, read);
@@ -90,7 +93,7 @@ async function hydrateActionDetails(
     plan: ActionHydrationPlan,
     observed: readonly ObservedActionSlot[],
     isRootList: boolean = false,
-    read?: ListReadOptions
+    read: ListReadOptions
 ): Promise<void> {
     const progress = read?.progress;
     const phaseUnits = read?.phaseUnits;
@@ -186,7 +189,7 @@ async function hydrateActionDetail(
     entry: ObservedActionSlot,
     work: ActionHydrationWork,
     listLength: number,
-    read: ListReadOptions | undefined,
+    read: ListReadOptions,
     entryPath: ActionPath,
     emitSnapshot?: () => void,
     account?: HydrationEntryAccount
@@ -217,7 +220,7 @@ async function hydrateActionDetailFromEditor(
     entry: ObservedActionSlot,
     work: ActionHydrationWork,
     listLength: number,
-    read: ListReadOptions | undefined,
+    read: ListReadOptions,
     entryPath: ActionPath,
     emitSnapshot?: () => void,
     account?: HydrationEntryAccount
@@ -250,8 +253,7 @@ async function hydrateActionDetailFromEditor(
             ctx,
             actionPath: entryPath,
             actionType: entry.action.type,
-            itemRegistry: read?.itemRegistry,
-            itemCaptures: read?.itemCaptures,
+            itemRead: read,
             events: read?.events,
             emitSnapshot,
             readChildActions: readActionList,
@@ -286,20 +288,45 @@ async function hydrateActionDetailFromEditor(
         refreshTruncatedScalarFields(ctx, entry.action, work.scalarFieldsToRead);
     }
 
-    if (read?.itemCaptures !== undefined && entry.action !== null) {
+    const itemCaptures =
+        read.itemReadMode === "sync" ? undefined : read.itemCaptures;
+    const itemFieldObservations =
+        read.itemReadMode === "sync" ? read.itemFieldObservations : undefined;
+    if (
+        (itemCaptures !== undefined || itemFieldObservations !== undefined) &&
+        entry.action !== null
+    ) {
         const itemFields = work.itemFieldsToCapture;
         for (let i = 0; i < itemFields.length; i++) {
             const field = itemFields[i];
-            const displayName = (entry.action as Record<string, unknown>)[field.prop];
-            if (typeof displayName === "string" && displayName.length > 0) {
+            const value = (entry.action as Record<string, unknown>)[field.prop];
+            const displayName = typeof value === "string" ? value : "";
+            if (itemCaptures !== undefined) {
                 const captured = await captureItemFromOpenEditorField(
                     ctx,
                     field.label,
-                    read.itemCaptures,
+                    itemCaptures,
                     displayName
                 );
                 if (captured !== null) {
                     (entry.action as Record<string, unknown>)[field.prop] = captured;
+                } else if (read.itemReadMode === "export") {
+                    throw new Error(
+                        `Could not capture the item in ${entry.action.type}.${field.prop}.`
+                    );
+                }
+            } else if (itemFieldObservations !== undefined) {
+                const observation = await observeItemFromOpenEditorField(
+                    ctx,
+                    field.label,
+                    displayName
+                );
+                if (observation !== null) {
+                    itemFieldObservations.record(
+                        entry.action as Action,
+                        field.prop,
+                        observation
+                    );
                 }
             }
         }

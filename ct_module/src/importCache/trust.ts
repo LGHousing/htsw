@@ -4,7 +4,12 @@ import type { ImportableCacheEntry } from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
-import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
+import {
+    cacheEntryHash,
+    cacheEntryListHashes,
+    sameHashList,
+    sameItemDependencySnapshot,
+} from "./status";
 import { matchByHash } from "./actionMatch";
 import { actionListsOfImportable, readCachedActionList } from "./actionLists";
 import type {
@@ -12,6 +17,10 @@ import type {
     TrustedChildListSnapshot,
 } from "../housingSync/actions/applyTrust";
 import { houseLockEntryFor, readHouseLock, type HouseLock } from "./houseLock";
+import {
+    itemDependencyIndexFor,
+    type ItemDependencyIndex,
+} from "../importables/itemDependencyIndex";
 
 export type {
     TrustedChildListPath,
@@ -54,7 +63,8 @@ export function buildTrustPlan(
     housingUuid: string,
     importables: readonly Importable[],
     trustMode: boolean = true,
-    importJsonPath?: string
+    importJsonPath?: string,
+    itemDependencies?: ItemDependencyIndex
 ): TrustPlan {
     const plans = new Map<string, ImportableTrustPlan>();
     const lock = importJsonPath === undefined ? null : readHouseLock(importJsonPath);
@@ -78,8 +88,23 @@ export function buildTrustPlan(
             identity
         );
         const entryHash = entry === null ? null : cacheEntryHash(entry);
-        const cacheMatchesLock = lockEntry === null || entryHash === lockEntry.hash;
-        const trustAllowed = trustMode && cacheMatchesLock;
+        const dependencyIndex =
+            itemDependencies ?? itemDependencyIndexFor(importable);
+        const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
+        const dependenciesMatch =
+            dependencySnapshot === undefined ||
+            sameItemDependencySnapshot(
+                entry?.itemDependencies,
+                dependencySnapshot
+            );
+        const cacheMatchesLock =
+            lockEntry === null ||
+            (entryHash === lockEntry.hash &&
+                sameItemDependencySnapshot(
+                    entry?.itemDependencies,
+                    lockEntry.itemDependencies
+                ));
+        const trustAllowed = trustMode && cacheMatchesLock && dependenciesMatch;
 
         if (trustAllowed && entry !== null) {
             sourceHash = importableHash(importable);
@@ -138,12 +163,17 @@ function lockEntryForImportable(
 ) {
     if (lock === null) return null;
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) {
-        return { hash: "", listScanHashes: undefined };
+        return {
+            hash: "",
+            listScanHashes: undefined,
+            itemDependencies: undefined,
+        };
     }
     return (
         houseLockEntryFor(lock, type, identity) ?? {
             hash: "",
             listScanHashes: undefined,
+            itemDependencies: undefined,
         }
     );
 }

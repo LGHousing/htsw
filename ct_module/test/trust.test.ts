@@ -19,6 +19,11 @@ import { createItemRegistry } from "../src/importables/itemRegistry";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportSession } from "../src/importables/imports";
 import type TaskContext from "../src/tasks/context";
+import type {
+    ItemDependencyIndex,
+    ItemDependencySnapshot,
+} from "../src/importables/itemDependencyIndex";
+import { buildCacheStatusRow } from "../src/importCache/status";
 
 function chat(message: string): Action {
     return { type: "MESSAGE", message };
@@ -159,6 +164,68 @@ describe("trustedChildListPathsForImportable", () => {
 });
 
 describe("buildTrustPlan house lock gating", () => {
+    it("does not trust an old cache entry when the source has item dependencies", () => {
+        const uuid = "dependency-cache-missing";
+        const desired = fn([chat("same")]);
+        const entry = cacheEntry(desired);
+        const files: Record<string, string> = {
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+                JSON.stringify(entry),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+        const snapshot: ItemDependencySnapshot = {
+            version: 1,
+            dependencies: [
+                {
+                    target: { kind: "named", name: "Key" },
+                    fingerprint: "0x123",
+                },
+            ],
+        };
+        const itemDependencies = {
+            snapshotOf: () => snapshot,
+        } as unknown as ItemDependencyIndex;
+
+        const row = buildTrustPlan(
+            uuid,
+            [desired],
+            true,
+            undefined,
+            itemDependencies
+        ).importables.get("FUNCTION:Debug");
+
+        expect(row?.wholeImportableTrusted).toBe(false);
+        expect(row?.trustedChildListPaths.size).toBe(0);
+        expect(buildCacheStatusRow(uuid, desired, itemDependencies).state).toBe(
+            "modified"
+        );
+    });
+
+    it("keeps old dependency-less cache entries current", () => {
+        const uuid = "dependency-cache-empty";
+        const desired = fn([chat("same")]);
+        const files: Record<string, string> = {
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+                JSON.stringify(cacheEntry(desired)),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+        const itemDependencies = {
+            snapshotOf: () => ({ version: 1, dependencies: [] }),
+        } as unknown as ItemDependencyIndex;
+
+        expect(buildCacheStatusRow(uuid, desired, itemDependencies).state).toBe(
+            "current"
+        );
+    });
+
     it("disables trust for an importable when the local cache does not match the project lock", () => {
         const uuid = "lock-test-mismatch";
         const importJsonPath = "./projects/demo/import.json";
@@ -284,6 +351,7 @@ describe("trusted action-list planning", () => {
             },
             conflicts: [],
             events: undefined,
+            actionItemRead: { mode: "sync" },
             npcLookup: createNpcLookupCache(),
         };
 

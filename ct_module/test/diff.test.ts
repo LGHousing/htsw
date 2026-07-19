@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Action, ActionPlaySound } from "htsw/types";
+import type { Action, ActionPlaySound, Condition } from "htsw/types";
 
 import {
     baselineActionListFromSlots,
@@ -7,6 +7,7 @@ import {
 } from "../src/housingSync/actions/diff";
 import type { ActionListOperation } from "../src/housingSync/actions/diff/types";
 import type { ObservedActionSlot } from "../src/housingSync/observedActions";
+import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
 
 import {
     changeVar,
@@ -25,6 +26,17 @@ function kindCounts(opsList: ActionListOperation[]): Record<string, number> {
     const out: Record<string, number> = { delete: 0, edit: 0, move: 0, add: 0 };
     for (const op of opsList) out[op.kind]++;
     return out;
+}
+
+function itemDiffContext(overrides: Partial<ItemDiffContext>): ItemDiffContext {
+    return {
+        hasAction: () => false,
+        hasCondition: () => false,
+        hasActionList: () => false,
+        actionsDiffer: () => false,
+        conditionsDiffer: () => false,
+        ...overrides,
+    };
 }
 
 describe("diffActionList — empty / identity", () => {
@@ -79,6 +91,96 @@ describe("diffActionList — adds / deletes", () => {
 });
 
 describe("diffActionList — edits", () => {
+    test("invalidated item references force an edit when the item name is unchanged", () => {
+        const observed = { type: "GIVE_ITEM", itemName: "key" } as Action;
+        const desired = { type: "GIVE_ITEM", itemName: "key" } as Action;
+        const itemDiff = itemDiffContext({ hasAction: (action) => action === desired });
+
+        const result = diffActionList(
+            baselineActionListFromSlots([obs(0, observed)]),
+            [desired],
+            itemDiff
+        ).operations;
+
+        expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0 });
+    });
+
+    test("observed item mismatches force an edit when source references are unchanged", () => {
+        const observed = { type: "GIVE_ITEM", itemName: "key" } as Action;
+        const desired = { type: "GIVE_ITEM", itemName: "key" } as Action;
+        const itemDiff = itemDiffContext({ actionsDiffer: () => true });
+
+        const result = diffActionList(
+            baselineActionListFromSlots([obs(0, observed)]),
+            [desired],
+            itemDiff
+        ).operations;
+
+        expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0 });
+    });
+
+    test("invalidated items in conditions keep the parent edit and condition diff", () => {
+        const observedCondition = {
+            type: "REQUIRE_ITEM",
+            itemName: "key",
+        } as Condition;
+        const desiredCondition = {
+            type: "REQUIRE_ITEM",
+            itemName: "key",
+        } as Condition;
+        const observed = conditional({ conditions: [observedCondition] });
+        const desired = conditional({ conditions: [desiredCondition] });
+        const itemDiff = itemDiffContext({
+            hasAction: (action) => action === desired,
+            hasCondition: (condition) => condition === desiredCondition,
+        });
+
+        const result = diffActionList(
+            baselineActionListFromSlots([obs(0, observed)]),
+            [desired],
+            itemDiff
+        ).operations;
+        const edit = result[0] as Extract<ActionListOperation, { kind: "edit" }>;
+
+        expect(edit.kind).toBe("edit");
+        expect(edit.childListDiffs).toHaveLength(1);
+        expect(edit.childListDiffs[0].prop).toBe("conditions");
+        expect(edit.childListDiffs[0].diff.operations[0].kind).toBe("edit");
+    });
+
+    test("invalidated items reach conditions inside nested action lists", () => {
+        const observedCondition = {
+            type: "REQUIRE_ITEM",
+            itemName: "key",
+        } as Condition;
+        const desiredCondition = {
+            type: "REQUIRE_ITEM",
+            itemName: "key",
+        } as Condition;
+        const observedConditional = conditional({ conditions: [observedCondition] });
+        const desiredConditional = conditional({ conditions: [desiredCondition] });
+        const observed = random({ actions: [observedConditional] });
+        const desired = random({ actions: [desiredConditional] });
+        const itemDiff = itemDiffContext({
+            hasAction: action => action === desired || action === desiredConditional,
+            hasCondition: condition => condition === desiredCondition,
+        });
+
+        const result = diffActionList(
+            baselineActionListFromSlots([obs(0, observed)]),
+            [desired],
+            itemDiff
+        ).operations;
+        const rootEdit = result[0] as Extract<ActionListOperation, { kind: "edit" }>;
+        const nestedEdit = rootEdit.childListDiffs[0].diff.operations[0] as Extract<
+            ActionListOperation,
+            { kind: "edit" }
+        >;
+
+        expect(nestedEdit.childListDiffs[0].prop).toBe("conditions");
+        expect(nestedEdit.childListDiffs[0].diff.operations[0].kind).toBe("edit");
+    });
+
     test("single field edit emits one edit op", () => {
         const observed = [obs(0, playSound({ volume: 0.5 }))];
         const desired = [playSound({ volume: 0.9 })];

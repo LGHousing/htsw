@@ -4,6 +4,10 @@ import type { Action, ImportableFunction } from "htsw/types";
 import { acceptHouseLockAsCurrent } from "../src/importCache/acceptHouseLock";
 import { importableHash } from "../src/importCache/hash";
 import type TaskContext from "../src/tasks/context";
+import type {
+    ItemDependencyIndex,
+    ItemDependencySnapshot,
+} from "../src/importables/itemDependencyIndex";
 
 function fn(name: string, message: string): ImportableFunction {
     const actions: Action[] = [{ type: "MESSAGE", message }];
@@ -102,6 +106,63 @@ describe("acceptHouseLockAsCurrent", () => {
             ok: false,
             reason: "unbound-lock",
         });
+        expect(write).not.toHaveBeenCalled();
+    });
+
+    it("does not accept a lock whose referenced items have changed", () => {
+        const uuid = "dependency-lock-house";
+        const importJsonPath = "./projects/dependencies/import.json";
+        const importable = fn("Uses Item", "same action");
+        const lockedDependencies: ItemDependencySnapshot = {
+            version: 1,
+            dependencies: [
+                {
+                    target: { kind: "named", name: "Key" },
+                    fingerprint: "0xold",
+                },
+            ],
+        };
+        const currentDependencies: ItemDependencySnapshot = {
+            version: 1,
+            dependencies: [
+                {
+                    target: { kind: "named", name: "Key" },
+                    fingerprint: "0xnew",
+                },
+            ],
+        };
+        const files: Record<string, string> = {
+            "./projects/dependencies/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {
+                    "FUNCTION:Uses Item": {
+                        type: "FUNCTION",
+                        identity: "Uses Item",
+                        hash: importableHash(importable),
+                        itemDependencies: lockedDependencies,
+                    },
+                },
+            }),
+        };
+        const write = vi.fn();
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write,
+        });
+        const itemDependencies = {
+            snapshotOf: () => currentDependencies,
+        } as unknown as ItemDependencyIndex;
+
+        const result = acceptHouseLockAsCurrent(
+            { displayMessage: vi.fn() } as unknown as TaskContext,
+            importJsonPath,
+            [importable],
+            itemDependencies
+        );
+
+        expect(result).toMatchObject({ ok: true, accepted: [], skipped: 1 });
         expect(write).not.toHaveBeenCalled();
     });
 });

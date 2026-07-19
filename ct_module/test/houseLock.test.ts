@@ -6,6 +6,7 @@ import {
     ACTION_LIST_SCAN_HASH_VERSION,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
+import type { ItemDependencySnapshot } from "../src/importables/itemDependencyIndex";
 
 const importJsonPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";
@@ -66,15 +67,32 @@ describe("house lock scan hashes", () => {
         const files: Record<string, string> = {};
         stubFiles(files);
         const importable = functionEntry();
+        const itemDependencies: ItemDependencySnapshot = {
+            version: 1,
+            dependencies: [
+                {
+                    target: { kind: "named", name: "Key" },
+                    fingerprint: "0x123",
+                },
+            ],
+        };
 
         expect(
-            upsertHouseLockImportable(importJsonPath, "current-house", importable)
+            upsertHouseLockImportable(
+                importJsonPath,
+                "current-house",
+                importable,
+                itemDependencies
+            )
         ).toBe(true);
         const written = JSON.parse(files[lockPath]);
         expect(written.scanHashVersion).toBe(ACTION_LIST_SCAN_HASH_VERSION);
         expect(written.importables["FUNCTION:Debug"].listScanHashes).toEqual({
             actions: actionListScanHashFromActions(importable.actions ?? []),
         });
+        expect(written.importables["FUNCTION:Debug"].itemDependencies).toEqual(
+            itemDependencies
+        );
         expect(readHouseLock(importJsonPath)).toEqual(written);
     });
 

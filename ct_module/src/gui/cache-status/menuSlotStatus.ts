@@ -6,6 +6,7 @@ import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
 import type { LinkStatusKey } from "./linkStatus";
+import { itemDependencyIndexFor } from "../../importables/itemDependencyIndex";
 
 export type MenuSlotCacheStatus = { key: LinkStatusKey; tooltip: string };
 
@@ -48,6 +49,21 @@ export function menuSlotCacheStatus(
     }
     if (cached === null) {
         return { key: "oneSided", tooltip: "Not in the house's menu — import to place it" };
+    }
+    const dependencies = itemDependencyIndexFor(menu);
+    if (dependencies !== undefined) {
+        const invalidations = dependencies.invalidationsFor(
+            menu,
+            entry.itemDependencies
+        );
+        for (const action of slot.actions ?? []) {
+            if (invalidations.hasInvalidatedSubtree(action)) {
+                return {
+                    key: "differs",
+                    tooltip: "A referenced item changed in this slot's actions",
+                };
+            }
+        }
     }
     return slotCanonical(slot) === slotCanonical(cached)
         ? { key: "matches", tooltip: "Matches this house's menu" }

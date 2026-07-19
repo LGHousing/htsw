@@ -2,6 +2,10 @@ import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "
 import type { ImportableItem } from "htsw/types";
 
 import { FileSystemFileLoader } from "../utils/fileLoaders";
+import { ItemCaptureRegistry } from "../housingSync/itemCapture";
+import { createItemRegistry } from "./itemRegistry";
+import { createItemDependencyIndex } from "./itemDependencyIndex";
+import { expectedInteractData } from "./items/interactDataCache";
 
 export type ExportProjectContext = {
     rootDir: string;
@@ -42,14 +46,53 @@ export function projectItemsFromParsedImportJson(
 }
 
 export function readProjectItemsForExport(importJsonPath: string): ImportableItem[] {
-    if (importJsonPath.trim() === "") return [];
+    return projectItemsFromParsedImportJson(
+        readParsedImportablesForExport(importJsonPath)
+    );
+}
+
+export function readParsedImportablesForExport(
+    importJsonPath: string
+): ImportablesParseResult | null {
+    if (importJsonPath.trim() === "") return null;
     try {
-        const parsed = parseImportablesResult(
+        return parseImportablesResult(
             new SourceMap(new FileSystemFileLoader()),
             importJsonPath
         );
-        return projectItemsFromParsedImportJson(parsed);
     } catch {
-        return [];
+        return null;
     }
+}
+
+export function createExportItemCaptureRegistry(
+    importJsonPath: string,
+    housingUuid: string,
+    fallbackItems: readonly ImportableItem[] = []
+): ItemCaptureRegistry {
+    const captures = new ItemCaptureRegistry();
+    const parsed = readParsedImportablesForExport(importJsonPath);
+    if (parsed !== null) {
+        const items = createItemRegistry(parsed.value, parsed.gcx);
+        const dependencies = createItemDependencyIndex(parsed.value, items);
+        for (const importable of parsed.value) {
+            if (importable.type !== "ITEM") continue;
+            captures.seedExportItem(
+                importable,
+                expectedInteractData(importable, dependencies, housingUuid)
+            );
+        }
+        return captures;
+    }
+
+    for (const item of fallbackItems) {
+        const hasClickActions =
+            (item.leftClickActions?.length ?? 0) > 0 ||
+            (item.rightClickActions?.length ?? 0) > 0;
+        captures.seedExportItem(
+            item,
+            hasClickActions ? { kind: "uncached" } : { kind: "absent" }
+        );
+    }
+    return captures;
 }

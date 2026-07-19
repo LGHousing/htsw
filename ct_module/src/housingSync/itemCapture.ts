@@ -13,8 +13,13 @@ import {
 import TaskContext from "../tasks/context";
 import { pollTicks } from "../tasks/poll";
 import { canonicalSlug } from "../project/paths";
-import { getItemFromNbt, getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
-import { removedFormatting } from "../utils/helpers";
+import {
+    extractInteractDataSnbt,
+    getItemFromNbt,
+    getItemFromSnbt,
+    itemToHtswTag,
+} from "../utils/nbt";
+import { removedFormatting, stableStringify } from "../utils/helpers";
 import { closeOpenScreen } from "./sideEffects";
 import { clickGoBack } from "./menus/menuUtils";
 import { timedWaitForMenu } from "./menus/menuWait";
@@ -26,6 +31,7 @@ import {
     waitForAnySetSlot,
 } from "./menus/packets";
 import { traceNote } from "./trace/taskTrace";
+import type { ItemFieldObservation } from "./itemFieldObservations";
 
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;
@@ -45,8 +51,13 @@ export type CapturedItem = {
      * already exists on disk and must never be re-written by an export. */
     seeded: boolean;
     inventorySlot?: number;
-    needsRepair?: boolean;
+    expectedInteractData?: InteractDataExpectation;
 };
+
+export type InteractDataExpectation =
+    | { kind: "absent" }
+    | { kind: "cached"; snbt: string }
+    | { kind: "uncached" };
 
 export class ItemCaptureRegistry {
     private byHash: Record<string, CapturedItem> = Object.create(null);
@@ -55,6 +66,7 @@ export class ItemCaptureRegistry {
     // when a NEW capture shares a display name with an existing project item.
     private seededDisplayNames: Record<string, string> = Object.create(null);
     private matchedHashes: Record<string, true> = Object.create(null);
+    private capturedNames: Record<string, true> = Object.create(null);
     private hintLines: string[] = [];
 
     /**
@@ -65,16 +77,24 @@ export class ItemCaptureRegistry {
      * ItemStack and strip Housing's noise, so a source `{id,Count}` matches the
      * read-back `{id,Count,tag:{display:{}},Damage:0s}` the GUI hands back.
      */
-    seed(name: string, nbt: ImportableItem["nbt"]): void {
-        const interactData = tagChild(
-            tagChild(tagChild(nbt as TagLike, "tag"), "ExtraAttributes"),
-            "interact_data"
+    seedExportItem(
+        item: ImportableItem,
+        expectedInteractData: InteractDataExpectation
+    ): void {
+        this.seedHash(
+            item.name,
+            canonicalItemKey(getItemFromNbt(item.nbt)),
+            displayNameFromTag(item.nbt),
+            expectedInteractData
         );
+    }
+
+    seedNbtOnly(name: string, nbt: ImportableItem["nbt"]): void {
         this.seedHash(
             name,
             canonicalItemKey(getItemFromNbt(nbt)),
             displayNameFromTag(nbt),
-            interactData !== undefined
+            undefined
         );
     }
 
@@ -82,7 +102,7 @@ export class ItemCaptureRegistry {
         name: string,
         hash: string,
         displayName: string | null,
-        needsRepair: boolean
+        expectedInteractData: InteractDataExpectation | undefined
     ): void {
         if (this.byHash[hash] !== undefined) return; // first declaration wins
         if (this.nameToHash[name] !== undefined) return;
@@ -91,7 +111,7 @@ export class ItemCaptureRegistry {
             snbt: "",
             displayName: displayName ?? "",
             seeded: true,
-            needsRepair,
+            expectedInteractData,
         };
         this.nameToHash[name] = hash;
         if (displayName !== null && this.seededDisplayNames[displayName] === undefined) {
@@ -104,7 +124,12 @@ export class ItemCaptureRegistry {
         const hash = canonicalItemKey(getItemFromSnbt(normalizedSnbt));
         const existing = this.byHash[hash];
         if (existing !== undefined) {
-            if (existing.seeded && existing.needsRepair === true) {
+            this.capturedNames[existing.name] = true;
+            if (
+                existing.seeded &&
+                existing.expectedInteractData !== undefined &&
+                !itemInteractDataMatches(normalizedSnbt, existing.expectedInteractData)
+            ) {
                 existing.snbt = normalizedSnbt;
                 existing.displayName = displayNameHint;
                 existing.seeded = false;
@@ -142,6 +167,7 @@ export class ItemCaptureRegistry {
             inventorySlot,
         };
         this.nameToHash[name] = hash;
+        this.capturedNames[name] = true;
         return name;
     }
 
@@ -177,6 +203,18 @@ export class ItemCaptureRegistry {
             out.push(this.byHash[hash]);
         }
         return out;
+    }
+
+    capturedItemNames(): string[] {
+        return Object.keys(this.capturedNames);
+    }
+
+    capturedInteractData(name: string): string | null {
+        const hash = this.nameToHash[name];
+        const snbt = hash === undefined ? "" : this.byHash[hash]?.snbt;
+        return snbt === undefined || snbt.length === 0
+            ? null
+            : extractInteractDataSnbt(snbt);
     }
 
     size(): number {
@@ -537,6 +575,40 @@ export function prettySnbt(snbt: string): string {
     }
 }
 
+export function itemInteractDataMatches(
+    itemSnbt: string,
+    expected: InteractDataExpectation
+): boolean {
+    if (expected.kind === "uncached") return false;
+    const observed = interactDataTag(itemSnbt);
+    if (expected.kind === "absent") return observed === null;
+    if (observed === null) return false;
+    return canonicalSnbt(observed) === canonicalSnbt(expected.snbt);
+}
+
+function interactDataTag(itemSnbt: string): unknown | null {
+    try {
+        const item = htsw.nbt.parseSnbtText(itemSnbt) as TagLike;
+        return (
+            tagChild(
+                tagChild(tagChild(item, "tag"), "ExtraAttributes"),
+                "interact_data"
+            ) ?? null
+        );
+    } catch (_error) {
+        return null;
+    }
+}
+
+function canonicalSnbt(value: unknown): string | null {
+    try {
+        const parsed = typeof value === "string" ? htsw.nbt.parseSnbtText(value) : value;
+        return stableStringify(parsed);
+    } catch (_error) {
+        return null;
+    }
+}
+
 export function portableItemSnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
@@ -547,6 +619,7 @@ export function portableItemSnbt(snbt: string): string {
     } catch (_error) {
         return snbt;
     }
+
 }
 
 export function normalizeItemSnbtForExport(snbt: string): string {
@@ -641,6 +714,88 @@ export async function captureItemFromOpenEditorField(
     }
 
     return registered;
+}
+
+export async function observeItemFromOpenEditorField(
+    ctx: TaskContext,
+    fieldName: string,
+    displayNameHint: string
+): Promise<ItemFieldObservation | null> {
+    const itemFieldSlot = ctx.tryGetItemSlot(fieldName);
+    if (itemFieldSlot === null) return null;
+
+    itemFieldSlot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+
+    try {
+        const currentItemSlot = ctx.tryGetMenuItemSlot("Current Item");
+        if (currentItemSlot === null) {
+            ctx.displayMessage(
+                `&7[item-capture] &eNo "Current Item" slot for "${displayNameHint}".`
+            );
+            return null;
+        }
+
+        const actionItemCount = getStackCount(currentItemSlot.getItem());
+        const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
+        const targetKey = mergeKey(currentSnbt);
+        const targetMergeKey = stackMergeCandidateKey(currentSnbt);
+        if (targetKey === null) {
+            ctx.displayMessage(
+                `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
+            );
+            return null;
+        }
+
+        const inventoryView: InventoryView = "openContainer";
+        const originalInventory = snapshotOpenContainerInventory();
+        try {
+            await clearMergeCandidates(
+                ctx,
+                inventoryView,
+                originalInventory,
+                targetKey,
+                targetMergeKey
+            );
+
+            if (isInventoryFull(inventoryView)) {
+                sendCreativeInventoryAction(ctx, SCRATCH_PACKET_SLOT, null);
+                await waitForSetSlotAck(ctx, "scratch clear ack");
+                await waitForInventorySlotMatch(
+                    ctx,
+                    inventoryView,
+                    SCRATCH_PACKET_SLOT,
+                    null,
+                    0
+                );
+            }
+
+            const captureBaseline = snapshotOpenContainerInventory();
+            currentItemSlot.click();
+            const captured = await waitForCapturedInventoryChange(
+                ctx,
+                inventoryView,
+                captureBaseline,
+                targetKey,
+                actionItemCount
+            );
+            if (captured === null) {
+                ctx.displayMessage(
+                    `&7[item-capture] &eNo inventory change for "${displayNameHint}".`
+                );
+                return null;
+            }
+
+            return {
+                snbt: captured.snbt,
+                canonicalKey: canonicalItemKey(getItemFromSnbt(captured.snbt)),
+            };
+        } finally {
+            await restoreInventoryToSnapshot(ctx, originalInventory, inventoryView);
+        }
+    } finally {
+        await clickGoBack(ctx);
+    }
 }
 
 function inventoryContainerSlot(slotId: number): number {

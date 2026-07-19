@@ -37,7 +37,8 @@ type ExportMenuOptions = {
  * item file is written exactly once across the whole batch).
  */
 type ExportMenuSharedState = {
-    itemCaptures: ItemCaptureRegistry;
+    actionItemCaptures: ItemCaptureRegistry;
+    slotItemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
 };
 
@@ -58,7 +59,7 @@ async function exportMenu(
     shared: ExportMenuSharedState
 ): Promise<void> {
     const { name } = options;
-    const { itemCaptures, writtenItems } = shared;
+    const { actionItemCaptures, slotItemCaptures, writtenItems } = shared;
 
     // A menu already declared in an INCLUDED file updates in place: the
     // entry is upserted into its declaring import.json, and since every
@@ -80,7 +81,14 @@ async function exportMenu(
         throw new Error(`No menu named "${name}" exists in this housing.`);
     }
 
-    const live = await readLiveMenu(ctx, options.onReadProgress);
+    const live = await readLiveMenu(
+        ctx,
+        {
+            itemReadMode: "export",
+            itemCaptures: actionItemCaptures,
+        },
+        options.onReadProgress
+    );
 
     const slug = canonicalSlug(name);
     const menuRel = inSectionFolder ? slug : `menus/${slug}`;
@@ -97,13 +105,16 @@ async function exportMenu(
             nbt: htsw.nbt.parseSnbtText(liveSlot.snbt) as MenuSlot["nbt"],
             ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
         });
+        const itemName = slotItemCaptures.register(
+            liveSlot.snbt,
+            liveSlot.nameHint
+        );
         // Read-only (deep read) records the live menu in the cache but writes no
         // item/.htsl/import.json files.
         if (options.readOnly !== undefined) continue;
 
         // Item: deduped by content into a shared items/<name>.snbt, written
         // before the json references it so the reference is never dangling.
-        const itemName = itemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
         const nbtRel = `items/${itemName}.snbt`;
         // Keyed by absolute path, not item name: menus in one batch can be
         // declared in different files, and each base dir needs its own copy
@@ -175,17 +186,15 @@ async function exportMenu(
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 }
 
-// Menus read each slot's item NBT straight off the live menu, so unlike the
-// action-list types they don't pull items through the inventory — no snapshot,
-// no batch item flush. Each slot item is deduped and written inline instead.
 export const readMenus = makeReadHouse<string>({
     type: "MENU",
     noun: "menu",
     list: listAllMenuNames,
     referencesExist: menuExportReferencesExist,
+    capturesActionItems: true,
     exportSummary: (state) => {
-        const count = state.itemCaptures.size();
-        return ` (${count} unique item${count === 1 ? "" : "s"})`;
+        const count = state.menuSlotItemCaptures.size();
+        return ` (${count} unique slot item${count === 1 ? "" : "s"})`;
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportMenu(
@@ -197,6 +206,10 @@ export const readMenus = makeReadHouse<string>({
                 readOnly: options.readOnly,
                 onReadProgress,
             },
-            { itemCaptures: state.itemCaptures, writtenItems: state.writtenItems }
+            {
+                actionItemCaptures: state.itemCaptures,
+                slotItemCaptures: state.menuSlotItemCaptures,
+                writtenItems: state.writtenItems,
+            }
         ),
 });

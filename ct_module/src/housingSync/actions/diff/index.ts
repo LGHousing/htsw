@@ -26,6 +26,7 @@ import type { ChildActionListName, ChildListName } from "../../actionPath";
 import type { Observed, ObservedActionSlot } from "../../observedActions";
 import type { UiFieldKind } from "../../fields/loreSpecs";
 import { isChildListFieldKind } from "../../fields/loreSpecs";
+import type { ItemDiffContext } from "./itemDiffContext";
 
 type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
@@ -67,6 +68,28 @@ const FIELD_KIND_COST: Record<string, number> = {
 
 // Fixed overhead for opening an action editor and going back (only paid if any field differs)
 const EDIT_OPEN_CLOSE_COST = 2;
+
+function itemActionDiffers(
+    itemDiff: ItemDiffContext | undefined,
+    observed: Action | Observed<Action>,
+    desired: Action
+): boolean {
+    return (
+        itemDiff?.hasAction(desired) === true ||
+        itemDiff?.actionsDiffer(observed, desired) === true
+    );
+}
+
+function itemConditionDiffers(
+    itemDiff: ItemDiffContext | undefined,
+    observed: Condition | null,
+    desired: Condition
+): boolean {
+    return (
+        itemDiff?.hasCondition(desired) === true ||
+        itemDiff?.conditionsDiffer(observed, desired) === true
+    );
+}
 
 function getFieldValue(value: object, key: string): unknown {
     return (value as { [key: string]: unknown })[key];
@@ -117,8 +140,13 @@ function circularMoveDistance(from: number, to: number, listLength: number): num
     return Math.min(directDistance, listLength - directDistance);
 }
 
-function conditionCost(observed: Condition, desired: Condition): number {
-    if (conditionsEqual(observed, desired)) {
+function conditionCost(
+    observed: Condition,
+    desired: Condition,
+    itemDiff?: ItemDiffContext
+): number {
+    const itemDiffers = itemConditionDiffers(itemDiff, observed, desired);
+    if (!itemDiffers && conditionsEqual(observed, desired)) {
         return 0;
     }
 
@@ -135,6 +163,7 @@ function conditionCost(observed: Condition, desired: Condition): number {
 
     return (
         fieldDifferenceCost(observed, desired, observed.type, scalarProps) +
+        (itemDiffers ? FIELD_KIND_COST.item : 0) +
         (observed.inverted === desired.inverted ? 0 : 1) +
         (observed.note === desired.note ? 0 : 1)
     );
@@ -142,7 +171,8 @@ function conditionCost(observed: Condition, desired: Condition): number {
 
 function conditionListCost(
     observed: Array<Condition | null>,
-    desired: Condition[]
+    desired: Condition[],
+    itemDiff?: ItemDiffContext
 ): number {
     const unmatchedObserved = observed.map((condition, index) => ({ index, condition }));
     const unmatchedDesired = desired.map((condition, index) => ({ index, condition }));
@@ -155,7 +185,14 @@ function conditionListCost(
         const desiredEntry = unmatchedDesired[desiredIndex];
         let observedIndex = -1;
         for (let i = 0; i < unmatchedObserved.length; i++) {
-            if (conditionsEqual(unmatchedObserved[i].condition, desiredEntry.condition)) {
+            if (
+                !itemConditionDiffers(
+                    itemDiff,
+                    unmatchedObserved[i].condition,
+                    desiredEntry.condition
+                ) &&
+                conditionsEqual(unmatchedObserved[i].condition, desiredEntry.condition)
+            ) {
                 observedIndex = i;
                 break;
             }
@@ -200,7 +237,11 @@ function conditionListCost(
                 candidates.push({
                     observed: observedEntry,
                     desired: desiredEntry,
-                    cost: conditionCost(observedEntry.condition, desiredEntry.condition),
+                    cost: conditionCost(
+                        observedEntry.condition,
+                        desiredEntry.condition,
+                        itemDiff
+                    ),
                 });
             }
         }
@@ -257,57 +298,74 @@ function indexOfAction(
 
 function indexOfExactActionAtDesiredIndex(
     current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry
-): number {
-    return indexOfAction(
-        current,
-        (entry) =>
-            entry.index === desired.index && actionsEqual(entry.action, desired.action)
-    );
-}
-
-function indexOfExactActionAtAnyIndex(
-    current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry
-): number {
-    return indexOfAction(current, (entry) => actionsEqual(entry.action, desired.action));
-}
-
-function indexOfNoteOnlyActionAtDesiredIndex(
-    current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry
+    desired: DesiredActionEntry,
+    itemDiff?: ItemDiffContext
 ): number {
     return indexOfAction(
         current,
         (entry) =>
             entry.index === desired.index &&
+            !itemActionDiffers(itemDiff, entry.action, desired.action) &&
+            actionsEqual(entry.action, desired.action)
+    );
+}
+
+function indexOfExactActionAtAnyIndex(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry,
+    itemDiff?: ItemDiffContext
+): number {
+    return indexOfAction(
+        current,
+        (entry) =>
+            !itemActionDiffers(itemDiff, entry.action, desired.action) &&
+            actionsEqual(entry.action, desired.action)
+    );
+}
+
+function indexOfNoteOnlyActionAtDesiredIndex(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry,
+    itemDiff?: ItemDiffContext
+): number {
+    return indexOfAction(
+        current,
+        (entry) =>
+            entry.index === desired.index &&
+            !itemActionDiffers(itemDiff, entry.action, desired.action) &&
             actionOnlyNoteDiffers(desired.action, entry.action)
     );
 }
 
 function indexOfNoteOnlyActionAtAnyIndex(
     current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry
+    desired: DesiredActionEntry,
+    itemDiff?: ItemDiffContext
 ): number {
-    return indexOfAction(current, (entry) =>
-        actionOnlyNoteDiffers(desired.action, entry.action)
+    return indexOfAction(
+        current,
+        (entry) =>
+            !itemActionDiffers(itemDiff, entry.action, desired.action) &&
+            actionOnlyNoteDiffers(desired.action, entry.action)
     );
 }
 
 function actionCost(
     current: KnownCurrentAction,
     desired: DesiredActionEntry,
-    listLength: number
+    listLength: number,
+    itemDiff?: ItemDiffContext
 ): number {
     if (current.action.type !== desired.action.type) {
         return Number.POSITIVE_INFINITY;
     }
 
-    if (actionsEqual(current.action, desired.action)) {
+    const itemDiffers = itemActionDiffers(itemDiff, current.action, desired.action);
+    if (!itemDiffers && actionsEqual(current.action, desired.action)) {
         return 0;
     }
 
-    if (actionOnlyNoteDiffers(desired.action, current.action)) {
+    if (!itemDiffers && actionOnlyNoteDiffers(desired.action, current.action)) {
         return NOTE_ONLY_COST;
     }
 
@@ -323,11 +381,12 @@ function actionCost(
         current.action.type,
         scalarProps
     );
+    const forcedItemCost = itemDiffers ? FIELD_KIND_COST.item : 0;
     const noteCost = current.action.note === desired.action.note ? 0 : 1;
 
     // Add open/close overhead only if any editing is needed
-    if (scalarCost > 0 || noteCost > 0) {
-        cost += EDIT_OPEN_CLOSE_COST + scalarCost + noteCost;
+    if (scalarCost > 0 || noteCost > 0 || forcedItemCost > 0) {
+        cost += EDIT_OPEN_CLOSE_COST + scalarCost + noteCost + forcedItemCost;
     }
 
     for (const prop of childListNames) {
@@ -344,12 +403,14 @@ function actionCost(
         if (prop === "conditions") {
             cost += conditionListCost(
                 observedValue as Array<Condition | null>,
-                desiredValue as Condition[]
+                desiredValue as Condition[],
+                itemDiff
             );
         } else {
             cost += actionListCost(
                 observedValue as Array<Observed<Action> | null>,
-                desiredValue as Action[]
+                desiredValue as Action[],
+                itemDiff
             );
         }
     }
@@ -360,7 +421,8 @@ function actionCost(
 function matchActions(
     current: KnownCurrentAction[],
     desired: Action[],
-    listLength: number
+    listLength: number,
+    itemDiff?: ItemDiffContext
 ): {
     matches: ActionMatch[];
     unmatchedCurrent: KnownCurrentAction[];
@@ -374,10 +436,15 @@ function matchActions(
         const desiredEntry = unmatchedDesired[desiredIndex];
         let currentIndex = indexOfExactActionAtDesiredIndex(
             unmatchedCurrent,
-            desiredEntry
+            desiredEntry,
+            itemDiff
         );
         if (currentIndex === -1) {
-            currentIndex = indexOfExactActionAtAnyIndex(unmatchedCurrent, desiredEntry);
+            currentIndex = indexOfExactActionAtAnyIndex(
+                unmatchedCurrent,
+                desiredEntry,
+                itemDiff
+            );
         }
         if (currentIndex === -1) {
             continue;
@@ -400,12 +467,14 @@ function matchActions(
         const desiredEntry = unmatchedDesired[desiredIndex];
         let currentIndex = indexOfNoteOnlyActionAtDesiredIndex(
             unmatchedCurrent,
-            desiredEntry
+            desiredEntry,
+            itemDiff
         );
         if (currentIndex === -1) {
             currentIndex = indexOfNoteOnlyActionAtAnyIndex(
                 unmatchedCurrent,
-                desiredEntry
+                desiredEntry,
+                itemDiff
             );
         }
         if (currentIndex === -1) {
@@ -456,7 +525,7 @@ function matchActions(
                     desiredIndex: desiredEntry.index,
                     desired: desiredEntry.action,
                     kind: "same_type",
-                    cost: actionCost(positionalMatch, desiredEntry, listLength),
+                    cost: actionCost(positionalMatch, desiredEntry, listLength, itemDiff),
                 });
             }
         }
@@ -479,7 +548,12 @@ function matchActions(
                     candidates.push({
                         current: currentEntry,
                         desired: desiredEntry,
-                        cost: actionCost(currentEntry, desiredEntry, listLength),
+                        cost: actionCost(
+                            currentEntry,
+                            desiredEntry,
+                            listLength,
+                            itemDiff
+                        ),
                     });
                 }
             }
@@ -531,14 +605,15 @@ function matchActions(
 
 function actionListCost(
     observed: Array<Observed<Action> | null>,
-    desired: Action[]
+    desired: Action[],
+    itemDiff?: ItemDiffContext
 ): number {
     const current = baselineActionListFromActions(observed);
     const knownCurrent = current.filter(
         (entry): entry is KnownCurrentAction => entry.action !== null
     );
 
-    const matchResult = matchActions(knownCurrent, desired, observed.length);
+    const matchResult = matchActions(knownCurrent, desired, observed.length, itemDiff);
 
     let cost = matchResult.matches.reduce((total, match) => total + match.cost, 0);
     cost += observed.filter((entry) => entry === null).length;
@@ -579,7 +654,8 @@ export function baselineActionListFromActions(
 function childActionListDiff(
     prop: ChildActionListName,
     observed: unknown,
-    desired: unknown
+    desired: unknown,
+    itemDiff?: ItemDiffContext
 ): ChildListDiff | null {
     const observedList = Array.isArray(observed)
         ? (observed as Array<Observed<Action> | null>)
@@ -587,7 +663,8 @@ function childActionListDiff(
     const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
     const diff = diffChildActionList(
         baselineActionListFromActions(observedList),
-        desiredList
+        desiredList,
+        itemDiff
     );
     if (diff.operations.length === 0) return null;
     return { prop, diff };
@@ -595,7 +672,8 @@ function childActionListDiff(
 
 function childConditionListDiff(
     observed: unknown,
-    desired: unknown
+    desired: unknown,
+    itemDiff?: ItemDiffContext
 ): ChildListDiff | null {
     const observedList = Array.isArray(observed)
         ? (observed as Array<Condition | null>)
@@ -603,7 +681,8 @@ function childConditionListDiff(
     const desiredList = Array.isArray(desired) ? (desired as Condition[]) : [];
     const diff = diffConditionList(
         baselineConditionListFromConditions(observedList),
-        desiredList
+        desiredList,
+        itemDiff
     );
     if (diff.operations.length === 0) return null;
     return { prop: "conditions", diff };
@@ -611,7 +690,8 @@ function childConditionListDiff(
 
 function getChildListDiffs(
     current: KnownCurrentAction,
-    desired: Action
+    desired: Action,
+    itemDiff?: ItemDiffContext
 ): ChildListDiff[] {
     const observed = current.action;
     if (observed.type !== desired.type) return [];
@@ -622,15 +702,16 @@ function getChildListDiffs(
         const desiredList = getFieldValue(desired, field.prop);
         const diff =
             field.kind === "conditionList"
-                ? childConditionListDiff(observedList, desiredList)
-                : childActionListDiff(field.prop, observedList, desiredList);
+                ? childConditionListDiff(observedList, desiredList, itemDiff)
+                : childActionListDiff(field.prop, observedList, desiredList, itemDiff);
         if (diff !== null) out.push(diff);
     }
     return out;
 }
 
 function createEditOperation(
-    match: ActionMatch
+    match: ActionMatch,
+    itemDiff?: ItemDiffContext
 ): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
     return {
@@ -642,12 +723,15 @@ function createEditOperation(
         desired: match.desired,
         noteOnly,
         noteDiffers: match.current.action.note !== match.desired.note,
-        childListDiffs: noteOnly ? [] : getChildListDiffs(match.current, match.desired),
+        childListDiffs: noteOnly
+            ? []
+            : getChildListDiffs(match.current, match.desired, itemDiff),
     };
 }
 
 function createChildListEditOperation(
-    match: ActionMatch
+    match: ActionMatch,
+    itemDiff?: ItemDiffContext
 ): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
     return {
@@ -659,27 +743,33 @@ function createChildListEditOperation(
         desired: match.desired,
         noteOnly,
         noteDiffers: match.current.action.note !== match.desired.note,
-        childListDiffs: [],
+        childListDiffs: noteOnly
+            ? []
+            : getChildListDiffs(match.current, match.desired, itemDiff),
     };
 }
 
 export function diffActionList(
     current: CurrentActionListEntry[],
-    desired: Action[]
+    desired: Action[],
+    itemDiff?: ItemDiffContext
 ): ActionListDiff {
-    return diffActionListCore(current, desired, createEditOperation);
+    return diffActionListCore(current, desired, createEditOperation, itemDiff);
 }
 
 function diffChildActionList(
     current: CurrentActionListEntry[],
-    desired: Action[]
+    desired: Action[],
+    itemDiff?: ItemDiffContext
 ): ActionListDiff {
-    return diffActionListCore(current, desired, createChildListEditOperation);
+    return diffActionListCore(current, desired, createChildListEditOperation, itemDiff);
 }
 
 function editOpIsObservablyNoop(
-    op: Extract<ActionListOperation, { kind: "edit" }>
+    op: Extract<ActionListOperation, { kind: "edit" }>,
+    itemDiff?: ItemDiffContext
 ): boolean {
+    if (itemActionDiffers(itemDiff, op.baselineAction, op.desired)) return false;
     if (op.noteDiffers) return false;
     if (op.childListDiffs.length > 0) return false;
     const scalarFields = getActionScalarLoreFields(op.baselineAction.type);
@@ -702,13 +792,17 @@ function editOpIsObservablyNoop(
 function diffActionListCore(
     current: CurrentActionListEntry[],
     desired: Action[],
-    createEdit: (match: ActionMatch) => Extract<ActionListOperation, { kind: "edit" }>
+    createEdit: (
+        match: ActionMatch,
+        itemDiff?: ItemDiffContext
+    ) => Extract<ActionListOperation, { kind: "edit" }>,
+    itemDiff?: ItemDiffContext
 ): ActionListDiff {
     const knownCurrent = current.filter(
         (entry): entry is KnownCurrentAction => entry.action !== null
     );
     const unknownCurrent = current.filter((entry) => entry.action === null);
-    const matchResult = matchActions(knownCurrent, desired, current.length);
+    const matchResult = matchActions(knownCurrent, desired, current.length, itemDiff);
     const operations: ActionListOperation[] = [];
 
     for (const currentEntry of unknownCurrent) {
@@ -752,9 +846,12 @@ function diffActionListCore(
             currentOrder.splice(targetIndex, 0, match);
         }
 
-        if (!actionsEqual(match.current.action, match.desired)) {
-            const editOp = createEdit(match);
-            if (editOpIsObservablyNoop(editOp)) {
+        if (
+            itemActionDiffers(itemDiff, match.current.action, match.desired) ||
+            !actionsEqual(match.current.action, match.desired)
+        ) {
+            const editOp = createEdit(match, itemDiff);
+            if (editOpIsObservablyNoop(editOp, itemDiff)) {
                 continue;
             }
             operations.push(editOp);

@@ -604,6 +604,32 @@ describe("import.json diagnostics readability", () => {
         expect(result.value.length).toBe(1);
     });
 
+    it("resolves a direct SNBT item from an explicit action-file path", () => {
+        const result = parseImportables(caseDirPath("direct_snbt"));
+        const sourcePath = resolve(
+            "test",
+            "cases",
+            "importjson",
+            "direct_snbt",
+            "actions",
+            "main.htsl"
+        );
+
+        const resolved = htsw.items.resolveItemReferenceFromSourcePath(
+            result.gcx,
+            new Map(),
+            sourcePath,
+            "items/stone.snbt"
+        );
+
+        expect(resolved?.kind).toBe("snbtPath");
+        if (resolved?.kind === "snbtPath") {
+            expect(resolved.path).toBe(
+                resolve(dirname(sourcePath), "items", "stone.snbt")
+            );
+        }
+    });
+
     it("reports missing direct SNBT item paths", () => {
         const result = parseImportables(caseFilePath("missing_direct_snbt"));
 

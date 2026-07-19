@@ -1,14 +1,91 @@
-import type { Importable } from "htsw/types";
+import type { Importable, ImportableItem } from "htsw/types";
 
-import { HOUSE_READERS } from "../../importables/houseReaders";
-import { houseTypeScanned, listCachedImportables } from "../../importCache/cache";
+import {
+    ALL_IMPORTABLE_TYPES,
+    HOUSE_READERS,
+} from "../../importables/houseReaders";
+import {
+    getImportCacheWriteRevision,
+    houseTypeScanned,
+    listCachedImportables,
+    readImportableCache,
+} from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
 import { buildCacheStatusRow } from "../../importCache/status";
 import type { LinkStatusKey } from "./linkStatus";
+import { itemDependencyIndexFor } from "../../importables/itemDependencyIndex";
 
 type HousePresenceState = "unscanned" | "present" | "absent";
+
+type ItemReferenceEvidence = {
+    housingUuid: string;
+    cacheRevision: number;
+    fingerprintsByName: Map<string, string[]>;
+};
+
+let itemReferenceEvidence: ItemReferenceEvidence | null = null;
+
+function cachedItemReferenceFingerprints(
+    housingUuid: string,
+    itemName: string
+): readonly string[] {
+    const cacheRevision = getImportCacheWriteRevision();
+    if (
+        itemReferenceEvidence === null ||
+        itemReferenceEvidence.housingUuid !== housingUuid ||
+        itemReferenceEvidence.cacheRevision !== cacheRevision
+    ) {
+        const fingerprintsByName = new Map<string, string[]>();
+        for (const type of ALL_IMPORTABLE_TYPES) {
+            if (type === "ITEM") continue;
+            for (const listed of listCachedImportables(housingUuid, type)) {
+                const cached = readImportableCache(housingUuid, type, listed.name);
+                const dependencies = cached?.itemDependencies?.dependencies;
+                if (dependencies === undefined) continue;
+                for (const dependency of dependencies) {
+                    if (dependency.target.kind !== "named") continue;
+                    const existing = fingerprintsByName.get(dependency.target.name);
+                    if (existing === undefined) {
+                        fingerprintsByName.set(dependency.target.name, [
+                            dependency.fingerprint,
+                        ]);
+                    } else if (existing.indexOf(dependency.fingerprint) < 0) {
+                        existing.push(dependency.fingerprint);
+                    }
+                }
+            }
+        }
+        itemReferenceEvidence = {
+            housingUuid,
+            cacheRevision,
+            fingerprintsByName,
+        };
+    }
+    return itemReferenceEvidence.fingerprintsByName.get(itemName) ?? [];
+}
+
+function referencedItemStatus(
+    housingUuid: string,
+    item: ImportableItem
+): { key: LinkStatusKey; tooltip: string } | null {
+    const fingerprints = cachedItemReferenceFingerprints(housingUuid, item.name);
+    if (fingerprints.length === 0) return null;
+    const current = itemDependencyIndexFor(item)?.fingerprintOfItem(item);
+    if (current === undefined) {
+        return { key: "unknown", tooltip: "Could not compare this referenced item" };
+    }
+    for (const fingerprint of fingerprints) {
+        if (fingerprint !== current) {
+            return {
+                key: "differs",
+                tooltip: "Referenced item differs from cached house content",
+            };
+        }
+    }
+    return { key: "matches", tooltip: "Referenced item matches cached house content" };
+}
 
 function cacheStateForImportable(importable: Importable) {
     const uuid = getHousingUuid();
@@ -45,13 +122,17 @@ export function importableLinkStatus(
         if (baseline === "modified") {
             return { key: "differs", tooltip: "Import will update the house from these files" };
         }
+        if (imp.type === "ITEM") {
+            const referenced = referencedItemStatus(uuid, imp);
+            if (referenced !== null) return referenced;
+        }
         // Never imported: file-side only as far as we can tell (items can't be
         // listed from a house to confirm otherwise). Show it as not-yet-linked
         // rather than "unknown" — import is the action that places/links it.
         return {
             key: "oneSided",
             tooltip: imp.type === "ITEM"
-                ? "Items can't be listed from a house — import to place it"
+                ? "Not found in cached house content"
                 : "Not listed from a house — import to place it",
         };
     }

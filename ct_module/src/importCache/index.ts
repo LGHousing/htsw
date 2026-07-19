@@ -13,10 +13,8 @@ export {
     readImportableCache,
     deleteImportableCache,
 } from "./cache";
-
 export {
     importableHash,
-    clickActionsHash,
 } from "./hash";
 
 export {

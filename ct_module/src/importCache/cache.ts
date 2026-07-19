@@ -14,6 +14,7 @@ import {
 } from "./paths";
 import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
+import type { ItemDependencySnapshot } from "../importables/itemDependencyIndex";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -81,6 +82,13 @@ export type ImportableCacheEntry = {
      * and the source diff to validate sub-trees cheaply.
      */
     lists: Record<string, string[]>;
+    /** Referenced item contents verified along with this importable. */
+    itemDependencies?: ItemDependencySnapshot;
+};
+
+export type ImportableCacheWriteOptions = {
+    quiet?: boolean;
+    itemDependencies?: ItemDependencySnapshot;
 };
 
 // A presence record: "this importable exists in the house" with no content yet
@@ -105,7 +113,8 @@ type PresenceRecord = {
  */
 function buildImportableCacheEntry(
     importable: Importable,
-    writer: CacheWriter
+    writer: CacheWriter,
+    itemDependencies?: ItemDependencySnapshot
 ): ImportableCacheEntry {
     return {
         schemaVersion: CACHE_SCHEMA_VERSION,
@@ -117,6 +126,7 @@ function buildImportableCacheEntry(
         importable,
         hash: importableHash(importable),
         lists: listHashes(importable),
+        ...(itemDependencies !== undefined ? { itemDependencies } : {}),
     };
 }
 
@@ -144,10 +154,19 @@ export function writeImportableCache(
     housingUuid: string,
     importable: Importable,
     writer: CacheWriter,
-    quiet?: boolean
+    quietOrOptions?: boolean | ImportableCacheWriteOptions,
+    itemDependencies?: ItemDependencySnapshot
 ): boolean {
+    const options: ImportableCacheWriteOptions =
+        typeof quietOrOptions === "boolean"
+            ? { quiet: quietOrOptions, itemDependencies }
+            : quietOrOptions ?? {};
     const path = cachePathFor(housingUuid, importable);
-    const entry = buildImportableCacheEntry(importable, writer);
+    const entry = buildImportableCacheEntry(
+        importable,
+        writer,
+        options.itemDependencies
+    );
     try {
         if (!atomicWriteText(path, JSON.stringify(entry, null, 4))) {
             throw new Error("write failed");
@@ -167,7 +186,7 @@ export function writeImportableCache(
             icon: importable.type === "FUNCTION" ? importable.icon : undefined,
             color: houseDisplayColor(importable),
         });
-        if (quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
+        if (options.quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
         return true;
     } catch (error) {
         ctx.displayMessage(`&7[cache] &eFailed to write cache at ${path}: ${error}`);
@@ -188,11 +207,12 @@ export async function tryWriteImportableCache(
     ctx: TaskContext,
     importable: Importable,
     writer: CacheWriter,
-    cachedUuid?: string
+    cachedUuid?: string,
+    options?: ImportableCacheWriteOptions
 ): Promise<void> {
     try {
         const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        writeImportableCache(ctx, housingUuid, importable, writer);
+        writeImportableCache(ctx, housingUuid, importable, writer, options);
     } catch (error) {
         if (writer === "exporter") {
             ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);

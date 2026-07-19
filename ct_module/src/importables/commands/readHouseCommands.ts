@@ -43,6 +43,7 @@ async function readCommand(
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
     const actions = await readActionListFully(ctx, {
+        itemReadMode: "export",
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {
@@ -81,6 +82,7 @@ async function scanCommand(
         ctx,
         { kind: "full" },
         {
+            itemReadMode: "export",
             itemCaptures: state.itemCaptures,
             exactHydrationEstimate: true,
             events,
@@ -119,6 +121,7 @@ async function hydrateCommand(
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
     const actions = await completeActionListScan(ctx, pending.scan, {
+        itemReadMode: "export",
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,

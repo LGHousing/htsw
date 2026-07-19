@@ -14,6 +14,9 @@ import { buildTrustPlan, tryWriteImportableCache } from "../importCache";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "./identity";
 import { createItemRegistry } from "./itemRegistry";
+import { createItemDependencyIndex } from "./itemDependencyIndex";
+import { createItemDiffContext } from "./itemDiff";
+import { createItemFieldObservationRecorder } from "../housingSync/itemFieldObservations";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import { resetMenuNameSession } from "./menus/listMenus";
 import { resetCommandNameSession } from "./commands/listCommands";
@@ -128,7 +131,13 @@ export async function importSelectedImportables(
             selection.sourcePath
         );
     const items = createItemRegistry(parsed.value, parsed.gcx);
+    const itemDependencies = createItemDependencyIndex(parsed.value, items);
     items.cachedHousingUuid = selection.housingUuid;
+    if (itemDependencies.cycles.length > 0) {
+        throw Diagnostic.error(
+            `Item click actions form a cycle: ${itemDependencies.cycles[0].itemNames.join(" -> ")}`
+        );
+    }
 
     const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
         parsed.value,
@@ -149,6 +158,7 @@ export async function importSelectedImportables(
 
     const expansion = expandClickActionItemDependencies(
         items,
+        itemDependencies,
         teamGroupExpansion.importables,
         selection.housingUuid
     );
@@ -171,7 +181,25 @@ export async function importSelectedImportables(
         selection.housingUuid,
         orderedImportables,
         selection.trustMode,
-        selection.sourcePath
+        selection.sourcePath,
+        itemDependencies
+    );
+
+    const itemFieldObservations = selection.trustMode
+        ? undefined
+        : createItemFieldObservationRecorder();
+    const itemDiff = createItemDiffContext(
+        orderedImportables,
+        itemDependencies,
+        items,
+        importable => {
+            const identity = importableIdentity(importable);
+            const entry = trustPlan.importables.get(
+                importableKey(importable.type, identity)
+            )?.entry;
+            return entry?.itemDependencies;
+        },
+        itemFieldObservations
     );
 
     const events = selection.events;
@@ -182,6 +210,10 @@ export async function importSelectedImportables(
         trust: trustPlan,
         conflicts: [],
         events,
+        actionItemRead: { mode: "sync" },
+        itemDependencies,
+        itemDiff,
+        itemFieldObservations,
         npcLookup: createNpcLookupCache(),
     };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
@@ -235,12 +267,14 @@ export async function importSelectedImportables(
                 ctx,
                 row.importable,
                 "importer",
-                selection.housingUuid
+                selection.housingUuid,
+                { itemDependencies: itemDependencies.snapshotOf(row.importable) }
             );
             upsertHouseLockImportable(
                 selection.sourcePath,
                 selection.housingUuid,
-                row.importable
+                row.importable,
+                itemDependencies.snapshotOf(row.importable)
             );
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;
@@ -253,12 +287,14 @@ export async function importSelectedImportables(
                     ctx,
                     row.importable,
                     "importer",
-                    selection.housingUuid
+                    selection.housingUuid,
+                    { itemDependencies: itemDependencies.snapshotOf(row.importable) }
                 );
                 upsertHouseLockImportable(
                     selection.sourcePath,
                     selection.housingUuid,
-                    row.importable
+                    row.importable,
+                    itemDependencies.snapshotOf(row.importable)
                 );
                 events?.emit({
                     kind: "importableFinished",
@@ -358,13 +394,15 @@ export async function importSelectedImportables(
                     ctx,
                     row.importable,
                     "importer",
-                    selection.housingUuid
+                    selection.housingUuid,
+                    { itemDependencies: itemDependencies.snapshotOf(row.importable) }
                 );
             }
             upsertHouseLockImportable(
                 selection.sourcePath,
                 selection.housingUuid,
-                row.importable
+                row.importable,
+                itemDependencies.snapshotOf(row.importable)
             );
             events?.emit({
                 kind: "importableFinished",

@@ -5,8 +5,11 @@ import { type ItemRegistry } from "../../../importables/itemRegistry";
 import { canonicalizeItemFields } from "../../fields/canonicalizeItems";
 import {
     captureItemFromOpenEditorField,
+    observeItemFromOpenEditorField,
     type ItemCaptureRegistry,
 } from "../../itemCapture";
+import type { ItemReadOptions } from "../../context/actionReadContext";
+import type { ItemFieldObservationRecorder } from "../../itemFieldObservations";
 import {
     CONDITION_MAPPINGS,
     getConditionScalarLoreFields,
@@ -63,16 +66,14 @@ async function readConditionsListPage(
         });
 }
 
-export type ReadConditionListOptions = {
-    itemRegistry?: ItemRegistry;
-    itemCaptures?: ItemCaptureRegistry;
+export type ReadConditionListOptions = ItemReadOptions & {
     phaseUnits?: PhaseUnits;
     progress?: ProgressHandler;
 };
 
 export async function readConditionList(
     ctx: TaskContext,
-    options?: ReadConditionListOptions
+    options: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
     const observed = await readPaginatedList(ctx, CONDITION_LIST_CONFIG, () =>
         readConditionsListPage(ctx)
@@ -80,7 +81,7 @@ export async function readConditionList(
     await hydrateScalarConditions(ctx, observed, options);
     await captureConditionItems(ctx, observed, options);
     await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
-    canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
+    canonicalizeObservedConditionSlots(observed, options.itemRegistry);
     return observed;
 }
 
@@ -214,10 +215,15 @@ function conditionItemCaptureUnits(entry: ObservedConditionSlot): number {
 async function captureConditionItems(
     ctx: TaskContext,
     observed: readonly ObservedConditionSlot[],
-    options: ReadConditionListOptions | undefined
+    options: ReadConditionListOptions
 ): Promise<void> {
-    const registry = options?.itemCaptures;
-    if (registry === undefined) return;
+    const registry =
+        options.itemReadMode === "sync" ? undefined : options.itemCaptures;
+    const observations =
+        options.itemReadMode === "sync"
+            ? options.itemFieldObservations
+            : undefined;
+    if (registry === undefined && observations === undefined) return;
 
     const entries: ObservedConditionSlot[] = [];
     for (let i = 0; i < observed.length; i++) {
@@ -256,7 +262,14 @@ async function captureConditionItems(
 
     for (let i = 0; i < entries.length; i++) {
         emit();
-        await captureConditionItemFields(ctx, entries[i], observed.length, registry);
+        await captureConditionItemFields(
+            ctx,
+            entries[i],
+            observed.length,
+            registry,
+            observations,
+            options.itemReadMode === "export"
+        );
         completed++;
         completedCaptureUnits += conditionItemCaptureUnits(entries[i]);
         emit();
@@ -267,7 +280,9 @@ async function captureConditionItemFields(
     ctx: TaskContext,
     entry: ObservedConditionSlot,
     listLength: number,
-    registry: ItemCaptureRegistry
+    registry: ItemCaptureRegistry | undefined,
+    observations: ItemFieldObservationRecorder | undefined,
+    captureRequired: boolean
 ): Promise<void> {
     if (entry.condition === null) return;
     await goToPaginatedListPage(
@@ -290,16 +305,31 @@ async function captureConditionItemFields(
         const fields = getConditionItemFieldsForCapture(entry.condition.type);
         for (let i = 0; i < fields.length; i++) {
             const field = fields[i];
-            const displayName = (entry.condition as Record<string, unknown>)[field.prop];
-            if (typeof displayName !== "string" || displayName.length === 0) continue;
-            const captured = await captureItemFromOpenEditorField(
-                ctx,
-                field.label,
-                registry,
-                displayName
-            );
-            if (captured !== null) {
-                (entry.condition as Record<string, unknown>)[field.prop] = captured;
+            const value = (entry.condition as Record<string, unknown>)[field.prop];
+            const displayName = typeof value === "string" ? value : "";
+            if (registry !== undefined) {
+                const captured = await captureItemFromOpenEditorField(
+                    ctx,
+                    field.label,
+                    registry,
+                    displayName
+                );
+                if (captured !== null) {
+                    (entry.condition as Record<string, unknown>)[field.prop] = captured;
+                } else if (captureRequired) {
+                    throw new Error(
+                        `Could not capture the item in ${entry.condition.type}.${field.prop}.`
+                    );
+                }
+            } else if (observations !== undefined) {
+                const observation = await observeItemFromOpenEditorField(
+                    ctx,
+                    field.label,
+                    displayName
+                );
+                if (observation !== null) {
+                    observations.record(entry.condition, field.prop, observation);
+                }
             }
         }
     } finally {

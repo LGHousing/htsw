@@ -63,6 +63,7 @@ function sessionWithLock(
         },
         conflicts: [],
         events: undefined,
+        actionItemRead: { mode: "sync" },
         npcLookup: createNpcLookupCache(),
     };
 }

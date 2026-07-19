@@ -8,6 +8,7 @@ import {
 } from "../src/housingSync/actions/conditions/diff";
 import type { ConditionListOperation } from "../src/housingSync/actions/diff/types";
 import type { ObservedConditionSlot } from "../src/housingSync/observedActions";
+import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
 
 function obs(index: number, condition: Condition | null): ObservedConditionSlot {
     return { index, slotId: index, slot: null as never, condition };
@@ -60,6 +61,26 @@ function kindCounts(opsList: ConditionListOperation[]): Record<string, number> {
 }
 
 describe("diffConditionList", () => {
+    test("invalidated item references force an edit when the item name is unchanged", () => {
+        const observed = requireItem("key");
+        const desired = requireItem("key");
+        const itemDiff: ItemDiffContext = {
+            hasAction: () => false,
+            hasCondition: (condition) => condition === desired,
+            hasActionList: () => false,
+            actionsDiffer: () => false,
+            conditionsDiffer: () => false,
+        };
+
+        const result = diffConditionList(
+            currentConditionListFromSlots([obs(0, observed)]),
+            [desired],
+            itemDiff
+        ).operations;
+
+        expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0 });
+    });
+
     test("empty and identical lists produce no ops", () => {
         expect(ops([], [])).toEqual([]);
 

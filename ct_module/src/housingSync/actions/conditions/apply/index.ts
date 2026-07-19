@@ -12,20 +12,14 @@ import { appendConditionsToOpenConditionList } from "./conditionOps";
 import { ConditionListApplyRun } from "./run";
 import type { ApplyConditionListOptions } from "./types";
 
-export {
-    appendConditionsToOpenConditionList,
-    type ApplyConditionListOptions,
-};
+export { appendConditionsToOpenConditionList, type ApplyConditionListOptions };
 
 export async function applyConditionList(
     ctx: TaskContext,
     desired: Condition[],
     options: ApplyConditionListOptions
 ): Promise<void> {
-    const phaseUnits = estimateConditionListPhaseUnits(
-        desired,
-        options.baselineCurrent
-    );
+    const phaseUnits = estimateConditionListPhaseUnits(desired, options.baselineCurrent);
     const progress = options.progress;
     progress?.({
         phase: "reading",
@@ -35,7 +29,9 @@ export async function applyConditionList(
         sync: { completedUnits: 0, totalUnits: 1, parent: null },
     });
     const observed = await readConditionList(ctx, {
+        itemReadMode: "sync",
         itemRegistry: options.itemRegistry,
+        itemFieldObservations: options.itemFieldObservations,
         phaseUnits,
         progress,
     });
@@ -48,7 +44,11 @@ export async function applyConditionList(
         sync: { completedUnits: 1, totalUnits: 1, parent: null },
     });
 
-    const diff = diffConditionList(currentConditionListFromSlots(observed), desired);
+    const diff = diffConditionList(
+        currentConditionListFromSlots(observed),
+        desired,
+        options.itemDiff
+    );
     const run = new ConditionListApplyRun(ctx, observed, diff, options, phaseUnits);
     await run.apply();
 }

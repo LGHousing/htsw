@@ -63,6 +63,7 @@ async function readRegionActionList(
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
     const actions = await readActionListFully(ctx, {
+        itemReadMode: "export",
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {

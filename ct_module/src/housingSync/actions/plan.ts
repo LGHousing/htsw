@@ -62,13 +62,23 @@ export async function prereadActionList(
                       scope: progressScope,
                       progress: event,
                   });
+    const itemRead = options.session.actionItemRead.mode === "sync"
+        ? {
+              itemReadMode: "sync" as const,
+              itemRegistry: options.session.items,
+              itemFieldObservations: options.session.itemFieldObservations,
+          }
+        : {
+              itemReadMode: "verify" as const,
+              itemRegistry: options.session.items,
+              itemCaptures: options.session.actionItemRead.captures,
+          };
     const readOptions = {
-        itemRegistry: options.session.items,
+        ...itemRead,
         progress,
         phaseUnits,
         listPath: options.listPath,
         events: options.session.events,
-        itemCaptures: options.session.itemCaptures,
     };
     const scan = await scanActionList(
         ctx,
@@ -111,7 +121,11 @@ export async function prereadActionList(
     for (const action of desired) {
         canonicalizeActionItemName(action, options.session.items);
     }
-    const diff = diffActionList(baselineActionListFromSlots(observed), desired);
+    const diff = diffActionList(
+        baselineActionListFromSlots(observed),
+        desired,
+        options.session.itemDiff
+    );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     emitPrereadCompleted(progress, phaseUnits);
 
@@ -155,7 +169,11 @@ function knownActionListPlan(
     for (const action of desired) {
         canonicalizeActionItemName(action, options.session.items);
     }
-    const diff = diffActionList(baselineActionListFromSlots(observed), desired);
+    const diff = diffActionList(
+        baselineActionListFromSlots(observed),
+        desired,
+        options.session.itemDiff
+    );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     return { desired, observed, diff, phaseUnits };
 }

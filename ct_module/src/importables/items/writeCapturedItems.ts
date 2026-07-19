@@ -15,6 +15,11 @@ import { ensureParentDirs } from "../../utils/filesystem";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { snbtTargetForItemExport } from "../../project/paths";
 import { itemEditorOpened } from "../waiters";
+import { readParsedImportablesForExport } from "../exportContext";
+import { createItemRegistry } from "../itemRegistry";
+import { createItemDependencyIndex } from "../itemDependencyIndex";
+import { writeImportableCache } from "../../importCache/cache";
+import { writeInteractDataCache } from "./interactDataCache";
 
 type ExportedClickActions = {
     left?: Action[];
@@ -25,7 +30,10 @@ async function readOpenActionList(
     ctx: TaskContext,
     registry: ItemCaptureRegistry
 ): Promise<Action[]> {
-    return readActionListFully(ctx, { itemCaptures: registry });
+    return readActionListFully(ctx, {
+        itemReadMode: "export",
+        itemCaptures: registry,
+    });
 }
 
 async function readClickActions(
@@ -87,6 +95,7 @@ export async function writeCapturedItems(
     registry: ItemCaptureRegistry,
     rootDir: string,
     importJsonPath: string,
+    housingUuid: string,
     newExportTargetImportJson?: string
 ): Promise<number> {
     if (registry.newEntries().length === 0) return 0;
@@ -126,6 +135,34 @@ export async function writeCapturedItems(
                 : {}),
         });
         ctx.displayMessage(`&7  -> ${target.snbtPath}`);
+    }
+
+    const parsed = readParsedImportablesForExport(importJsonPath);
+    if (parsed !== null) {
+        const items = createItemRegistry(parsed.value, parsed.gcx);
+        const dependencies = createItemDependencyIndex(parsed.value, items);
+        for (const importable of parsed.value) {
+            if (importable.type !== "ITEM" || !written.has(importable.name)) continue;
+            const interactData = registry.capturedInteractData(importable.name);
+            if (interactData !== null) {
+                try {
+                    writeInteractDataCache(
+                        importable,
+                        dependencies,
+                        housingUuid,
+                        interactData
+                    );
+                } catch (error) {
+                    ctx.displayMessage(
+                        `&7[export] &eCould not cache click actions for '${importable.name}': ${error}`
+                    );
+                }
+            }
+            writeImportableCache(ctx, housingUuid, importable, "exporter", {
+                quiet: true,
+                itemDependencies: dependencies.snapshotOf(importable),
+            });
+        }
     }
 
     return written.size;

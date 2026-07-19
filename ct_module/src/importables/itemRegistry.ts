@@ -1,14 +1,17 @@
 import { items as itemReferences, type GlobalCtxt } from "htsw";
+import type { Tag } from "htsw/nbt";
 import type { Importable, ImportableItem } from "htsw/types";
+import type { ItemDependencyIndex } from "./itemDependencyIndex";
 
 import TaskContext from "../tasks/context";
 import { getCurrentHousingUuid } from "../importCache";
 import { removedFormatting, unique } from "../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../utils/nbt";
 
-interface ItemRegistryEntry {
+export interface ItemRegistryEntry {
     name: string;
-    item: Item;
+    readonly item: Item;
+    nbt: Tag;
     aliases: string[];
     source: "named" | "snbtPath";
     importable?: ImportableItem;
@@ -18,6 +21,11 @@ interface ItemRegistryEntry {
 export interface ItemRegistry {
     get(name: string): ItemRegistryEntry | undefined;
     resolve(name: string, ownerNode?: object): ItemRegistryEntry | undefined;
+    resolveFromSourcePath(
+        name: string,
+        sourcePath?: string,
+        ownerNode?: object
+    ): ItemRegistryEntry | undefined;
     canonicalizeObservedName(name: string): string;
 
     /**
@@ -27,12 +35,14 @@ export interface ItemRegistry {
      * for every action in a sync. See `getMemoizedHousingUuid` below.
      */
     cachedHousingUuid: string | undefined;
+    itemDependencies?: ItemDependencyIndex;
 }
 
 class DefaultItemRegistry implements ItemRegistry {
     private readonly byName: Record<string, ItemRegistryEntry> = {};
     private readonly aliases: Record<string, ItemRegistryEntry | "ambiguous"> = {};
     private readonly directByOwnerPath: Record<string, ItemRegistryEntry> = {};
+    private readonly directByOwner = new WeakMap<object, Map<string, ItemRegistryEntry>>();
     private readonly itemNames = new Map<string, ImportableItem>();
     private readonly gcx?: GlobalCtxt;
 
@@ -52,13 +62,13 @@ class DefaultItemRegistry implements ItemRegistry {
                 removedFormatting(importable.name).trim(),
                 ...readItemDisplayAliases(importable.nbt),
             ]);
-            const entry: ItemRegistryEntry = {
+            const entry = itemRegistryEntry({
                 name: importable.name,
                 importable,
-                item: getItemFromNbt(importable.nbt),
+                nbt: importable.nbt,
                 aliases,
                 source: "named",
-            };
+            });
 
             this.byName[entry.name] = entry;
             for (const alias of aliases) {
@@ -81,6 +91,11 @@ class DefaultItemRegistry implements ItemRegistry {
         const named = this.get(name);
         if (named !== undefined) {
             return named;
+        }
+
+        if (ownerNode !== undefined) {
+            const bound = this.directByOwner.get(ownerNode)?.get(name);
+            if (bound !== undefined) return bound;
         }
 
         if (
@@ -111,15 +126,75 @@ class DefaultItemRegistry implements ItemRegistry {
             return undefined;
         }
 
-        const entry: ItemRegistryEntry = {
+        const entry = itemRegistryEntry({
             name,
-            item: getItemFromNbt(resolved.nbt),
+            nbt: resolved.nbt,
             aliases: uniqueAliases(readItemDisplayAliases(resolved.nbt)),
             source: "snbtPath",
             path: resolved.path,
-        };
+        });
         this.directByOwnerPath[resolved.path] = entry;
         return entry;
+    }
+
+    public resolveFromSourcePath(
+        name: string,
+        sourcePath?: string,
+        ownerNode?: object
+    ): ItemRegistryEntry | undefined {
+        const named = this.get(name);
+        if (named !== undefined) return named;
+        if (
+            this.gcx === undefined ||
+            sourcePath === undefined ||
+            !itemReferences.isDirectSnbtItemReference(name)
+        ) {
+            return undefined;
+        }
+
+        const resolvedPath = itemReferences.resolveItemPathFromSourcePath(
+            this.gcx,
+            sourcePath,
+            name
+        );
+        const existing = this.directByOwnerPath[resolvedPath];
+        if (existing !== undefined) {
+            this.bindDirectOwner(ownerNode, name, existing);
+            return existing;
+        }
+
+        const resolved = itemReferences.resolveItemReferenceFromSourcePath(
+            this.gcx,
+            this.itemNames,
+            sourcePath,
+            name
+        );
+        if (resolved === undefined || resolved.kind !== "snbtPath") return undefined;
+
+        const entry = itemRegistryEntry({
+            name,
+            nbt: resolved.nbt,
+            aliases: uniqueAliases(readItemDisplayAliases(resolved.nbt)),
+            source: "snbtPath",
+            path: resolved.path,
+        });
+        this.directByOwnerPath[resolved.path] = entry;
+        this.bindDirectOwner(ownerNode, name, entry);
+        return entry;
+    }
+
+    private bindDirectOwner(
+        ownerNode: object | undefined,
+        name: string,
+        entry: ItemRegistryEntry
+    ): void {
+        if (ownerNode === undefined) return;
+        let entries = this.directByOwner.get(ownerNode);
+        if (entries === undefined) {
+            entries = new Map();
+            this.directByOwner.set(ownerNode, entries);
+        }
+        entries.set(name, entry);
     }
 
     public canonicalizeObservedName(name: string): string {
@@ -132,6 +207,19 @@ class DefaultItemRegistry implements ItemRegistry {
         const alias = this.aliases[normalized] ?? this.aliases[name];
         return alias === undefined || alias === "ambiguous" ? name : alias.name;
     }
+}
+
+function itemRegistryEntry(
+    fields: Omit<ItemRegistryEntry, "item">
+): ItemRegistryEntry {
+    let item: Item | undefined;
+    return {
+        ...fields,
+        get item(): Item {
+            if (item === undefined) item = getItemFromNbt(fields.nbt);
+            return item;
+        },
+    };
 }
 
 export function createItemRegistry(

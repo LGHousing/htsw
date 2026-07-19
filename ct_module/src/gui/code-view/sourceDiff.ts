@@ -61,6 +61,11 @@ import {
     ActionTreePath,
     type ActionPathKey,
 } from "../../housingSync/actionPath";
+import {
+    itemDependencyIndexFor,
+    type ItemDependencySnapshot,
+} from "../../importables/itemDependencyIndex";
+import { visitItemReferences } from "../../importables/itemDependencies";
 
 export type SourceDiffGhost = {
     id: string;
@@ -71,6 +76,8 @@ export type SourceDiffGhost = {
 
 export type SourceDiffEntry = {
     states: Map<ActionPathKey, DiffState>;
+    changedItems: Set<ActionPathKey>;
+    itemOnlyChanges: Set<ActionPathKey>;
     ghostsBeforeLine: Map<number, SourceDiffGhost[]>;
     ghostsAtEnd: SourceDiffGhost[];
 };
@@ -201,9 +208,15 @@ function computeFor(
     const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = {
         states: new Map(),
+        changedItems: new Set(),
+        itemOnlyChanges: new Set(),
         ghostsBeforeLine: new Map(),
         ghostsAtEnd: [],
     };
+    const changedItems = changedItemsByAction(
+        match.importable,
+        cache.itemDependencies
+    );
     walk(
         out,
         cachedPrefix,
@@ -212,9 +225,27 @@ function computeFor(
         sourceActions,
         cachedActions,
         cachedLists,
-        parseHtslFile(filePath)
+        parseHtslFile(filePath),
+        changedItems
     );
     return out;
+}
+
+function changedItemsByAction(
+    importable: Importable,
+    cached: ItemDependencySnapshot | undefined
+): WeakSet<Action> {
+    const result = new WeakSet<Action>();
+    const dependencies = itemDependencyIndexFor(importable);
+    if (dependencies === undefined) return result;
+    const invalidations = dependencies.invalidationsFor(importable, cached);
+    visitItemReferences(importable, use => {
+        if (!invalidations.isFieldInvalidated(use.owner, use.property)) return;
+        const action = use.actionAncestors[use.actionAncestors.length - 1];
+        if (action === undefined) return;
+        result.add(action);
+    });
+    return result;
 }
 
 export type FileTarget = {
@@ -321,7 +352,8 @@ function walk(
     items: readonly Action[],
     cachedItems: readonly Action[],
     lists: { [k: string]: string[] },
-    sourceFile: ReturnType<typeof parseHtslFile>
+    sourceFile: ReturnType<typeof parseHtslFile>,
+    changedItemsByAction: WeakSet<Action>
 ): void {
     const cacheKey = cacheBracketed === "" ? prefix : `${prefix}${cacheBracketed}`;
     const slots = lists[cacheKey];
@@ -359,8 +391,16 @@ function walk(
             state =
                 slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
+        const textState = state;
+        if (changedItemsByAction.has(action)) {
+            out.changedItems.add(sourcePathKey);
+            if (state === "match") {
+                state = "edit";
+                out.itemOnlyChanges.add(sourcePathKey);
+            }
+        }
         out.states.set(sourcePathKey, state);
-        if (state === "edit" && cachedAction !== undefined) {
+        if (textState === "edit" && cachedAction !== undefined) {
             addGhostBeforeAction(
                 out,
                 sourcePath,
@@ -390,7 +430,8 @@ function walk(
                     ? cachedAction.ifActions
                     : [],
                 lists,
-                sourceFile
+                sourceFile,
+                changedItemsByAction
             );
             walk(
                 out,
@@ -402,7 +443,8 @@ function walk(
                     ? cachedAction.elseActions
                     : [],
                 lists,
-                sourceFile
+                sourceFile,
+                changedItemsByAction
             );
         } else if (action.type === "RANDOM") {
             walk(
@@ -415,7 +457,8 @@ function walk(
                     ? cachedAction.actions
                     : [],
                 lists,
-                sourceFile
+                sourceFile,
+                changedItemsByAction
             );
         }
     }

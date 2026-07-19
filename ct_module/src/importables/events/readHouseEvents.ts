@@ -37,6 +37,7 @@ async function scanEvent(
         ctx,
         { kind: "full" },
         {
+            itemReadMode: "export",
             itemCaptures: state.itemCaptures,
             exactHydrationEstimate: true,
             events,
@@ -62,6 +63,7 @@ async function hydrateEvent(
 ): Promise<ImportableEvent> {
     await openEventEditor(ctx, name);
     const actions = await completeActionListScan(ctx, pending.scan, {
+        itemReadMode: "export",
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
         events,
@@ -142,6 +144,7 @@ async function exportEvent(
 ): Promise<void> {
     await openEventEditor(ctx, name);
     const actions = await readActionListFully(ctx, {
+        itemReadMode: "export",
         itemCaptures: state.itemCaptures,
         ...(onReadProgress !== undefined
             ? {

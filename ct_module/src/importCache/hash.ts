@@ -258,19 +258,6 @@ function actionListCanonical(actions: readonly Action[]): string {
     return "[" + parts.join(",") + "]";
 }
 
-/**
- * Content key for an item's click actions — used to cache/share its housing
- * `interact_data`. Same normalization as `importableHash`, so two items with
- * the same actions collide on one cached blob.
- */
-export function clickActionsHash(
-    left: readonly Action[] | undefined,
-    right: readonly Action[] | undefined
-): string {
-    const key = actionListCanonical(left ?? []) + " " + actionListCanonical(right ?? []);
-    return String(cyrb53(key));
-}
-
 export function menuSlotCanonical(slot: Record<string, unknown>): string {
     const keys = Object.keys(slot).sort();
     const parts: string[] = [];

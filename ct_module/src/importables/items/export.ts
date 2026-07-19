@@ -1,19 +1,12 @@
-import type { ImportableItem } from "htsw/types";
-
 import {
-    ItemCaptureRegistry,
     snbtFromItem,
 } from "../../housingSync/itemCapture";
+import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import type { ReadFn } from "../read";
 import { removedFormatting } from "../../utils/helpers";
 import { writeCapturedItems } from "./writeCapturedItems";
-
-function seededRegistry(items: readonly ImportableItem[] | undefined): ItemCaptureRegistry {
-    const registry = new ItemCaptureRegistry();
-    for (const item of items ?? []) registry.seed(item.name, item.nbt);
-    return registry;
-}
+import { createExportItemCaptureRegistry } from "../exportContext";
 
 export const exportHeldItem: ReadFn = async (ctx, options) => {
     const slotId = selectedHotbarSlot();
@@ -24,7 +17,12 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
     const snbt = snbtFromItem(stack, { pretty: false });
     if (snbt === null) throw new Error("Could not read the held item's NBT.");
 
-    const registry = seededRegistry(options.projectItems);
+    const housingUuid = await getCurrentHousingUuid(ctx);
+    const registry = createExportItemCaptureRegistry(
+        options.importJsonPath,
+        housingUuid,
+        options.projectItems
+    );
     const name = registry.register(snbt, removedFormatting(stack.getName()).trim() || "item", slotId);
     if (!registry.needsWrite(name)) {
         ctx.displayMessage(`&7[export] Held item is already declared as '${name}'.`);
@@ -35,6 +33,7 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
         registry,
         options.rootDir,
         options.importJsonPath,
+        housingUuid,
         options.newExportTargetImportJson
     );
     return { total: 1, succeeded: 1, failed: 0 };

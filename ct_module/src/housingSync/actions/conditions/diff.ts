@@ -7,6 +7,7 @@ import type {
     CurrentConditionListEntry,
 } from "../diff/types";
 import type { ObservedConditionSlot } from "../../observedActions";
+import type { ItemDiffContext } from "../diff/itemDiffContext";
 
 export function currentConditionListFromSlots(
     slots: readonly ObservedConditionSlot[]
@@ -36,20 +37,34 @@ export function baselineConditionListFromConditions(
 
 function indexOfEqualCondition(
     entries: readonly CurrentConditionListEntry[],
-    desired: Condition
+    desired: Condition,
+    itemDiff?: ItemDiffContext
 ): number {
     for (let i = 0; i < entries.length; i++) {
-        if (conditionsEqual(entries[i].condition, desired)) return i;
+        if (
+            !itemDiff?.hasCondition(desired) &&
+            !itemDiff?.conditionsDiffer(entries[i].condition, desired) &&
+            conditionsEqual(entries[i].condition, desired)
+        ) {
+            return i;
+        }
     }
     return -1;
 }
 
 function indexOfNoteOnlyCondition(
     entries: readonly CurrentConditionListEntry[],
-    desired: Condition
+    desired: Condition,
+    itemDiff?: ItemDiffContext
 ): number {
     for (let i = 0; i < entries.length; i++) {
-        if (conditionOnlyNoteDiffers(desired, entries[i].condition)) return i;
+        if (
+            !itemDiff?.hasCondition(desired) &&
+            !itemDiff?.conditionsDiffer(entries[i].condition, desired) &&
+            conditionOnlyNoteDiffers(desired, entries[i].condition)
+        ) {
+            return i;
+        }
     }
     return -1;
 }
@@ -66,7 +81,8 @@ function indexOfConditionType(
 
 export function diffConditionList(
     current: CurrentConditionListEntry[],
-    desired: Condition[]
+    desired: Condition[],
+    itemDiff?: ItemDiffContext
 ): ConditionListDiff {
     const unmatchedCurrent = [...current];
     const unmatchedDesired = [...desired];
@@ -79,7 +95,11 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const currentIndex = indexOfEqualCondition(unmatchedCurrent, desiredCondition);
+        const currentIndex = indexOfEqualCondition(
+            unmatchedCurrent,
+            desiredCondition,
+            itemDiff
+        );
 
         if (currentIndex === -1) {
             continue;
@@ -98,7 +118,11 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const currentIndex = indexOfNoteOnlyCondition(unmatchedCurrent, desiredCondition);
+        const currentIndex = indexOfNoteOnlyCondition(
+            unmatchedCurrent,
+            desiredCondition,
+            itemDiff
+        );
 
         if (currentIndex === -1) {
             continue;
