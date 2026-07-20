@@ -18,6 +18,12 @@ function compoundEntries(tag: TagLike): Record<string, TagLike> {
     return tag.value as Record<string, TagLike>;
 }
 
+// `ExtraAttributes` is kept even when empty: Housing stores it exactly as
+// authored (verified in-game — an item field set to `ExtraAttributes:{}` reads
+// back with it, and a plain item never gains one), so an empty
+// `ExtraAttributes:{}` is a real, server-preserved distinction that must stay
+// part of an item's identity — otherwise `isItem`/`giveItem` fields that differ
+// only by it diff as unchanged and never update.
 function stripEmptyCompounds(tag: TagLike): TagLike {
     if (tag.type !== "compound") return tag;
     const value = compoundEntries(tag);
@@ -25,6 +31,7 @@ function stripEmptyCompounds(tag: TagLike): TagLike {
     for (const key of Object.keys(value)) {
         const child = stripEmptyCompounds(value[key]);
         if (
+            key !== "ExtraAttributes" &&
             child.type === "compound" &&
             Object.keys(child.value as Record<string, unknown>).length === 0
         ) {
@@ -60,8 +67,22 @@ function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
 // Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
 // item's click actions. It's non-portable, so it must never be part of an
 // item's identity (an action item reads back with it; its source has none).
+// If interact_data was the only thing in ExtraAttributes, drop the now-empty
+// container too: an interact_data-only ExtraAttributes is not an authored
+// marker, so it must collapse to "no ExtraAttributes" — unlike a genuinely
+// empty `ExtraAttributes:{}`, which stripEmptyCompounds keeps.
 export function stripInteractData(tag: TagLike): TagLike {
-    return withoutTagAtPath(tag, ["tag", "ExtraAttributes", "interact_data"]);
+    const withoutInteract = withoutTagAtPath(tag, ["tag", "ExtraAttributes", "interact_data"]);
+    if (withoutInteract === tag) return tag;
+    const extra = tagChild(tagChild(withoutInteract, "tag"), "ExtraAttributes");
+    if (
+        extra !== undefined &&
+        extra.type === "compound" &&
+        Object.keys(extra.value as Record<string, unknown>).length === 0
+    ) {
+        return withoutTagAtPath(withoutInteract, ["tag", "ExtraAttributes"]);
+    }
+    return withoutInteract;
 }
 
 // The server strips `tag.ItemModel` (the 1.21-era item-model override) when an

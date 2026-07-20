@@ -149,4 +149,25 @@ describe("canonicalItemTag", () => {
         expect(canonicalItemTag(withBlank)).toEqual(canonicalItemTag(houseForm));
         expect(withBlank).toEqual(snapshot);
     });
+
+    test("empty ExtraAttributes is a real, server-preserved distinction", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const marked = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ ExtraAttributes: compound({}) }),
+        });
+        // Housing stores ExtraAttributes:{} exactly as authored, so an item
+        // carrying it must not canonicalize equal to one without it — otherwise
+        // isItem/giveItem fields differing only by it diff as unchanged.
+        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(marked));
+    });
+
+    test("other empty compounds are still stripped", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const emptyDisplay = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ display: compound({}) }),
+        });
+        expect(canonicalItemTag(plain)).toEqual(canonicalItemTag(emptyDisplay));
+    });
 });
