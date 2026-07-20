@@ -243,14 +243,15 @@ function diagnosticElement(
                 spans.push(byLine[i].spans[j]);
             }
         }
-        let primary = spans[0];
+        let primary: DiagnosticLineSpan | null = null;
         for (let i = 0; i < spans.length; i++) {
             if (spans[i].kind === "primary") {
                 primary = spans[i];
                 break;
             }
         }
-        if (primary !== undefined) {
+        if (primary === null && spans.length > 0) primary = spans[0];
+        if (primary !== null) {
             snippet.add(new TextLayoutText("&7" + locationLine(
                 displayPath(file.path),
                 primary.line,

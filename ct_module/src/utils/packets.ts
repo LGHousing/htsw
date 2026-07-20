@@ -1,28 +1,33 @@
+import { javaType } from "./java";
 
-export const C01PacketChatMessage = Java.type(
+type RhinoString = string | { toString(): string };
+
+export const C01PacketChatMessage = javaType(
     "net.minecraft.network.play.client.C01PacketChatMessage"
 );
 
-export const C10PacketCreativeInventoryAction = Java.type(
+export const C10PacketCreativeInventoryAction = javaType(
     "net.minecraft.network.play.client.C10PacketCreativeInventoryAction"
 );
 
-export const S30PacketWindowItems = Java.type(
+export const S30PacketWindowItems = javaType(
     "net.minecraft.network.play.server.S30PacketWindowItems"
 );
 
-export const S2DPacketOpenWindow = Java.type(
+export const S2DPacketOpenWindow = javaType(
     "net.minecraft.network.play.server.S2DPacketOpenWindow"
 );
 
-export const S2FPacketSetSlot = Java.type(
+export const S2FPacketSetSlot = javaType(
     "net.minecraft.network.play.server.S2FPacketSetSlot"
 );
 
 export function packetClassName(packet: unknown): string {
     try {
-        const name = (packet as { getClass(): { getName(): string } }).getClass().getName();
-        return String(name).substring(String(name).lastIndexOf(".") + 1);
+        const name = String(
+            (packet as { getClass(): { getName(): RhinoString } }).getClass().getName()
+        );
+        return name.substring(name.lastIndexOf(".") + 1);
     } catch (_e) {
         return String(packet);
     }
@@ -38,9 +43,11 @@ export function openWindowPacketId(packet: unknown): number | null {
 
 export function openWindowPacketTitle(packet: unknown): string | null {
     try {
-        const comp = (packet as {
-            func_179840_c(): { func_150260_c(): string };
-        }).func_179840_c();
+        const comp = (
+            packet as {
+                func_179840_c(): { func_150260_c(): RhinoString | null | undefined };
+            }
+        ).func_179840_c();
         const text = comp.func_150260_c();
         return text === null || text === undefined ? null : String(text);
     } catch (_e) {
@@ -50,7 +57,7 @@ export function openWindowPacketTitle(packet: unknown): string | null {
 
 export function openWindowPacketGuiId(packet: unknown): string | null {
     try {
-        return String((packet as { func_148902_e(): string }).func_148902_e());
+        return String((packet as { func_148902_e(): RhinoString }).func_148902_e());
     } catch (_e) {
         return null;
     }
@@ -64,9 +71,15 @@ export function windowItemsPacketId(packet: unknown): number | null {
     }
 }
 
-export function windowItemsPacketStacks(packet: unknown): unknown[] {
+export function windowItemsPacketStacks(
+    packet: unknown
+): HtswJavaObjectArray<HtswMinecraftItemStack | null> {
     try {
-        return (packet as { func_148910_d(): unknown[] }).func_148910_d();
+        return (
+            packet as {
+                func_148910_d(): HtswJavaObjectArray<HtswMinecraftItemStack | null>;
+            }
+        ).func_148910_d();
     } catch (_e) {
         return [];
     }
@@ -88,9 +101,11 @@ export function setSlotPacketSlot(packet: unknown): number | null {
     }
 }
 
-export function setSlotPacketStack(packet: unknown): unknown {
+export function setSlotPacketStack(packet: unknown): HtswMinecraftItemStack | null {
     try {
-        return (packet as { func_149174_e(): unknown }).func_149174_e();
+        return (
+            packet as { func_149174_e(): HtswMinecraftItemStack | null }
+        ).func_149174_e();
     } catch (_e) {
         return null;
     }
@@ -104,9 +119,13 @@ export function creativeInventoryPacketSlot(packet: unknown): number | null {
     }
 }
 
-export function creativeInventoryPacketStack(packet: unknown): unknown {
+export function creativeInventoryPacketStack(
+    packet: unknown
+): HtswMinecraftItemStack | null {
     try {
-        return (packet as { func_149625_d(): unknown }).func_149625_d();
+        return (
+            packet as { func_149625_d(): HtswMinecraftItemStack | null }
+        ).func_149625_d();
     } catch (_e) {
         return null;
     }

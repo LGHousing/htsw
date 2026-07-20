@@ -63,10 +63,7 @@ import { parseNpcPosIdentity } from "../../../importables/identity";
 import { openEventEditor } from "../../../importables/events/shared";
 import { openManageTeam } from "../../../importables/teams/listTeams";
 import { openEditGroup } from "../../../importables/groups/listGroups";
-import {
-    openNpcEditorForPos,
-    teleportToNpc,
-} from "../../../importables/npcs/listNpcs";
+import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";
 import { exportHeldItem } from "../../../importables/items/export";
 
 // House readers come from the shared export registry, so this browser and the
@@ -107,7 +104,11 @@ export type HouseContentType = {
     // Export reads the live housing menu, so the view still gates it on standing
     // in the house. A type without this hook is browse-only.
     export?: {
-        selected: (names: string[], onDone: () => void, labels?: ReadonlyMap<string, string>) => void;
+        selected: (
+            names: string[],
+            onDone: () => void,
+            labels?: ReadonlyMap<string, string>
+        ) => void;
     };
     standaloneAction?: { label: string; run: () => void };
 };
@@ -126,8 +127,8 @@ function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>):
     TaskManager.run(async (ctx) => {
         await fn(ctx);
     }).catch((err: unknown) => {
-        showToast(`${label} failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] ${label} failed: ${err}`);
+        showToast(`${label} failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] ${label} failed: ${String(err)}`);
     });
 }
 
@@ -136,7 +137,9 @@ function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>):
 // a tab here. `HouseContentType & { type: K }` also pins each entry's `type`
 // field to its key. HOUSE_CONTENT_TYPES below is the ordered array the view
 // consumes; Object.keys preserves this insertion order.
-const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { type: K } } = {
+const HOUSE_CONTENT_BY_TYPE: {
+    [K in HouseReadableType]: HouseContentType & { type: K };
+} = {
     FUNCTION: {
         type: "FUNCTION",
         label: "Functions",
@@ -145,7 +148,12 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
         scanned: houseFunctionsScanned,
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
-        deepRead: makeDeepRead("FUNCTION", "function", readFunctions, isFunctionScanInFlight),
+        deepRead: makeDeepRead(
+            "FUNCTION",
+            "function",
+            readFunctions,
+            isFunctionScanInFlight
+        ),
         rowActions: [
             {
                 label: "Run",
@@ -243,7 +251,8 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
             {
                 label: "Edit",
                 icon: Icons.pencil,
-                run: (name) => runMenuTask("open event", (ctx) => openEventEditor(ctx, name)),
+                run: (name) =>
+                    runMenuTask("open event", (ctx) => openEventEditor(ctx, name)),
                 opensEditor: true,
             },
         ],
@@ -262,7 +271,8 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
             {
                 label: "Edit",
                 icon: Icons.pencil,
-                run: (name) => runMenuTask("open team", (ctx) => openManageTeam(ctx, name)),
+                run: (name) =>
+                    runMenuTask("open team", (ctx) => openManageTeam(ctx, name)),
                 opensEditor: true,
             },
         ],
@@ -285,7 +295,8 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
             {
                 label: "Edit",
                 icon: Icons.pencil,
-                run: (name) => runMenuTask("open group", (ctx) => openEditGroup(ctx, name)),
+                run: (name) =>
+                    runMenuTask("open group", (ctx) => openEditGroup(ctx, name)),
                 opensEditor: true,
             },
         ],
@@ -328,10 +339,9 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
     },
 };
 
-export const HOUSE_CONTENT_TYPES: HouseContentType[] =
-    (Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]).map(
-        (type) => HOUSE_CONTENT_BY_TYPE[type]
-    );
+export const HOUSE_CONTENT_TYPES: HouseContentType[] = (
+    Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]
+).map((type) => HOUSE_CONTENT_BY_TYPE[type]);
 
 HOUSE_CONTENT_TYPES.push({
     type: "ITEM",
@@ -344,7 +354,8 @@ HOUSE_CONTENT_TYPES.push({
     scanNames: false,
     standaloneAction: {
         label: "Export held item",
-        run: () => startExport({ type: "ITEM", label: "held item", read: exportHeldItem }),
+        run: () =>
+            startExport({ type: "ITEM", label: "held item", read: exportHeldItem }),
     },
 });
 

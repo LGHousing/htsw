@@ -4,13 +4,10 @@ import { Rect } from "../lib/layout";
 import { Col, Container, Text } from "../lib/components";
 import { togglePopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
+import { runtimeString, type RuntimeString } from "../lib/java";
 
 /** Hypixel housing chat-command shortcuts surfaced in the toolbar dropdown. */
-type OpenTargetId =
-    | "functions"
-    | "eventactions"
-    | "regions"
-    | "menus";
+type OpenTargetId = "functions" | "eventactions" | "regions" | "menus";
 
 type OpenTarget = { id: OpenTargetId; label: string; command: string };
 
@@ -21,8 +18,7 @@ const OPEN_TARGETS: OpenTarget[] = [
     { id: "menus", label: "Menus", command: "/menus" },
 ];
 
-const PERSIST_PATH =
-    "./config/ChatTriggers/modules/HTSW/gui-open-target.json";
+const PERSIST_PATH = "./config/ChatTriggers/modules/HTSW/gui-open-target.json";
 
 let lastTarget: OpenTargetId = "functions";
 let loaded = false;
@@ -32,10 +28,16 @@ function load(): void {
     loaded = true;
     try {
         if (!FileLib.exists(PERSIST_PATH)) return;
-        const raw = String(FileLib.read(PERSIST_PATH) ?? "");
+        const stored = FileLib.read(PERSIST_PATH) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed.id === "string") {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "id" in parsed &&
+            typeof parsed.id === "string"
+        ) {
             for (let i = 0; i < OPEN_TARGETS.length; i++) {
                 if (OPEN_TARGETS[i].id === parsed.id) {
                     lastTarget = parsed.id;
@@ -71,7 +73,7 @@ export function runOpenTarget(target: OpenTarget): void {
     try {
         ChatLib.command(target.command.replace(/^\//, ""));
     } catch (err) {
-        ChatLib.chat(`&c[htsw] command failed: ${err}`);
+        ChatLib.chat(`&c[htsw] command failed: ${String(err)}`);
     }
 }
 

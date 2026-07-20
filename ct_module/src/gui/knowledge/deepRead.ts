@@ -82,7 +82,7 @@ export function startDeepRead(
             options.onSuccess?.();
         })
         .catch((err: unknown) => {
-            showToast(`${summaryLabel} read failed: ${err}`, 0xffe85c5c, 8000);
-            ChatLib.chat(`&c[htsw] ${summaryLabel} read failed: ${err}`);
+            showToast(`${summaryLabel} read failed: ${String(err)}`, 0xffe85c5c, 8000);
+            ChatLib.chat(`&c[htsw] ${summaryLabel} read failed: ${String(err)}`);
         });
 }

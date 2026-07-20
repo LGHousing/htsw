@@ -24,7 +24,6 @@ function textMatches(text: string, match: TextMatch): boolean {
 function itemExists(ctx: TaskContext, match: TextMatch): boolean {
     return ctx.tryGetMenuItemSlot((slot) => {
         const item = slot.getItem();
-        if (item === null || item === undefined) return false;
         return textMatches(removedFormatting(item.getName()), match);
     }) !== null;
 }
@@ -96,9 +95,9 @@ export function menuOpened(
         start(ctx: TaskContext): WaitForPromise<void> {
             const kind = options.kind ?? "menuClickWait";
             let waiter: WaitForPromise<void> | null = null;
-            let stopped = false;
+            const state = { stopped: false };
             const promise = (async (): Promise<void> => {
-                while (!stopped) {
+                for (; !state.stopped;) {
                     waiter = timedWaitForMenu(ctx, kind);
                     await waiter;
                     waiter = null;
@@ -107,7 +106,7 @@ export function menuOpened(
                 throw new Error(`${menuOpenedLabel(options)} was cancelled`);
             })() as WaitForPromise<void>;
             promise.cleanupWaiter = () => {
-                stopped = true;
+                state.stopped = true;
                 waiter?.cleanupWaiter?.();
             };
             promise.catch(() => {});

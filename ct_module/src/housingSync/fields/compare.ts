@@ -63,9 +63,9 @@ export function normalizeConditionCompare(
 }
 
 export function normalizeActionCompare(
-    value: Action | Observed<Action>
-): Action | Observed<Action> {
-    return normalizeValue(value) as Action | Observed<Action>;
+    value: Action | Observed
+): Action | Observed {
+    return normalizeValue(value) as Action | Observed;
 }
 
 /**
@@ -93,7 +93,6 @@ function compareKey(value: unknown): string {
 }
 
 function compareKeyNoNote(value: { note?: unknown }): string {
-    if (typeof value !== "object" || value === null) return canonicalStringify(value);
     const hit = compareKeyNoNoteCache.get(value);
     if (hit !== undefined) return hit;
     const key = canonicalStringify(stripNote(value));
@@ -102,8 +101,8 @@ function compareKeyNoNote(value: { note?: unknown }): string {
 }
 
 export function actionsEqual(
-    observed: Action | Observed<Action>,
-    desired: Action | Observed<Action>
+    observed: Action | Observed,
+    desired: Action | Observed
 ): boolean {
     return compareKey(observed) === compareKey(desired);
 }
@@ -122,7 +121,7 @@ function stripNote<T extends { note?: unknown }>(value: T): T {
 
 export function actionOnlyNoteDiffers(
     desired: Action,
-    current: Action | Observed<Action>
+    current: Action | Observed
 ): boolean {
     return (
         desired.type === current.type &&

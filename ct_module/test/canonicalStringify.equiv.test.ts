@@ -11,20 +11,20 @@ function reference(action: Action): string {
 }
 
 const SAMPLES: Action[] = [
-    { type: "MESSAGE", message: "&aHello &r&lworld" } as Action,
-    { type: "PLAY_SOUND", sound: "note.pling", volume: 1, pitch: 1 } as Action,
+    { type: "MESSAGE", message: "&aHello &r&lworld" },
+    { type: "PLAY_SOUND", sound: "note.pling", volume: 1, pitch: 1 },
     {
         type: "CHANGE_VAR",
         holder: { type: "Player" },
         key: "coins",
         op: "Increment",
         value: "1,000",
-    } as Action,
+    },
     {
         type: "TELEPORT",
         location: { type: "Custom Coordinates", value: "5 64 -3" },
         preventTeleportInsideBlocks: false,
-    } as Action,
+    },
     {
         type: "CONDITIONAL",
         matchAny: false,
@@ -37,8 +37,8 @@ const SAMPLES: Action[] = [
             { type: "RANDOM", actions: [{ type: "KILL" }, { type: "HEAL" }] },
         ],
         elseActions: [{ type: "EXIT" }],
-    } as Action,
-    { type: "GIVE_EXPERIENCE_LEVELS", amount: "5" } as Action,
+    },
+    { type: "GIVE_EXPERIENCE_LEVELS", amount: "5" },
     {
         type: "TITLE",
         title: "t",
@@ -46,7 +46,7 @@ const SAMPLES: Action[] = [
         fadein: 1,
         stay: 5,
         fadeout: 1,
-    } as Action,
+    },
 ];
 
 describe("canonicalStringify matches stableStringify(normalizeActionCompare(...))", () => {

@@ -130,12 +130,12 @@ describe("item dependency index", () => {
         const observations = createItemFieldObservationRecorder();
         const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
         const observedCondition = (
-            (observedAction as Extract<Action, { type: "RANDOM" }>).actions?.[0] as Extract<
+            (observedAction as Extract<Action, { type: "RANDOM" }>).actions[0] as Extract<
                 Action,
                 { type: "CONDITIONAL" }
             >
-        ).conditions?.[0];
-        observations.record(observedCondition!, "itemName", {
+        ).conditions[0];
+        observations.record(observedCondition, "itemName", {
             snbt: "{}",
             canonicalKey: "different",
         });

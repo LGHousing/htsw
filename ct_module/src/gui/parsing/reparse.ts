@@ -34,7 +34,7 @@ function fileExistsSafe(path: string): boolean {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        return Files.exists(Paths.get(String(path)));
+        return Files.exists(Paths.get(path));
     } catch (_e) {
         return false;
     }

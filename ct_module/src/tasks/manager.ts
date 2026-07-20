@@ -1,10 +1,6 @@
 import TaskContext from "./context";
-
-export type TaskCancelledError = { __taskCancelled: true; reason: string };
-
-export function isTaskCancelled(err: unknown): err is TaskCancelledError {
-    return !!err && typeof err === "object" && (err as any).__taskCancelled === true;
-}
+export { isTaskCancelled } from "./cancellation";
+import { isTaskCancelled } from "./cancellation";
 
 type TaskCallback<T, A extends unknown[] = unknown[]> = (
     ctx: TaskContext,
@@ -42,7 +38,7 @@ export class TaskManager {
     ): Promise<T | undefined> {
         try {
             return await callback(ctx, ...args);
-        } catch (err: any) {
+        } catch (err: unknown) {
             if (isTaskCancelled(err)) {
                 ChatLib.chat(`&cTask cancelled`);
                 return undefined;

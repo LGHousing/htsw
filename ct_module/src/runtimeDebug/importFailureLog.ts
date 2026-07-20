@@ -1,7 +1,4 @@
-import {
-    recentRuntimeDebugRecords,
-    runtimeDebugStats,
-} from "./runtimeDebugBuffer";
+import { recentRuntimeDebugRecords, runtimeDebugStats } from "./runtimeDebugBuffer";
 import { ensureParentDirs } from "../utils/filesystem";
 import {
     describeGuiScreenMenu,
@@ -38,8 +35,8 @@ function errorDetails(error: unknown): Record<string, unknown> {
 function stringifyUnknown(value: unknown): string {
     if (typeof value === "string") return value;
     try {
-        const json = JSON.stringify(value);
-        if (json !== undefined) return json;
+        const json: unknown = JSON.stringify(value);
+        if (typeof json === "string") return json;
     } catch (_e) {}
     return String(value);
 }
@@ -48,7 +45,7 @@ function safeRead(label: string, read: () => unknown): unknown {
     try {
         return read();
     } catch (error) {
-        return `<failed ${label}: ${error}>`;
+        return `<failed ${label}: ${stringifyUnknown(error)}>`;
     }
 }
 
@@ -71,7 +68,9 @@ export function writeImportFailureLog(
             menuItems: safeRead("menu items", () => menuItemDebugSnapshot()),
             gui: safeRead("gui", () => describeGuiScreenMenu()),
             waiters: safeRead("waiters", () => getEventContainerCounts()),
-            recentWindowOpens: safeRead("window opens", () => describeRecentWindowOpens()),
+            recentWindowOpens: safeRead("window opens", () =>
+                describeRecentWindowOpens()
+            ),
         },
         runtimeDebugStats: runtimeDebugStats(),
         recentRuntimeDebug: recentRuntimeDebugRecords(),

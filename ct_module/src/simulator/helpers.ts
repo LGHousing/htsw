@@ -1,7 +1,8 @@
 import { Gamemode } from "htsw/types";
+import { getPlayer } from "../utils/java";
 
 export function getGamemode(): Gamemode {
-    const player = Player.getPlayer();
+    const player = getPlayer();
     const gameType = player
         .func_178889_l /*getCurrentGameType*/
         ();

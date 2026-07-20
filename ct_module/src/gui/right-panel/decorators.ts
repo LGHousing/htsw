@@ -228,7 +228,8 @@ export function progressDecorator(path: string | null): LineDecorator {
         },
         modelKey(): string | null {
             if (path === null) return "progress:none";
-            return `progress:${path}\n${previewRevision(path)}\n${focusPath ?? ""}\n${isApplyPhase}`;
+            const focusKey = focusPath === null ? "" : ActionPath.key(focusPath);
+            return `progress:${path}\n${previewRevision(path)}\n${focusKey}\n${isApplyPhase}`;
         },
     };
 }

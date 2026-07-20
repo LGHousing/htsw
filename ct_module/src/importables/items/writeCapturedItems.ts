@@ -102,7 +102,7 @@ export async function writeCapturedItems(
 
     const written = new Set<string>();
 
-    while (true) {
+    for (;;) {
         const item = registry.newEntries().find((entry) => !written.has(entry.name));
         if (item === undefined) break;
         written.add(item.name);
@@ -154,7 +154,7 @@ export async function writeCapturedItems(
                     );
                 } catch (error) {
                     ctx.displayMessage(
-                        `&7[export] &eCould not cache click actions for '${importable.name}': ${error}`
+                        `&7[export] &eCould not cache click actions for '${importable.name}': ${String(error)}`
                     );
                 }
             }

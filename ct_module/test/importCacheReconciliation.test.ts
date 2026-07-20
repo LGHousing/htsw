@@ -16,7 +16,10 @@ import {
     recordHouseScan,
 } from "../src/importCache/cache";
 
-const globals = globalThis as unknown as { Java: any; FileLib: any };
+const globals = globalThis as typeof globalThis & {
+    Java: Java;
+    FileLib: typeof FileLib;
+};
 const originalJava = globals.Java;
 const originalFileLib = globals.FileLib;
 
@@ -33,8 +36,8 @@ function stubEmptyFilesystem(): void {
             if (name === "java.nio.file.Files") return files;
             return {};
         },
-    };
-    globals.FileLib = { ...originalFileLib, exists: () => false };
+    } as unknown as Java;
+    globals.FileLib = { exists: () => false } as unknown as typeof FileLib;
 }
 
 beforeEach(() => {
@@ -87,7 +90,7 @@ describe("house cache deletion", () => {
                 if (name === "java.nio.file.Files") return files;
                 return {};
             },
-        };
+        } as unknown as Java;
 
         expect(deleteHousingCache("locked-house")).toBe("partial");
 
@@ -107,7 +110,7 @@ describe("house cache deletion", () => {
                 if (name === "java.nio.file.Files") return deletableFiles;
                 return {};
             },
-        };
+        } as unknown as Java;
 
         expect(deleteHousingCache("deletable-house")).toBe("deleted");
     });

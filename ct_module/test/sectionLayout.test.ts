@@ -357,7 +357,7 @@ describe("preferred new-export target routing", () => {
         expect(created.includePath).toBe("g/import.json");
         const commands = JSON.parse(
             fs.readFile("./htsw/projects/Tribalists/commands/import.json")
-        );
+        ) as { include: string[] };
         expect(commands.include).toEqual(["g/import.json"]);
     });
 
@@ -408,7 +408,11 @@ describe("moveImportableEntry into a folder already holding the files", () => {
         // menus/menus/shop/slot-0.htsl.
         expect(fs.store.has("/project/menus/shop/slot-0.htsl")).toBe(true);
         expect(fs.store.has("/project/menus/menus/shop/slot-0.htsl")).toBe(false);
-        const dest = JSON.parse(fs.readFile("/project/menus/import.json"));
+        const dest = JSON.parse(fs.readFile("/project/menus/import.json")) as {
+            menus: Array<{
+                slots: Array<{ actions: string; nbt: string }>;
+            }>;
+        };
         expect(dest.menus[0].slots[0].actions).toBe("shop/slot-0.htsl");
         // The item snbt was NOT under menus/, so it copies in normally.
         expect(dest.menus[0].slots[0].nbt).toBe("items/coin.snbt");
@@ -433,7 +437,12 @@ describe("restructureProjectPerSection", () => {
         expect(result.failures).toEqual([]);
         expect(result.moved.length).toBe(3);
 
-        const root = JSON.parse(fs.readFile(ROOT));
+        const root = JSON.parse(fs.readFile(ROOT)) as {
+            include: string[];
+            functions?: unknown[];
+            events?: unknown[];
+            items?: unknown[];
+        };
         expect(root.include).toContain("functions/import.json");
         expect(root.include).toContain("items/import.json");
         expect(root.include).toContain("teams/import.json");
@@ -442,12 +451,16 @@ describe("restructureProjectPerSection", () => {
         expect(root.events ?? []).toEqual([]);
         expect(root.items ?? []).toEqual([]);
 
-        const functions = JSON.parse(fs.readFile("/project/functions/import.json"));
+        const functions = JSON.parse(fs.readFile("/project/functions/import.json")) as {
+            functions: Array<{ name: string; actions: string }>;
+        };
         expect(functions.functions[0]).toEqual({ name: "Hello", actions: "hello.htsl" });
         expect(fs.store.has("/project/functions/hello.htsl")).toBe(true);
         expect(fs.store.has("/project/hello.htsl")).toBe(false);
 
-        const items = JSON.parse(fs.readFile("/project/items/import.json"));
+        const items = JSON.parse(fs.readFile("/project/items/import.json")) as {
+            items: Array<{ name: string; nbt: string }>;
+        };
         // wand.snbt already lived under items/ — reference shortens in place.
         expect(items.items[0]).toEqual({ name: "Wand", nbt: "wand.snbt" });
         expect(fs.store.has("/project/items/wand.snbt")).toBe(true);
@@ -476,7 +489,9 @@ describe("restructureProjectPerSection", () => {
         expect(result.failures).toEqual([]);
         expect(result.moved).toEqual([{ section: "functions", identity: "Root Fn" }]);
 
-        const custom = JSON.parse(fs.readFile("/project/custom/import.json"));
+        const custom = JSON.parse(fs.readFile("/project/custom/import.json")) as {
+            functions: Array<{ name: string }>;
+        };
         expect(custom.functions[0].name).toBe("Custom Fn");
         expect(fs.store.has("/project/custom/custom_fn.htsl")).toBe(true);
     });
@@ -494,8 +509,8 @@ describe("restructureProjectPerSection", () => {
         expect(second.createdIncludes).toEqual([]);
         expect(second.moved).toEqual([]);
 
-        const root = JSON.parse(fs.readFile(ROOT));
-        const functionIncludes = (root.include as string[]).filter(
+        const root = JSON.parse(fs.readFile(ROOT)) as { include: string[] };
+        const functionIncludes = root.include.filter(
             (ref) => ref === "functions/import.json"
         );
         expect(functionIncludes.length).toBe(1);
@@ -514,7 +529,9 @@ describe("createIncludedFolderInTree", () => {
         expect(result.parentImportJsonPath).toBe("/project/functions/import.json");
         expect(result.includePath).toBe("combat/import.json");
         expect(fs.readFile("/project/functions/combat/import.json")).toBe("{}\n");
-        const parent = JSON.parse(fs.readFile("/project/functions/import.json"));
+        const parent = JSON.parse(
+            fs.readFile("/project/functions/import.json")
+        ) as { include: string[] };
         expect(parent.include).toEqual(["combat/import.json"]);
     });
 
@@ -523,7 +540,7 @@ describe("createIncludedFolderInTree", () => {
 
         const result = createIncludedFolderInTree(fs, ROOT, "combat");
         expect(result.parentImportJsonPath).toBe(ROOT);
-        const root = JSON.parse(fs.readFile(ROOT));
+        const root = JSON.parse(fs.readFile(ROOT)) as { include: string[] };
         expect(root.include).toEqual(["combat/import.json"]);
     });
 
@@ -551,7 +568,9 @@ describe("createIncludedFolderInTree", () => {
         expect(moved.ok).toBe(true);
         expect(fs.store.has("/project/functions/combat/duel.htsl")).toBe(true);
         expect(fs.store.has("/project/duel.htsl")).toBe(false);
-        const combat = JSON.parse(fs.readFile("/project/functions/combat/import.json"));
+        const combat = JSON.parse(fs.readFile("/project/functions/combat/import.json")) as {
+            functions: Array<{ name: string; actions: string }>;
+        };
         expect(combat.functions[0]).toEqual({ name: "Duel", actions: "duel.htsl" });
     });
 });
@@ -565,7 +584,9 @@ describe("createEmptyProjectFiles with section folders", () => {
         });
         expect(result.created).toBe(true);
 
-        const root = JSON.parse(fs.readFile("/projects/mygame/import.json"));
+        const root = JSON.parse(fs.readFile("/projects/mygame/import.json")) as {
+            include: string[];
+        };
         expect(root.include).toContain("functions/import.json");
         expect(root.include).toContain("events/import.json");
         expect(fs.store.has("/projects/mygame/functions/import.json")).toBe(true);
@@ -576,7 +597,9 @@ describe("createEmptyProjectFiles with section folders", () => {
         const fs = memoryFs({});
 
         createEmptyProjectFiles(fs, "/projects", "flatgame");
-        const root = JSON.parse(fs.readFile("/projects/flatgame/import.json"));
+        const root = JSON.parse(fs.readFile("/projects/flatgame/import.json")) as {
+            include?: string[];
+        };
         expect(root.include).toBeUndefined();
     });
 });

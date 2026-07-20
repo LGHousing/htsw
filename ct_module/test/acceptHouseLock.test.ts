@@ -43,7 +43,7 @@ describe("acceptHouseLockAsCurrent", () => {
                 },
             },
         });
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             [lockPath]: lockText,
             [undeclaredPath]: "house-only",
             [changedPath]: "older-local-knowledge",
@@ -58,11 +58,7 @@ describe("acceptHouseLockAsCurrent", () => {
         });
         const ctx = { displayMessage: vi.fn() } as unknown as TaskContext;
 
-        const result = acceptHouseLockAsCurrent(
-            ctx,
-            importJsonPath,
-            [accepted, changed]
-        );
+        const result = acceptHouseLockAsCurrent(ctx, importJsonPath, [accepted, changed]);
 
         expect(result.ok).toBe(true);
         if (!result.ok) return;
@@ -70,7 +66,9 @@ describe("acceptHouseLockAsCurrent", () => {
         expect(result.accepted).toEqual([accepted]);
         expect(result.skipped).toBe(1);
         expect(result.failed).toBe(0);
-        expect(JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted.knowledge.json`])).toMatchObject({
+        expect(
+            JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted.knowledge.json`]!)
+        ).toMatchObject({
             writer: "project-lock",
             importable: accepted,
             hash: importableHash(accepted),
@@ -82,7 +80,7 @@ describe("acceptHouseLockAsCurrent", () => {
 
     it("rejects an unbound lock without writing knowledge", () => {
         const importJsonPath = "./projects/demo/import.json";
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: null,
@@ -131,7 +129,7 @@ describe("acceptHouseLockAsCurrent", () => {
                 },
             ],
         };
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             "./projects/dependencies/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,

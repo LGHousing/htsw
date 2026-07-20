@@ -54,7 +54,7 @@ export function scanHouseNpcs(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`NPC scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] NPC scan failed: ${err}`);
+        showToast(`NPC scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] NPC scan failed: ${String(err)}`);
     });
 }

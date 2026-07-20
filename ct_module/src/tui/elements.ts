@@ -116,8 +116,9 @@ export class UIElementCanvas implements UIElement {
             const rendered = element.render();
             for (let i = 0; i < rendered.length; i++) {
                 const absY = y + i;
-                if (!lineMap.has(absY)) lineMap.set(absY, []);
-                lineMap.get(absY)!.push({ x, text: rendered[i], order });
+                const line = lineMap.get(absY) ?? [];
+                line.push({ x, text: rendered[i], order });
+                lineMap.set(absY, line);
             }
         }
 

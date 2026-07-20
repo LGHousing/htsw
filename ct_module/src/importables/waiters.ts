@@ -31,10 +31,7 @@ export function menuSettingsOpened(name: string): TaskWaiter<void> {
     });
 }
 
-export function menuCreated(name: string): TaskWaiter<{
-    message: void;
-    editor: void;
-}> {
+export function menuCreated(name: string) {
     return allOf({
         message: chatMessage(`Created custom menu with the title ${name}!`),
         editor: menuSettingsOpened(name),

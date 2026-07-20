@@ -86,6 +86,14 @@ export function getTaskProgress(): TaskProgress | null {
     return taskProgress;
 }
 
+export function parkedTaskFor(
+    progress: TaskProgress,
+    key: string
+): TaskProgress["parked"][string] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(progress.parked, key)) return undefined;
+    return progress.parked[key];
+}
+
 /**
  * Whether the active progress session is an import or an export. The
  * progress strip + queue summary share one UI; this only swaps the
@@ -316,7 +324,7 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     if (row.status === "queued") return { kind: "queued" };
     const current = progress.active;
     if (current === null || current.key !== key) {
-        const parked = progress.parked[key];
+        const parked = parkedTaskFor(progress, key);
         if (parked !== undefined) {
             const snap = runStateFromActive(parked);
             return {
@@ -408,7 +416,6 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
         if (progressPath === null) return false;
         return current.key === queueRowKey(item.type, item.identity, progressPath);
     }
-    if (item.operation !== "import") return false;
     if (activeTaskPath === null) return false;
     return canonicalPath(item.sourcePath) === canonicalPath(activeTaskPath);
 }

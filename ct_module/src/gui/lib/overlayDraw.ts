@@ -3,8 +3,8 @@
 import { getEffectiveOverlayScale, getMcScale } from "./overlayScale";
 import { GL11, javaType } from "./java";
 
-const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
-const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
+const RenderHelper = javaType("net.minecraft.client.renderer.RenderHelper");
+const GlStateManager = javaType("net.minecraft.client.renderer.GlStateManager");
 
 function resetGuiState(): void {
     try {

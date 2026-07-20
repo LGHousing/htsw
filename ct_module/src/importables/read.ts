@@ -2,10 +2,7 @@ import type { ImportableItem } from "htsw/types";
 
 import type TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import type {
-    ExportProgressSink,
-    ProgressHandler,
-} from "../housingSync/progress/types";
+import type { ExportProgressSink, ProgressHandler } from "../housingSync/progress/types";
 
 export type ReadResult = { total: number; succeeded: number; failed: number };
 
@@ -37,10 +34,7 @@ export type ReadOptions = {
     skipExisting?: boolean;
 };
 
-export type ReadFn = (
-    ctx: TaskContext,
-    options: ReadOptions
-) => Promise<ReadResult>;
+export type ReadFn = (ctx: TaskContext, options: ReadOptions) => Promise<ReadResult>;
 
 export type ReadLoopParams = {
     // Names to process — already listed and skip-filtered by the caller. Drives
@@ -90,28 +84,33 @@ export async function runReadLoop(
     let failed = 0;
     try {
         if (scanOne !== undefined && hydrateOne !== undefined) {
-            const pending: Array<unknown | null> = names.map(() => null);
+            const pending: unknown[] = names.map(() => null);
             progress?.scanStarted?.();
             for (let i = 0; i < names.length; i++) {
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.item(i, name);
-                ctx.displayMessage(`&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`);
+                ctx.displayMessage(
+                    `&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`
+                );
                 const sink = progress;
+                const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
                     pending[i] = await scanOne(
                         ctx,
                         name,
-                        sink?.itemProgress === undefined
+                        itemProgress === undefined
                             ? undefined
-                            : (payload) => sink.itemProgress!(i, payload)
+                            : (payload) => itemProgress(i, payload)
                     );
                 } catch (error) {
                     if (isTaskCancelled(error)) throw error;
                     pending[i] = null;
                     failed++;
                     sink?.itemFailed?.(i, String(error));
-                    ctx.displayMessage(`&c[export-all] failed on '${shown(name)}': ${error}`);
+                    ctx.displayMessage(
+                        `&c[export-all] failed on '${shown(name)}': ${String(error)}`
+                    );
                 }
             }
             for (let i = 0; i < names.length; i++) {
@@ -119,16 +118,19 @@ export async function runReadLoop(
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.itemReactivated?.(i);
-                ctx.displayMessage(`&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`);
+                ctx.displayMessage(
+                    `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
+                );
                 const sink = progress;
+                const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
                     await hydrateOne(
                         ctx,
                         name,
                         pending[i],
-                        sink?.itemProgress === undefined
+                        itemProgress === undefined
                             ? undefined
-                            : (payload) => sink.itemProgress!(i, payload)
+                            : (payload) => itemProgress(i, payload)
                     );
                     succeeded++;
                     sink?.itemFinished?.(i);
@@ -136,7 +138,9 @@ export async function runReadLoop(
                     if (isTaskCancelled(error)) throw error;
                     failed++;
                     sink?.itemFailed?.(i, String(error));
-                    ctx.displayMessage(`&c[export-all] failed on '${shown(name)}': ${error}`);
+                    ctx.displayMessage(
+                        `&c[export-all] failed on '${shown(name)}': ${String(error)}`
+                    );
                 }
             }
             return { succeeded, failed };
@@ -146,18 +150,17 @@ export async function runReadLoop(
             const name = names[i];
 
             progress?.item(i, name);
-            ctx.displayMessage(
-                `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
-            );
+            ctx.displayMessage(`&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`);
 
             const sink = progress;
+            const itemProgress = sink?.itemProgress?.bind(sink);
             try {
                 await processOne(
                     ctx,
                     name,
-                    sink?.itemProgress === undefined
+                    itemProgress === undefined
                         ? undefined
-                        : (payload) => sink.itemProgress!(i, payload)
+                        : (payload) => itemProgress(i, payload)
                 );
                 succeeded++;
                 sink?.itemFinished?.(i);
@@ -168,7 +171,7 @@ export async function runReadLoop(
                 failed++;
                 sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(
-                    `&c[export-all] failed on '${shown(name)}': ${error}`
+                    `&c[export-all] failed on '${shown(name)}': ${String(error)}`
                 );
             }
         }

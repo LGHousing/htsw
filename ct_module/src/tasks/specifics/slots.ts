@@ -1,4 +1,5 @@
 import { removedFormatting } from "../../utils/helpers";
+import { getMinecraft, javaType } from "../../utils/java";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero as lastObservedWindowID } from "./waitFor";
 
 export enum MouseButton {
@@ -102,7 +103,9 @@ export function getItemSlot(check: string | ((slot: ItemSlot) => boolean)): Item
  * excluding the player inventory (last 36 slots). Works for any
  * container size.
  */
-export function getMenuItemSlots(check: null | ((slot: ItemSlot) => boolean) = null): ItemSlot[] | null {
+export function getMenuItemSlots(
+    check: null | ((slot: ItemSlot) => boolean) = null
+): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
         return null;
@@ -126,7 +129,7 @@ export function getMenuItemSlots(check: null | ((slot: ItemSlot) => boolean) = n
 }
 
 export function tryGetMenuItemSlot(
-    check: string | ((slot: ItemSlot) => boolean),
+    check: string | ((slot: ItemSlot) => boolean)
 ): ItemSlot | null {
     if (typeof check === "string") {
         const name = removedFormatting(check);
@@ -143,14 +146,13 @@ export function tryGetMenuItemSlot(
     return null;
 }
 
-export function getMenuItemSlot(
-    check: string | ((slot: ItemSlot) => boolean),
-): ItemSlot {
+export function getMenuItemSlot(check: string | ((slot: ItemSlot) => boolean)): ItemSlot {
     const slot = tryGetMenuItemSlot(check);
     if (slot === null) {
-        const base = typeof check === "string"
-            ? `Could not find "${check}"`
-            : "Could not find item slot";
+        const base =
+            typeof check === "string"
+                ? `Could not find "${check}"`
+                : "Could not find item slot";
         throw new Error(`${base}${menuStateDescription()}`);
     }
     return slot;
@@ -169,9 +171,11 @@ export function menuStateDescription(): string {
             if (n.length > 0) names.push(n);
         }
     }
-    const slotList = names.length === 0
-        ? "<empty>"
-        : names.join(", ") + (slots !== null && slots.length > names.length ? ", …" : "");
+    const slotList =
+        names.length === 0
+            ? "<empty>"
+            : names.join(", ") +
+              (slots !== null && slots.length > names.length ? ", …" : "");
     const winId = getOpenContainerWindowId();
     const containerWindowID: number | string = winId === null ? "?" : winId;
     return ` in "${title ?? "<no container>"}" (slots: ${slotList}; size=${containerSize}, menuSlots=${menuEnd < 0 ? "?" : menuEnd}, winID=${containerWindowID}, lastSeenWinID=${lastObservedWindowID})`;
@@ -196,7 +200,9 @@ export function getOpenContainerWindowId(): number | null {
     const container = Player.getContainer();
     if (container == null) return null;
     try {
-        const id = (container as unknown as { getWindowId?: () => number }).getWindowId?.();
+        const id = (
+            container as unknown as { getWindowId?: () => number }
+        ).getWindowId?.();
         if (typeof id === "number" && id >= 0) return id;
     } catch (_e) {}
     try {
@@ -236,7 +242,7 @@ function itemStack(item: Item): unknown {
 
 function rawStackName(stack: unknown): string | undefined {
     try {
-        return String((stack as { func_82833_r(): string }).func_82833_r());
+        return String((stack as { func_82833_r(): unknown }).func_82833_r());
     } catch (_e) {
         return undefined;
     }
@@ -244,10 +250,13 @@ function rawStackName(stack: unknown): string | undefined {
 
 function rawStackId(stack: unknown): string | undefined {
     try {
-        const ItemClass = Java.type("net.minecraft.item.Item");
-        const rawItem = (stack as { func_77973_b(): unknown }).func_77973_b();
-        const key = (ItemClass as any).field_150901_e.func_148750_c(rawItem);
-        return key === null || key === undefined ? undefined : String(key);
+        const ItemClass = javaType("net.minecraft.item.Item");
+        const rawItem = (
+            stack as { func_77973_b(): HtswMinecraftItem | null }
+        ).func_77973_b();
+        if (rawItem === null) return undefined;
+        const key = ItemClass.field_150901_e.func_148750_c(rawItem);
+        return key === null ? undefined : key.toString();
     } catch (_e) {
         return undefined;
     }
@@ -316,21 +325,26 @@ function listItem(value: unknown, index: number): unknown {
 
 export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
     try {
-        const mc = Client.getMinecraft() as unknown as { field_71462_r?: unknown };
+        const mc = getMinecraft();
         const screen = mc.field_71462_r;
         if (screen == null) return null;
-        const klass = (screen as { getClass(): { getName(): string } }).getClass().getName();
+        const klass = String(screen.getClass().getName());
         const short = klass.substring(klass.lastIndexOf(".") + 1);
         const container = (screen as { field_147002_h?: unknown }).field_147002_h;
-        if (container == null) return {
-            screen: short,
-            itemCount: 0,
-            slotCount: 0,
-            menuSlotCount: 0,
-            windowId: null,
-        };
+        if (container == null)
+            return {
+                screen: short,
+                itemCount: 0,
+                slotCount: 0,
+                menuSlotCount: 0,
+                windowId: null,
+            };
         const c = container as {
-            func_75138_a(): { length?: number; size?: () => number; get?: (i: number) => unknown };
+            func_75138_a(): {
+                length?: number;
+                size?: () => number;
+                get?: (i: number) => unknown;
+            };
             field_75152_c?: number;
         };
         const inv = c.func_75138_a();
@@ -363,6 +377,7 @@ export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
 export function describeGuiScreenMenu(): string {
     const state = getDisplayedGuiMenuState();
     if (state === null) return "noScreen";
-    if (state.slotCount === 0 && state.windowId === null) return `${state.screen}:noContainer`;
+    if (state.slotCount === 0 && state.windowId === null)
+        return `${state.screen}:noContainer`;
     return `${state.screen}:${state.itemCount}items/win${state.windowId}`;
 }

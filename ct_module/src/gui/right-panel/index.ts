@@ -365,7 +365,7 @@ function formatActiveSnbt(): void {
     try {
         src = fileLoader.readFile(path);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] format: read failed: ${err}`);
+        ChatLib.chat(`&c[htsw] format: read failed: ${String(err)}`);
         return;
     }
     const sm = new htsw.SourceMap(new StringFileLoader(src));
@@ -385,9 +385,9 @@ function formatActiveSnbt(): void {
     }
     const formatted = htsw.nbt.printSnbt(tag, { pretty: true, indent: "    " });
     try {
-        FileLib.write(String(path), formatted, true);
+        FileLib.write(path, formatted, true);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] format: write failed: ${err}`);
+        ChatLib.chat(`&c[htsw] format: write failed: ${String(err)}`);
         return;
     }
     fileCache.delete(path);

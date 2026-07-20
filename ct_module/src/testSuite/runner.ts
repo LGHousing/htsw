@@ -159,7 +159,7 @@ async function runFixture(
                 failures.push(cleanupFailures[i]);
             }
         } catch (e) {
-            failures.push(`cleanup failed: ${e}`);
+            failures.push(`cleanup failed: ${String(e)}`);
         }
     }
 
@@ -216,7 +216,7 @@ async function verifyFixture(
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (e) {
-            failures.push(`inventory restore failed: ${e}`);
+            failures.push(`inventory restore failed: ${String(e)}`);
         }
     }
     return failures;
@@ -242,7 +242,6 @@ async function deepReadVerifyFixture(
     for (let t = 0; t < HOUSE_READABLE_TYPES.length; t++) {
         const type = HOUSE_READABLE_TYPES[t];
         const reader = HOUSE_READERS[type];
-        if (reader === null) continue;
         const items: Importable[] = [];
         for (let i = 0; i < importables.length; i++) {
             if (importables[i].type === type) items.push(importables[i]);
@@ -452,11 +451,11 @@ async function expectSingleMenuSlotOp(
 function mutateMenuSlotItem(menu: ImportableMenu, slotIndex: number): ImportableMenu {
     const clone = JSON.parse(JSON.stringify(menu)) as ImportableMenu;
     const nbt = clone.slots[slotIndex].nbt as {
-        value?: Record<string, { type: string; value: unknown }>;
+        value?: Partial<Record<string, { type: string; value: unknown }>>;
     };
     const currentId =
         nbt.value !== undefined && typeof nbt.value.id?.value === "string"
-            ? String(nbt.value.id.value)
+            ? nbt.value.id.value
             : "";
     const swappedId =
         currentId === "minecraft:diamond" ? "minecraft:stone" : "minecraft:diamond";
@@ -478,9 +477,9 @@ function mutateMenuSlotActions(menu: ImportableMenu, slotIndex: number): Importa
 
 const HASH_DIFF_LOG = "./htsw/test-hash-diff.log";
 
-function canonicalPartsByKey(importable: Importable): Record<string, string> {
+function canonicalPartsByKey(importable: Importable): Partial<Record<string, string>> {
     const parts = importableCanonicalParts(importable);
-    const byKey: Record<string, string> = {};
+    const byKey: Partial<Record<string, string>> = {};
     for (let i = 0; i < parts.length; i++) byKey[parts[i].key] = parts[i].serialized;
     return byKey;
 }

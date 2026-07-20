@@ -100,7 +100,7 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
     }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
-    if (kind === "actionList" || kind === "conditionList") {
+    if (kind === "actionList") {
         return COST.menuClickWait;
     }
     return COST.menuClickWait;
@@ -469,7 +469,7 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
         if (a.type === "CONDITIONAL") {
             lists += knownChildListUnits(a.ifActions);
             lists += knownChildListUnits(a.elseActions);
-            const conditionCount = a.conditions?.length ?? 0;
+            const conditionCount = a.conditions.length;
             if (conditionCount > 0) lists += childListUnits(conditionCount);
         } else if (a.type === "RANDOM") {
             lists += knownChildListUnits(a.actions);
@@ -620,7 +620,7 @@ function childConditionBaseline(
 }
 
 function childConditionDesired(action: Action): Condition[] {
-    return action.type === "CONDITIONAL" ? (action.conditions ?? []) : [];
+    return action.type === "CONDITIONAL" ? action.conditions : [];
 }
 
 function childActionBaseline(
@@ -643,9 +643,9 @@ function childActionDesired(
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] {
     if (action.type === "CONDITIONAL") {
-        return (prop === "ifActions" ? action.ifActions : action.elseActions) ?? [];
+        return prop === "ifActions" ? action.ifActions : action.elseActions;
     }
-    if (action.type === "RANDOM" && prop === "actions") return action.actions ?? [];
+    if (action.type === "RANDOM" && prop === "actions") return action.actions;
     return [];
 }
 
@@ -694,8 +694,8 @@ function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
         if (action.type === "CONDITIONAL") {
             lists += exactKnownChildListUnits(action.ifActions);
             lists += exactKnownChildListUnits(action.elseActions);
-            if ((action.conditions?.length ?? 0) > 0)
-                lists += childListUnits(action.conditions!.length);
+            if (action.conditions.length > 0)
+                lists += childListUnits(action.conditions.length);
         } else if (action.type === "RANDOM") {
             lists += exactKnownChildListUnits(action.actions);
         }
@@ -762,7 +762,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "MENU") {
         let total = COST.commandMenuWait + COST.menuClickWait;
-        const slots = importable.slots ?? [];
+        const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             total += actionListReadCost(slots[i].actions ?? []);
         }
@@ -871,7 +871,7 @@ export function estimateImportableCost(
         // pricing only the click (as this branch once did) undercounts a
         // menu's work by the entire cost of its action lists.
         let total = COST.commandMenuWait + COST.menuClickWait;
-        const slots = importable.slots ?? [];
+        const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             const actions = slots[i].actions ?? [];
             total +=

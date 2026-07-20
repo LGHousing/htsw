@@ -3,6 +3,7 @@
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
 import { toForwardSlashes } from "../../lib/pathDisplay";
 import { canonicalPath, isParsePending, requestParse } from "../../parsing/parses";
+import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
 
 export type SourceDir = {
     kind: "dir";
@@ -20,26 +21,7 @@ const sources: Source[] = [];
 
 // Structural views of the java.nio objects this walker touches — the runtime
 // values are real Java classes; these list only the members we call.
-type JavaPath = {
-    toAbsolutePath(): JavaPath;
-    normalize(): JavaPath;
-    toString(): string;
-    getFileName(): JavaPath | null;
-    getParent(): JavaPath | null;
-    relativize(other: JavaPath): JavaPath;
-};
-type JavaDirectoryStream = {
-    iterator(): { hasNext(): boolean; next(): JavaPath };
-    close(): void;
-};
-type JavaFilesStatics = {
-    isDirectory(p: JavaPath): boolean;
-    isRegularFile(p: JavaPath): boolean;
-    newDirectoryStream(dir: JavaPath): JavaDirectoryStream;
-    exists(p: JavaPath): boolean;
-};
-type JavaPathsStatics = { get(path: string): JavaPath };
-type JavaStringQueue = { add(value: string): void; poll(): string | null };
+type JavaStringQueue = { add(value: string): void; poll(): RuntimeString | null | undefined };
 
 // Lazy: top-level `Java.type(...)` is known to hang CT 1.8.9 at module
 // load (see the comment block in `gui/lib/render.ts` above
@@ -48,18 +30,20 @@ type JavaStringQueue = { add(value: string): void; poll(): string | null };
 let pendingPaths: JavaStringQueue | null = null;
 function getPendingPaths(): JavaStringQueue {
     if (pendingPaths === null) {
-        const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
-        pendingPaths = new ConcurrentLinkedQueue() as JavaStringQueue;
+        const ConcurrentLinkedQueue = javaType(
+            "java.util.concurrent.ConcurrentLinkedQueue"
+        );
+        pendingPaths = new ConcurrentLinkedQueue();
     }
     return pendingPaths;
 }
 
-function pathOf(absolute: string): JavaPath {
-    const Paths: JavaPathsStatics = Java.type("java.nio.file.Paths");
-    return Paths.get(String(absolute)).toAbsolutePath().normalize();
+function pathOf(absolute: string): HtswJavaPath {
+    const Paths = javaType("java.nio.file.Paths");
+    return Paths.get(absolute).toAbsolutePath().normalize();
 }
 
-function fileNameOf(p: JavaPath): string {
+function fileNameOf(p: HtswJavaPath): string {
     const fn = p.getFileName();
     if (fn === null) return String(p.toString());
     return String(fn.toString());
@@ -73,11 +57,11 @@ function alreadyHas(fullPath: string): boolean {
 }
 
 function addSourceFromAbsolute(absolute: string): void {
-    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+    const Files = javaType("java.nio.file.Files");
     // Identity via canonicalPath, like every other path comparison — dedup
     // by any other spelling lets the same project open twice.
-    const fullPath = canonicalPath(String(absolute));
-    let p: JavaPath;
+    const fullPath = canonicalPath(absolute);
+    let p: HtswJavaPath;
     try {
         p = pathOf(fullPath);
     } catch (_e) {
@@ -103,15 +87,15 @@ function addSourceFromAbsolute(absolute: string): void {
 
 function drainPending(): void {
     if (pendingPaths === null) return; // never queued anything yet
-    while (true) {
+    for (;;) {
         const next = pendingPaths.poll();
-        if (next === null) break;
-        addSourceFromAbsolute(String(next));
+        if (next === null || next === undefined) break;
+        addSourceFromAbsolute(runtimeString(next));
     }
 }
 
 export function queueSourcePath(absolute: string): void {
-    getPendingPaths().add(String(absolute));
+    getPendingPaths().add(absolute);
 }
 
 export function getSources(): Source[] {
@@ -130,13 +114,13 @@ export function removeSource(fullPath: string): void {
     }
 }
 
-function relativePath(root: JavaPath, p: JavaPath): string {
+function relativePath(root: HtswJavaPath, p: HtswJavaPath): string {
     const rel = root.relativize(p);
     return toForwardSlashes(String(rel.toString()));
 }
 
-function isRegularFileSafe(p: JavaPath): boolean {
-    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+function isRegularFileSafe(p: HtswJavaPath): boolean {
+    const Files = javaType("java.nio.file.Files");
     try {
         return Files.isRegularFile(p);
     } catch (_e) {
@@ -144,8 +128,8 @@ function isRegularFileSafe(p: JavaPath): boolean {
     }
 }
 
-function visitFile(p: JavaPath, root: JavaPath, out: Result[]): void {
-    let fileName: JavaPath | null;
+function visitFile(p: HtswJavaPath, root: HtswJavaPath, out: Result[]): void {
+    let fileName: HtswJavaPath | null;
     try {
         fileName = p.getFileName();
     } catch (_e) {
@@ -188,8 +172,8 @@ function visitFile(p: JavaPath, root: JavaPath, out: Result[]): void {
     }
 }
 
-function isDirectorySafe(p: JavaPath): boolean {
-    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+function isDirectorySafe(p: HtswJavaPath): boolean {
+    const Files = javaType("java.nio.file.Files");
     try {
         return Files.isDirectory(p);
     } catch (_e) {
@@ -201,9 +185,14 @@ function isDirectorySafe(p: JavaPath): boolean {
 // once (so depth=1 gives the folder root + one nest deep, no further).
 // Bounded recursion keeps the Projects list usable while letting the user
 // drop a parent folder and still find the import.json one level in.
-function walkDir(dir: JavaPath, root: JavaPath, out: Result[], depth: number = 1): void {
-    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
-    let stream: JavaDirectoryStream;
+function walkDir(
+    dir: HtswJavaPath,
+    root: HtswJavaPath,
+    out: Result[],
+    depth: number = 1
+): void {
+    const Files = javaType("java.nio.file.Files");
+    let stream: HtswJavaDirectoryStream;
     try {
         stream = Files.newDirectoryStream(dir);
     } catch (_e) {
@@ -211,8 +200,8 @@ function walkDir(dir: JavaPath, root: JavaPath, out: Result[], depth: number = 1
     }
     try {
         const it = stream.iterator();
-        while (true) {
-            let entry: JavaPath;
+        for (;;) {
+            let entry: HtswJavaPath;
             try {
                 if (!it.hasNext()) break;
                 entry = it.next();
@@ -246,12 +235,12 @@ const ENUMERATION_TTL_MS = 1000;
 const enumerationCache = new Map<string, { at: number; results: Result[] }>();
 
 function enumerateForSourceUncached(s: Source): Result[] {
-    const Paths: JavaPathsStatics = Java.type("java.nio.file.Paths");
-    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
     const out: Result[] = [];
-    let p: JavaPath;
+    let p: HtswJavaPath;
     try {
-        p = Paths.get(String(s.fullPath));
+        p = Paths.get(s.fullPath);
     } catch (_e) {
         return out;
     }

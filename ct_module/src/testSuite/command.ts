@@ -17,8 +17,8 @@ export function commandTest(args: string[]): void {
     const slice = args.length > 0 ? args[0] : undefined;
     TaskManager.run(async (ctx) => {
         await runLiveTestSuite(ctx, slice);
-    }).catch((err) => {
-        ChatLib.chat(`&c[htsw test] failed: ${err}`);
+    }).catch((err: unknown) => {
+        ChatLib.chat(`&c[htsw test] failed: ${String(err)}`);
     });
 }
 
@@ -27,7 +27,7 @@ function runCoverageCommand(slice?: string): void {
     try {
         fixtures = loadTestFixtures(slice);
     } catch (e) {
-        ChatLib.chat(`&c[htsw test] coverage failed: ${e}`);
+        ChatLib.chat(`&c[htsw test] coverage failed: ${String(e)}`);
         return;
     }
     if (fixtures.length === 0) {

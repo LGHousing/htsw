@@ -66,7 +66,7 @@ type FileState = {
  */
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
-const states: { [key: string]: FileState } = {};
+const states: { [key: string]: FileState | undefined } = {};
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
@@ -287,7 +287,7 @@ function appendActionLines(
 
 function appendKnownActionLines(
     out: PreviewLine[],
-    action: Observed<Action>,
+    action: Observed,
     completeAction: Action | undefined,
     childLists: Extract<ObservedNode, { kind: "partial" }>["childLists"] | undefined,
     actionPath: ActionPath,
@@ -297,7 +297,7 @@ function appendKnownActionLines(
     if (action.type === "CONDITIONAL") {
         const conditions: ObservedChildList | undefined =
             completeAction?.type === "CONDITIONAL"
-                ? { state: "conditions", entries: completeAction.conditions ?? [] }
+                ? { state: "conditions", entries: completeAction.conditions }
                 : childLists?.conditions;
         const condText = shellOnly
             ? `${action.matchAny ? "or " : ""}(...conditions...)`
@@ -316,7 +316,7 @@ function appendKnownActionLines(
                 completeAction?.type === "CONDITIONAL"
                     ? {
                           state: "actions",
-                          entries: nodesFromActions(completeAction.ifActions ?? []),
+                          entries: nodesFromActions(completeAction.ifActions),
                       }
                     : childLists?.ifActions;
             appendChildListBody(
@@ -331,7 +331,7 @@ function appendKnownActionLines(
                 completeAction?.type === "CONDITIONAL"
                     ? {
                           state: "actions",
-                          entries: nodesFromActions(completeAction.elseActions ?? []),
+                          entries: nodesFromActions(completeAction.elseActions),
                       }
                     : childLists?.elseActions;
             if (childListLength(elseActions) > 0) {
@@ -378,7 +378,7 @@ function appendKnownActionLines(
                 completeAction?.type === "RANDOM"
                     ? {
                           state: "actions",
-                          entries: nodesFromActions(completeAction.actions ?? []),
+                          entries: nodesFromActions(completeAction.actions),
                       }
                     : childLists?.actions;
             appendChildListBody(
@@ -519,13 +519,13 @@ function formatConditionsHead(
     let allKnown = true;
     for (let i = 0; i < conds.length; i++) {
         const c = conds[i];
-        if (c === null || c === undefined) {
+        if (c === null) {
             allKnown = false;
             break;
         }
         let printed: string;
         try {
-            printed = htsw.htsl.printCondition(c as never);
+            printed = htsw.htsl.printCondition(c);
         } catch (_e) {
             allKnown = false;
             break;
@@ -544,7 +544,7 @@ function indent(depth: number): string {
     return s;
 }
 
-function printActionOneLine(action: Observed<Action>): string {
+function printActionOneLine(action: Observed): string {
     let text: string;
     try {
         text = htsw.htsl.printAction(normalizeActionForPreview(action) as never);
@@ -555,7 +555,7 @@ function printActionOneLine(action: Observed<Action>): string {
     return split.length > 0 ? split[0] : text;
 }
 
-function normalizeActionForPreview(action: Observed<Action>): Observed<Action> {
+function normalizeActionForPreview(action: Observed): Observed {
     if (action.type !== "PLAY_SOUND") return action;
     const normalized = { ...action } as Record<string, unknown>;
     if (typeof normalized.sound === "string") {
@@ -576,7 +576,7 @@ function normalizeActionForPreview(action: Observed<Action>): Observed<Action> {
             normalized.location = { type: normalized.location };
         }
     }
-    return normalized as Observed<Action>;
+    return normalized as Observed;
 }
 
 function makeLine(opts: {
@@ -876,14 +876,11 @@ export function applyComplete(
         bump(s);
         return;
     }
-    if (kind === "move") {
-        const startIdx = findActionStartIndex(s.lines, actionPath);
-        if (startIdx < 0) return;
-        s.lines[startIdx].diffState = undefined;
-        s.lines[startIdx].completed = true;
-        bump(s);
-        return;
-    }
+    const startIdx = findActionStartIndex(s.lines, actionPath);
+    if (startIdx < 0) return;
+    s.lines[startIdx].diffState = undefined;
+    s.lines[startIdx].completed = true;
+    bump(s);
 }
 
 export function markHeadApplied(path: string, actionPath: ActionPath): void {

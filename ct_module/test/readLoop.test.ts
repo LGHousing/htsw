@@ -16,6 +16,20 @@ function fakeCtx() {
     } as unknown as TaskContext;
 }
 
+function fakeCtxWithDisplaySpy(): {
+    ctx: TaskContext;
+    displayMessage: ReturnType<typeof vi.fn>;
+} {
+    const displayMessage = vi.fn();
+    return {
+        ctx: {
+            checkCancelled: vi.fn(),
+            displayMessage,
+        } as unknown as TaskContext,
+        displayMessage,
+    };
+}
+
 function fakeSink() {
     const calls: string[] = [];
     const sink: ExportProgressSink = {
@@ -166,14 +180,14 @@ describe("runReadLoop", () => {
     });
 
     it("renders names through displayName in chat lines", async () => {
-        const ctx = fakeCtx();
+        const { ctx, displayMessage } = fakeCtxWithDisplaySpy();
         await runReadLoop(ctx, {
             names: ["spawn"],
             verb: "Exporting",
             displayName: (name) => `/${name}`,
             processOne: async () => {},
         });
-        expect(ctx.displayMessage).toHaveBeenCalledWith(
+        expect(displayMessage).toHaveBeenCalledWith(
             "&7[1/1] &fExporting '/spawn'"
         );
     });

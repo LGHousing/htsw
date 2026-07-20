@@ -16,6 +16,7 @@ import {
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { runOnMainThread } from "../../utils/mainThread";
+import { createTaskCancelledError } from "../cancellation";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -28,7 +29,7 @@ type CheckPredicateMap = {
     message: (message: string) => boolean;
 };
 
-type EventContainer<C extends (...args: any[]) => boolean> = {
+type EventContainer<C extends (...args: never[]) => boolean> = {
     check: C;
     resolve: (value: Parameters<C>) => void;
     remaining: number;
@@ -56,8 +57,17 @@ const EVENT_CONTAINERS: EventContainers = {
 const TIMEOUTS: TimeoutEntry[] = [];
 let packetCaptureForTask = false;
 
-type EventTrigger = ReturnType<typeof register> | undefined;
+type EventTrigger =
+    | {
+          register?(): void;
+          unregister?(): void;
+      }
+    | undefined;
 const EVENT_TRIGGERS = {} as { [K in keyof CheckPredicateMap]: EventTrigger };
+
+function unregisterEventTrigger(trigger: EventTrigger): void {
+    trigger?.unregister?.();
+}
 
 function updateTriggerRegistration(event: EventName): void {
     const needed =
@@ -66,8 +76,8 @@ function updateTriggerRegistration(event: EventName): void {
         ((event === "packetReceived" || event === "packetSent") &&
             packetCaptureForTask);
     const trigger = EVENT_TRIGGERS[event];
-    if (needed) trigger?.register();
-    else trigger?.unregister();
+    if (needed) trigger?.register?.();
+    else unregisterEventTrigger(trigger);
 }
 
 // Resolve only the waiters present when this event fired. resolve() can re-enter
@@ -112,7 +122,7 @@ function rejectExpiredTimeouts(): void {
         if (entry.isCancelled()) {
             cleanupTimeout(entry);
             entry.cleanupInner?.();
-            entry.reject({ __taskCancelled: true, reason: "Task cancelled" });
+            entry.reject(createTaskCancelledError());
             continue;
         }
 
@@ -133,7 +143,7 @@ function onTick(): void {
 }
 
 EVENT_TRIGGERS.tick = register("tick", onTick);
-EVENT_TRIGGERS.tick?.unregister();
+unregisterEventTrigger(EVENT_TRIGGERS.tick);
 
 export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero: number = 0;
 
@@ -242,7 +252,7 @@ EVENT_TRIGGERS.packetReceived = register("packetReceived", (packet) => {
         recordWindowOpen(packet);
     });
 });
-EVENT_TRIGGERS.packetReceived?.unregister();
+unregisterEventTrigger(EVENT_TRIGGERS.packetReceived);
 
 EVENT_TRIGGERS.packetSent = register("packetSent", (packet) => {
     runOnMainThread(() => {
@@ -250,7 +260,7 @@ EVENT_TRIGGERS.packetSent = register("packetSent", (packet) => {
         maybeResolve("packetSent", packet);
     });
 });
-EVENT_TRIGGERS.packetSent?.unregister();
+unregisterEventTrigger(EVENT_TRIGGERS.packetSent);
 
 EVENT_TRIGGERS.message = register("chat", (event) => {
     // Read the message before deferring — other chat handlers may mutate or
@@ -259,7 +269,7 @@ EVENT_TRIGGERS.message = register("chat", (event) => {
     const message = ChatLib.getChatMessage(event, true);
     runOnMainThread(() => maybeResolve("message", message));
 });
-EVENT_TRIGGERS.message?.unregister();
+unregisterEventTrigger(EVENT_TRIGGERS.message);
 
 /**
  * Live waiter count per event type. Every received packet / tick re-runs
@@ -303,10 +313,10 @@ export function resetEventContainers(): number {
     EVENT_CONTAINERS.packetSent.length = 0;
     EVENT_CONTAINERS.message.length = 0;
     TIMEOUTS.length = 0;
-    EVENT_TRIGGERS.tick?.unregister();
-    EVENT_TRIGGERS.packetReceived?.unregister();
-    EVENT_TRIGGERS.packetSent?.unregister();
-    EVENT_TRIGGERS.message?.unregister();
+    unregisterEventTrigger(EVENT_TRIGGERS.tick);
+    unregisterEventTrigger(EVENT_TRIGGERS.packetReceived);
+    unregisterEventTrigger(EVENT_TRIGGERS.packetSent);
+    unregisterEventTrigger(EVENT_TRIGGERS.message);
     return total;
 }
 

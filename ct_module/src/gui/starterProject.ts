@@ -8,7 +8,11 @@ import { previewSelect } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
 import { showToast } from "./toast";
-import { STARTER_PROJECT_NAME, createStarterProjectFiles, joinPath } from "htsw-editor-common/project";
+import {
+    STARTER_PROJECT_NAME,
+    createStarterProjectFiles,
+    joinPath,
+} from "htsw-editor-common/project";
 import { ctProjectFs } from "../project/projectFs";
 
 export const STARTER_DIR = joinPath(PROJECTS_ROOT, STARTER_PROJECT_NAME);
@@ -21,7 +25,7 @@ export function createStarterProject(): void {
         importJsonPath = result.importJsonPath;
         created = result.created;
     } catch (err) {
-        showToast(`Couldn't create starter project: ${err}`, 0xffe85c5c, 8000);
+        showToast(`Couldn't create starter project: ${String(err)}`, 0xffe85c5c, 8000);
         return;
     }
     if (created) {

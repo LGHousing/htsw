@@ -7,7 +7,7 @@ import { getChildListFields } from "./fields/actionMappings";
 
 type ObservedFields<T extends Action | Condition> = {
     [K in keyof Omit<T, "type">]?: T[K] extends Action[]
-        ? Array<Observed<Action> | null>
+        ? Array<Observed | null>
         : T[K] extends Condition[]
           ? Array<Condition | null>
           : T[K];
@@ -32,7 +32,7 @@ export type ObservedActionSlot = {
     index: number;
     slotId?: number;
     slot?: ItemSlot;
-    action: Observed<Action> | null;
+    action: Observed | null;
     hydrated: boolean;
     truncatedFields: readonly ActionScalarFieldToRead[];
     childListSummaries?: ChildListSummaries;
@@ -52,7 +52,7 @@ export type ObservedNode =
     | {
           kind: "partial";
           type: Action["type"];
-          action: Observed<Action>;
+          action: Observed;
           childLists: Partial<Record<ChildListName, ObservedChildList>>;
       };
 
@@ -75,7 +75,7 @@ export function observedNodesFromSlots(
 }
 
 function observedNodeFromAction(
-    action: Observed<Action>,
+    action: Observed,
     summaries?: ChildListSummaries,
     childListsToRead?: ChildListsToRead
 ): ObservedNode {
@@ -110,7 +110,7 @@ function observedNodeFromAction(
                     entries: entries.map((entry) =>
                         entry === null
                             ? { kind: "unknown" }
-                            : observedNodeFromAction(entry as Observed<Action>)
+                            : observedNodeFromAction(entry as Observed)
                     ),
                 };
             }
@@ -135,7 +135,7 @@ export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Ac
     return result;
 }
 
-export function presentChildListsContainNoNulls(action: Observed<Action>): boolean {
+export function presentChildListsContainNoNulls(action: Observed): boolean {
     for (const field of getChildListFields(action.type)) {
         const value = (action as Record<string, unknown>)[field.prop];
         if (!Array.isArray(value)) continue;
@@ -143,7 +143,7 @@ export function presentChildListsContainNoNulls(action: Observed<Action>): boole
             if (entry === null) return false;
             if (
                 field.kind === "actionList" &&
-                !presentChildListsContainNoNulls(entry as Observed<Action>)
+                !presentChildListsContainNoNulls(entry as Observed)
             ) {
                 return false;
             }
@@ -163,7 +163,7 @@ export function fullyHydratedObservedSlotsToActions(
     });
 }
 
-function observedActionToActionStrict(observed: Observed<Action>): Action {
+function observedActionToActionStrict(observed: Observed): Action {
     if (observed.type !== "CONDITIONAL" && observed.type !== "RANDOM") {
         return observed as Action;
     }
@@ -176,21 +176,22 @@ function observedActionToActionStrict(observed: Observed<Action>): Action {
                 `Hydrated action "${observed.type}" is missing child list "${field.prop}".`
             );
         }
-        action[field.prop] = value.map((entry) => {
+        const entries = value as unknown[];
+        action[field.prop] = entries.map((entry) => {
             if (entry === null) {
                 throw new Error(
                     `Hydrated action "${observed.type}" has an unread entry in "${field.prop}".`
                 );
             }
             return field.kind === "actionList"
-                ? observedActionToActionStrict(entry as Observed<Action>)
+                ? observedActionToActionStrict(entry as Observed)
                 : entry;
         });
     }
     return action as Action;
 }
 
-function observedActionToAction(observed: Observed<Action>): Action {
+function observedActionToAction(observed: Observed): Action {
     if (observed.type === "CONDITIONAL") {
         return {
             type: "CONDITIONAL",
@@ -199,10 +200,10 @@ function observedActionToAction(observed: Observed<Action>): Action {
                 (c): c is NonNullable<typeof c> => c !== null
             ),
             ifActions: (observed.ifActions ?? [])
-                .filter((a): a is Observed<Action> => a !== null)
+                .filter((a): a is Observed => a !== null)
                 .map(observedActionToAction),
             elseActions: (observed.elseActions ?? [])
-                .filter((a): a is Observed<Action> => a !== null)
+                .filter((a): a is Observed => a !== null)
                 .map(observedActionToAction),
             ...(observed.note !== undefined ? { note: observed.note } : {}),
         };
@@ -211,7 +212,7 @@ function observedActionToAction(observed: Observed<Action>): Action {
         return {
             type: "RANDOM",
             actions: (observed.actions ?? [])
-                .filter((a): a is Observed<Action> => a !== null)
+                .filter((a): a is Observed => a !== null)
                 .map(observedActionToAction),
             ...(observed.note !== undefined ? { note: observed.note } : {}),
         };

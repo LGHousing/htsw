@@ -1,10 +1,7 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { canonicalStringify } from "../housingSync/fields/compare";
-import {
-    canonicalItemTag,
-    type TagLike,
-} from "../housingSync/fields/itemTagCanonical";
+import { canonicalItemTag, type TagLike } from "../housingSync/fields/itemTagCanonical";
 
 export type ItemChanges = {
     nbt: string[];
@@ -19,11 +16,7 @@ function actionListsMatch(
     return canonicalStringify(left ?? []) === canonicalStringify(right ?? []);
 }
 
-function leafValues(
-    tag: TagLike,
-    path: string,
-    output: Map<string, unknown>
-): void {
+function leafValues(tag: TagLike, path: string, output: Map<string, unknown>): void {
     if (tag.type === "compound") {
         const value = tag.value as Record<string, TagLike>;
         const keys = Object.keys(value).sort();
@@ -37,11 +30,7 @@ function leafValues(
         for (let i = 0; i < list.value.length; i++) {
             const itemPath = `${path}[${i}]`;
             if (list.type === "compound") {
-                leafValues(
-                    { type: "compound", value: list.value[i] },
-                    itemPath,
-                    output
-                );
+                leafValues({ type: "compound", value: list.value[i] }, itemPath, output);
             } else {
                 output.set(itemPath, list.value[i]);
             }
@@ -54,8 +43,14 @@ function leafValues(
 
 function shown(value: unknown): string {
     if (value === undefined) return "(missing)";
-    const serialized = JSON.stringify(value);
-    const text = serialized === undefined ? String(value) : serialized;
+    const serialized = JSON.stringify(value) as unknown as string | undefined;
+    const text =
+        serialized ??
+        (typeof value === "symbol"
+            ? value.toString()
+            : typeof value === "function"
+              ? "(function)"
+              : "(unserializable)");
     return text.length > 48 ? text.substring(0, 45) + "..." : text;
 }
 
@@ -77,12 +72,9 @@ function nbtChanges(file: TagLike, house: TagLike): string[] {
     return result;
 }
 
-export function itemChanges(
-    file: ImportableItem,
-    house: ImportableItem
-): ItemChanges {
+export function itemChanges(file: ImportableItem, house: ImportableItem): ItemChanges {
     return {
-        nbt: nbtChanges(file.nbt as TagLike, house.nbt as TagLike),
+        nbt: nbtChanges(file.nbt, house.nbt),
         leftClickActions: !actionListsMatch(
             file.leftClickActions,
             house.leftClickActions

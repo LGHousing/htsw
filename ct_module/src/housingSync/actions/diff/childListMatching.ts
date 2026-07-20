@@ -56,7 +56,7 @@ export function matchObservedToDesired(
                           (field) =>
                               (
                                   entry.childListSummaries?.[
-                                      field.prop as ChildListName
+                                      field.prop
                                   ] ?? []
                               ).length > 0
                       ))

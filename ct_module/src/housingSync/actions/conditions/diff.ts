@@ -129,7 +129,10 @@ export function diffConditionList(
         }
 
         const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        const matchedCondition = baselineCondition.condition!;
+        const matchedCondition = baselineCondition.condition;
+        if (matchedCondition === null) {
+            throw new Error("Matched condition entry has no condition");
+        }
         unmatchedDesired.splice(desiredIndex, 1);
         operations.push({
             kind: "edit",
@@ -150,7 +153,10 @@ export function diffConditionList(
         }
 
         const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        const matchedCondition = baselineCondition.condition!;
+        const matchedCondition = baselineCondition.condition;
+        if (matchedCondition === null) {
+            throw new Error("Matched condition entry has no condition");
+        }
         operations.push({
             kind: "edit",
             entryId: baselineCondition.entryId,

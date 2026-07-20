@@ -7,7 +7,7 @@ type FileState = {
     focusedLineId: string | null;
 };
 
-const states: { [key: string]: FileState } = {};
+const states: { [key: string]: FileState | undefined } = {};
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
@@ -16,7 +16,7 @@ function keyForFile(path: string): string {
 function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
-    if (!s) {
+    if (s === undefined) {
         s = { focusedLineId: null };
         states[k] = s;
     }

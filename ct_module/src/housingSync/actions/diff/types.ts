@@ -20,7 +20,7 @@ export type ActionListOperation =
           entryId: number;
           fromIndex: number;
           desiredIndex: number;
-          baselineAction: Observed<Action>;
+          baselineAction: Observed;
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
@@ -31,7 +31,7 @@ export type ActionListOperation =
           kind: "delete";
           entryId: number;
           fromIndex: number;
-          baselineAction: Observed<Action> | null;
+          baselineAction: Observed | null;
       };
 
 export type ActionListDiff = {
@@ -68,7 +68,7 @@ export type ConditionListDiff = {
 export type CurrentActionListEntry = {
     entryId: number;
     index: number;
-    action: Observed<Action> | null;
+    action: Observed | null;
 };
 
 export type CurrentConditionListEntry = {

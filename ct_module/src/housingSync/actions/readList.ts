@@ -59,7 +59,7 @@ export type ActionListScan = {
 };
 
 function readChildListSummaries(
-    action: Observed<Action>,
+    action: Observed,
     slot: ItemSlot
 ): { summaries: ChildListSummaries; childListsToRead: ChildListsToRead } {
     const childListFields = getChildListFields(action.type);
@@ -181,10 +181,10 @@ export async function scanActionList(
     const needsItemHydration =
         read.itemReadMode !== "sync" ||
         read.itemFieldObservations !== undefined;
-    const progress = read?.progress;
-    const events = read?.events;
+    const progress = read.progress;
+    const events = read.events;
     const desiredTotal = mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
-    const phaseUnits = read?.phaseUnits;
+    const phaseUnits = read.phaseUnits;
     let readCompletedUnits = 0;
     let observed: ObservedActionSlot[] = [];
     if (phaseUnits !== undefined) {
@@ -198,7 +198,7 @@ export async function scanActionList(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: read?.listPath ?? ActionListPath.root(),
+        listPath: read.listPath ?? ActionListPath.root(),
     });
     observed = await readPaginatedList(
         ctx,
@@ -226,9 +226,9 @@ export async function scanActionList(
         }
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
-    const isRootList = read?.listPath === undefined;
+    const isRootList = read.listPath === undefined;
     if (isRootList) {
-        emitObservedSnapshot(observed, read?.events);
+        emitObservedSnapshot(observed, read.events);
     }
     let plan: ActionHydrationPlan;
     let trustApplication:
@@ -262,7 +262,7 @@ export async function scanActionList(
     if (trustApplication !== undefined) {
         applyActionListTrust(trustApplication.matches, plan, trustApplication.trust);
     }
-    if (phaseUnits !== undefined && read?.exactHydrationEstimate === true) {
+    if (phaseUnits !== undefined && read.exactHydrationEstimate === true) {
         phaseUnits.reading = readCompletedUnits;
         phaseUnits.hydrating = exactHydrationPlanUnits(plan);
         phaseUnits.applying = 0;
@@ -308,7 +308,7 @@ export function emitObservedSnapshot(
 }
 
 export function canonicalizeActionItemName(
-    action: Observed<Action> | Action,
+    action: Observed | Action,
     itemRegistry: ItemRegistry
 ): void {
     canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);

@@ -82,8 +82,8 @@ export function readCachedActionList(
         const match = basePath.match(/^slots\[(\d+)\]\.actions$/);
         if (match !== null) {
             const idx = Number(match[1]);
-            const slot = importable.slots[idx];
-            return slot?.actions;
+            if (idx < 0 || idx >= importable.slots.length) return undefined;
+            return importable.slots[idx].actions;
         }
     }
     return undefined;

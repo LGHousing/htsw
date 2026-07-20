@@ -1,21 +1,28 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { GL11, javaType } from "./java";
+import { GL11, getMinecraft, javaType } from "./java";
 
-const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
-const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
-const ItemClass: any = javaType("net.minecraft.item.Item");
+const RenderHelper = javaType("net.minecraft.client.renderer.RenderHelper");
+const GlStateManager = javaType("net.minecraft.client.renderer.GlStateManager");
+const ItemClass = javaType("net.minecraft.item.Item");
 
-const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
-const mcItemCache: { [key: string]: any } = {};
+const ItemStackClass = javaType("net.minecraft.item.ItemStack");
+const mcItemCache: { [key: string]: HtswMinecraftItemStack | null } = {};
 
-function getCachedItemStack(itemId: string, count: number, metadata: number): any {
+function getCachedItemStack(
+    itemId: string,
+    count: number,
+    metadata: number
+): HtswMinecraftItemStack | null {
     const key = itemId + ":" + count + ":" + metadata;
     if (key in mcItemCache) return mcItemCache[key];
     try {
         const id = itemId.indexOf(":") >= 0 ? itemId : "minecraft:" + itemId;
         const item = ItemClass.func_111206_d(id);
-        if (item === null || item === undefined) { mcItemCache[key] = null; return null; }
+        if (item === null) {
+            mcItemCache[key] = null;
+            return null;
+        }
         const stack = new ItemStackClass(item, count, metadata);
         mcItemCache[key] = stack;
         return stack;
@@ -35,7 +42,7 @@ export function renderMcItem(
     const stack = getCachedItemStack(itemId, count, metadata);
     if (stack === null) return;
     try {
-        const mc = Client.getMinecraft();
+        const mc = getMinecraft();
         const ri = mc.func_175599_af();
         GlStateManager.func_179126_j();
         GL11.glDepthMask(true);

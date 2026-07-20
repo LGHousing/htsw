@@ -100,7 +100,7 @@ function parseOptionalBoolean(value: string, defaultValue: boolean): boolean | u
         trimmed === "enabled" ||
         trimmed === "listed"
     ) {
-        return defaultValue === true ? undefined : true;
+        return defaultValue ? undefined : true;
     }
     if (
         trimmed === "false" ||
@@ -109,7 +109,7 @@ function parseOptionalBoolean(value: string, defaultValue: boolean): boolean | u
         trimmed === "disabled" ||
         trimmed === "unlisted"
     ) {
-        return defaultValue === false ? undefined : false;
+        return !defaultValue ? undefined : false;
     }
     return null;
 }
@@ -152,7 +152,7 @@ function currentBlockPos(): Pos {
 }
 
 function optionalBounds(imp: Importable): Bounds | undefined {
-    return imp.type === "REGION" ? (imp.bounds as Bounds | undefined) : undefined;
+    return imp.type === "REGION" ? (imp.bounds) : undefined;
 }
 
 function setSingleCoordinateFields(pos: Pos): void {

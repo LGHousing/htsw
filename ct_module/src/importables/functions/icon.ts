@@ -2,16 +2,17 @@ import type { FunctionIcon } from "htsw/types";
 import { MINECRAFT_ITEMS } from "htsw/types";
 
 import { itemHasEnchantGlint, itemWithEnchantGlint } from "../../utils/nbt";
+import { javaType } from "../../utils/java";
 
-const McItem = Java.type("net.minecraft.item.Item");
-const ItemStack = Java.type("net.minecraft.item.ItemStack");
+const McItem = javaType("net.minecraft.item.Item");
+const ItemStack = javaType("net.minecraft.item.ItemStack");
 
 // A function icon's identity: the item's HTSW name, stack count, and whether it
 // carries the enchantment glint. The display name/lore Housing hangs on the slot
 // is irrelevant, and damage/meta is dropped — those three are all the importer sets.
 export type FunctionIconSnapshot = { item: string; count: number; enchanted: boolean };
 
-function stackCount(stack: any): number {
+function stackCount(stack: HtswMinecraftItemStack): number {
     const n = stack.field_77994_a;
     return typeof n === "number" ? n : 0;
 }
@@ -24,7 +25,8 @@ function stackCount(stack: any): number {
 // validates against (bare `.name`); its `id` is the 1.8 getIdFromItem value.
 function itemNameForId(itemId: number): string | null {
     for (let i = 0; i < MINECRAFT_ITEMS.length; i++) {
-        if (MINECRAFT_ITEMS[i].id === itemId) return `minecraft:${MINECRAFT_ITEMS[i].name}`;
+        if (MINECRAFT_ITEMS[i].id === itemId)
+            return `minecraft:${MINECRAFT_ITEMS[i].name}`;
     }
     return null;
 }
@@ -34,11 +36,12 @@ function itemNameForId(itemId: number): string | null {
  * glint, ignoring NBT and the display name/lore Housing hangs on the slot.
  * Returns null for an empty stack or an item outside HTSW's table.
  */
-export function snapshotIconStack(stack: any): FunctionIconSnapshot | null {
+export function snapshotIconStack(
+    stack: HtswMinecraftItemStack | null | undefined
+): FunctionIconSnapshot | null {
     if (stack === null || stack === undefined) return null;
     const mcItem = stack.func_77973_b();
-    if (mcItem === null || mcItem === undefined) return null;
-    // @ts-expect-error func_150891_b is Item.getIdFromItem in 1.8.
+    if (mcItem === null) return null;
     const name = itemNameForId(McItem.func_150891_b(mcItem));
     if (name === null) return null;
     return {
@@ -48,13 +51,11 @@ export function snapshotIconStack(stack: any): FunctionIconSnapshot | null {
     };
 }
 
-function createIconStack(icon: FunctionIcon): any {
-    // @ts-expect-error func_111206_d is Item.getByNameOrId in 1.8.
+function createIconStack(icon: FunctionIcon): HtswMinecraftItemStack {
     const mcItem = McItem.func_111206_d(icon.item);
     if (mcItem === null) {
         throw new Error(`Unknown function icon item '${icon.item}'`);
     }
-    // @ts-expect-error ChatTriggers' TS declarations do not expose this NMS constructor.
     const stack = new ItemStack(mcItem, icon.count ?? 1);
     return icon.enchanted ? itemWithEnchantGlint(new Item(stack)).getItemStack() : stack;
 }
@@ -94,6 +95,9 @@ export function iconSnapshotsEqual(
  * ignoring NBT. The exact-NBT areItemStacksEqual used for GIVE_ITEM is too
  * strict for an icon, which the importer can only ever set to {item, count, glint}.
  */
-export function iconStacksEqual(a: any, b: any): boolean {
+export function iconStacksEqual(
+    a: HtswMinecraftItemStack | null | undefined,
+    b: HtswMinecraftItemStack | null | undefined
+): boolean {
     return iconSnapshotsEqual(snapshotIconStack(a), snapshotIconStack(b));
 }

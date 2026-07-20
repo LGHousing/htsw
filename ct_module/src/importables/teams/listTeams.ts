@@ -46,7 +46,6 @@ function teamNameFromSlotName(rawDisplayName: string): string | null {
 
 function readTeamEntryFromSlot(slot: ItemSlot, index: number): TeamListEntry | null {
     const item = slot.getItem();
-    if (item === null || item === undefined) return null;
     const displayName = item.getName();
     const name = teamNameFromSlotName(displayName);
     const color = teamGroupColorFromDisplayName(displayName);

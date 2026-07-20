@@ -118,7 +118,13 @@ describe("moveImportableEntry", () => {
         );
 
         expect(result.ok).toBe(true);
-        const dest = JSON.parse(fs.readFile("/project/dest.import.json"));
+        const dest = JSON.parse(fs.readFile("/project/dest.import.json")) as {
+            npcs: Array<{
+                name: string;
+                pos: { x: number; y: number; z: number };
+                leftClickActions: string;
+            }>;
+        };
         expect(dest.npcs).toEqual([
             {
                 name: "Guide",
@@ -126,7 +132,9 @@ describe("moveImportableEntry", () => {
                 leftClickActions: "guide_left.htsl",
             },
         ]);
-        const source = JSON.parse(fs.readFile("/project/npcs.import.json"));
+        const source = JSON.parse(
+            fs.readFile("/project/npcs.import.json")
+        ) as Record<string, unknown>;
         expect(source).not.toHaveProperty("npcs");
     });
 });

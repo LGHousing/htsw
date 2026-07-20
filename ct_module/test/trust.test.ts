@@ -168,7 +168,7 @@ describe("buildTrustPlan house lock gating", () => {
         const uuid = "dependency-cache-missing";
         const desired = fn([chat("same")]);
         const entry = cacheEntry(desired);
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
                 JSON.stringify(entry),
         };
@@ -208,7 +208,7 @@ describe("buildTrustPlan house lock gating", () => {
     it("keeps old dependency-less cache entries current", () => {
         const uuid = "dependency-cache-empty";
         const desired = fn([chat("same")]);
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
                 JSON.stringify(cacheEntry(desired)),
         };
@@ -232,7 +232,7 @@ describe("buildTrustPlan house lock gating", () => {
         const cached = fn([chat("cached")]);
         const desired = fn([chat("cached")]);
         const entry = cacheEntry(cached);
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
                 JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
@@ -269,7 +269,7 @@ describe("buildTrustPlan house lock gating", () => {
         const importJsonPath = "./projects/demo/import.json";
         const cached = fn([chat("same")]);
         const entry = cacheEntry(cached);
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
                 JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
@@ -304,7 +304,7 @@ describe("buildTrustPlan house lock gating", () => {
         const uuid = "lock-test-scan-hash";
         const importJsonPath = "./projects/demo/import.json";
         const desired = fn([chat("same")]);
-        const files: Record<string, string> = {
+        const files: Partial<Record<string, string>> = {
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,

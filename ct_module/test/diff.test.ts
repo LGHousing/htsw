@@ -188,7 +188,7 @@ describe("diffActionList — edits", () => {
         expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0, move: 0 });
         const edit = result.find((op) => op.kind === "edit")!;
         expect(edit.kind).toBe("edit");
-        const editOp = edit as Extract<ActionListOperation, { kind: "edit" }>;
+        const editOp = edit;
         expect(editOp.noteOnly).toBe(false);
         expect(editOp.childListDiffs).toEqual([]);
     });
@@ -233,8 +233,7 @@ describe("diffActionList — edits", () => {
         const observed = [obs(0, playSound({ volume: 0.5, note: "old" }))];
         const desired = [playSound({ volume: 0.9, note: "new" })];
         const result = ops(observed, desired);
-        const edit = result.find((op) => op.kind === "edit") as
-            Extract<ActionListOperation, { kind: "edit" }> | undefined;
+        const edit = result.find((op) => op.kind === "edit");
         expect(edit).toBeDefined();
         expect(edit!.noteOnly).toBe(false);
         expect(edit!.noteDiffers).toBe(true);
@@ -247,8 +246,7 @@ describe("diffActionList — edits", () => {
         const desired = [conditional({ ifActions: [message("new")], elseActions: [] })];
 
         const result = ops(observed, desired);
-        const edit = result.find((op) => op.kind === "edit") as
-            Extract<ActionListOperation, { kind: "edit" }> | undefined;
+        const edit = result.find((op) => op.kind === "edit");
 
         expect(edit).toBeDefined();
         expect(edit!.childListDiffs).toHaveLength(1);
@@ -274,8 +272,7 @@ describe("diffActionList — edits", () => {
         ];
 
         const result = ops(observed, desired);
-        const edit = result.find((op) => op.kind === "edit") as
-            Extract<ActionListOperation, { kind: "edit" }> | undefined;
+        const edit = result.find((op) => op.kind === "edit");
         const childListMoves = edit?.childListDiffs[0].diff.operations.filter(
             (op) => op.kind === "move"
         );
@@ -289,8 +286,7 @@ describe("diffActionList — edits", () => {
         const desired = [random({ actions: [message("old"), playSound()] })];
 
         const result = ops(observed, desired);
-        const edit = result.find((op) => op.kind === "edit") as
-            Extract<ActionListOperation, { kind: "edit" }> | undefined;
+        const edit = result.find((op) => op.kind === "edit");
 
         expect(edit).toBeDefined();
         expect(edit!.childListDiffs).toHaveLength(1);

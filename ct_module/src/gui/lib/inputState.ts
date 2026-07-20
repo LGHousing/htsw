@@ -12,17 +12,29 @@ import { javaType } from "./java";
 
 const GuiTextFieldClass = javaType("net.minecraft.client.gui.GuiTextField");
 
+type GuiTextField = HtswGuiTextField & {
+    func_146192_a(mouseX: number, mouseY: number, button: number): void;
+    func_146194_f(): void;
+    func_146201_a(character: string, keyCode: number): boolean;
+};
+
 type Record = {
-    field: any; // GuiTextField
+    field: GuiTextField;
     w: number;
     h: number;
     lastSyncedText: string;
 };
 
-const records: { [id: string]: Record } = {};
+const records: { [id: string]: Record | undefined } = {};
 let nextComponentId = 1000;
 
-function newField(x: number, y: number, w: number, h: number, text: string): any {
+function newField(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    text: string
+): GuiTextField {
     const fr = Renderer.getFontRenderer();
     // GuiTextField(int componentId, FontRenderer, int x, int y, int width, int height)
     const f = new GuiTextFieldClass(nextComponentId++, fr, x, y, w, h);
@@ -30,7 +42,7 @@ function newField(x: number, y: number, w: number, h: number, text: string): any
     f.func_146185_a(false); // setEnableBackgroundDrawing(false) — we draw our own bg
     f.func_146205_d(false); // setCanLoseFocus(false) — focus controlled externally
     f.func_146180_a(text); // setText
-    return f;
+    return f as GuiTextField;
 }
 
 export function getInputField(
@@ -40,11 +52,11 @@ export function getInputField(
     w: number,
     h: number,
     propText: string
-): any {
+): GuiTextField {
     let r = records[id];
-    if (!r || r.w !== w || r.h !== h) {
-        const oldText = r ? r.field.func_146179_b() : propText;
-        const oldCursor = r ? r.field.func_146198_h() : propText.length; // getCursorPosition
+    if (r === undefined || r.w !== w || r.h !== h) {
+        const oldText = r === undefined ? propText : r.field.func_146179_b();
+        const oldCursor = r === undefined ? propText.length : r.field.func_146198_h(); // getCursorPosition
         const newF = newField(x, y, w, h, oldText);
         newF.func_146190_e(oldCursor); // setCursorPosition
         r = { field: newF, w, h, lastSyncedText: oldText };
@@ -65,7 +77,7 @@ export function getInputField(
 // editing to detect onChange-worthy edits.
 export function readAndSync(id: string): string | null {
     const r = records[id];
-    if (!r) return null;
+    if (r === undefined) return null;
     const t = r.field.func_146179_b();
     r.lastSyncedText = t;
     return t;
@@ -75,12 +87,17 @@ export function getRecord(id: string): Record | null {
     return records[id] ?? null;
 }
 export function tickAllFields(): void {
-    for (const id in records) records[id].field.func_146178_a(); // updateCursorCounter
+    for (const id in records) {
+        const record = records[id];
+        if (record !== undefined) record.field.func_146178_a(); // updateCursorCounter
+    }
 }
 
 export function applyFocus(focusedId: string | null): void {
     for (const id in records) {
+        const record = records[id];
+        if (record === undefined) continue;
         const focused = id === focusedId;
-        records[id].field.func_146195_b(focused); // setFocused
+        record.field.func_146195_b(focused); // setFocused
     }
 }

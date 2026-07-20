@@ -1,5 +1,7 @@
 /// <reference types="../CTAutocomplete" />
 
+import { runtimeString, type RuntimeString } from "./utils/java";
+
 // Persisted user preferences. One JSON file for all of them so adding a
 // setting is a new field, not a new file with its own load/persist pair.
 const SETTINGS_PATH = "./config/ChatTriggers/modules/HTSW/gui-settings.json";
@@ -13,10 +15,6 @@ type Settings = {
     playImportCompletionSound: boolean;
     smoothScrolling: boolean;
     autoUpdate: AutoUpdatePreference;
-};
-
-type PersistedSettings = Partial<Settings> & {
-    muteImportSounds?: boolean;
 };
 
 let state: Settings = {
@@ -38,9 +36,14 @@ function load(): void {
     loaded = true;
     try {
         if (!FileLib.exists(SETTINGS_PATH)) return;
-        const raw = String(FileLib.read(SETTINGS_PATH) ?? "");
+        const stored = FileLib.read(SETTINGS_PATH) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw) as PersistedSettings;
+        const decoded: unknown = JSON.parse(raw);
+        if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
+            return;
+        }
+        const parsed = decoded as Record<string, unknown>;
         const legacySoundsMuted = parsed.muteImportSounds === true;
         state = {
             showInventoryButtons: parsed.showInventoryButtons !== false,

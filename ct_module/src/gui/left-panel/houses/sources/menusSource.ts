@@ -43,8 +43,8 @@ export function scanHouseMenus(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Menu scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Menu scan failed: ${err}`);
+        showToast(`Menu scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Menu scan failed: ${String(err)}`);
     });
 }
 
@@ -52,7 +52,10 @@ export function scanHouseMenus(): void {
 // deletion ("Deleted the custom menu") carries no title, so we can't patch a
 // single entry — the next rescan reconciles it. Renames (Change Title) have no
 // captured confirmation, so a retitle also needs a rescan.
-register("chat", (event: any) => {
+register("chat", (...args: (string | ForgeClientChatReceivedEvent)[]) => {
+    if (args.length === 0) return;
+    const event = args[args.length - 1];
+    if (typeof event === "string") return;
     const msg = ChatLib.getChatMessage(event, false);
     if (typeof msg !== "string") return;
     const uuid = getHousingUuid();

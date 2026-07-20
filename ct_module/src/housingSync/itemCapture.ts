@@ -20,6 +20,7 @@ import {
     itemToHtswTag,
 } from "../utils/nbt";
 import { removedFormatting, stableStringify } from "../utils/helpers";
+import { getMinecraft, getPlayer } from "../utils/java";
 import { closeOpenScreen } from "./sideEffects";
 import { clickGoBack } from "./menus/menuUtils";
 import { timedWaitForMenu } from "./menus/menuWait";
@@ -55,18 +56,16 @@ export type CapturedItem = {
 };
 
 export type InteractDataExpectation =
-    | { kind: "absent" }
-    | { kind: "cached"; snbt: string }
-    | { kind: "uncached" };
+    { kind: "absent" } | { kind: "cached"; snbt: string } | { kind: "uncached" };
 
 export class ItemCaptureRegistry {
-    private byHash: Record<string, CapturedItem> = Object.create(null);
-    private nameToHash: Record<string, string> = Object.create(null);
+    private byHash = Object.create(null) as Partial<Record<string, CapturedItem>>;
+    private nameToHash = Object.create(null) as Partial<Record<string, string>>;
     // Stripped display name → seeded project name, for the "resembles" hint
     // when a NEW capture shares a display name with an existing project item.
-    private seededDisplayNames: Record<string, string> = Object.create(null);
-    private matchedHashes: Record<string, true> = Object.create(null);
-    private capturedNames: Record<string, true> = Object.create(null);
+    private seededDisplayNames = Object.create(null) as Partial<Record<string, string>>;
+    private matchedHashes = Object.create(null) as Record<string, true>;
+    private capturedNames = Object.create(null) as Record<string, true>;
     private hintLines: string[] = [];
 
     /**
@@ -180,7 +179,8 @@ export class ItemCaptureRegistry {
     newEntries(): CapturedItem[] {
         const out: CapturedItem[] = [];
         for (const hash in this.byHash) {
-            if (!this.byHash[hash].seeded) out.push(this.byHash[hash]);
+            const entry = this.byHash[hash];
+            if (entry !== undefined && !entry.seeded) out.push(entry);
         }
         return out;
     }
@@ -200,7 +200,8 @@ export class ItemCaptureRegistry {
     entries(): CapturedItem[] {
         const out: CapturedItem[] = [];
         for (const hash in this.byHash) {
-            out.push(this.byHash[hash]);
+            const entry = this.byHash[hash];
+            if (entry !== undefined) out.push(entry);
         }
         return out;
     }
@@ -232,9 +233,7 @@ export class ItemCaptureRegistry {
  * so a placed/action item compares equal to its source.
  */
 export function canonicalItemKey(item: Item): string {
-    const tag = itemToHtswTag(item) as TagLike | null;
-    if (tag === null) return "<null>";
-    return canonicalStringify(canonicalItemTag(tag));
+    return canonicalStringify(canonicalItemTag(itemToHtswTag(item)));
 }
 
 function displayNameFromTag(root: unknown): string | null {
@@ -251,15 +250,19 @@ function slugForDisplayName(displayName: string): string {
     return slug.length > 0 ? slug : "captured_item";
 }
 
-function getStackCount(stack: any): number {
+function getStackCount(stack: unknown): number {
     if (stack === null || stack === undefined) return 0;
+    const item = stack as {
+        getItemStack(): HtswMinecraftItemStack | null;
+        getStackSize(): number;
+    };
     try {
-        const n = stack.getStackSize();
+        const n = item.getStackSize();
         if (typeof n === "number") return n;
     } catch (_e) {}
     try {
-        const raw = stack.getItemStack();
-        if (raw !== null && raw !== undefined) {
+        const raw = item.getItemStack();
+        if (raw !== null) {
             const field = raw.field_77994_a;
             if (typeof field === "number") return field;
         }
@@ -298,7 +301,7 @@ function diffForCapture(
     let found: { snbt: string; slotId: number } | null = null;
     for (let i = 0; i < before.length; i++) {
         const b = before[i];
-        const a = after[i];
+        const a = i < after.length ? after[i] : undefined;
         if (a === undefined) continue;
         if (a.nbt === null) continue;
         if (a.nbt === b.nbt && a.count === b.count) continue;
@@ -339,7 +342,8 @@ function inventorySlotToPacketSlot(slotId: number): number {
 }
 
 function inventorySlotToOpenContainerSlot(slotId: number): number | null {
-    const container = Player.getContainer();
+    const container = Player.getContainer() as unknown as
+        ReturnType<typeof Player.getContainer> | null | undefined;
     if (container === null || container === undefined) return null;
     const size = container.getSize();
     if (size < INVENTORY_SIZE) return null;
@@ -364,14 +368,19 @@ function inventoryEntrySummary(
 ): string {
     const key = mergeKey(entry.nbt);
     const candidateKey = stackMergeCandidateKey(entry.nbt);
-    const containerSlot = view === "openContainer"
-        ? inventorySlotToOpenContainerSlot(entry.slotId)
-        : null;
+    const containerSlot =
+        view === "openContainer" ? inventorySlotToOpenContainerSlot(entry.slotId) : null;
     return `slot=${entry.slotId} packet=${inventorySlotToPacketSlot(entry.slotId)} container=${containerSlot === null ? "none" : containerSlot} count=${entry.count} identityMatch=${key === targetKey} mergeMatch=${targetMergeKey !== null && candidateKey === targetMergeKey} key=${shortHash(key)} merge=${shortHash(candidateKey)}`;
 }
 
-function entryFromItem(slotId: number, stack: Item | null | undefined): InventorySnapshotEntry {
-    const nbt = stack === null || stack === undefined ? null : snbtFromItem(stack, { pretty: false });
+function entryFromItem(
+    slotId: number,
+    stack: Item | null | undefined
+): InventorySnapshotEntry {
+    const nbt =
+        stack === null || stack === undefined
+            ? null
+            : snbtFromItem(stack, { pretty: false });
     if (nbt === null) return { slotId, nbt: null, count: 0 };
     return { slotId, nbt, count: getStackCount(stack) };
 }
@@ -383,8 +392,16 @@ function playerInventoryEntry(slotId: number): InventorySnapshotEntry {
 function openContainerInventoryEntry(slotId: number): InventorySnapshotEntry {
     const containerSlot = inventorySlotToOpenContainerSlot(slotId);
     if (containerSlot !== null) {
-        const item = Player.getContainer()?.getItems()?.[containerSlot];
-        return entryFromItem(slotId, item);
+        const container = Player.getContainer() as unknown as
+            ReturnType<typeof Player.getContainer> | null | undefined;
+        if (container !== null && container !== undefined) {
+            const items = container.getItems() as unknown as Array<
+                Item | null | undefined
+            >;
+            if (containerSlot >= 0 && containerSlot < items.length) {
+                return entryFromItem(slotId, items[containerSlot]);
+            }
+        }
     }
     return playerInventoryEntry(slotId);
 }
@@ -413,23 +430,21 @@ async function waitForInventorySlotMatch(
     return pollTicks(
         ctx,
         SET_SLOT_ACK_MAX_TICKS,
-        () => inventoryEntryMatches(readInventoryEntry(slotId, view), expectedNbt, expectedCount),
+        () =>
+            inventoryEntryMatches(
+                readInventoryEntry(slotId, view),
+                expectedNbt,
+                expectedCount
+            ),
         { stableTicks: 2 }
     );
 }
 
-async function waitForSetSlotAck(
-    ctx: TaskContext,
-    label: string
-): Promise<void> {
+async function waitForSetSlotAck(ctx: TaskContext, label: string): Promise<void> {
     try {
-        await ctx.withTimeout(
-            waitForAnySetSlot(ctx),
-            label,
-            SET_SLOT_ACK_TIMEOUT_MS
-        );
+        await ctx.withTimeout(waitForAnySetSlot(ctx), label, SET_SLOT_ACK_TIMEOUT_MS);
     } catch (error) {
-        traceNote("item-capture", `${label} timeout: ${error}`);
+        traceNote("item-capture", `${label} timeout: ${String(error)}`);
     }
 }
 
@@ -443,7 +458,10 @@ async function clearMergeCandidates(
     let cleared = false;
     const nonEmpty: string[] = [];
     for (let i = 0; i < snapshot.length; i++) {
-        if (snapshot[i].nbt !== null) nonEmpty.push(inventoryEntrySummary(snapshot[i], targetKey, targetMergeKey, view));
+        if (snapshot[i].nbt !== null)
+            nonEmpty.push(
+                inventoryEntrySummary(snapshot[i], targetKey, targetMergeKey, view)
+            );
     }
     traceNote(
         "item-capture",
@@ -453,16 +471,16 @@ async function clearMergeCandidates(
         const entry = snapshot[i];
         const entryKey = mergeKey(entry.nbt);
         const entryMergeKey = stackMergeCandidateKey(entry.nbt);
-        if (entryKey !== targetKey && (targetMergeKey === null || entryMergeKey !== targetMergeKey)) continue;
+        if (
+            entryKey !== targetKey &&
+            (targetMergeKey === null || entryMergeKey !== targetMergeKey)
+        )
+            continue;
         traceNote(
             "item-capture",
             `clear merge candidate ${inventoryEntrySummary(entry, targetKey, targetMergeKey, view)}`
         );
-        sendCreativeInventoryAction(
-            ctx,
-            inventorySlotToPacketSlot(entry.slotId),
-            null,
-        );
+        sendCreativeInventoryAction(ctx, inventorySlotToPacketSlot(entry.slotId), null);
         cleared = true;
         await waitForSetSlotAck(ctx, `clear merge slot ${entry.slotId}`);
         const matched = await waitForInventorySlotMatch(ctx, view, entry.slotId, null, 0);
@@ -478,9 +496,17 @@ async function clearMergeCandidates(
             const entry = snapshot[i];
             if (
                 mergeKey(entry.nbt) === targetKey ||
-                (targetMergeKey !== null && stackMergeCandidateKey(entry.nbt) === targetMergeKey)
+                (targetMergeKey !== null &&
+                    stackMergeCandidateKey(entry.nbt) === targetMergeKey)
             ) {
-                afterTick.push(inventoryEntrySummary(readInventoryEntry(entry.slotId, view), targetKey, targetMergeKey, view));
+                afterTick.push(
+                    inventoryEntrySummary(
+                        readInventoryEntry(entry.slotId, view),
+                        targetKey,
+                        targetMergeKey,
+                        view
+                    )
+                );
             }
         }
         traceNote("item-capture", `after clear tick inventory=[${afterTick.join("; ")}]`);
@@ -569,7 +595,9 @@ function rewriteSnbtCount(snbt: string, newCount: number): string {
 export function prettySnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, { pretty: true });
+        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, {
+            pretty: true,
+        });
     } catch (_error) {
         return snbt;
     }
@@ -586,7 +614,7 @@ export function itemInteractDataMatches(
     return canonicalSnbt(observed) === canonicalSnbt(expected.snbt);
 }
 
-function interactDataTag(itemSnbt: string): unknown | null {
+function interactDataTag(itemSnbt: string): unknown {
     try {
         const item = htsw.nbt.parseSnbtText(itemSnbt) as TagLike;
         return (
@@ -613,28 +641,30 @@ export function portableItemSnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
         return htsw.nbt.printSnbt(
-            stripInteractData(normalizeBlankLoreSeparators(tag) as TagLike) as Tag,
+            stripInteractData(normalizeBlankLoreSeparators(tag)) as Tag,
             { pretty: true }
         );
     } catch (_error) {
         return snbt;
     }
-
 }
 
 export function normalizeItemSnbtForExport(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, { pretty: false });
+        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, {
+            pretty: false,
+        });
     } catch (_error) {
         return snbt;
     }
 }
 
-export function snbtFromItem(item: Item, opts: { pretty: boolean }): string | null {
+export function snbtFromItem(item: Item, opts: { pretty: boolean }): string {
     const tag = itemToHtswTag(item);
-    if (tag === null) return null;
-    return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag as TagLike) as Tag, { pretty: opts.pretty });
+    return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, {
+        pretty: opts.pretty,
+    });
 }
 
 export async function captureItemFromOpenEditorField(
@@ -674,12 +704,24 @@ export async function captureItemFromOpenEditorField(
         const originalInventory = snapshotOpenContainerInventory();
         let retainCapturedItem = false;
         try {
-            await clearMergeCandidates(ctx, inventoryView, originalInventory, targetKey, targetMergeKey);
+            await clearMergeCandidates(
+                ctx,
+                inventoryView,
+                originalInventory,
+                targetKey,
+                targetMergeKey
+            );
 
             if (isInventoryFull(inventoryView)) {
                 sendCreativeInventoryAction(ctx, SCRATCH_PACKET_SLOT, null);
                 await waitForSetSlotAck(ctx, "scratch clear ack");
-                await waitForInventorySlotMatch(ctx, inventoryView, SCRATCH_PACKET_SLOT, null, 0);
+                await waitForInventorySlotMatch(
+                    ctx,
+                    inventoryView,
+                    SCRATCH_PACKET_SLOT,
+                    null,
+                    0
+                );
             }
 
             const captureBaseline = snapshotOpenContainerInventory();
@@ -813,8 +855,8 @@ export async function holdCapturedItem(
 
     await closeOpenScreen(ctx);
     if (slotId >= 9) {
-        const player = Player.getPlayer() as any;
-        const controller = Client.getMinecraft().field_71442_b;
+        const player = getPlayer();
+        const controller = getMinecraft().field_71442_b;
         const sourceSlot = inventoryContainerSlot(slotId);
         controller.func_78753_a(0, sourceSlot, 0, 0, player);
         controller.func_78753_a(0, 36, 0, 0, player);
@@ -837,22 +879,18 @@ export async function restoreInventoryToSnapshot(
         if (inventoryEntryMatches(current, entry.nbt, entry.count)) continue;
 
         const packetSlot = inventorySlotToPacketSlot(entry.slotId);
-        let desiredStack: any = null;
+        let desiredStack: HtswMinecraftItemStack | null = null;
         if (entry.nbt !== null) {
             try {
                 desiredStack = getItemFromSnbt(entry.nbt).getItemStack();
             } catch (error) {
                 ctx.displayMessage(
-                    `&7[item-capture] &eFailed to rebuild slot ${entry.slotId} item from snapshot: ${error}`
+                    `&7[item-capture] &eFailed to rebuild slot ${entry.slotId} item from snapshot: ${String(error)}`
                 );
                 continue;
             }
         }
-        sendCreativeInventoryAction(
-            ctx,
-            packetSlot,
-            desiredStack,
-        );
+        sendCreativeInventoryAction(ctx, packetSlot, desiredStack);
         try {
             await ctx.withTimeout(
                 waitForAnySetSlot(ctx),
@@ -860,9 +898,18 @@ export async function restoreInventoryToSnapshot(
                 SET_SLOT_ACK_TIMEOUT_MS
             );
         } catch (error) {
-            traceNote("item-capture", `restore slot ${entry.slotId} ack timeout: ${error}`);
+            traceNote(
+                "item-capture",
+                `restore slot ${entry.slotId} ack timeout: ${String(error)}`
+            );
         }
-        const restored = await waitForInventorySlotMatch(ctx, view, entry.slotId, entry.nbt, entry.count);
+        const restored = await waitForInventorySlotMatch(
+            ctx,
+            view,
+            entry.slotId,
+            entry.nbt,
+            entry.count
+        );
         if (!restored) {
             const currentEntry = readInventoryEntry(entry.slotId, view);
             traceNote(

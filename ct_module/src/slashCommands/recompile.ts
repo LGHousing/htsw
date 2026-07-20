@@ -1,4 +1,5 @@
 import { FileSystemFileLoader } from "../utils/fileLoaders";
+import { javaType, runtimeString, type RuntimeString } from "../utils/java";
 
 function readDotEnv(key: string): string | null {
     // .env lives next to this CT module at install time, not at the MC
@@ -149,7 +150,7 @@ function ansiToMinecraft(text: string): string {
                     // Reset individual attrs – no MC equivalent, ignore
                 } else if (c === 39) {
                     result += "&r"; // Default foreground
-                } else if (ANSI_FG_TO_MC[c] !== undefined) {
+                } else if (Object.prototype.hasOwnProperty.call(ANSI_FG_TO_MC, c)) {
                     result += ANSI_FG_TO_MC[c];
                 } else if (c === 38) {
                     // Extended foreground: 38;5;N  or  38;2;R;G;B
@@ -190,20 +191,20 @@ function ansiToMinecraft(text: string): string {
  * @param prefix  Formatting prefix prepended to every line (e.g. "&c" for stderr)
  * @returns       The Java Thread so the caller can `.join()` it later.
  */
-function streamToChat(stream: any, prefix: string): any {
-    const BufferedReader = Java.type("java.io.BufferedReader");
-    const InputStreamReader = Java.type("java.io.InputStreamReader");
-    const Runnable = Java.type("java.lang.Runnable");
-    const Thread = Java.type("java.lang.Thread");
+function streamToChat(stream: HtswJavaInputStream, prefix: string): HtswJavaThread {
+    const BufferedReader = javaType("java.io.BufferedReader");
+    const InputStreamReader = javaType("java.io.InputStreamReader");
+    const Runnable = javaType("java.lang.Runnable");
+    const Thread = javaType("java.lang.Thread");
 
     const thread = new Thread(
         new Runnable({
             run: () => {
                 try {
                     const br = new BufferedReader(new InputStreamReader(stream));
-                    let line: string;
+                    let line: RuntimeString | null;
                     while ((line = br.readLine()) !== null) {
-                        const formatted = ansiToMinecraft(line);
+                        const formatted = ansiToMinecraft(runtimeString(line));
                         if (formatted.trim().length > 0) {
                             ChatLib.chat(prefix + formatted);
                         }
@@ -228,8 +229,8 @@ function streamToChat(stream: any, prefix: string): any {
 function runOSCommandStreaming(command: string[]): number {
     ChatLib.chat("&aRunning: &7" + command.map(quoteCommandArg).join(" "));
 
-    const ProcessBuilder = Java.type("java.lang.ProcessBuilder");
-    const ArrayList = Java.type("java.util.ArrayList");
+    const ProcessBuilder = javaType("java.lang.ProcessBuilder");
+    const ArrayList = javaType("java.util.ArrayList");
 
     const args = new ArrayList();
     for (const arg of command) {
@@ -267,8 +268,8 @@ export function recompile() {
         return;
     }
 
-    const Runnable = Java.type("java.lang.Runnable");
-    const Thread = Java.type("java.lang.Thread");
+    const Runnable = javaType("java.lang.Runnable");
+    const Thread = javaType("java.lang.Thread");
 
     const task = new Runnable({
         run: function () {

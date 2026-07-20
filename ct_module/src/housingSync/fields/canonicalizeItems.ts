@@ -2,7 +2,9 @@ import type { ItemRegistry } from "../../importables/itemRegistry";
 import type { UiFieldKind } from "./loreSpecs";
 
 type FieldSpec = { prop: string; kind: UiFieldKind };
-type MappingTable = Record<string, { loreFields: Record<string, FieldSpec> }>;
+type MappingTable = Partial<
+    Record<string, { loreFields: Record<string, FieldSpec> }>
+>;
 
 /**
  * Walks a node (action or condition) and re-routes every `kind: "item"`

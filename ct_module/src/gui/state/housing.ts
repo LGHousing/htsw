@@ -2,6 +2,7 @@
 
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { setExportImportJsonPath } from "./paths";
+import { runtimeString, type RuntimeString } from "../lib/java";
 
 // Persisted across /ct reload: the in-memory uuid being wiped left every
 // house-derived UI (bind chips, bound markers, house names) in its gray
@@ -20,7 +21,8 @@ function load(): void {
     loaded = true;
     try {
         if (!FileLib.exists(HOUSING_STATE_PATH)) return;
-        const raw = String(FileLib.read(HOUSING_STATE_PATH) ?? "");
+        const stored = FileLib.read(HOUSING_STATE_PATH) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.trim() === "") return;
         const parsed = JSON.parse(raw) as { uuid?: unknown };
         if (typeof parsed.uuid === "string" && parsed.uuid.length > 0) {

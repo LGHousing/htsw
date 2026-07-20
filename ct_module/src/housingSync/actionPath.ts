@@ -93,8 +93,10 @@ export const ActionPath = {
         for (let i = 0; i < path.parts.length; i++) {
             const part = path.parts[i];
             if (typeof part === "number") {
-                action = list[part] ?? null;
-                if (action === null) return null;
+                if (part < 0 || part >= list.length) return null;
+                const nextAction = (list as readonly (Action | undefined)[])[part];
+                if (nextAction === undefined) return null;
+                action = nextAction;
                 continue;
             }
             if (action === null) return null;
@@ -133,11 +135,10 @@ export const ActionTreePath = {
 
     equals(a: ActionTreePath, b: ActionTreePath): boolean {
         if (a.kind !== b.kind) return false;
-        if (a.kind === "conditionList" && b.kind === "conditionList") {
-            return a.prop === b.prop && ActionPath.equals(a.parent, b.parent);
+        if (a.kind === "conditionList") {
+            return ActionTreePath.key(a) === ActionTreePath.key(b);
         }
-        if (a.kind === "conditionList" || b.kind === "conditionList") return false;
-        return partsEqual(a.parts, b.parts);
+        return partsEqual(a.parts, (b as ActionListPath | ActionPath).parts);
     },
 
     parentAction(path: ActionTreePath): ActionPath | null {

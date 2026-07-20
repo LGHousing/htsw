@@ -1,10 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import {
-    ClickInfo,
-    Element,
-    Rect,
-} from "../../lib/layout";
+import { ClickInfo, Element, Rect } from "../../lib/layout";
 import { Button, Container, Icon, McItem, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
@@ -19,10 +15,21 @@ import {
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { ACCENT_DANGER, ACCENT_INFO, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT } from "../../lib/theme";
+import {
+    ACCENT_DANGER,
+    ACCENT_INFO,
+    ACCENT_SUCCESS,
+    ACCENT_WARN,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+} from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
-import { cacheStateForImportable, importableLinkStatus, linkStatusIcon } from "../../cache-status";
+import {
+    cacheStateForImportable,
+    importableLinkStatus,
+    linkStatusIcon,
+} from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
 import {
     hasChildList,
@@ -58,9 +65,20 @@ import {
 } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, needsModifiedQueue, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
+import {
+    autoTrackRefresh,
+    needsModifiedQueue,
+    queueModifiedFromPath,
+    queueModifiedImportables,
+} from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
-import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeHouseExportCount, subtreeImportableCount } from "./includeTree";
+import {
+    type IncludeNode,
+    findIncludeNode,
+    includeTreeOf,
+    subtreeHouseExportCount,
+    subtreeImportableCount,
+} from "./includeTree";
 import {
     showInExplorer,
     openInVSCode,
@@ -86,8 +104,8 @@ import {
 import { openMoveDestinationPicker } from "./moveDestinationPicker";
 import { acceptHouseLockMenuAction } from "./acceptHouseLock";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
-import type { Bounds, Importable, MenuSlot } from "htsw/types";
-import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
+import type { Importable, MenuSlot } from "htsw/types";
+import { tagChild } from "../../../housingSync/fields/itemTagCanonical";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
 import { exportBatch, exportExisting } from "../../../importables/exportBatch";
@@ -144,7 +162,10 @@ const includeGroupExpansion: Map<string, boolean> = new Map();
 export function includeGroupKey(entryFullPath: string, nodeFullPath: string): string {
     return `${entryFullPath}::${nodeFullPath}`;
 }
-export function isIncludeGroupExpanded(expKey: string, defaultExpanded: boolean): boolean {
+export function isIncludeGroupExpanded(
+    expKey: string,
+    defaultExpanded: boolean
+): boolean {
     return includeGroupExpansion.get(expKey) ?? defaultExpanded;
 }
 export function expandIncludeGroup(expKey: string): void {
@@ -262,7 +283,12 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                ...(cf !== null ? valDiff(functionIconCompareKey(imp.icon), functionIconCompareKey(cf.icon)) : undefined),
+                ...(cf !== null
+                    ? valDiff(
+                          functionIconCompareKey(imp.icon),
+                          functionIconCompareKey(cf.icon)
+                      )
+                    : undefined),
             },
         ];
         if (imp.icon !== undefined) {
@@ -271,7 +297,9 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 label: "Count",
                 value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
                 // count 1 and absent count are the same icon.
-                ...(cf !== null ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1) : undefined),
+                ...(cf !== null
+                    ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1)
+                    : undefined),
             });
         }
         return fields;
@@ -283,25 +311,31 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "mode",
                 label: "Mode",
                 value: imp.mode ?? "Self",
-                ...(cc !== null ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self") : undefined),
+                ...(cc !== null
+                    ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self")
+                    : undefined),
             },
             {
                 key: "requiredPriority",
                 label: "Priority",
                 value: String(imp.requiredPriority ?? 0),
-                ...(cc !== null ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0) : undefined),
+                ...(cc !== null
+                    ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0)
+                    : undefined),
             },
             {
                 key: "listed",
                 label: "Listed",
                 value: (imp.listed ?? true) ? "true" : "false",
-                ...(cc !== null ? valDiff(imp.listed ?? true, cc.listed ?? true) : undefined),
+                ...(cc !== null
+                    ? valDiff(imp.listed ?? true, cc.listed ?? true)
+                    : undefined),
             },
         ];
     }
     if (imp.type === "REGION") {
         const cr = cached !== null && cached.type === "REGION" ? cached : null;
-        const bounds = imp.bounds as Bounds | undefined;
+        const bounds = imp.bounds;
         const cachedBounds = cr?.bounds;
         if (bounds === undefined) {
             return [
@@ -315,12 +349,20 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
         }
         return [
             {
-                key: "boundsFrom", label: "From", value: formatPos(bounds.from),
-                ...(cachedBounds !== undefined ? valDiff(bounds.from, cachedBounds.from) : undefined),
+                key: "boundsFrom",
+                label: "From",
+                value: formatPos(bounds.from),
+                ...(cachedBounds !== undefined
+                    ? valDiff(bounds.from, cachedBounds.from)
+                    : undefined),
             },
             {
-                key: "boundsTo", label: "To", value: formatPos(bounds.to),
-                ...(cachedBounds !== undefined ? valDiff(bounds.to, cachedBounds.to) : undefined),
+                key: "boundsTo",
+                label: "To",
+                value: formatPos(bounds.to),
+                ...(cachedBounds !== undefined
+                    ? valDiff(bounds.to, cachedBounds.to)
+                    : undefined),
             },
         ];
     }
@@ -347,10 +389,15 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
             {
                 key: "leftClickRedirect",
                 label: "Redirect",
-                value: imp.leftClickRedirect === undefined
-                    ? "default"
-                    : imp.leftClickRedirect ? "true" : "false",
-                ...(cn !== null ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect) : undefined),
+                value:
+                    imp.leftClickRedirect === undefined
+                        ? "default"
+                        : imp.leftClickRedirect
+                          ? "true"
+                          : "false",
+                ...(cn !== null
+                    ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect)
+                    : undefined),
             },
         ];
     }
@@ -449,8 +496,13 @@ function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
         danger: true,
         onConfirm: () => {
             const section = SECTION_BY_TYPE[imp.type];
-            if (section === undefined || !removeImportableEntry(parent.fullPath, section, identity)) {
-                ChatLib.chat(`&c[htsw] Couldn't remove '${identity}' from ${shortPath(parent.fullPath)}`);
+            if (
+                section === undefined ||
+                !removeImportableEntry(parent.fullPath, section, identity)
+            ) {
+                ChatLib.chat(
+                    `&c[htsw] Couldn't remove '${identity}' from ${shortPath(parent.fullPath)}`
+                );
                 return;
             }
             for (let i = 0; i < files.length; i++) {
@@ -461,11 +513,15 @@ function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
                 }
                 closeTab(files[i]);
             }
-            removeFromQueueKey(queueItemKey(makeImportableQueueItem(imp, parent.fullPath)));
+            removeFromQueueKey(
+                queueItemKey(makeImportableQueueItem(imp, parent.fullPath))
+            );
             markParseStale(parent.fullPath);
             requestParse(parent.fullPath);
             bumpTreeRevision();
-            ChatLib.chat(`&a[htsw] Deleted '${identity}' from ${shortPath(parent.fullPath)}.`);
+            ChatLib.chat(
+                `&a[htsw] Deleted '${identity}' from ${shortPath(parent.fullPath)}.`
+            );
         },
     });
 }
@@ -489,12 +545,18 @@ function confirmDeleteProject(importJsonPath: string): void {
             invalidateParseCacheEntry(importJsonPath);
             bumpTreeRevision();
             if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
-            else ChatLib.chat(`&c[htsw] Couldn't fully delete ${dir} — check it manually.`);
+            else
+                ChatLib.chat(
+                    `&c[htsw] Couldn't fully delete ${dir} — check it manually.`
+                );
         },
     });
 }
 
-function confirmDeleteIncludedProject(parentImportJsonPath: string, includedImportJsonPath: string): void {
+function confirmDeleteIncludedProject(
+    parentImportJsonPath: string,
+    includedImportJsonPath: string
+): void {
     const dir = projectDirOf(includedImportJsonPath);
     const count = countFilesRecursive(dir);
     openConfirmPopover({
@@ -507,8 +569,12 @@ function confirmDeleteIncludedProject(parentImportJsonPath: string, includedImpo
         confirmLabel: `Delete ${count} file${count === 1 ? "" : "s"}`,
         danger: true,
         onConfirm: () => {
-            if (!removeIncludeFromImportJson(parentImportJsonPath, includedImportJsonPath)) {
-                ChatLib.chat(`&c[htsw] Couldn't remove include from ${shortPath(parentImportJsonPath)}.`);
+            if (
+                !removeIncludeFromImportJson(parentImportJsonPath, includedImportJsonPath)
+            ) {
+                ChatLib.chat(
+                    `&c[htsw] Couldn't remove include from ${shortPath(parentImportJsonPath)}.`
+                );
                 return;
             }
             const ok = deleteDirRecursive(dir);
@@ -520,14 +586,21 @@ function confirmDeleteIncludedProject(parentImportJsonPath: string, includedImpo
             requestParse(parentImportJsonPath);
             bumpTreeRevision();
             if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
-            else ChatLib.chat(`&c[htsw] Couldn't fully delete ${dir} — check it manually.`);
+            else
+                ChatLib.chat(
+                    `&c[htsw] Couldn't fully delete ${dir} — check it manually.`
+                );
         },
     });
 }
 
 function fsActions(fullPath: string): MenuAction[] {
     return [
-        { label: revealInFilesLabel(), icon: Icons.folderOpen, onClick: () => showInExplorer(fullPath) },
+        {
+            label: revealInFilesLabel(),
+            icon: Icons.folderOpen,
+            onClick: () => showInExplorer(fullPath),
+        },
         {
             label: "Copy path",
             icon: Icons.copy,
@@ -535,7 +608,11 @@ function fsActions(fullPath: string): MenuAction[] {
                 if (setClipboardString(fullPath)) ChatLib.chat("&a[htsw] Copied path.");
             },
         },
-        { label: "Open with VSCode", icon: Icons.codeXml, onClick: () => openInVSCode(fullPath) },
+        {
+            label: "Open with VSCode",
+            icon: Icons.codeXml,
+            onClick: () => openInVSCode(fullPath),
+        },
     ];
 }
 
@@ -597,9 +674,15 @@ function openInHousingAction(imp: Importable): MenuAction | null {
 
 function importableExportType(type: Importable["type"]): HouseExportTypeName | null {
     if (
-        type === "FUNCTION" || type === "EVENT" || type === "MENU" ||
-        type === "REGION" || type === "COMMAND" || type === "TEAM" || type === "GROUP"
-    ) return type;
+        type === "FUNCTION" ||
+        type === "EVENT" ||
+        type === "MENU" ||
+        type === "REGION" ||
+        type === "COMMAND" ||
+        type === "TEAM" ||
+        type === "GROUP"
+    )
+        return type;
     return null;
 }
 
@@ -611,7 +694,11 @@ function projectBindingWarning(parent: ResultImport): string[] {
         : [];
 }
 
-function finishProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+function finishProjectReExport(
+    parent: ResultImport,
+    importJsonPath: string,
+    count: number
+): void {
     markParseStale(parent.fullPath);
     requestParse(parent.fullPath);
     bumpTreeRevision();
@@ -621,36 +708,49 @@ function finishProjectReExport(parent: ResultImport, importJsonPath: string, cou
     );
 }
 
-function runProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+function runProjectReExport(
+    parent: ResultImport,
+    importJsonPath: string,
+    count: number
+): void {
     if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", ACCENT_WARN);
         return;
     }
     runHousingSyncTask("export", (ctx) =>
-        exportExisting(ctx, readExportProjectContext({
-            rootDir: projectDirOf(importJsonPath),
-            importJsonPath,
-        }))
-    ).then((result) => {
-        if (result === undefined) return;
-        if (result.failed > 0) {
-            markParseStale(parent.fullPath);
-            requestParse(parent.fullPath);
-            bumpTreeRevision();
-            showToast(
-                `Re-export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
-                ACCENT_DANGER,
-                8000
-            );
-            return;
-        }
-        finishProjectReExport(parent, importJsonPath, count);
-    }).catch((err: unknown) => {
-        showToast(`Re-export failed: ${err}`, ACCENT_DANGER, 8000);
-    });
+        exportExisting(
+            ctx,
+            readExportProjectContext({
+                rootDir: projectDirOf(importJsonPath),
+                importJsonPath,
+            })
+        )
+    )
+        .then((result) => {
+            if (result === undefined) return;
+            if (result.failed > 0) {
+                markParseStale(parent.fullPath);
+                requestParse(parent.fullPath);
+                bumpTreeRevision();
+                showToast(
+                    `Re-export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
+                    ACCENT_DANGER,
+                    8000
+                );
+                return;
+            }
+            finishProjectReExport(parent, importJsonPath, count);
+        })
+        .catch((err: unknown) => {
+            showToast(`Re-export failed: ${String(err)}`, ACCENT_DANGER, 8000);
+        });
 }
 
-function confirmProjectReExport(parent: ResultImport, importJsonPath: string, count: number): void {
+function confirmProjectReExport(
+    parent: ResultImport,
+    importJsonPath: string,
+    count: number
+): void {
     openConfirmPopover({
         title: `Re-export ${count} declared from the house?`,
         lines: [
@@ -663,7 +763,10 @@ function confirmProjectReExport(parent: ResultImport, importJsonPath: string, co
     });
 }
 
-function reExportImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
+function reExportImportableAction(
+    parent: ResultImport,
+    imp: Importable
+): MenuAction | null {
     if (imp.type === "ITEM") return null;
     return {
         label: "Re-export from house",
@@ -709,7 +812,10 @@ function hasModifiedForQueue(importables: readonly Importable[]): boolean {
     return false;
 }
 
-function queueModifiedAction(importables: readonly Importable[], onClick: () => void): MenuAction[] {
+function queueModifiedAction(
+    importables: readonly Importable[],
+    onClick: () => void
+): MenuAction[] {
     if (!hasModifiedForQueue(importables)) return [];
     return [
         {
@@ -785,16 +891,22 @@ function runSingleImportableReExport(parent: ResultImport, imp: Importable): voi
             type,
             names: [importableIdentity(imp)],
         });
-    }).then((result) => {
-        if (result === undefined) return;
-        if (result.failed > 0) {
-            showToast(`Re-export failed for ${importableLabel(imp)}`, ACCENT_DANGER, 8000);
-            return;
-        }
-        finishProjectReExport(parent, parent.fullPath, 1);
-    }).catch((err: unknown) => {
-        showToast(`Re-export failed: ${err}`, ACCENT_DANGER, 8000);
-    });
+    })
+        .then((result) => {
+            if (result === undefined) return;
+            if (result.failed > 0) {
+                showToast(
+                    `Re-export failed for ${importableLabel(imp)}`,
+                    ACCENT_DANGER,
+                    8000
+                );
+                return;
+            }
+            finishProjectReExport(parent, parent.fullPath, 1);
+        })
+        .catch((err: unknown) => {
+            showToast(`Re-export failed: ${String(err)}`, ACCENT_DANGER, 8000);
+        });
 }
 
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
@@ -805,7 +917,9 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     const deepRead = readImportableAction(parent, imp);
     const actions: MenuAction[] = [
         {
-            label: isInQueue(queueItemKey(item)) ? "Remove from queue" : "Queue for import",
+            label: isInQueue(queueItemKey(item))
+                ? "Remove from queue"
+                : "Queue for import",
             icon: Icons.listPlus,
             onClick: () => toggleQueue(item),
         },
@@ -833,7 +947,8 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                   {
                       label: "Move to…",
                       icon: Icons.folderInput,
-                      onClick: () => openMoveDestinationPicker(parent, imp, lastMenuX, lastMenuY),
+                      onClick: () =>
+                          openMoveDestinationPicker(parent, imp, lastMenuX, lastMenuY),
                   } as MenuAction,
               ]
             : []),
@@ -900,7 +1015,12 @@ function changedAggregate(count: number): Element {
                 tooltipColor: ACCENT_WARN,
                 children: [],
             }),
-            Text({ text: String(count), color: ACCENT_WARN, tooltip, tooltipColor: ACCENT_WARN }),
+            Text({
+                text: String(count),
+                color: ACCENT_WARN,
+                tooltip,
+                tooltipColor: ACCENT_WARN,
+            }),
         ],
     });
 }
@@ -915,7 +1035,10 @@ function errorAggregate(count: number): Element {
                 color: ACCENT_DANGER,
                 tooltip,
                 tooltipColor: ACCENT_DANGER,
-                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+                style: {
+                    width: { kind: "px", value: 9 },
+                    height: { kind: "px", value: 9 },
+                },
             }),
             Container({
                 style: { padding: { side: "top", value: 1 } },
@@ -945,13 +1068,20 @@ function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): El
     return out;
 }
 
-function queueImportables(parent: ResultImport, importables: readonly Importable[]): void {
+function queueImportables(
+    parent: ResultImport,
+    importables: readonly Importable[]
+): void {
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
         const item = makeImportableQueueItem(imp, parent.fullPath);
         const added = addToQueue(item);
         if (!added && !isInQueue(queueItemKey(item))) continue;
-        const key = importableSelectionKey(parent.fullPath, imp.type, importableIdentity(imp));
+        const key = importableSelectionKey(
+            parent.fullPath,
+            imp.type,
+            importableIdentity(imp)
+        );
         if (!isImportableChecked(key)) toggleImportableChecked(key);
     }
 }
@@ -1020,7 +1150,10 @@ function queueCheckbox(checked: boolean, onToggle: () => void): Element {
                 color,
                 tooltip: checked ? "Queued" : "Add to queue",
                 tooltipColor: color,
-                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
             }),
         ],
     });
@@ -1059,7 +1192,10 @@ function rowMenuButton(actions: MenuAction[], key: string): Element {
             Icon({
                 name: Icons.ellipsisVertical,
                 color: COLOR_TEXT_FAINT,
-                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+                style: {
+                    width: { kind: "px", value: 11 },
+                    height: { kind: "px", value: 11 },
+                },
             }),
         ],
     });
@@ -1165,7 +1301,10 @@ function houseBindControl(fullPath: string): Element | false {
                     color: COLOR_TEXT_FAINT,
                     tooltip: `Bind to ${houseDisplayName(current)}`,
                     tooltipColor: COLOR_TEXT_DIM,
-                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                    style: {
+                        width: { kind: "px", value: 10 },
+                        height: { kind: "px", value: 10 },
+                    },
                 }),
             ],
         });
@@ -1195,7 +1334,10 @@ function houseBindControl(fullPath: string): Element | false {
                 color,
                 tooltip: tip,
                 tooltipColor: color,
-                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+                style: {
+                    width: { kind: "px", value: 9 },
+                    height: { kind: "px", value: 9 },
+                },
             }),
             Text({
                 text: houseDisplayName(boundUuid),
@@ -1229,76 +1371,83 @@ export function resultRow(
     const importJsonPath = isImport ? r.fullPath : null;
     const expKey = expansionKey(sourceKey, r.fullPath);
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
-    const aggregateIndicators = isImport && !expanded
-        ? collapsedSubtreeAggregates(r, includeTreeOf(r))
-        : [];
-    const fileExtras: MenuAction[] = isImport && r.type === "import"
-        ? [
-              {
-                  label: "Queue all for import",
-                  icon: Icons.listPlus,
-                  onClick: () => {
-                      queueImportJsonSubtree(r, includeTreeOf(r));
+    const aggregateIndicators =
+        isImport && !expanded ? collapsedSubtreeAggregates(r, includeTreeOf(r)) : [];
+    const fileExtras: MenuAction[] =
+        isImport
+            ? [
+                  {
+                      label: "Queue all for import",
+                      icon: Icons.listPlus,
+                      onClick: () => {
+                          queueImportJsonSubtree(r, includeTreeOf(r));
+                      },
                   },
-              },
-              ...queueModifiedAction(
-                  subtreeImportables(includeTreeOf(r)),
-                  () => queueModifiedFromPath(r.fullPath)
-              ),
-              {
-                  label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
-                  icon: Icons.refreshCw,
-                  disabled: () => getHousingUuid() === null,
-                  onClick: () => confirmProjectReExport(
-                      r,
-                      r.fullPath,
-                      subtreeHouseExportCount(includeTreeOf(r))
+                  ...queueModifiedAction(subtreeImportables(includeTreeOf(r)), () =>
+                      queueModifiedFromPath(r.fullPath)
                   ),
-              },
-              {
-                  label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
-                  icon: Icons.scanEye,
-                  disabled: () => getHousingUuid() === null,
-                  onClick: () => runProjectDeepRead(
-                      r,
-                      r.fullPath,
-                      subtreeImportables(includeTreeOf(r))
-                  ),
-              },
-              { kind: "separator" },
-              openInViewAction(r.fullPath, importJsonPath),
-              { kind: "separator" },
-              {
-                  label: isAutoTrackSource(r.fullPath) ? "Auto-Track: ON" : "Auto-Track: OFF",
-                  icon: Icons.radar,
-                  onClick: () => {
-                      const nowOn = toggleAutoTrackSource(r.fullPath);
-                      if (nowOn === null) {
-                          ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
-                          return;
-                      }
-                      if (nowOn) autoTrackRefresh();
+                  {
+                      label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
+                      icon: Icons.refreshCw,
+                      disabled: () => getHousingUuid() === null,
+                      onClick: () =>
+                          confirmProjectReExport(
+                              r,
+                              r.fullPath,
+                              subtreeHouseExportCount(includeTreeOf(r))
+                          ),
                   },
-              },
-              acceptHouseLockMenuAction(r.fullPath),
-              {
-                  label: "Open project in VSCode",
-                  icon: Icons.folderCode,
-                  onClick: () => {
-                      openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
+                  {
+                      label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
+                      icon: Icons.scanEye,
+                      disabled: () => getHousingUuid() === null,
+                      onClick: () =>
+                          runProjectDeepRead(
+                              r,
+                              r.fullPath,
+                              subtreeImportables(includeTreeOf(r))
+                          ),
                   },
-              },
-              ...fsActions(r.fullPath),
-              ...extraActions,
-              { kind: "separator" },
-              {
-                  label: "Delete project folder…",
-                  icon: Icons.trash2,
-                  onClick: () => confirmDeleteProject(r.fullPath),
-              },
-          ]
-        : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
-    const actions = isImport ? fileExtras : composeFileMenu(fileExtras, r.fullPath, importJsonPath);
+                  { kind: "separator" },
+                  openInViewAction(r.fullPath, importJsonPath),
+                  { kind: "separator" },
+                  {
+                      label: isAutoTrackSource(r.fullPath)
+                          ? "Auto-Track: ON"
+                          : "Auto-Track: OFF",
+                      icon: Icons.radar,
+                      onClick: () => {
+                          const nowOn = toggleAutoTrackSource(r.fullPath);
+                          if (nowOn === null) {
+                              ChatLib.chat(
+                                  "&c[htsw] Couldn't save the Auto-Track setting."
+                              );
+                              return;
+                          }
+                          if (nowOn) autoTrackRefresh();
+                      },
+                  },
+                  acceptHouseLockMenuAction(r.fullPath),
+                  {
+                      label: "Open project in VSCode",
+                      icon: Icons.folderCode,
+                      onClick: () => {
+                          openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
+                      },
+                  },
+                  ...fsActions(r.fullPath),
+                  ...extraActions,
+                  { kind: "separator" },
+                  {
+                      label: "Delete project folder…",
+                      icon: Icons.trash2,
+                      onClick: () => confirmDeleteProject(r.fullPath),
+                  },
+              ]
+            : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
+    const actions = isImport
+        ? fileExtras
+        : composeFileMenu(fileExtras, r.fullPath, importJsonPath);
     return Container({
         style: {
             direction: "row",
@@ -1316,10 +1465,14 @@ export function resultRow(
         onDoubleClick: () => confirmSelect(r.fullPath, importJsonPath),
         children: [
             isImport
-                ? caretButton(expanded, () => {
-                      importExpansion.set(expKey, !expanded);
-                      bumpTreeRevision();
-                  }, DISCLOSURE_W)
+                ? caretButton(
+                      expanded,
+                      () => {
+                          importExpansion.set(expKey, !expanded);
+                          bumpTreeRevision();
+                      },
+                      DISCLOSURE_W
+                  )
                 : rowSlot(DISCLOSURE_W),
             fileIconFor(r),
             rowSlot(INNER_GAP),
@@ -1341,12 +1494,20 @@ export function resultRow(
 // parent import.json's directory ("clocks", "../shared/menus-module").
 // Indentation already conveys nesting for downward includes; upward includes
 // keep their "../" hops so the cross-folder relationship stays visible.
-function includeRowLabel(parentNodePath: string, rootNodePath: string, fullPath: string): string {
-    const rel = relativePath(projectDirOf(parentNodePath), fullPath) ??
+function includeRowLabel(
+    parentNodePath: string,
+    rootNodePath: string,
+    fullPath: string
+): string {
+    const rel =
+        relativePath(projectDirOf(parentNodePath), fullPath) ??
         relativePath(projectDirOf(rootNodePath), fullPath);
     if (rel === null) return shortPath(fullPath);
     const suffix = "/import.json";
-    if (rel.length > suffix.length && rel.lastIndexOf(suffix) === rel.length - suffix.length) {
+    if (
+        rel.length > suffix.length &&
+        rel.lastIndexOf(suffix) === rel.length - suffix.length
+    ) {
         return rel.substring(0, rel.length - suffix.length);
     }
     return rel;
@@ -1372,7 +1533,9 @@ function relativePath(fromDir: string, fullPath: string): string | null {
 }
 
 function pathSegments(path: string): string[] {
-    return toForwardSlashes(path).split("/").filter((part) => part.length > 0);
+    return toForwardSlashes(path)
+        .split("/")
+        .filter((part) => part.length > 0);
 }
 
 export function includeGroupRow(
@@ -1397,9 +1560,8 @@ export function includeGroupRow(
             icon: Icons.listPlus,
             onClick: () => queueImportJsonSubtree(parent, node),
         },
-        ...queueModifiedAction(
-            declaredImportables,
-            () => queueModifiedSubtree(parent, node)
+        ...queueModifiedAction(declaredImportables, () =>
+            queueModifiedSubtree(parent, node)
         ),
         {
             label: `Re-export from house (${count})`,
@@ -1421,7 +1583,8 @@ export function includeGroupRow(
         {
             label: "Delete project folder…",
             icon: Icons.trash2,
-            onClick: () => confirmDeleteIncludedProject(canonicalPath(parentNodePath), fullPath),
+            onClick: () =>
+                confirmDeleteIncludedProject(canonicalPath(parentNodePath), fullPath),
         },
     ];
     return Container({
@@ -1440,14 +1603,22 @@ export function includeGroupRow(
         onClick: rowHandler(actions, () => previewSelect(fullPath, parent.fullPath)),
         onDoubleClick: () => confirmSelect(fullPath, parent.fullPath),
         children: [
-            caretButton(expanded, () => {
-                includeGroupExpansion.set(expKey, !expanded);
-                bumpTreeRevision();
-            }, DISCLOSURE_W),
+            caretButton(
+                expanded,
+                () => {
+                    includeGroupExpansion.set(expKey, !expanded);
+                    bumpTreeRevision();
+                },
+                DISCLOSURE_W
+            ),
             Icon({ name: Icons.fileJson, color: ACCENT_INFO }),
             rowSlot(INNER_GAP),
             Text({
-                text: includeRowLabel(parentNodePath, canonicalPath(parent.fullPath), fullPath),
+                text: includeRowLabel(
+                    parentNodePath,
+                    canonicalPath(parent.fullPath),
+                    fullPath
+                ),
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
@@ -1501,7 +1672,11 @@ function includeReferenceRow(
             }),
             rowSlot(INNER_GAP),
             Text({
-                text: includeRowLabel(parentNodePath, canonicalPath(parent.fullPath), fullPath),
+                text: includeRowLabel(
+                    parentNodePath,
+                    canonicalPath(parent.fullPath),
+                    fullPath
+                ),
                 color: COLOR_TEXT_FAINT,
                 truncate: true,
                 style: { width: { kind: "grow" } },
@@ -1538,7 +1713,10 @@ function diagnosticBadge(counts: SeverityCounts): Element {
                 color,
                 tooltip: tip,
                 tooltipColor: color,
-                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+                style: {
+                    width: { kind: "px", value: 9 },
+                    height: { kind: "px", value: 9 },
+                },
             }),
             // The MC font digit sits ~1px high in its line box vs the icon's
             // geometric centre; a 1px top pad drops it to match.
@@ -1587,7 +1765,11 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
-    const checkKey = importableSelectionKey(parent.fullPath, imp.type, importableIdentity(imp));
+    const checkKey = importableSelectionKey(
+        parent.fullPath,
+        imp.type,
+        importableIdentity(imp)
+    );
     const checked = isImportableChecked(checkKey);
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
     const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
@@ -1610,13 +1792,14 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             background: () => (isJumpFlashing(expKey) ? ROW_HOVER_BG : ROW_BG),
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(
-            importableActions(parent, imp),
-            () => previewSelect(previewPath, parent.fullPath)
+        onClick: rowHandler(importableActions(parent, imp), () =>
+            previewSelect(previewPath, parent.fullPath)
         ),
         onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
         children: [
-            queueCheckbox(checked, () => toggleImportableInQueue(parent, imp, checkKey, checked)),
+            queueCheckbox(checked, () =>
+                toggleImportableInQueue(parent, imp, checkKey, checked)
+            ),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
             rowSlot(INNER_GAP),
             importableStatus(imp),
@@ -1643,7 +1826,11 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     });
 }
 
-export function childListRow(parent: ResultImport, imp: Importable, kind: ImportableChildListName): Element {
+export function childListRow(
+    parent: ResultImport,
+    imp: Importable,
+    kind: ImportableChildListName
+): Element {
     const label = CHILD_LIST_LABELS[kind];
     const target = importableChildListPath(imp, kind) ?? parent.fullPath;
     const actions = composeFileMenu(
@@ -1653,9 +1840,7 @@ export function childListRow(parent: ResultImport, imp: Importable, kind: Import
     );
     const cached = getCachedImportable(imp);
     const itemChange =
-        imp.type === "ITEM" && cached?.type === "ITEM"
-            ? itemChanges(imp, cached)
-            : null;
+        imp.type === "ITEM" && cached?.type === "ITEM" ? itemChanges(imp, cached) : null;
     const changed =
         itemChange !== null &&
         ((kind === "leftClickActions" && itemChange.leftClickActions) ||
@@ -1689,7 +1874,10 @@ export function childListRow(parent: ResultImport, imp: Importable, kind: Import
             Icon({
                 name: Icons.fileCode,
                 color: IMPORTABLE_TYPE_COLORS[imp.type],
-                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+                style: {
+                    width: { kind: "px", value: 11 },
+                    height: { kind: "px", value: 11 },
+                },
             }),
             rowSlot(INNER_GAP),
             Text({
@@ -1701,7 +1889,11 @@ export function childListRow(parent: ResultImport, imp: Importable, kind: Import
     });
 }
 
-export function menuSlotExpansionKey(parent: ResultImport, imp: Importable, slot: MenuSlot): string {
+export function menuSlotExpansionKey(
+    parent: ResultImport,
+    imp: Importable,
+    slot: MenuSlot
+): string {
     return `${importableExpansionKey(parent.fullPath, imp)}::slot:${slot.slot}`;
 }
 
@@ -1717,17 +1909,23 @@ function menuSlotFilePath(
 ): string {
     const path = kind === "item" ? slot.nbtPath : slot.actionsPath;
     if (path !== undefined) return path;
-    return parent.parse !== null ? importableDeclaringPath(imp, parent.parse) : parent.fullPath;
+    return parent.parse !== null
+        ? importableDeclaringPath(imp, parent.parse)
+        : parent.fullPath;
 }
 
 function slotItemId(slot: MenuSlot): string | undefined {
-    const id = tagChild(slot.nbt as TagLike, "id");
+    const id = tagChild(slot.nbt, "id");
     return id !== undefined && id.type === "string" ? String(id.value) : undefined;
 }
 
 function slotItemLabel(slot: MenuSlot): string {
-    const name = tagChild(tagChild(tagChild(slot.nbt as TagLike, "tag"), "display"), "Name");
-    if (name !== undefined && name.type === "string" && String(name.value).trim().length > 0) {
+    const name = tagChild(tagChild(tagChild(slot.nbt, "tag"), "display"), "Name");
+    if (
+        name !== undefined &&
+        name.type === "string" &&
+        String(name.value).trim().length > 0
+    ) {
         return String(name.value);
     }
     if (slot.nbtPath !== undefined) {
@@ -1750,10 +1948,19 @@ function slotDiagnosticCounts(parent: ResultImport, slot: MenuSlot): SeverityCou
     return out;
 }
 
-export function menuSlotRow(parent: ResultImport, imp: Importable, slot: MenuSlot): Element {
+export function menuSlotRow(
+    parent: ResultImport,
+    imp: Importable,
+    slot: MenuSlot
+): Element {
     const expKey = menuSlotExpansionKey(parent, imp, slot);
     const expanded = importableExpansion.has(expKey);
-    const target = menuSlotFilePath(parent, imp, slot, slot.actions !== undefined ? "actions" : "item");
+    const target = menuSlotFilePath(
+        parent,
+        imp,
+        slot,
+        slot.actions !== undefined ? "actions" : "item"
+    );
     const actions = composeFileMenu(
         [openInViewAction(target, parent.fullPath)],
         target,
@@ -1782,7 +1989,10 @@ export function menuSlotRow(parent: ResultImport, imp: Importable, slot: MenuSlo
                 : Icon({
                       name: Icons.fileCode,
                       color: IMPORTABLE_TYPE_COLORS[imp.type],
-                      style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+                      style: {
+                          width: { kind: "px", value: 11 },
+                          height: { kind: "px", value: 11 },
+                      },
                   }),
             rowSlot(INNER_GAP),
             slotStatus !== null && linkStatusIcon(slotStatus.key, slotStatus.tooltip),
@@ -1835,7 +2045,10 @@ export function menuSlotFileRow(
             Icon({
                 name: Icons.fileCode,
                 color: IMPORTABLE_TYPE_COLORS[kind === "item" ? "ITEM" : imp.type],
-                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+                style: {
+                    width: { kind: "px", value: 11 },
+                    height: { kind: "px", value: 11 },
+                },
             }),
             rowSlot(INNER_GAP),
             Text({ text: kind === "item" ? "Item" : "Actions", color: COLOR_TEXT_DIM }),
@@ -1850,27 +2063,36 @@ export function menuSlotFileRow(
     });
 }
 
-const DIFF_SYMBOL: { [k in FieldDiff]: string } = { changed: "~", added: "+", removed: "-" };
+const DIFF_SYMBOL: { [k in FieldDiff]: string } = {
+    changed: "~",
+    added: "+",
+    removed: "-",
+};
 const DIFF_COLOR: { [k in FieldDiff]: number } = {
     changed: 0xffe5bc4b | 0,
     added: 0xff5cb85c | 0,
     removed: 0xffe85c5c | 0,
 };
 
-export function metadataRow(parent: ResultImport, imp: Importable, field: MetadataField): Element {
-    const fileTarget = imp.type === "ITEM" && field.key === "nbt"
-        ? importableSourceFilePath(parent, imp)
-        : null;
+export function metadataRow(
+    parent: ResultImport,
+    imp: Importable,
+    field: MetadataField
+): Element {
+    const fileTarget =
+        imp.type === "ITEM" && field.key === "nbt"
+            ? importableSourceFilePath(parent, imp)
+            : null;
     const editable =
-        field.key !== "legacyDiff" &&
-        !(imp.type === "NPC" && field.key === "pos");
-    const actions = fileTarget === null
-        ? null
-        : composeFileMenu(
-              [openInViewAction(fileTarget, parent.fullPath)],
-              fileTarget,
-              parent.fullPath
-          );
+        field.key !== "legacyDiff" && !(imp.type === "NPC" && field.key === "pos");
+    const actions =
+        fileTarget === null
+            ? null
+            : composeFileMenu(
+                  [openInViewAction(fileTarget, parent.fullPath)],
+                  fileTarget,
+                  parent.fullPath
+              );
     const value = fileTarget === null ? field.value : shortPath(fileTarget);
     return Container({
         style: {
@@ -1886,13 +2108,15 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
         onClick: !editable
             ? undefined
             : fileTarget === null || actions === null
-            ? (rect, info) => {
-                  if (info.button !== 0) return;
-                  openEditImportableFieldPopover(rect, parent.fullPath, imp, field.key);
-              }
-            : rowHandler(actions, () => previewSelect(fileTarget, parent.fullPath)),
+              ? (rect, info) => {
+                    if (info.button !== 0) return;
+                    openEditImportableFieldPopover(rect, parent.fullPath, imp, field.key);
+                }
+              : rowHandler(actions, () => previewSelect(fileTarget, parent.fullPath)),
         onDoubleClick:
-            fileTarget === null ? undefined : () => confirmSelect(fileTarget, parent.fullPath),
+            fileTarget === null
+                ? undefined
+                : () => confirmSelect(fileTarget, parent.fullPath),
         children: [
             field.diff !== undefined
                 ? Text({

@@ -251,7 +251,7 @@ async function prereadMenuConflictLists(
             continue;
         }
 
-        let editorOpened = false;
+        const editor = { opened: false };
         await prepareActionListSync(ctx, {
             desired,
             session,
@@ -266,10 +266,10 @@ async function prereadMenuConflictLists(
             open: async () => {
                 menuGridClick(op.slot, "LEFT");
                 await timedWaitForMenu(ctx, "menuClickWait");
-                editorOpened = true;
+                editor.opened = true;
             },
         });
-        if (editorOpened) await clickGoBack(ctx);
+        if (editor.opened) await clickGoBack(ctx);
     }
 }
 
@@ -345,8 +345,8 @@ function buildMenuDiff(
             const baselineSlot = baselineBySlot.get(change.slot);
             if (baselineSlot !== undefined) {
                 op.itemCompare = {
-                    read: snbtFromItem(baselineSlot.item, { pretty: false }) ?? "<null>",
-                    desired: snbtFromItem(desiredItem, { pretty: false }) ?? "<null>",
+                    read: snbtFromItem(baselineSlot.item, { pretty: false }),
+                    desired: snbtFromItem(desiredItem, { pretty: false }),
                 };
             }
         }
@@ -486,11 +486,11 @@ export async function applyImportableMenuPlan(
             baselineApplyUnits: completedUnits,
             parentSync: { completedUnits: workDone, totalUnits: totals.count },
         };
-        let actionsEditorOpened = false;
+        const editor = { opened: false };
         const openActionsEditor = async (): Promise<void> => {
             menuGridClick(op.slot, "LEFT");
             await timedWaitForMenu(ctx, "menuClickWait");
-            actionsEditorOpened = true;
+            editor.opened = true;
         };
         const actionsSync = await prepareActionListSync(ctx, {
             desired: op.syncActions,
@@ -501,7 +501,7 @@ export async function applyImportableMenuPlan(
             open: openActionsEditor,
         });
         if (actionsSync.kind === "planned") {
-            if (!actionsEditorOpened) await openActionsEditor();
+            if (!editor.opened) await openActionsEditor();
             await applyActionListPlan(ctx, actionsSync.plan, { session, progressScope });
             await clickGoBack(ctx);
         }

@@ -2,6 +2,7 @@ import { VERSION, runtime } from "htsw";
 
 import { getDate, getGamemode } from "./helpers";
 import { getSimulatorRuntime } from "./session";
+import { getPlayer } from "../utils/java";
 
 const MOCK_DATA = {
     server: {
@@ -69,7 +70,7 @@ export function createPlaceholderBehaviors(vars: runtime.simple.Vars): runtime.P
         .with("player.health", () => runtime.VarLong.fromNumber(Player.getHP()))
         .with("player.maxhealth", () =>
             runtime.VarLong.fromNumber(
-                Player.getPlayer()
+                getPlayer()
                     .func_110138_aP /*getMaxHealth*/
                     ()
             )
@@ -151,7 +152,7 @@ export function createPlaceholderBehaviors(vars: runtime.simple.Vars): runtime.P
 function behaviorPlayerTeamPlayers(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     if (invocation.args.length > 1) return runtime.VarLong.fromNumber(0);
     return runtime.VarLong.fromNumber(MOCK_DATA.player.team.players);
 }
@@ -159,41 +160,41 @@ function behaviorPlayerTeamPlayers(
 function behaviorDateDay(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getDate());
 }
 
 function behaviorDateMonth(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getMonth());
 }
 
 function behaviorDateYear(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getFullYear());
 }
 
 function behaviorDateHour(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getHours());
 }
 
 function behaviorDateMinute(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getMinutes());
 }
 
 function behaviorDateSeconds(
     _rt: runtime.Runtime,
     invocation: runtime.PlaceholderInvocation
-): runtime.Var<any> {
+): runtime.VarLong {
     return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getSeconds());
 }

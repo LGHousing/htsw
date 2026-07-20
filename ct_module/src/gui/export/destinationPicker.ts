@@ -84,9 +84,11 @@ function createExportProject(name: string, sectionFolders: boolean): void {
         });
         selectExportImportJson(result.importJsonPath);
         closeAllPopovers();
-        ChatLib.chat(`&a[htsw] ${result.created ? "Created" : "Selected"} ${result.importJsonPath}`);
+        ChatLib.chat(
+            `&a[htsw] ${result.created ? "Created" : "Selected"} ${result.importJsonPath}`
+        );
     } catch (err) {
-        ChatLib.chat(`&c[htsw] New project failed: ${err}`);
+        ChatLib.chat(`&c[htsw] New project failed: ${String(err)}`);
     }
 }
 
@@ -128,7 +130,8 @@ function destinationRow(path: string, boundPath: string | null): Element {
             gap: 6,
             height: { kind: "px", value: 28 },
             background: () => (selected() ? COLOR_ROW_SELECTED : COLOR_ROW),
-            hoverBackground: () => (selected() ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER),
+            hoverBackground: () =>
+                selected() ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
         // Selecting a destination keeps the picker open so the "New exports
         // land in" tree below can rebuild for it — the whole point of the
@@ -146,7 +149,11 @@ function destinationRow(path: string, boundPath: string | null): Element {
                         color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
                         truncate: true,
                     }),
-                    Text({ text: shortPath(path), color: COLOR_TEXT_DIM, truncate: true }),
+                    Text({
+                        text: shortPath(path),
+                        color: COLOR_TEXT_DIM,
+                        truncate: true,
+                    }),
                 ],
             }),
             ...(bound
@@ -156,7 +163,10 @@ function destinationRow(path: string, boundPath: string | null): Element {
                           color: ACCENT_SUCCESS,
                           tooltip: "Bound to this house",
                           tooltipColor: COLOR_TEXT_DIM,
-                          style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                          style: {
+                              width: { kind: "px", value: 10 },
+                              height: { kind: "px", value: 10 },
+                          },
                       }),
                   ]
                 : []),
@@ -187,7 +197,7 @@ function splitIntoSectionFolders(importJsonPath: string): void {
             0xff5cb85c
         );
     } catch (err) {
-        showToast(`Split failed: ${err}`, 0xffe85c5c, 8000);
+        showToast(`Split failed: ${String(err)}`, 0xffe85c5c, 8000);
     }
 }
 
@@ -210,7 +220,9 @@ function dirOfPath(p: string): string {
 
 function baseIncludeTree(base: string): IncludeNode | null {
     const cached = requestParse(base);
-    return cached !== null && cached.parsed !== null ? cached.parsed.importJson.fileTree : null;
+    return cached !== null && cached.parsed !== null
+        ? cached.parsed.importJson.fileTree
+        : null;
 }
 
 function exportSubSignature(base: string): string {
@@ -229,7 +241,8 @@ function rebuildExportSubTree(base: string): void {
     exportSubRoots = [buildPickerNode(root, projectDir, 0, null)];
     exportSubExpansion.clear();
     for (let i = 0; i < exportSubRoots.length; i++) {
-        if (exportSubRoots[i].children.length > 0) exportSubExpansion.add(exportSubRoots[i].path);
+        if (exportSubRoots[i].children.length > 0)
+            exportSubExpansion.add(exportSubRoots[i].path);
     }
 }
 
@@ -275,7 +288,9 @@ function newExportFileRow(): Element {
         text: "New import.json…",
         disabled,
         tooltip: () =>
-            disabled() ? "Choose an available project first" : "Create an included export folder",
+            disabled()
+                ? "Choose an available project first"
+                : "Create an included export folder",
         tooltipColor: COLOR_TEXT_FAINT,
         style: {
             width: { kind: "grow" },
@@ -318,7 +333,7 @@ function newExportFileRow(): Element {
                             );
                         }
                     } catch (err) {
-                        ChatLib.chat(`&c[htsw] New file failed: ${err}`);
+                        ChatLib.chat(`&c[htsw] New file failed: ${String(err)}`);
                     }
                 },
             });
@@ -375,7 +390,9 @@ export function exportDestinationPicker(): Element {
 
     const projectRows: Element[] = [
         ...open.map(row),
-        ...(recents.length === 0 ? [] : [destinationSection("Recent"), ...recents.map(row)]),
+        ...(recents.length === 0
+            ? []
+            : [destinationSection("Recent"), ...recents.map(row)]),
     ];
     if (projectRows.length === 0) {
         projectRows.push(destinationSection("No available projects"));
@@ -404,7 +421,10 @@ export function exportDestinationPicker(): Element {
             destinationSection("Project"),
             Scroll({
                 id: "export-dest-projects",
-                style: { gap: 2, height: { kind: "px", value: EXPORT_PROJECTS_SCROLL_H } },
+                style: {
+                    gap: 2,
+                    height: { kind: "px", value: EXPORT_PROJECTS_SCROLL_H },
+                },
                 children: () => projectRows,
             }),
             Row({
@@ -419,7 +439,8 @@ export function exportDestinationPicker(): Element {
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },
-                        onClick: () => openNewProjectPopover(aliasPrefill(), createExportProject),
+                        onClick: () =>
+                            openNewProjectPopover(aliasPrefill(), createExportProject),
                     }),
                     Button({
                         icon: Icons.search,
@@ -445,7 +466,10 @@ export function exportDestinationPicker(): Element {
                     Text({
                         text: "New entries go in",
                         color: COLOR_TEXT_FAINT,
-                        style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
+                        style: {
+                            width: { kind: "grow" },
+                            padding: { side: "x", value: 4 },
+                        },
                     }),
                     splitAction(availableExportImportJsonPath()),
                 ],

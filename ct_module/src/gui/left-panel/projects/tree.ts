@@ -8,13 +8,7 @@ import {
 } from "../../lib/layout";
 import { Col, Container, Text } from "../../lib/components";
 import { COLOR_TEXT_DIM } from "../../lib/theme";
-import {
-    Source,
-    SourceDir,
-    SourceFile,
-    enumerateForSource,
-    getSources,
-} from "./source";
+import { Source, SourceDir, SourceFile, enumerateForSource, getSources } from "./source";
 import { sortResults } from "./sort";
 import {
     isImportableStatusFilterActive,
@@ -23,7 +17,13 @@ import {
     isLinkStatusActive,
     resetFilters,
 } from "./filter";
-import { Result, ResultImport, ROW_BG, bumpTreeRevision, getTreeRevision } from "./rowModel";
+import {
+    Result,
+    ResultImport,
+    ROW_BG,
+    bumpTreeRevision,
+    getTreeRevision,
+} from "./rowModel";
 import {
     type IncludeNode,
     includeAncestorPaths,
@@ -185,9 +185,9 @@ function gapBandFor(r: TreeRow): Element {
 
 function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
     if (
-        cacheEpisode !== null
-        && r.cachedEpisode === cacheEpisode
-        && r.cachedElement !== undefined
+        cacheEpisode !== null &&
+        r.cachedEpisode === cacheEpisode &&
+        r.cachedElement !== undefined
     ) {
         return r.cachedElement;
     }
@@ -252,8 +252,8 @@ function buildRoots(): Root[] {
     return out;
 }
 
-function importableName(imp: { type: string; name?: string; event?: string }): string {
-    return imp.type === "EVENT" ? (imp as any).event : (imp as any).name;
+function importableName(imp: Importable): string {
+    return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
 function filterImportableList(r: ResultImport, list: Importable[]): Importable[] {
@@ -266,7 +266,8 @@ function filterImportableList(r: ResultImport, list: Importable[]): Importable[]
         if (
             isImportableStatusFilterActive() &&
             !isLinkStatusActive(importableLinkStatus(imp).key)
-        ) continue;
+        )
+            continue;
         if (q.length > 0 && !pathMatch) {
             if (importableName(imp).toLowerCase().indexOf(q) < 0) continue;
         }
@@ -321,7 +322,8 @@ function resultsForSource(s: Source): Result[] {
     let anyIncludes = false;
     for (let i = 0; i < all.length; i++) {
         const r = all[i];
-        const tree = r.type !== "import" || r.parse === null ? null : r.parse.importJson.fileTree;
+        const tree =
+            r.type !== "import" || r.parse === null ? null : r.parse.importJson.fileTree;
         if (tree === null || tree.includes.length === 0) {
             includesByRow.push(null);
             continue;
@@ -369,7 +371,11 @@ function isIncludedElsewhere(
 // importables — groups first, like folders before files, so includes don't
 // hide below a long flat run. While a search/type filter narrows, groups
 // auto-expand and empty ones disappear.
-function emitImportContents(out: TreeRow[], r: ResultImport, baseLevels: LevelGuide[]): void {
+function emitImportContents(
+    out: TreeRow[],
+    r: ResultImport,
+    baseLevels: LevelGuide[]
+): void {
     if (r.parsePending && r.parse === null) {
         out.push({
             levels: baseLevels,
@@ -425,14 +431,15 @@ function emitIncludeNode(
         out.push({
             levels,
             branch: isLast ? "ell" : "tee",
-            content: () => includeGroupRow(
-                r,
-                kid,
-                expKey,
-                narrowing,
-                canonicalPath(node.path),
-                isReference ? () => jumpToIncludeNode(r, kidPath) : undefined
-            ),
+            content: () =>
+                includeGroupRow(
+                    r,
+                    kid,
+                    expKey,
+                    narrowing,
+                    canonicalPath(node.path),
+                    isReference ? () => jumpToIncludeNode(r, kidPath) : undefined
+                ),
             height: 18,
             key: isReference ? undefined : expKey,
         });
@@ -588,7 +595,12 @@ let lastBuildMs = 0;
 let maxBuildMs = 0;
 let buildCount = 0;
 
-export function getTreePerfStats(): { lastBuildMs: number; maxBuildMs: number; builds: number; rows: number } {
+export function getTreePerfStats(): {
+    lastBuildMs: number;
+    maxBuildMs: number;
+    builds: number;
+    rows: number;
+} {
     return {
         lastBuildMs,
         maxBuildMs,
@@ -601,9 +613,9 @@ function treeRows(): TreeRow[] {
     const now = Date.now();
     const parseRevision = getParseCacheRevision();
     if (
-        cachedTreeRows !== null
-        && cachedTreeRevision === getTreeRevision()
-        && cachedParseRevision === parseRevision
+        cachedTreeRows !== null &&
+        cachedTreeRevision === getTreeRevision() &&
+        cachedParseRevision === parseRevision
     ) {
         if (now - cachedTreeAt < TREE_ROWS_TTL_MS || anyScrollAnimating()) {
             return cachedTreeRows;
@@ -630,8 +642,8 @@ function treeRows(): TreeRow[] {
 }
 
 function indexTreeRows(rows: readonly TreeRow[]): void {
-    cachedRowStarts = new Array(rows.length);
-    cachedRowEnds = new Array(rows.length);
+    cachedRowStarts = new Array<number>(rows.length);
+    cachedRowEnds = new Array<number>(rows.length);
     let y = 0;
     for (let i = 0; i < rows.length; i++) {
         cachedRowStarts[i] = y;
@@ -695,11 +707,12 @@ function buildTreeRows(): TreeRow[] {
             out.push({
                 levels: [],
                 branch: null,
-                content: () => rootRow(
-                    formatFullDir(root.source.fullPath),
-                    root.key,
-                    dirRootActions(root.source)
-                ),
+                content: () =>
+                    rootRow(
+                        formatFullDir(root.source.fullPath),
+                        root.key,
+                        dirRootActions(root.source)
+                    ),
                 height: 18,
             });
             if (collapsedRoots.has(root.key)) continue;
@@ -735,18 +748,22 @@ function buildTreeRows(): TreeRow[] {
                     out.push({
                         levels: [],
                         branch: null,
-                        content: () => resultRow(
-                            r,
-                            fileSourceKey,
-                            defaultExpanded,
-                            standaloneCloseAction(file),
-                            formatFullDir(file.fullPath)
-                        ),
+                        content: () =>
+                            resultRow(
+                                r,
+                                fileSourceKey,
+                                defaultExpanded,
+                                standaloneCloseAction(file),
+                                formatFullDir(file.fullPath)
+                            ),
                         height: 18,
                         key: expKey,
                     });
 
-                    if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
+                    if (
+                        r.type === "import" &&
+                        isImportExpanded(expKey, defaultExpanded)
+                    ) {
                         emitImportContents(out, r, []);
                     }
                 }
@@ -782,7 +799,10 @@ function jumpToIncludeNode(r: ResultImport, targetPath: string): void {
     for (let i = 0; i < rows.length; i++) {
         if (rows[i].key === targetKey) {
             const viewportH = getScrollState(RESULTS_SCROLL_ID).viewportRect.h;
-            setScrollOffset(RESULTS_SCROLL_ID, Math.max(0, y - Math.max(0, viewportH / 3)));
+            setScrollOffset(
+                RESULTS_SCROLL_ID,
+                Math.max(0, y - Math.max(0, viewportH / 3))
+            );
             return;
         }
         y += rows[i].height + ROW_GAP_H;
@@ -823,7 +843,8 @@ function revealLocation(target: ProjectsTreeRevealTarget): RevealLocation | null
                 const r = results[i];
                 if (r.type !== "import") continue;
                 if (includeAncestorPaths(includeTreeOf(r), scopePath) === null) continue;
-                const sourceKey = root.kind === "dir" ? root.key : `file:${source.fullPath}`;
+                const sourceKey =
+                    root.kind === "dir" ? root.key : `file:${source.fullPath}`;
                 const rootKey = root.kind === "dir" ? root.key : null;
                 let declaringPath = scopePath;
                 let targetKey: string;
@@ -865,7 +886,10 @@ function scrollToTreeRow(key: string): boolean {
     for (let i = 0; i < rows.length; i++) {
         if (rows[i].key === key) {
             const viewportH = getScrollState(RESULTS_SCROLL_ID).viewportRect.h;
-            setScrollOffset(RESULTS_SCROLL_ID, Math.max(0, y - Math.max(0, viewportH / 3)));
+            setScrollOffset(
+                RESULTS_SCROLL_ID,
+                Math.max(0, y - Math.max(0, viewportH / 3))
+            );
             setJumpFlash(key);
             return true;
         }
@@ -880,10 +904,14 @@ export function revealInProjectsTree(target: ProjectsTreeRevealTarget): void {
     if (location.rootKey !== null) collapsedRoots.delete(location.rootKey);
     expandImport(expansionKey(location.sourceKey, location.result.fullPath));
     for (let i = 0; i < location.ancestors.length; i++) {
-        expandIncludeGroup(includeGroupKey(location.result.fullPath, location.ancestors[i]));
+        expandIncludeGroup(
+            includeGroupKey(location.result.fullPath, location.ancestors[i])
+        );
     }
     if (!location.topLevel) {
-        expandIncludeGroup(includeGroupKey(location.result.fullPath, location.declaringPath));
+        expandIncludeGroup(
+            includeGroupKey(location.result.fullPath, location.declaringPath)
+        );
     }
     bumpTreeRevision();
     if (scrollToTreeRow(location.targetKey) || !isNarrowing()) return;

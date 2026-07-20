@@ -17,7 +17,7 @@ import type { Observed } from "../src/housingSync/observedActions";
 
 import { changeVar, message, playSound } from "./utils";
 
-function actionsCompareEqual(a: Action | Observed<Action>, b: Action): boolean {
+function actionsCompareEqual(a: Action | Observed, b: Action): boolean {
     return (
         JSON.stringify(normalizeActionCompare(a)) ===
         JSON.stringify(normalizeActionCompare(b))

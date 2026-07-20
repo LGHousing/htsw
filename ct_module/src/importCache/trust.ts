@@ -181,7 +181,7 @@ function lockEntryForImportable(
 export function trustedChildListSnapshotsForImportable(
     importable: Importable,
     cachedImportable: Importable,
-    cachedLists: Record<string, string[]>
+    cachedLists: Partial<Record<string, string[]>>
 ): Map<TrustedChildListPath, TrustedChildListSnapshot> {
     const trusted = new Map<TrustedChildListPath, TrustedChildListSnapshot>();
     for (const { basePath, actions } of actionListsOfImportable(importable)) {
@@ -201,7 +201,7 @@ export function trustedChildListSnapshotsForImportable(
 
 export function trustedChildListPathsForImportable(
     importable: Importable,
-    cachedLists: Record<string, string[]>
+    cachedLists: Partial<Record<string, string[]>>
 ): Set<TrustedChildListPath> {
     const trusted = new Set<TrustedChildListPath>();
     for (const { basePath, actions } of actionListsOfImportable(importable)) {
@@ -216,7 +216,7 @@ function collectTrustedActionListSnapshots(
     cachedPath: string,
     desiredActions: readonly Action[],
     cachedActions: readonly Action[],
-    cachedLists: Record<string, string[]>
+    cachedLists: Partial<Record<string, string[]>>
 ): void {
     const desiredHashes = desiredActions.map(actionHash);
     const cachedHashes = cachedLists[cachedPath];
@@ -231,14 +231,15 @@ function collectTrustedActionListSnapshots(
     for (let i = 0; i < desiredActions.length; i++) {
         const cachedIndex = matched[i];
         if (cachedIndex === null) continue;
+        if (cachedIndex < 0 || cachedIndex >= cachedActions.length) continue;
         const action = desiredActions[i];
         const cachedAction = cachedActions[cachedIndex];
-        if (cachedAction === undefined || cachedAction.type !== action.type) continue;
+        if (cachedAction.type !== action.type) continue;
 
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
         if (action.type === "CONDITIONAL" && cachedAction.type === "CONDITIONAL") {
-            const conditions = action.conditions ?? [];
+            const conditions = action.conditions;
             const desiredConditionsPath = `${desiredChildBase}.conditions`;
             const cachedConditionsPath = `${cachedChildBase}.conditions`;
             if (
@@ -249,23 +250,23 @@ function collectTrustedActionListSnapshots(
             ) {
                 trusted.set(desiredConditionsPath, {
                     kind: "conditions",
-                    conditions: cachedAction.conditions ?? [],
+                    conditions: cachedAction.conditions,
                 });
             }
             collectTrustedActionListSnapshots(
                 trusted,
                 `${desiredChildBase}.ifActions`,
                 `${cachedChildBase}.ifActions`,
-                action.ifActions ?? [],
-                cachedAction.ifActions ?? [],
+                action.ifActions,
+                cachedAction.ifActions,
                 cachedLists
             );
             collectTrustedActionListSnapshots(
                 trusted,
                 `${desiredChildBase}.elseActions`,
                 `${cachedChildBase}.elseActions`,
-                action.elseActions ?? [],
-                cachedAction.elseActions ?? [],
+                action.elseActions,
+                cachedAction.elseActions,
                 cachedLists
             );
         } else if (action.type === "RANDOM" && cachedAction.type === "RANDOM") {
@@ -273,8 +274,8 @@ function collectTrustedActionListSnapshots(
                 trusted,
                 `${desiredChildBase}.actions`,
                 `${cachedChildBase}.actions`,
-                action.actions ?? [],
-                cachedAction.actions ?? [],
+                action.actions,
+                cachedAction.actions,
                 cachedLists
             );
         }
@@ -286,7 +287,7 @@ function collectTrustedActionListPaths(
     desiredPath: string,
     cachedPath: string,
     desiredActions: readonly Action[],
-    cachedLists: Record<string, string[]>
+    cachedLists: Partial<Record<string, string[]>>
 ): void {
     const desiredHashes = desiredActions.map(actionHash);
     const cachedHashes = cachedLists[cachedPath];
@@ -302,7 +303,7 @@ function collectTrustedActionListPaths(
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
         if (action.type === "CONDITIONAL") {
-            const conditions = action.conditions ?? [];
+            const conditions = action.conditions;
             const desiredConditionsPath = `${desiredChildBase}.conditions`;
             const cachedConditionsPath = `${cachedChildBase}.conditions`;
             if (
@@ -317,14 +318,14 @@ function collectTrustedActionListPaths(
                 trusted,
                 `${desiredChildBase}.ifActions`,
                 `${cachedChildBase}.ifActions`,
-                action.ifActions ?? [],
+                action.ifActions,
                 cachedLists
             );
             collectTrustedActionListPaths(
                 trusted,
                 `${desiredChildBase}.elseActions`,
                 `${cachedChildBase}.elseActions`,
-                action.elseActions ?? [],
+                action.elseActions,
                 cachedLists
             );
         } else if (action.type === "RANDOM") {
@@ -332,7 +333,7 @@ function collectTrustedActionListPaths(
                 trusted,
                 `${desiredChildBase}.actions`,
                 `${cachedChildBase}.actions`,
-                action.actions ?? [],
+                action.actions,
                 cachedLists
             );
         }

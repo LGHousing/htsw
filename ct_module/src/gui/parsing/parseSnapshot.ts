@@ -40,7 +40,7 @@ import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { getMtimeMs } from "../lib/java";
+import { getMtimeMs, runtimeString, type RuntimeString } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
@@ -125,26 +125,67 @@ function snapshotFileFor(importJsonPath: string): string {
     return `${SNAPSHOT_DIR}/${hashPathKey(importJsonPath)}.json`;
 }
 
+function isSnapshotDiagnostic(value: unknown): value is SnapshotDiagnostic {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+    const diagnostic = value as Record<string, unknown>;
+    if (
+        diagnostic.level !== "bug" &&
+        diagnostic.level !== "error" &&
+        diagnostic.level !== "warning" &&
+        diagnostic.level !== "note" &&
+        diagnostic.level !== "help"
+    ) {
+        return false;
+    }
+    if (typeof diagnostic.message !== "string") return false;
+    if (!Array.isArray(diagnostic.spans) || !Array.isArray(diagnostic.notes)) return false;
+    if (diagnostic.notes.some((note) => typeof note !== "string")) return false;
+    for (const spanValue of diagnostic.spans) {
+        if (
+            spanValue === null ||
+            typeof spanValue !== "object" ||
+            Array.isArray(spanValue)
+        ) {
+            return false;
+        }
+        const span = spanValue as Record<string, unknown>;
+        if (span.kind !== "primary" && span.kind !== "secondary") return false;
+        if (typeof span.path !== "string") return false;
+        if (typeof span.start !== "number" || typeof span.end !== "number") return false;
+        if (span.label !== undefined && typeof span.label !== "string") return false;
+    }
+    return true;
+}
+
 export function loadSnapshot(importJsonPath: string): Snapshot | null {
     const p = snapshotFileFor(importJsonPath);
     if (!FileLib.exists(p)) return null;
     try {
-        const raw = String(FileLib.read(p) ?? "");
+        const stored = FileLib.read(p) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.length === 0) return null;
-        const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== SNAPSHOT_VERSION) return null;
-        if (parsed.importJsonPath !== importJsonPath) return null;
-        if (!Array.isArray(parsed.importables)) return null;
-        if (!Array.isArray(parsed.hashes)) return null;
-        if (parsed.hashes.length !== parsed.importables.length) return null;
-        if (parsed.houseUuid !== null && typeof parsed.houseUuid !== "string") return null;
-        if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
-        if (parsed.fileTree !== null && typeof parsed.fileTree !== "object") return null;
-        if (!Array.isArray(parsed.diagnostics)) return null;
-        for (const d of parsed.diagnostics) {
-            if (!Array.isArray(d.spans) || !Array.isArray(d.notes)) return null;
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+        const snapshot = parsed as { [key: string]: unknown };
+        if (snapshot.version !== SNAPSHOT_VERSION) return null;
+        if (snapshot.importJsonPath !== importJsonPath) return null;
+        if (!Array.isArray(snapshot.importables)) return null;
+        if (!Array.isArray(snapshot.hashes)) return null;
+        if (snapshot.hashes.length !== snapshot.importables.length) return null;
+        if (snapshot.houseUuid !== null && typeof snapshot.houseUuid !== "string")
+            return null;
+        if (
+            snapshot.fingerprint === null ||
+            typeof snapshot.fingerprint !== "object" ||
+            Array.isArray(snapshot.fingerprint)
+        )
+            return null;
+        if (snapshot.fileTree !== null && typeof snapshot.fileTree !== "object") return null;
+        if (!Array.isArray(snapshot.diagnostics)) return null;
+        for (const d of snapshot.diagnostics) {
+            if (!isSnapshotDiagnostic(d)) return null;
         }
-        return parsed;
+        return snapshot as Snapshot;
     } catch (_e) {
         return null;
     }
@@ -175,10 +216,7 @@ export function diffSnapshotFingerprint(snapshot: Snapshot): FingerprintChange[]
  * (still live) sourceMap, producing the storable form. Unresolvable
  * spans are dropped; the message and level always survive.
  */
-function serializeDiagnostic(
-    sm: SourceMap,
-    diag: Diagnostic
-): SnapshotDiagnostic {
+function serializeDiagnostic(sm: SourceMap, diag: Diagnostic): SnapshotDiagnostic {
     const spans: SnapshotDiagnosticSpan[] = [];
     for (const s of diag.spans) {
         try {
@@ -208,17 +246,24 @@ function serializeDiagnostic(
  * the restored spans are real SourceMap positions.
  */
 function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnostic {
-    const make =
-        stored.level === "bug"
-            ? Diagnostic.bug
-            : stored.level === "error"
-              ? Diagnostic.error
-              : stored.level === "warning"
-                ? Diagnostic.warning
-                : stored.level === "help"
-                  ? Diagnostic.help
-                  : Diagnostic.note;
-    const diag = make(stored.message);
+    let diag: Diagnostic;
+    switch (stored.level) {
+        case "bug":
+            diag = Diagnostic.bug(stored.message);
+            break;
+        case "error":
+            diag = Diagnostic.error(stored.message);
+            break;
+        case "warning":
+            diag = Diagnostic.warning(stored.message);
+            break;
+        case "help":
+            diag = Diagnostic.help(stored.message);
+            break;
+        case "note":
+            diag = Diagnostic.note(stored.message);
+            break;
+    }
     for (const s of stored.spans) {
         let span: Span;
         try {
@@ -289,8 +334,8 @@ function deserializeFileTree(
     const visit = (node: SerializedFileNode): ImportJsonFileNode => {
         const imps: Importable[] = [];
         for (let i = 0; i < node.importables.length; i++) {
-            const imp = flat[node.importables[i]];
-            if (imp !== undefined) imps.push(imp);
+            const index = node.importables[i];
+            if (index >= 0 && index < flat.length) imps.push(flat[index]);
         }
         const out: ImportJsonFileNode = {
             path: node.path,
@@ -323,9 +368,7 @@ function writeSnapshotFile(snapshot: Snapshot): void {
  * attribution (`sourcePath`, per-list `…ActionsPath`, slot paths) through
  * serialization, so source-path resolution works unchanged.
  */
-export function restoreParseFromSnapshot(
-    snapshot: Snapshot
-): ImportablesParseResult {
+export function restoreParseFromSnapshot(snapshot: Snapshot): ImportablesParseResult {
     const sm = new SourceMap(new FileSystemFileLoader());
     const gcx = new GlobalCtxt(sm, snapshot.importJsonPath);
     const importJson = new ImportJsonParseMetadata();

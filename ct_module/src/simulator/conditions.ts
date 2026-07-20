@@ -9,6 +9,7 @@ import type {
 } from "htsw/types";
 
 import { getGamemode } from "./helpers";
+import { getPlayer } from "../utils/java";
 
 export function createConditionBehaviors(vars: runtime.simple.Vars): runtime.ConditionBehaviors {
     return new runtime.simple.SimpleConditionBehaviors(vars)
@@ -53,7 +54,7 @@ function behaviorCompareMaxHealth(
     if (!condition.op || !condition.amount) return false;
 
     const lhs = runtime.VarLong.fromNumber(
-        Player.getPlayer()
+        getPlayer()
             .func_110138_aP /*getMaxHealth*/
             ()
     );
@@ -83,11 +84,12 @@ function behaviorRequirePotionEffect(
     _rt: runtime.Runtime,
     condition: ConditionRequirePotionEffect
 ): boolean {
-    if (!condition.effect) return false;
+    const expectedEffect = condition.effect;
+    if (!expectedEffect) return false;
 
     return (
         Player.getActivePotionEffects().find((effect) => {
-            return effect.getLocalizedName() == condition.effect!;
+            return effect.getLocalizedName() == expectedEffect;
         }) !== undefined
     );
 }

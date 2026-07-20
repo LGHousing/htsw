@@ -202,7 +202,7 @@ function collectTeamAndGroupFromActions(
             groups.push(action.group);
         } else if (
             action.type === "CHANGE_VAR" &&
-            action.holder?.type === "Team" &&
+            action.holder.type === "Team" &&
             typeof action.holder.team === "string"
         ) {
             teams.push(action.holder.team);

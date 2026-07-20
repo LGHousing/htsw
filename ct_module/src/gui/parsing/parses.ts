@@ -1,10 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import {
-    ImportablesParseResult,
-    parseImportablesResult,
-    SourceMap,
-} from "htsw";
+import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { createItemRegistry } from "../../importables/itemRegistry";
@@ -42,7 +38,7 @@ function buildParseFingerprint(
     const paths = allReferencedPaths(importJsonPath, parsed);
     for (let i = 0; i < paths.length; i++) {
         const p = paths[i];
-        if (out[p] === undefined) out[p] = getMtimeMs(p);
+        if (!Object.prototype.hasOwnProperty.call(out, p)) out[p] = getMtimeMs(p);
     }
     return out;
 }
@@ -99,7 +95,7 @@ function fingerprintOf(
 // `Java.type("java.nio.file.Paths")` lookup plus NIO path ops, which `java.ts`
 // already warns is "not free". The result is a pure function of the input
 // string (the process CWD is stable for the session), so memoize by input.
-let _Paths: any = null;
+let _Paths: HtswJavaPathsClass | null = null;
 const canonicalPathCache = new Map<string, string>();
 
 export function canonicalPath(p: string): string {
@@ -109,8 +105,8 @@ export function canonicalPath(p: string): string {
     let result: string;
     try {
         if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
-        const abs = _Paths.get(String(p)).toAbsolutePath();
-        let resolved: any;
+        const abs = _Paths.get(p).toAbsolutePath();
+        let resolved: HtswJavaPath;
         try {
             // The one identity function for paths: everything that compares,
             // caches, or dedups by path goes through here, and on Windows the
@@ -176,7 +172,11 @@ type ParsePerfEntry = {
 
 const parsePerf: ParsePerfEntry[] = [];
 
-function recordParsePerf(path: string, ms: number, source: ParsePerfEntry["source"]): void {
+function recordParsePerf(
+    path: string,
+    ms: number,
+    source: ParsePerfEntry["source"]
+): void {
     parsePerf.push({ path, ms, source, at: Date.now() });
     if (parsePerf.length > 8) parsePerf.shift();
 }
@@ -235,7 +235,16 @@ function snapshotEntryIfFresh(
     const changed = diffSnapshotFingerprint(snapshot);
     if (changed.length !== 0) return null;
     const parsed = restoreParseFromSnapshot(snapshot);
-    return commitParseEntry(canon, rawPath, mtime, parsed, null, "snapshot", snapshot.fingerprint, startedAt);
+    return commitParseEntry(
+        canon,
+        rawPath,
+        mtime,
+        parsed,
+        null,
+        "snapshot",
+        snapshot.fingerprint,
+        startedAt
+    );
 }
 
 /**
@@ -271,25 +280,33 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     let source: ParsePerfEntry["source"] = "full";
     const snapshotEntry = snapshotEntryIfFresh(canon, rawPath, mtime, startedAt);
     if (snapshotEntry !== null) return snapshotEntry;
-    if (parsed === null) {
-        const sm = new SourceMap(new FileSystemFileLoader());
-        try {
-            // Parse with the canonical absolute path, not the stored
-            // `./htsw/...` form: the loader resolves every include to an
-            // absolute path, and mixing forms in the file tree breaks any
-            // path comparison against the root node (e.g. rehomeFileTree's
-            // directory-containment check, which can never match a `./`
-            // root against absolute children).
-            parsed = parseImportablesResult(sm, canon);
-        } catch (e) {
-            const msg = e && (e as { message?: string }).message
+    const sm = new SourceMap(new FileSystemFileLoader());
+    try {
+        // Parse with the canonical absolute path, not the stored
+        // `./htsw/...` form: the loader resolves every include to an
+        // absolute path, and mixing forms in the file tree breaks any
+        // path comparison against the root node (e.g. rehomeFileTree's
+        // directory-containment check, which can never match a `./`
+        // root against absolute children).
+        parsed = parseImportablesResult(sm, canon);
+    } catch (e) {
+        const msg =
+            e && (e as { message?: string }).message
                 ? (e as { message: string }).message
                 : String(e);
-            error = msg;
-            source = "error";
-        }
+        error = msg;
+        source = "error";
     }
-    return commitParseEntry(canon, rawPath, mtime, parsed, error, source, null, startedAt);
+    return commitParseEntry(
+        canon,
+        rawPath,
+        mtime,
+        parsed,
+        error,
+        source,
+        null,
+        startedAt
+    );
 }
 
 /** Look up a previously-parsed import.json by canonical path. */

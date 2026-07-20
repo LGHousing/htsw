@@ -109,7 +109,7 @@ async function writeEventResult(
         name,
         options.newExportTargetImportJson
     );
-    const actions = importable.actions ?? [];
+    const actions = importable.actions;
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
         ctx.displayMessage(`&7[export] &e${diag.message}`);

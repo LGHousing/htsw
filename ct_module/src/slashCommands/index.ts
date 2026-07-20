@@ -15,6 +15,7 @@ import { recompile } from "./recompile";
 import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
+import { getMinecraft, javaType } from "../utils/java";
 import {
     clickHtswOverlay,
     scrollHtswOverlay,
@@ -258,9 +259,9 @@ function findHtswSubcommand(name: string): HtswSubcommand | null {
 function printHtswHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${moduleVersion()}`;
-    ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
+    ChatLib.chat(ChatLib.getCenteredText(title));
     const subtitle = `&fCreated by @sndyx, @j_sse, and @callanftw`;
-    ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
+    ChatLib.chat(ChatLib.getCenteredText(subtitle));
     ChatLib.chat("");
     for (let i = 0; i < HTSW_SUBCOMMANDS.length; i++) {
         const command = HTSW_SUBCOMMANDS[i];
@@ -291,7 +292,7 @@ function commandBridge(args: string[]): void {
     if (point === null) return;
     if (action === "click") {
         const buttonName = (args[3] ?? "left").toLowerCase();
-        const buttons: { [name: string]: number } = { left: 0, right: 1, middle: 2 };
+        const buttons: Partial<Record<string, number>> = { left: 0, right: 1, middle: 2 };
         const button = buttons[buttonName];
         if (button === undefined) {
             ChatLib.chat("&cUsage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]");
@@ -321,7 +322,7 @@ function bridgePoint(args: string[]): { x: number; y: number } | null {
     }
     const space = (args[3] ?? "framebuffer").toLowerCase();
     if (space === "framebuffer") {
-        const mc = Client.getMinecraft() as any;
+        const mc = getMinecraft();
         x = Math.floor((x * Renderer.screen.getWidth()) / mc.field_71443_c);
         y = Math.floor((y * Renderer.screen.getHeight()) / mc.field_71440_d);
     } else if (space !== "gui") {
@@ -336,9 +337,9 @@ function bridgePoint(args: string[]): { x: number; y: number } | null {
 }
 
 function commandProjects(): void {
-    const Paths = Java.type("java.nio.file.Paths");
-    const Files = Java.type("java.nio.file.Files");
-    const dir = Paths.get(String(PROJECTS_ROOT)).toAbsolutePath().normalize();
+    const Paths = javaType("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
+    const dir = Paths.get(PROJECTS_ROOT).toAbsolutePath().normalize();
     try {
         Files.createDirectories(dir);
     } catch (_e) {
@@ -350,7 +351,7 @@ function commandProjects(): void {
         ChatLib.chat("&a[htsw] Opened projects folder");
         ChatLib.chat(`&7  ${abs}`);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Couldn't open projects folder: ${err}`);
+        ChatLib.chat(`&c[htsw] Couldn't open projects folder: ${String(err)}`);
         ChatLib.chat(`&7  ${abs}`);
     }
 }
@@ -539,7 +540,7 @@ function commandImport(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
-        ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
+        ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
         ChatLib.chat("&f/htsw import <import.json|actions.htsl>");
         ChatLib.chat("&f/htsw import raw <actions.htsl> &7- Append into the open action menu");
@@ -636,7 +637,7 @@ function startRawHtslImport(path: string): void {
             printDiagnostic(sm, err);
             return;
         }
-        ChatLib.chat(`&c[htsw] Raw HTSL import failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Raw HTSL import failed: ${String(err)}`);
     });
 }
 
@@ -644,7 +645,7 @@ function commandSimulator(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fSimulator Runtime &f&l${moduleVersion()}`;
-        ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
+        ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
         ChatLib.chat("&f/htsw simulator [start [path] | restart | stop]");
         ChatLib.chat("");

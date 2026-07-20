@@ -62,7 +62,6 @@ function labelPrefixMatch(label: string): (slot: ItemSlot) => boolean {
     const prefix = `${label}: `;
     return (slot) => {
         const item = slot.getItem();
-        if (item === null || item === undefined) return false;
         const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
         return name.indexOf(prefix) === 0;
     };
@@ -101,7 +100,6 @@ function readPage(ctx: TaskContext, page: number): PermPageReport {
     if (slots !== null) {
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
-            if (item === null || item === undefined) continue;
             const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
             const rawLore = item.getLore();
             const lore: string[] = [];
@@ -199,7 +197,7 @@ export function commandGroupPerms(args: string[]): void {
     const groupName = args.length > 0 ? args.join(" ") : undefined;
     TaskManager.run(async (ctx) => {
         await dumpGroupPermissions(ctx, groupName);
-    }).catch((err) => {
-        ChatLib.chat(`&c[htsw groupperms] failed: ${err}`);
+    }).catch((err: unknown) => {
+        ChatLib.chat(`&c[htsw groupperms] failed: ${String(err)}`);
     });
 }

@@ -42,7 +42,7 @@ export function scanHouseCommands(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Command scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Command scan failed: ${err}`);
+        showToast(`Command scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Command scan failed: ${String(err)}`);
     });
 }

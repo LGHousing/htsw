@@ -56,7 +56,6 @@ export async function listAllCommandNames(ctx: TaskContext): Promise<string[]> {
             const slots = getVisiblePaginatedItemSlots(ctx);
             for (let i = 0; i < slots.length; i++) {
                 const item = slots[i].getItem();
-                if (item === null || item === undefined) continue;
                 const extracted = extractCommandNameFromSlot(
                     removedFormatting(item.getName())
                 );

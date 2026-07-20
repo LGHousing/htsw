@@ -29,7 +29,8 @@ export function isEmptyPaginatedPlaceholder(
     slot: ItemSlot,
     config: PaginatedListConfig
 ): boolean {
-    const item = slot.getItem();
+    const rawItem: unknown = slot.getItem();
+    const item = rawItem as Item | null | undefined;
     if (item === null || item === undefined) return false;
     const actual = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
     const expected = config.emptyPlaceholderName.trim();
@@ -126,7 +127,7 @@ export async function goToPaginatedListPage(
         throw new Error(`Invalid target ${config.label} page: ${targetPage}`);
     }
 
-    while (true) {
+    for (;;) {
         const state = getCurrentPaginatedListPageState(ctx, config);
         if (state.currentPage === targetPage) {
             return;
@@ -184,14 +185,13 @@ export async function getPaginatedListSlotAtIndex(
     await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(index), config);
     const visibleSlots = getVisiblePaginatedItemSlots(ctx);
     const localIndex = getPaginatedListLocalIndex(index);
-    const slot = visibleSlots[localIndex];
-    if (!slot) {
+    if (localIndex < 0 || localIndex >= visibleSlots.length) {
         throw new Error(
             `Could not resolve visible ${config.label} slot ${localIndex} for global index ${index}.`
         );
     }
 
-    return slot;
+    return visibleSlots[localIndex];
 }
 
 export async function findPaginatedListEntry<T extends { index: number }>(
@@ -204,7 +204,7 @@ export async function findPaginatedListEntry<T extends { index: number }>(
     await goToPaginatedListPage(ctx, 1, config);
 
     let totalEntries = 0;
-    while (true) {
+    for (;;) {
         const visibleSlots = getVisiblePaginatedItemSlots(ctx);
         const pageEntries = await readPage();
         const localSlotIndices: number[] = [];
@@ -218,12 +218,12 @@ export async function findPaginatedListEntry<T extends { index: number }>(
             const localSlotIndex = localSlotIndices[i];
             if (!matches(pageEntries[i])) continue;
 
-            const slot = visibleSlots[localSlotIndex];
-            if (!slot) {
+            if (localSlotIndex < 0 || localSlotIndex >= visibleSlots.length) {
                 throw new Error(
                     `Could not resolve visible ${config.label} slot ${localSlotIndex}.`
                 );
             }
+            const slot = visibleSlots[localSlotIndex];
             return { entry: pageEntries[i], slot };
         }
 
@@ -272,7 +272,7 @@ export async function readPaginatedList<T extends { index: number }>(
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
     let pagesRead = 0;
-    while (true) {
+    for (;;) {
         const pageEntries = await readPage();
         for (const entry of pageEntries) {
             entry.index = entries.length;

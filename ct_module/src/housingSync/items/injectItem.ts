@@ -17,31 +17,40 @@ const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and simila
  * field should hold. Defaults to `canonicalStacksEqual`; the icon path passes
  * a looser item+count comparator.
  */
-export type StackMatcher = (a: any, b: any) => boolean;
+export type StackMatcher = (a: MCItemStack, b: MCItemStack) => boolean;
 
 // The server rewrites item NBT on any round-trip (integral tags re-typed, blank
 // lore lines become "§7"), so byte-exact areItemStacksEqual never matches a
 // server-side stack against a source-built one. Compare through canonicalItemKey,
 // the shared key defined in fields/itemTagCanonical.ts.
-function canonicalStacksEqual(left: any, right: any): boolean {
+function canonicalStacksEqual(left: MCItemStack, right: MCItemStack): boolean {
     return canonicalItemKey(new Item(left)) === canonicalItemKey(new Item(right));
 }
 
-function slotMatchesStack(slotId: number, stack: any, match: StackMatcher): boolean {
-    const slot = Player.getContainer()?.getItems()?.[slotId];
-    return (
-        slot !== null &&
-        slot !== undefined &&
-        match(slot.getItemStack(), stack)
-    );
+function containerItemAt(slotId: number): Item | null | undefined {
+    const container = Player.getContainer() as unknown as
+        | ReturnType<typeof Player.getContainer>
+        | null
+        | undefined;
+    if (container === null || container === undefined) return undefined;
+    const items = container.getItems() as unknown as Array<Item | null | undefined>;
+    return slotId >= 0 && slotId < items.length ? items[slotId] : undefined;
 }
 
-function containerSlotStack(slotId: number): any | null {
-    const slot = Player.getContainer()?.getItems()?.[slotId];
+function slotMatchesStack(
+    slotId: number,
+    stack: MCItemStack,
+    match: StackMatcher
+): boolean {
+    const slot = containerItemAt(slotId);
+    return slot !== null && slot !== undefined && match(slot.getItemStack(), stack);
+}
+
+function containerSlotStack(slotId: number): MCItemStack | null {
+    const slot = containerItemAt(slotId);
     if (slot === null || slot === undefined) return null;
     return slot.getItemStack();
 }
-
 
 /**
  * Set the value of a Housing "Item" field (GIVE_ITEM, REMOVE_ITEM, IS_ITEM, ...).
@@ -118,7 +127,9 @@ export async function selectItemFromOpenInventory(
     }
 
     const targetSlotInContainer = container.getSize() - 36 + (INV_PACKET_SLOT - 9);
-    const scratchSlot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
+    const scratchSlot = ctx.tryGetItemSlot(
+        (s) => s.getSlotId() === targetSlotInContainer
+    );
     if (
         scratchSlot !== null &&
         match(scratchSlot.getItem().getItemStack(), desiredStack)
@@ -134,7 +145,11 @@ export async function selectItemFromOpenInventory(
         return;
     }
 
-    if (desiredSummary !== null && desiredSummary.id !== null && isUnspawnableItem(desiredSummary.id)) {
+    if (
+        desiredSummary !== null &&
+        desiredSummary.id !== null &&
+        isUnspawnableItem(desiredSummary.id)
+    ) {
         throw new Error(`Cannot creative-spawn "${desiredSummary.id}" for "${label}".`);
     }
 
@@ -146,11 +161,7 @@ export async function selectItemFromOpenInventory(
         desired: desiredSummary,
         before: summarizeItemStack(containerSlotStack(targetSlotInContainer)),
     });
-    sendCreativeInventoryAction(
-        ctx,
-        INV_PACKET_SLOT,
-        desiredStack,
-    );
+    sendCreativeInventoryAction(ctx, INV_PACKET_SLOT, desiredStack);
     const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () =>
         slotMatchesStack(targetSlotInContainer, desiredStack, match)
     );
@@ -165,12 +176,13 @@ export async function selectItemFromOpenInventory(
             desired: desiredSummary,
             observed,
         });
-        const observedText = observed === null
-            ? "the target slot was empty"
-            : `the target slot held "${observed.cleanName ?? observed.name}" (${observed.id ?? "unknown id"}:${observed.damage ?? "?"})`;
+        const observedText =
+            observed === null
+                ? "the target slot was empty"
+                : `the target slot held "${observed.cleanName}" (${observed.id ?? "unknown id"}:${observed.damage ?? "?"})`;
         throw new Error(
             `Couldn't place "${itemName}" for "${label}" — ${observedText} after ` +
-            `creative spawn instead of the expected item/NBT.`
+                `creative spawn instead of the expected item/NBT.`
         );
     }
     recordRuntimeDebug("itemInjection", {

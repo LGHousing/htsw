@@ -24,7 +24,7 @@ import {
 
 type ChildActionApplyArgs = {
     desired: Action[];
-    observed?: ReadonlyArray<Observed<Action> | null>;
+    observed?: ReadonlyArray<Observed | null>;
     offset?: number;
 };
 
@@ -84,7 +84,7 @@ export type CreateActionApplyContextArgs = {
 };
 
 function observedActionsAsBaselineCurrent(
-    observed: ReadonlyArray<Observed<Action> | null> | undefined
+    observed: ReadonlyArray<Observed | null> | undefined
 ): readonly Action[] | undefined {
     if (observed === undefined) return undefined;
     const out: Action[] = [];
@@ -144,7 +144,7 @@ export function createActionApplyContext({
 
         shouldApplyList(prop) {
             return (
-                listsToApply === null || listsToApply.has(prop as ChildListDiff["prop"])
+                listsToApply === null || listsToApply.has(prop)
             );
         },
 

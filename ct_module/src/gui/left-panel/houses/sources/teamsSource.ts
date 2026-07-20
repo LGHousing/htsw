@@ -52,7 +52,7 @@ export function scanHouseTeams(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Team scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Team scan failed: ${err}`);
+        showToast(`Team scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Team scan failed: ${String(err)}`);
     });
 }

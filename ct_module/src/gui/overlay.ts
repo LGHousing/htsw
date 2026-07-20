@@ -16,9 +16,9 @@ import {
     getShowInventoryButtons,
     getSmoothScrolling,
 } from "../settings";
-import { javaType } from "./lib/java";
+import { getMinecraft, javaType } from "./lib/java";
 
-declare const JavaAdapter: new (baseClass: any, implementation: object) => any;
+declare const JavaAdapter: new (baseClass: unknown, implementation: object) => unknown;
 
 const MouseClass = javaType("org.lwjgl.input.Mouse");
 const KeyboardClass = javaType("org.lwjgl.input.Keyboard");
@@ -293,8 +293,8 @@ function pollWheel(): void {
     // wheels/touchpads report fractions of 120. Collapsing this to ±1 made
     // fast scrolling crawl.
     const delta = dwheel / 120;
-    const mc = Client.getMinecraft();
-    const dh = (mc as any).field_71440_d;
+    const mc = getMinecraft();
+    const dh = mc.field_71440_d;
     const s = getEffectiveOverlayScale();
     const overlayScreenH = Math.floor(dh / s);
     const mx = Math.floor(MouseClass.getX() / s);
@@ -303,10 +303,11 @@ function pollWheel(): void {
 }
 
 function nativeScreenUsesTypedCharacters(): boolean {
-    const screen = (Client.getMinecraft() as any).field_71462_r;
-    if (screen === null || screen === undefined) return false;
+    const screen = getMinecraft().field_71462_r;
+    if (screen === null) return false;
     try {
-        return String(screen.getClass().getName()).indexOf("GuiRepair") >= 0;
+        const className: unknown = screen.getClass().getName();
+        return String(className).indexOf("GuiRepair") >= 0;
     } catch (_e) {
         return false;
     }
@@ -366,13 +367,13 @@ function paintImportShade(rawX: number, rawY: number, frame: Panel): void {
 //
 // Created lazily on first need so we don't pay the Java alloc until an
 // import actually runs.
-let placeholderScreen: any = null;
-function getPlaceholderScreen(): any {
+let placeholderScreen: unknown = null;
+function getPlaceholderScreen(): unknown {
     if (placeholderScreen === null) placeholderScreen = new JavaAdapter(GuiScreenClass, {});
     return placeholderScreen;
 }
 
-function isPlaceholderScreen(s: any): boolean {
+function isPlaceholderScreen(s: unknown): boolean {
     return placeholderScreen !== null && s === placeholderScreen;
 }
 
@@ -392,7 +393,9 @@ export function initHtswGui(): void {
     // We also clear `lastUuidFetchAt`: a prior failed `/wtfmap` (e.g. one
     // attempted from a lobby) sets the cooldown, which would otherwise
     // gate the next auto-fetch in the new housing for up to 60s.
-    register("chat", (event: any) => {
+    register("chat", (...args: (string | ForgeClientChatReceivedEvent)[]) => {
+        const event = args[args.length - 1];
+        if (typeof event === "string") return;
         const msg = ChatLib.getChatMessage(event, false);
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
@@ -448,14 +451,17 @@ export function initHtswGui(): void {
     // so a fully opaque scrim there hides every HUD element.
     // `postGuiRender` covers the other state (any GuiScreen open, including
     // GuiChat) where `DrawScreenEvent.Post` is the natural late hook.
-    register(RenderGameOverlayEventPost, (event: any) => {
+    register(
+        RenderGameOverlayEventPost,
+        (event: ForgeEvent & { type: HtswForgeElementType }) => {
         if (!RenderGameOverlayElementType.ALL.equals(event.type)) return;
         sampleProgressTraceTick();
-        const screen = (Client.getMinecraft() as any).field_71462_r;
-        if (screen !== null && screen !== undefined) return;
+        const screen = getMinecraft().field_71462_r;
+        if (screen !== null) return;
         paintImportShade(0, 0, frame);
         renderToast();
-    });
+        }
+    );
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         sampleProgressTraceTick();
         paintImportShade(mouseX, mouseY, frame);
@@ -480,21 +486,30 @@ export function initHtswGui(): void {
         if (getContainerBounds() !== null) return false;
         return true;
     }
-    register("renderChat", (event: any) => {
+    register(
+        "renderChat",
+        (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
+        if (inImportGap()) cancel(event);
+        }
+    );
+    register("renderScoreboard", (event: CancellableEvent) => {
         if (inImportGap()) cancel(event);
     });
-    register("renderScoreboard", (event: any) => {
+    register("renderTitle", (_title: string, _subtitle: string, event: CancellableEvent) => {
         if (inImportGap()) cancel(event);
     });
-    register("renderTitle", (event: any) => {
+    register(
+        "renderPlayerList",
+        (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
         if (inImportGap()) cancel(event);
-    });
-    register("renderPlayerList", (event: any) => {
+        }
+    );
+    register(
+        "renderBossHealth",
+        (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
         if (inImportGap()) cancel(event);
-    });
-    register("renderBossHealth", (event: any) => {
-        if (inImportGap()) cancel(event);
-    });
+        }
+    );
 
     // Cursor recenter mitigation. When MC closes a screen mid-import
     // (`displayGuiScreen(null)` somewhere in packet processing), it sets
@@ -514,8 +529,8 @@ export function initHtswGui(): void {
         // Runs ~60Hz alongside the render loop, the finest granularity CT
         // exposes for cheap polling. Tick (20Hz) drops 2/3 of frames and
         // misses brief grab→ungrab cycles.
-        const mc = Client.getMinecraft() as any;
-        const inGame = mc.field_71415_G === true;
+        const mc = getMinecraft();
+        const inGame = mc.field_71415_G;
         if (prevInGameHasFocus && !inGame && getTaskProgress() !== null) {
             // Just transitioned grab → ungrab while an import is in flight:
             // MC just centered the cursor inside `ungrabMouseCursor`. Put
@@ -543,9 +558,9 @@ export function initHtswGui(): void {
     //     blank — the overlay shade + panels render via paintImportShade)
     //   - the outgoing screen is either a real inventory or our existing
     //     placeholder (so closing chat / pause menu still works normally)
-    register(ForgeGuiOpenEvent, (event: any) => {
+    register(ForgeGuiOpenEvent, (event: ForgeEvent & { gui: unknown }) => {
         const incoming = event.gui;
-        const current = (Client.getMinecraft() as any).field_71462_r;
+        const current = getMinecraft().field_71462_r;
         if (!enabled) return;
         if (incoming !== null && incoming !== undefined) return;
         if (getTaskProgress() === null) return;
@@ -564,12 +579,12 @@ export function initHtswGui(): void {
     // untouched, so audio resumes the moment the import ends or the
     // toggle is turned off.
     register("soundPlay", (
-        _position: any,
+        _position: Vector3f,
         _name: string,
         _vol: number,
         _pitch: number,
-        _category: any,
-        event: any
+        _category: MCSoundCategory,
+        event: ForgePlaySoundEvent
     ) => {
         if (!enabled) return;
         if (getTaskProgress() === null) return;
@@ -594,15 +609,15 @@ export function initHtswGui(): void {
     //    polling it feeds the targets at render rate without double-applying
     //    what the Pre handler saw. Draining it also doesn't starve MC — all
     //    vanilla handling reads per-event wheel.
-    register(ForgeMouseInputEventPre, (event: any) => {
+    register(ForgeMouseInputEventPre, (event: ForgeEvent) => {
         const dwheel = MouseClass.getEventDWheel();
         if (dwheel === 0) return;
-        const mc = Client.getMinecraft();
-        const screen = (mc as any).field_71462_r;
-        if (screen === null || screen === undefined) return;
+        const mc = getMinecraft();
+        const screen = mc.field_71462_r;
+        if (screen === null) return;
         // Convert raw real-pixel mouse coords directly into overlay space —
         // 1 overlay unit = effective overlay scale real pixels.
-        const dh = (mc as any).field_71440_d;
+        const dh = mc.field_71440_d;
         const s = getEffectiveOverlayScale();
         const overlayScreenH = Math.floor(dh / s);
         const mx = Math.floor(MouseClass.getEventX() / s);
@@ -645,11 +660,11 @@ export function initHtswGui(): void {
     // input's GuiTextField. This gives us cursor movement, selection (shift+arrows), home/end,
     // Ctrl+A/C/V/X, backspace/delete, and the real LWJGL char (CT's guiKey char is undefined).
     // Cancelling stops MC from reacting to e.g. "e" closing the inventory.
-    register(ForgeKeyboardInputEventPre, (event: any) => {
+    register(ForgeKeyboardInputEventPre, (event: ForgeEvent) => {
         if (!KeyboardClass.getEventKeyState()) return; // key-up — ignore
         const keyCode = KeyboardClass.getEventKey();
         const focusedId = getFocusedInput();
-        const screen = (Client.getMinecraft() as any).field_71462_r;
+        const screen = getMinecraft().field_71462_r;
         const taskMenuOpen =
             isTaskRunning() &&
             (isPlaceholderScreen(screen) || getOpenContainerBounds() !== null);
@@ -785,7 +800,7 @@ export function initHtswGui(): void {
         // `grabMouseCursor` which doesn't move the cursor, so this is
         // snap-free even at import end.
         if (getTaskProgress() === null) {
-            const mc = Client.getMinecraft() as any;
+            const mc = getMinecraft();
             if (isPlaceholderScreen(mc.field_71462_r)) {
                 mc.func_147108_a(null);
             }

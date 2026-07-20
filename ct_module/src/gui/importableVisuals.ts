@@ -57,6 +57,7 @@ const EVENT_ICON_ITEMS: { [K in ImportableEvent["event"]]: string } = {
     "Player Toggle Sneak": "minecraft:hay_block",
     "Player Toggle Flight": "minecraft:feather",
 };
+const EVENT_ICON_ITEMS_BY_NAME: { [event: string]: string | undefined } = EVENT_ICON_ITEMS;
 
 const TEAM_GROUP_COLORS: { [K in Color]: number } = {
     "Dark Blue": 0xff0000aa | 0,
@@ -119,7 +120,7 @@ export function ImportableIcon(props: {
     if (props.type === "EVENT") {
         const event =
             props.importable?.type === "EVENT" ? props.importable.event : props.name;
-        const item = EVENT_ICON_ITEMS[event as ImportableEvent["event"]];
+        const item = EVENT_ICON_ITEMS_BY_NAME[event];
         return item === undefined ? false : McItem({ item, style: props.style });
     }
 

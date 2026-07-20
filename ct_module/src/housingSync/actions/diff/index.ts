@@ -71,7 +71,7 @@ const EDIT_OPEN_CLOSE_COST = 2;
 
 function itemActionDiffers(
     itemDiff: ItemDiffContext | undefined,
-    observed: Action | Observed<Action>,
+    observed: Action | Observed,
     desired: Action
 ): boolean {
     return (
@@ -408,7 +408,7 @@ function actionCost(
             );
         } else {
             cost += actionListCost(
-                observedValue as Array<Observed<Action> | null>,
+                observedValue as Array<Observed | null>,
                 desiredValue as Action[],
                 itemDiff
             );
@@ -604,7 +604,7 @@ function matchActions(
 }
 
 function actionListCost(
-    observed: Array<Observed<Action> | null>,
+    observed: Array<Observed | null>,
     desired: Action[],
     itemDiff?: ItemDiffContext
 ): number {
@@ -637,7 +637,7 @@ export function baselineActionListFromSlots(
 }
 
 export function baselineActionListFromActions(
-    actions: ReadonlyArray<Observed<Action> | Action | null>
+    actions: ReadonlyArray<Observed | Action | null>
 ): CurrentActionListEntry[] {
     const out: CurrentActionListEntry[] = [];
     for (let i = 0; i < actions.length; i++) {
@@ -658,7 +658,7 @@ function childActionListDiff(
     itemDiff?: ItemDiffContext
 ): ChildListDiff | null {
     const observedList = Array.isArray(observed)
-        ? (observed as Array<Observed<Action> | null>)
+        ? (observed as Array<Observed | null>)
         : [];
     const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
     const diff = diffChildActionList(

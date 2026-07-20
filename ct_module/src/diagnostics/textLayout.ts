@@ -153,7 +153,9 @@ export class TextLayoutCanvas implements TextLayoutElement {
     }
 
     render(): string[] {
-        const lineMap: { x: number; text: string; order: number }[][] = [];
+        const lineMap: Array<
+            { x: number; text: string; order: number }[] | undefined
+        > = [];
         for (let order = 0; order < this.elements.length; order++) {
             const entry = this.elements[order];
             const rendered = entry.element.render();
@@ -211,16 +213,17 @@ export class TextLayoutCanvas implements TextLayoutElement {
     }
 
     renderSegments(): LineSegment[][] {
-        const lineMap: LineSegment[][] = [];
+        const lineMap: Array<LineSegment[] | undefined> = [];
         for (let k = 0; k < this.elements.length; k++) {
             const entry = this.elements[k];
             const childLines = entry.element.renderSegments();
             for (let i = 0; i < childLines.length; i++) {
                 const y = entry.y + i;
-                if (lineMap[y] === undefined) lineMap[y] = [];
+                const line = lineMap[y] ?? [];
+                lineMap[y] = line;
                 const childSegs = childLines[i];
                 for (let s = 0; s < childSegs.length; s++) {
-                    lineMap[y].push({ x: entry.x + childSegs[s].x, text: childSegs[s].text });
+                    line.push({ x: entry.x + childSegs[s].x, text: childSegs[s].text });
                 }
             }
         }

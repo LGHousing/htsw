@@ -6,10 +6,7 @@ import {
     snbtFromItem,
 } from "../../housingSync/itemCapture";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
-import {
-    importJsonTargetForSectionEntry,
-    parentDirOf,
-} from "../../project/paths";
+import { importJsonTargetForSectionEntry, parentDirOf } from "../../project/paths";
 import type TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
@@ -23,7 +20,6 @@ type CapturedChestSlot = {
 export type CapturedChest = {
     totalSlots: number;
     slots: CapturedChestSlot[];
-    unreadable: number;
 };
 
 export type ChestExportOptions = {
@@ -68,7 +64,7 @@ export function buildChestMenuEntry(
 
 export function captureOpenChest(): CapturedChest | null {
     const container = Player.getContainer();
-    if (container === null || container === undefined) return null;
+    if (container === undefined) return null;
     if (container.getClassName().indexOf("ContainerChest") === -1) return null;
 
     const totalSlots = container.getSize() - 36;
@@ -78,15 +74,10 @@ export function captureOpenChest(): CapturedChest | null {
     }
 
     const slots: CapturedChestSlot[] = [];
-    let unreadable = 0;
     for (let slot = 0; slot < totalSlots; slot++) {
         const stack = container.getStackInSlot(slot);
-        if (stack === null || stack === undefined) continue;
+        if (stack === null) continue;
         const snbt = snbtFromItem(stack, { pretty: false });
-        if (snbt === null) {
-            unreadable++;
-            continue;
-        }
         slots.push({
             slot,
             snbt,
@@ -94,7 +85,7 @@ export function captureOpenChest(): CapturedChest | null {
         });
     }
 
-    return { totalSlots, slots, unreadable };
+    return { totalSlots, slots };
 }
 
 export async function exportCapturedChest(
@@ -104,10 +95,7 @@ export async function exportCapturedChest(
 ): Promise<ChestExportCounts> {
     const registry = new ItemCaptureRegistry();
     for (let i = 0; i < options.projectItems.length; i++) {
-        registry.seedNbtOnly(
-            options.projectItems[i].name,
-            options.projectItems[i].nbt
-        );
+        registry.seedNbtOnly(options.projectItems[i].name, options.projectItems[i].nbt);
     }
 
     const importJsonPath = importJsonTargetForSectionEntry(
@@ -148,7 +136,7 @@ export async function exportCapturedChest(
         ctx.displayMessage(`&e[export] ${hints[i]}`);
     }
     ctx.displayMessage(
-        `&aExported menu '${options.name}' (${captured.slots.length} slot${captured.slots.length === 1 ? "" : "s"}, items: ${itemCounts.matched} matched, ${itemCounts.fresh} new${captured.unreadable > 0 ? `, ${captured.unreadable} unreadable stack${captured.unreadable === 1 ? "" : "s"} skipped` : ""})`
+        `&aExported menu '${options.name}' (${captured.slots.length} slot${captured.slots.length === 1 ? "" : "s"}, items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 

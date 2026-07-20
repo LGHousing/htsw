@@ -3,7 +3,11 @@
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { knownEventNames } from "../../../../importables/events/listEvents";
-import { listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
+import {
+    listCachedImportables,
+    recordHouseScan,
+    type HouseImportable,
+} from "../../../../importCache/cache";
 
 function eventRows(uuid: string | null): HouseImportable[] {
     if (uuid === null) return [];
@@ -46,7 +50,7 @@ export function scanHouseEvents(): void {
     try {
         recordHouseScan(uuid, "EVENT", names);
     } catch (error) {
-        showToast(`Event refresh failed: ${error}`, 0xffe85c5c, 8000);
+        showToast(`Event refresh failed: ${String(error)}`, 0xffe85c5c, 8000);
         return;
     }
     showToast(

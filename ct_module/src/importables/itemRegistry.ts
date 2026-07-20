@@ -39,9 +39,9 @@ export interface ItemRegistry {
 }
 
 class DefaultItemRegistry implements ItemRegistry {
-    private readonly byName: Record<string, ItemRegistryEntry> = {};
-    private readonly aliases: Record<string, ItemRegistryEntry | "ambiguous"> = {};
-    private readonly directByOwnerPath: Record<string, ItemRegistryEntry> = {};
+    private readonly byName: Partial<Record<string, ItemRegistryEntry>> = {};
+    private readonly aliases: Partial<Record<string, ItemRegistryEntry | "ambiguous">> = {};
+    private readonly directByOwnerPath: Partial<Record<string, ItemRegistryEntry>> = {};
     private readonly directByOwner = new WeakMap<object, Map<string, ItemRegistryEntry>>();
     private readonly itemNames = new Map<string, ImportableItem>();
     private readonly gcx?: GlobalCtxt;

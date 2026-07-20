@@ -14,7 +14,10 @@ export function resolveLocation(
     rt: Runtime, location: Location
 ): ResolvedLocation {
     if (location.type === "Custom Coordinates") {
-        return resolveLocationCoordinates(rt, location.coordinates!);
+        if (location.coordinates === undefined) {
+            throw new Error("Custom Coordinates location has no coordinates");
+        }
+        return resolveLocationCoordinates(rt, location.coordinates);
     }
 
     if (location.type === "House Spawn Location") {
@@ -58,7 +61,7 @@ function resolveLocationCoordinates(
         }
     }
 
-    const varToNumber = (v: Var<any>): number => {
+    const varToNumber = (v: Var<unknown>): number => {
         if (v instanceof VarLong) {
             return v.value.toNumber();
         }
@@ -82,7 +85,7 @@ function resolveLocationCoordinates(
         }
     }
 
-    const numericYawPitch = yawPitchVars.map(it => varToNumber(it));
+    const numericYawPitch: Array<number | undefined> = yawPitchVars.map(it => varToNumber(it));
     let numericYaw: number | undefined = numericYawPitch[0];
     let numericPitch: number | undefined = numericYawPitch[1];
     

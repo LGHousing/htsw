@@ -25,10 +25,10 @@ export function expectedInteractData(
     );
     try {
         if (!FileLib.exists(path)) return { kind: "uncached" };
-        const snbt = FileLib.read(path);
+        const snbt = FileLib.read(path) as unknown as string | null;
         return snbt === null
             ? { kind: "uncached" }
-            : { kind: "cached", snbt: String(snbt) };
+            : { kind: "cached", snbt };
     } catch (_error) {
         return { kind: "uncached" };
     }

@@ -1,5 +1,11 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import {
+    getMinecraft,
+    javaListAt,
+    javaListLength,
+} from "../lib/java";
+
 // The overlay scrollback mirrors Minecraft's own chat buffer so it shows the
 // same messages — server chat, /htsw command output, AND printed diagnostics.
 // CT's ChatLib.getChatLines() only exposes CT's inbound history (not our own
@@ -25,7 +31,7 @@
 const MAX_LINES = 100;
 const LINE_FIELD_NAMES = ["field_146253_i", "field_146252_h"];
 
-let lineField: any = null;
+let lineField: HtswJavaReflectField | null = null;
 let lineFieldFailed = false;
 let lastLen = -1;
 let lastNewest = "";
@@ -45,21 +51,23 @@ function replaceCache(lines: string[]): boolean {
     return true;
 }
 
-function chatGuiFromMinecraft(): any | null {
+function chatGuiFromMinecraft(): HtswMinecraftChatGui | null {
     try {
-        const ingame = (Client.getMinecraft() as any).field_71456_v;
-        if (ingame === null || ingame === undefined) return null;
-        const c = ingame.func_146158_b();
-        return c === null || c === undefined ? null : c;
+        const ingame = getMinecraft().field_71456_v;
+        if (ingame === null) return null;
+        return ingame.func_146158_b();
     } catch (_e) {
         return null;
     }
 }
 
-function chatGuiFromClient(): any | null {
+function chatGuiFromClient(): HtswMinecraftChatGui | null {
     try {
-        const c = (Client as any).getChatGUI();
-        return c === null || c === undefined ? null : c;
+        return (
+            Client as unknown as {
+                getChatGUI(): HtswMinecraftChatGui | null;
+            }
+        ).getChatGUI();
     } catch (_e) {
         return null;
     }
@@ -67,11 +75,11 @@ function chatGuiFromClient(): any | null {
 
 // The chat-line list is a private field — resolve and cache the Field once,
 // walking the class hierarchy (same reflection pattern as bounds.ts).
-function reflectLineList(chat: any): any | null {
+function reflectLineList(chat: HtswMinecraftChatGui): unknown {
     if (lineField === null && !lineFieldFailed) {
         for (let n = 0; n < LINE_FIELD_NAMES.length && lineField === null; n++) {
             try {
-                let klass = chat.getClass();
+                let klass: HtswJavaClass | null = chat.getClass();
                 while (klass !== null) {
                     try {
                         const f = klass.getDeclaredField(LINE_FIELD_NAMES[n]);
@@ -96,45 +104,20 @@ function reflectLineList(chat: any): any | null {
     }
 }
 
-// The reflected value may be a Java Object[] (the common case here) or a
-// java.util.List; support both.
-function lengthOf(v: any): number {
-    try {
-        if (typeof v.size === "function") return Number(v.size());
-    } catch (_e) {
-        // not a List
-    }
-    try {
-        if (typeof v.length === "number") return Number(v.length);
-    } catch (_e) {
-        // not an array
-    }
-    return -1;
-}
-
-function elementAt(v: any, i: number): any {
-    try {
-        if (typeof v.get === "function") return v.get(i);
-    } catch (_e) {
-        // not a List
-    }
-    try {
-        return v[i];
-    } catch (_e) {
-        return null;
-    }
-}
-
-function formattedTextOf(chatLine: any): string {
+function formattedTextOf(chatLine: unknown): string {
     try {
         if (chatLine === null || chatLine === undefined) return "";
-        return String(chatLine.func_151461_a().func_150254_d());
+        const line = chatLine as {
+            func_151461_a(): { func_150254_d(): string };
+        };
+        const text: unknown = line.func_151461_a().func_150254_d();
+        return String(text);
     } catch (_e) {
         return "";
     }
 }
 
-function mcChatList(): { list: any; len: number } | null {
+function mcChatList(): { list: unknown; len: number } | null {
     let chat = chatGuiFromMinecraft();
     if (chat === null) chat = chatGuiFromClient();
     if (chat === null) return null;
@@ -142,7 +125,7 @@ function mcChatList(): { list: any; len: number } | null {
     const list = reflectLineList(chat);
     if (list === null) return null;
 
-    const len = lengthOf(list);
+    const len = javaListLength(list);
     if (len < 0) return null;
     return { list, len };
 }
@@ -150,12 +133,12 @@ function mcChatList(): { list: any; len: number } | null {
 // Index 0 is newest. Walk newest->oldest over the most recent MAX_LINES,
 // pushing to build an oldest-first array; trailing nulls (an ArrayList's
 // unused capacity slots sit at the high indices) are skipped.
-function buildMcLines(list: any, len: number): string[] | null {
+function buildMcLines(list: unknown, len: number): string[] | null {
     const limit = Math.min(len, MAX_LINES);
     const lines: string[] = [];
     let nonEmpty = 0;
     for (let i = limit - 1; i >= 0; i--) {
-        const el = elementAt(list, i);
+        const el = javaListAt(list, i);
         if (el === null || el === undefined) continue;
         const s = formattedTextOf(el);
         if (s.length > 0) nonEmpty++;
@@ -168,13 +151,17 @@ function buildMcLines(list: any, len: number): string[] | null {
 // CT's ClientListener history (inbound only). Returns oldest-first.
 function readCtFallback(): string[] | null {
     try {
-        const raw: any = ChatLib.getChatLines();
+        const raw = (
+            ChatLib as unknown as {
+                getChatLines(): unknown;
+            }
+        ).getChatLines();
         if (raw === null || raw === undefined) return null;
-        const n = typeof raw.length === "number" ? raw.length : Number(raw.size());
+        const n = javaListLength(raw);
         const limit = Math.min(n, MAX_LINES);
         const lines: string[] = [];
         for (let i = limit - 1; i >= 0; i--) {
-            lines.push(String(typeof raw.length === "number" ? raw[i] : raw.get(i)));
+            lines.push(String(javaListAt(raw, i)));
         }
         return lines;
     } catch (_e) {
@@ -197,7 +184,7 @@ export function refreshChatLines(): boolean {
         return replaceCache(fb);
     }
 
-    const newest = mc.len > 0 ? formattedTextOf(elementAt(mc.list, 0)) : "";
+    const newest = mc.len > 0 ? formattedTextOf(javaListAt(mc.list, 0)) : "";
     if (mc.len === lastLen && newest === lastNewest && cacheLines.length > 0) {
         return false;
     }

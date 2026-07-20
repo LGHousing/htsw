@@ -83,7 +83,7 @@ function dirExists(path: string): boolean {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        const p = Paths.get(String(path));
+        const p = Paths.get(path);
         return Files.exists(p) && Files.isDirectory(p);
     } catch (_e) {
         return false;
@@ -106,13 +106,13 @@ function listDir(dir: string): Entry[] {
     const Files = javaType("java.nio.file.Files");
     const Paths = javaType("java.nio.file.Paths");
     const out: Entry[] = [];
-    let p: any;
+    let p: HtswJavaPath;
     try {
-        p = Paths.get(String(dir));
+        p = Paths.get(dir);
     } catch (_e) {
         return out;
     }
-    let stream: any;
+    let stream: HtswJavaDirectoryStream;
     try {
         stream = Files.newDirectoryStream(p);
     } catch (_e) {
@@ -120,8 +120,8 @@ function listDir(dir: string): Entry[] {
     }
     try {
         const it = stream.iterator();
-        while (true) {
-            let entry: any;
+        for (;;) {
+            let entry: HtswJavaPath;
             try {
                 if (!it.hasNext()) break;
                 entry = it.next();
@@ -129,7 +129,9 @@ function listDir(dir: string): Entry[] {
                 break;
             }
             try {
-                const name = String(entry.getFileName().toString());
+                const fileName = entry.getFileName();
+                if (fileName === null) continue;
+                const name = String(fileName.toString());
                 const isDir = Files.isDirectory(entry);
                 const dot = name.lastIndexOf(".");
                 const ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : "";
@@ -212,9 +214,9 @@ function commitPathDraft(): void {
     const normalized = normalizeHtswPath(raw);
     const Paths = javaType("java.nio.file.Paths");
     const Files = javaType("java.nio.file.Files");
-    let p: any;
+    let p: HtswJavaPath;
     try {
-        p = Paths.get(String(normalized));
+        p = Paths.get(normalized);
     } catch (_e) {
         ChatLib.chat(`&c[htsw] Invalid path: ${normalized}`);
         return;
@@ -267,7 +269,7 @@ function openInOS(): void {
     try {
         openPathInOS(cwd);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Open in OS failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Open in OS failed: ${String(err)}`);
     }
 }
 
@@ -275,7 +277,7 @@ function pathExists(path: string): boolean {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        return Files.exists(Paths.get(String(path)));
+        return Files.exists(Paths.get(path));
     } catch (_e) {
         return false;
     }
@@ -288,7 +290,7 @@ function newFolder(): void {
         let i = 1;
         while (i <= 100) {
             const candidate = `${cwd}/new-folder${i === 1 ? "" : `-${i}`}`;
-            const p = Paths.get(String(candidate));
+            const p = Paths.get(candidate);
             if (!Files.exists(p)) {
                 Files.createDirectories(p);
                 openRenameFilePopover(ZERO, candidate);
@@ -297,7 +299,7 @@ function newFolder(): void {
             i++;
         }
     } catch (err) {
-        ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
+        ChatLib.chat(`&c[htsw] New folder failed: ${String(err)}`);
     }
 }
 
@@ -319,7 +321,7 @@ function newImportJson(): void {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
         const target = `${cwd}/import.json`;
-        const p = Paths.get(String(target));
+        const p = Paths.get(target);
         if (Files.exists(p)) {
             loadAsImport(target);
             return;
@@ -328,11 +330,11 @@ function newImportJson(): void {
         ChatLib.chat(`&a[htsw] Created ${target}`);
         loadAsImport(target);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Init import.json failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Init import.json failed: ${String(err)}`);
     }
 }
 
-function deletePathRecursive(Files: any, path: any): void {
+function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): void {
     if (Files.isDirectory(path)) {
         const stream = Files.newDirectoryStream(path);
         try {
@@ -351,14 +353,14 @@ function deleteEntry(entry: Entry): void {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        deletePathRecursive(Files, Paths.get(String(entry.fullPath)));
+        deletePathRecursive(Files, Paths.get(entry.fullPath));
         if (selectedImportPath === entry.fullPath) {
             selectedImportPath = null;
             selectedImportName = null;
         }
         ChatLib.chat(`&a[htsw] Deleted ${entry.name}`);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Delete failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Delete failed: ${String(err)}`);
     }
 }
 

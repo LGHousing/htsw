@@ -8,7 +8,13 @@
  * Click + wait pairs live in helpers.ts.
  */
 import TaskContext from "../../tasks/context";
-import { describeGuiScreenMenu, getDisplayedGuiMenuState, getMenuItemSlots, getOpenContainerWindowId, menuStateDescription } from "../../tasks/specifics/slots";
+import {
+    describeGuiScreenMenu,
+    getDisplayedGuiMenuState,
+    getMenuItemSlots,
+    getOpenContainerWindowId,
+    menuStateDescription,
+} from "../../tasks/specifics/slots";
 import {
     S2DPacketOpenWindow,
     S30PacketWindowItems,
@@ -16,7 +22,10 @@ import {
     windowItemsPacketId,
     windowItemsPacketStacks,
 } from "../../utils/packets";
-import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
+import {
+    describeRecentWindowOpens,
+    type WaitForPromise,
+} from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
@@ -49,7 +58,7 @@ function s30MenuItemCount(packet: unknown): number {
     const end = Math.max(0, items.length - PLAYER_INVENTORY_SLOTS);
     let n = 0;
     for (let i = 0; i < end; i++) {
-        if (items[i] !== null && items[i] !== undefined) n++;
+        if (items[i] !== null) n++;
     }
     return n;
 }
@@ -98,9 +107,10 @@ function describeMenuWaitState(state: MenuWaitState): string {
         return `no S2DPacketOpenWindow/S30PacketWindowItems pair received; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
     }
     if (!state.everMatchedWindow) {
-        const sampled = state.ticksWaited === 0
-            ? "was not sampled before the wait timed out"
-            : `last sampled as windowId ${state.lastCurId}`;
+        const sampled =
+            state.ticksWaited === 0
+                ? "was not sampled before the wait timed out"
+                : `last sampled as windowId ${state.lastCurId}`;
         return `window ${state.openedWindowId} opened with ${state.expectedItems} items, but readiness ${sampled}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
     }
     return `window ${state.openedWindowId} opened, active container reached it, observed ${state.lastCount}/${state.expectedItems} items (peak ${state.maxCount}); snapshot slots=${state.snapshotSlots}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
@@ -216,9 +226,12 @@ function wrapMenuWaitTimeout(
     cleanup: () => void,
     state: MenuWaitState
 ): WaitForPromise<void> {
-    const wrapped = promise.catch((error) => {
+    const wrapped = promise.catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        if (message.indexOf("Timeout after") !== -1 && visibleGuiMatchesOpenedWindow(state, false)) {
+        if (
+            message.indexOf("Timeout after") !== -1 &&
+            visibleGuiMatchesOpenedWindow(state, false)
+        ) {
             traceMenuWait("timeoutRecovered", {
                 error: message,
                 ticksWaited: state.ticksWaited,
@@ -333,7 +346,11 @@ export function waitForMenu(
     // Cancel via the timed promise (stops the guard's tick loop) rather than the
     // bare waiter cleanup, so an abandoned waitForMenu (a losing race branch)
     // tears the timer down too instead of leaking a 6s phantom timeout.
-    return wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state);
+    return wrapMenuWaitTimeout(
+        timedPromise,
+        timedPromise.cleanupWaiter ?? cleanup,
+        state
+    );
 }
 
 export function waitForKnownMenu(
@@ -369,12 +386,20 @@ export function waitForKnownMenu(
         "Waiting for menu to load",
         MENU_WAIT_TIMEOUT_MS
     );
-    return wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state);
+    return wrapMenuWaitTimeout(
+        timedPromise,
+        timedPromise.cleanupWaiter ?? cleanup,
+        state
+    );
 }
 
 export function timedWaitForMenu(
     ctx: TaskContext,
-    kind: "menuClickWait" | "pageTurnWait" | "goBackWait" | "commandMenuWait" = "menuClickWait"
+    kind:
+        | "menuClickWait"
+        | "pageTurnWait"
+        | "goBackWait"
+        | "commandMenuWait" = "menuClickWait"
 ): WaitForPromise<void> {
     const expected =
         kind === "pageTurnWait"

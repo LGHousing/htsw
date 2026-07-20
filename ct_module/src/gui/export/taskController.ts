@@ -102,7 +102,7 @@ export function startExport(
             if (onSuccess !== undefined) onSuccess();
         })
         .catch((err: unknown) => {
-            showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
+            showToast(`Export failed: ${String(err)}`, 0xffe85c5c, 8000);
         });
 }
 

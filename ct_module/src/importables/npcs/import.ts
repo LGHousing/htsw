@@ -90,7 +90,11 @@ export async function prereadImportableNpc(
         }
 
         if (leftEligible) {
-            leftPlan = await prereadActionList(ctx, importable.leftClickActions!, {
+            const leftActions = importable.leftClickActions;
+            if (leftActions === undefined) {
+                throw new Error("NPC left-click actions became unavailable during pre-read");
+            }
+            leftPlan = await prereadActionList(ctx, leftActions, {
                 session,
                 baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
                 trust: getActionListTrust(trustPlan, "leftClickActions"),
@@ -105,7 +109,11 @@ export async function prereadImportableNpc(
 
     if (rightEligible) {
         await openNpcRightClickActions(ctx, importable, session.npcLookup);
-        rightPlan = await prereadActionList(ctx, importable.rightClickActions!, {
+        const rightActions = importable.rightClickActions;
+        if (rightActions === undefined) {
+            throw new Error("NPC right-click actions became unavailable during pre-read");
+        }
+        rightPlan = await prereadActionList(ctx, rightActions, {
             session,
             baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
             trust: getActionListTrust(trustPlan, "rightClickActions"),
@@ -141,7 +149,11 @@ export async function applyImportableNpcPlan(
     if (plan.leftPlan !== null || !plan.leftClickRedirectHandled) {
         await openNpcLeftClickActions(ctx, plan.importable, session.npcLookup);
         if (!plan.leftClickRedirectHandled) {
-            await setLeftClickRedirect(ctx, plan.importable.leftClickRedirect!);
+            const redirect = plan.importable.leftClickRedirect;
+            if (redirect === undefined) {
+                throw new Error("NPC left-click redirect became unavailable during apply");
+            }
+            await setLeftClickRedirect(ctx, redirect);
         }
         if (plan.leftPlan !== null) {
             await applyActionListPlan(ctx, plan.leftPlan, { session });

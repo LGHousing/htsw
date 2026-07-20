@@ -1,6 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Rect } from "./layout";
+import { getMinecraft } from "./java";
 
 export const SCREEN_PAD = 4;
 
@@ -23,24 +24,25 @@ export type ContainerBounds = {
 //   field_147000_g = GuiContainer.ySize   (protected — needs reflection)
 
 type ContainerFields = {
-    left: any;
-    top: any;
-    xSize: any;
-    ySize: any;
+    left: HtswJavaReflectField;
+    top: HtswJavaReflectField;
+    xSize: HtswJavaReflectField;
+    ySize: HtswJavaReflectField;
 };
 
 let containerFields: ContainerFields | null = null;
 
-function resolveContainerFields(obj: any): ContainerFields | null {
+function resolveContainerFields(obj: HtswJavaObject): ContainerFields | null {
     if (containerFields !== null) return containerFields;
     try {
-        let klass = obj.getClass();
+        let klass: HtswJavaClass | null = obj.getClass();
         while (klass !== null) {
             const declared = klass.getDeclaredFields();
-            const found: { [name: string]: any } = {};
+            const found: { [name: string]: HtswJavaReflectField | undefined } = {};
             for (let i = 0; i < declared.length; i++) {
                 const field = declared[i];
-                found[String(field.getName())] = field;
+                const fieldName: unknown = field.getName();
+                found[String(fieldName)] = field;
             }
             const left = found.field_147003_i;
             const top = found.field_147009_r;
@@ -60,7 +62,7 @@ function resolveContainerFields(obj: any): ContainerFields | null {
     return null;
 }
 
-function readIntField(obj: any, field: any): number | null {
+function readIntField(obj: HtswJavaObject, field: HtswJavaReflectField): number | null {
     try {
         const value = field.get(obj);
         return typeof value === "number" ? value : null;
@@ -77,9 +79,10 @@ function readIntField(obj: any, field: any): number | null {
 // We compare by `Class.getName()` substring so the check survives both
 // deobf names (`net.minecraft.client.gui.inventory.GuiInventory`) and
 // obfuscated runtime names — the simple name suffix is the same in both.
-function isSuppressedScreen(gui: any): boolean {
+function isSuppressedScreen(gui: HtswMinecraftGuiScreen): boolean {
     try {
-        const name = String(gui.getClass().getName());
+        const className: unknown = gui.getClass().getName();
+        const name = String(className);
         if (name.indexOf("GuiInventory") >= 0) return true;
         if (name.indexOf("GuiContainerCreative") >= 0) return true;
     } catch (_e) {
@@ -89,10 +92,11 @@ function isSuppressedScreen(gui: any): boolean {
 }
 
 export function getOpenContainerBottomExtension(): number {
-    const gui = Client.getMinecraft().field_71462_r;
-    if (gui === null || gui === undefined) return 0;
+    const gui = getMinecraft().field_71462_r;
+    if (gui === null) return 0;
     try {
-        const name = String(gui.getClass().getName());
+        const className: unknown = gui.getClass().getName();
+        const name = String(className);
         return name.indexOf("GuiContainerCreative") >= 0 ? 28 : 0;
     } catch (_e) {
         return 0;
@@ -100,8 +104,8 @@ export function getOpenContainerBottomExtension(): number {
 }
 
 function readOpenContainerBounds(): ContainerBounds | null {
-    const gui = Client.getMinecraft().field_71462_r;
-    if (gui === null || gui === undefined) return null;
+    const gui = getMinecraft().field_71462_r;
+    if (gui === null) return null;
 
     const screenW = gui.field_146294_l;
     const screenH = gui.field_146295_m;
@@ -125,8 +129,8 @@ export function getOpenContainerBounds(): ContainerBounds | null {
 }
 
 export function getContainerBounds(): ContainerBounds | null {
-    const gui = Client.getMinecraft().field_71462_r;
-    if (gui === null || gui === undefined || isSuppressedScreen(gui)) return null;
+    const gui = getMinecraft().field_71462_r;
+    if (gui === null || isSuppressedScreen(gui)) return null;
     return readOpenContainerBounds();
 }
 

@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { pathExists } from "../lib/java";
+import { pathExists, runtimeString, type RuntimeString } from "../lib/java";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 
 const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
@@ -16,17 +16,19 @@ function load(): void {
     loaded = true;
     try {
         if (!FileLib.exists(RECENTS_PATH)) return;
-        const raw = String(FileLib.read(RECENTS_PATH) ?? "");
+        const stored = FileLib.read(RECENTS_PATH) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw);
+        const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed)) {
             // Normalize + dedupe: older versions stored whatever spelling the
             // caller had (absolute vs ./htsw/...), so one file could sit in
             // the list twice.
             const filtered: string[] = [];
             for (let i = 0; i < parsed.length; i++) {
-                if (typeof parsed[i] !== "string") continue;
-                const norm = normalizeHtswPath(parsed[i]);
+                const recent: unknown = parsed[i];
+                if (typeof recent !== "string") continue;
+                const norm = normalizeHtswPath(recent);
                 if (filtered.indexOf(norm) === -1) filtered.push(norm);
             }
             recents = filtered;

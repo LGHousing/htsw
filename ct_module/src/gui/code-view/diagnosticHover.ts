@@ -19,7 +19,7 @@ function diagnosticId(diagnostic: Diagnostic): number {
 }
 
 export function hoverPath(path: string): string {
-    const normalized = String(path).split("\\").join("/");
+    const normalized = path.split("\\").join("/");
     const htswProjects = normalized.lastIndexOf("/htsw/projects/");
     if (htswProjects >= 0) return normalized.substring(htswProjects + 1);
     const projects = normalized.lastIndexOf("/projects/");
@@ -88,8 +88,8 @@ export function offerLineHover(
         }
         width = diagBlock.width;
     } else {
-        lines = extras!.slice();
-        segments = extras!.map((line) => [{ x: 0, text: line }]);
+        lines = extras === null ? [] : extras.slice();
+        segments = extras === null ? [] : extras.map((line) => [{ x: 0, text: line }]);
         width = 0;
     }
     if (extras !== null) {

@@ -1,6 +1,5 @@
 import type { Action } from "htsw/types";
 
-import type { ChildListName } from "../../actionPath";
 import {
     getActionLoreFields,
     getActionScalarLoreFields,
@@ -107,7 +106,7 @@ function getChildListsNeedingHydration(entry: ObservedActionSlot): ChildListsToR
     if (entry.action === null) return childLists;
 
     for (const field of getChildListFields(entry.action.type)) {
-        const prop = field.prop as ChildListName;
+        const prop = field.prop;
         if ((entry.childListSummaries?.[prop] ?? []).length > 0) {
             childLists.add(prop);
         }
@@ -154,7 +153,7 @@ export function addItemCaptureEntries(
 }
 
 export function scalarFieldsNeedingHydration(
-    action: Observed<Action>
+    action: Observed
 ): ActionScalarFieldToRead[] {
     const fields = getActionScalarLoreFields(action.type);
     const out: ActionScalarFieldToRead[] = [];
@@ -205,7 +204,7 @@ export function buildFullHydrationPlan(
 }
 
 export function actionsFullyHydrated(
-    actions: ReadonlyArray<Action | Observed<Action> | null>
+    actions: ReadonlyArray<Action | Observed | null>
 ): boolean {
     for (const action of actions) {
         if (action === null) return false;

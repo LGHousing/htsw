@@ -213,7 +213,7 @@ function isWrapStopLine(line: string): boolean {
 
 export function parseLoreFields<TProp extends string>(
     slot: ItemSlot,
-    loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>
+    loreFields: Partial<Record<string, { prop: TProp; kind: UiFieldKind }>>
 ): Partial<Record<TProp, string | boolean | Location>> {
     const parsed: Partial<Record<TProp, string | boolean | Location>> = {};
     const lore = slot.getItem().getLore();

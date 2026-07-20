@@ -28,7 +28,7 @@ function item(name: string, displayName: string): ImportableItem {
                 },
             },
         },
-    } as ImportableItem;
+    };
 }
 
 describe("itemChanges", () => {

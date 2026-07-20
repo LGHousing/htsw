@@ -1,3 +1,5 @@
+import { javaType, runtimeString, type RuntimeString } from "./java";
+
 /**
  * Best-effort `mkdir -p` for the parent directory of `path`. Used before
  * `FileLib.write` because that call doesn't create missing parents on its
@@ -8,9 +10,9 @@
  */
 export function ensureParentDirs(path: string): void {
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const p = Paths.get(String(path));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const p = Paths.get(runtimeString(path));
         const parent = p.getParent();
         if (parent !== null && !Files.exists(parent)) {
             Files.createDirectories(parent);
@@ -30,7 +32,8 @@ export function atomicWriteText(path: string, content: string): boolean {
     if (writeTempThenMove(path, tempPath, content)) return true;
     try {
         FileLib.write(path, content, true);
-        return String(FileLib.read(path) ?? "") === content;
+        const written = FileLib.read(path) as RuntimeString | null | undefined;
+        return runtimeString(written) === content;
     } catch (_fallbackError) {
         return false;
     }
@@ -40,11 +43,11 @@ function writeTempThenMove(path: string, tempPath: string, content: string): boo
     try {
         ensureParentDirs(path);
         FileLib.write(tempPath, content, true);
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
-        const temp = Paths.get(String(tempPath));
-        const target = Paths.get(String(path));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const StandardCopyOption = javaType("java.nio.file.StandardCopyOption");
+        const temp = Paths.get(runtimeString(tempPath));
+        const target = Paths.get(runtimeString(path));
         if (tryFilesystemMove(() => {
             Files.move(
                 temp,
@@ -79,9 +82,11 @@ function tryFilesystemMove(move: () => void): boolean {
 
 export function getFileMtimeMs(path: string): number {
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        return Number(
+            Files.getLastModifiedTime(Paths.get(runtimeString(path))).toMillis()
+        );
     } catch (_e) {
         return -1;
     }
@@ -91,9 +96,9 @@ export function getFileMtimeMs(path: string): number {
  * doesn't exist or any delete failed. */
 export function deleteDirRecursive(path: string): boolean {
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const root = Paths.get(String(path));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const root = Paths.get(runtimeString(path));
         if (!Files.exists(root)) return false;
         deleteRecursive(Files, root);
         return !Files.exists(root);
@@ -102,7 +107,7 @@ export function deleteDirRecursive(path: string): boolean {
     }
 }
 
-function deleteRecursive(Files: any, p: any): void {
+function deleteRecursive(Files: HtswJavaFilesClass, p: HtswJavaPath): void {
     if (Files.isDirectory(p)) {
         const stream = Files.newDirectoryStream(p);
         try {
@@ -118,15 +123,15 @@ function deleteRecursive(Files: any, p: any): void {
 /** Count regular files under a path (the path itself if it's a file). */
 export function countFilesRecursive(path: string): number {
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        return countRecursive(Files, Paths.get(String(path)));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        return countRecursive(Files, Paths.get(runtimeString(path)));
     } catch (_e) {
         return 0;
     }
 }
 
-function countRecursive(Files: any, p: any): number {
+function countRecursive(Files: HtswJavaFilesClass, p: HtswJavaPath): number {
     if (!Files.exists(p)) return 0;
     if (!Files.isDirectory(p)) return 1;
     let n = 0;

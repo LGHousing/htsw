@@ -9,10 +9,7 @@ import TaskContext from "../tasks/context";
 import { writeCapturedItems } from "./items/writeCapturedItems";
 import { filterAlreadyExported } from "./exportSkip";
 import { runReadLoop, type ReadFn, type ReadOptions } from "./read";
-import {
-    readImportableCache,
-    writeImportableCache,
-} from "../importCache/cache";
+import { readImportableCache, writeImportableCache } from "../importCache/cache";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import type { Importable } from "htsw/types";
@@ -120,16 +117,10 @@ function refreshExportedItemDependencies(
         if (importable.type === type && names.has(identity)) {
             const cached = readImportableCache(housingUuid, type, identity);
             if (cached !== null) {
-                writeImportableCache(
-                    ctx,
-                    housingUuid,
-                    cached.importable,
-                    cached.writer,
-                    {
-                        quiet: true,
-                        itemDependencies: dependencies.snapshotOf(importable),
-                    }
-                );
+                writeImportableCache(ctx, housingUuid, cached.importable, cached.writer, {
+                    quiet: true,
+                    itemDependencies: dependencies.snapshotOf(importable),
+                });
             }
         }
         if (importable.type === "ITEM" && capturedItemNames.has(identity)) {
@@ -179,7 +170,9 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
             try {
                 await restoreInventoryToSnapshot(ctx, state.inventorySnapshot);
             } catch (error) {
-                ctx.displayMessage(`&7[export] &eInventory restore failed: ${error}`);
+                ctx.displayMessage(
+                    `&7[export] &eInventory restore failed: ${String(error)}`
+                );
             }
         };
 
@@ -196,19 +189,23 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         if (options.names !== undefined) {
             names = options.names;
         } else {
-            names = listed!.map(nameOf);
+            if (listed === null) {
+                throw new Error(`Could not list ${spec.noun}s for export`);
+            }
+            names = listed.map(nameOf);
             options.onNamesListed?.(names);
         }
 
+        const referencesExist = spec.referencesExist;
         const exportNames =
-            spec.referencesExist === undefined
+            referencesExist === undefined
                 ? names
                 : filterAlreadyExported(
                       ctx,
                       spec.noun,
                       names,
                       readOnly ? false : options.skipExisting,
-                      (name) => spec.referencesExist!(importJsonPath, name)
+                      (name) => referencesExist(importJsonPath, name)
                   );
 
         if (exportNames.length === 0) {
@@ -224,6 +221,8 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         let succeeded = 0;
         let failed = 0;
         const completedNames = new Set<string>();
+        const scanOne = spec.scanOne;
+        const hydrateOne = spec.hydrateOne;
         try {
             const result = await runReadLoop(ctx, {
                 names: exportNames,
@@ -255,7 +254,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                         }
                     }
                 },
-                ...(spec.scanOne === undefined || spec.hydrateOne === undefined
+                ...(scanOne === undefined || hydrateOne === undefined
                     ? {}
                     : {
                           scanOne: async (
@@ -271,7 +270,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                                   throw new Error(
                                       `No ${spec.noun} named "${name}" exists in this housing.`
                                   );
-                              return spec.scanOne!(
+                               return scanOne(
                                   ctx,
                                   entry,
                                   options,
@@ -293,7 +292,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                                   throw new Error(
                                       `No ${spec.noun} named "${name}" exists in this housing.`
                                   );
-                              await spec.hydrateOne!(
+                               await hydrateOne(
                                   ctx,
                                   entry,
                                   pending,

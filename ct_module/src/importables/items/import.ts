@@ -61,12 +61,15 @@ function itemShellMatchesCached(
     return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
 }
 
-function readCachedInteractData(housingUuid: string, fingerprint: string): string | undefined {
+function readCachedInteractData(
+    housingUuid: string,
+    fingerprint: string
+): string | undefined {
     const path = interactDataCachePath(housingUuid, fingerprint);
     if (!FileLib.exists(path)) return undefined;
 
-    const raw = FileLib.read(path);
-    return raw === null ? undefined : String(raw);
+    const raw = FileLib.read(path) as unknown as string | null;
+    return raw === null ? undefined : raw;
 }
 
 type ItemStart = {
@@ -75,7 +78,7 @@ type ItemStart = {
     cachedImportable?: ImportableItem;
 };
 
-function hotbarSlotStack(slot: number): any | null {
+function hotbarSlotStack(slot: number): MCItemStack | null {
     const current = Player.getInventory()?.getStackInSlot(slot);
     if (current === null || current === undefined) return null;
     return current.getItemStack();
@@ -86,7 +89,7 @@ function hotbarSlotStack(slot: number): any | null {
 // longer), so exact areItemStacksEqual never recognizes a landed injection.
 // Item, damage, count, and display name survive the round-trip and are
 // enough to identify the stack we just sent to this specific slot.
-function stackLanded(current: any, sent: any): boolean {
+function stackLanded(current: MCItemStack, sent: MCItemStack): boolean {
     return (
         current.func_77973_b() === sent.func_77973_b() &&
         current.func_77960_j() === sent.func_77960_j() &&
@@ -95,11 +98,10 @@ function stackLanded(current: any, sent: any): boolean {
     );
 }
 
-function hotbarZeroLanded(stack: any): boolean {
+function hotbarZeroLanded(stack: MCItemStack): boolean {
     const current = hotbarSlotStack(0);
     return current !== null && stackLanded(current, stack);
 }
-
 
 export type ItemImportPlan = {
     kind: "ITEM";
@@ -140,7 +142,10 @@ async function importImportableItem(
 ): Promise<void> {
     const events = session.events;
     const ownSteps = hasItemClickActions(importable) ? 3 : 1;
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
+    const setup = createSetupStepEmitter(
+        events,
+        countReferencedShells(importable) + ownSteps
+    );
 
     await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -164,7 +169,10 @@ async function importImportableItem(
     const cachePath = interactDataCachePath(uuid, clickFingerprint);
     const cachedInteractData = readCachedInteractData(uuid, clickFingerprint);
     if (cachedInteractData !== undefined) {
-        await injectHeldItem(ctx, itemWithInteractData(importable.nbt, cachedInteractData));
+        await injectHeldItem(
+            ctx,
+            itemWithInteractData(importable.nbt, cachedInteractData)
+        );
         setup(`gave cached ${importable.name}`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid, {
             itemDependencies: dependencyIndex.snapshotOf(importable),
@@ -176,23 +184,14 @@ async function importImportableItem(
     await injectHeldItem(ctx, start.item);
     setup(`injected item ${importable.name}`);
 
-    await ctx.expectAfter(
-        () => ctx.runCommand("/edit"),
-        itemEditorOpened()
-    );
+    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
     setup(`opened item editor`);
 
     ctx.getItemSlot("Edit Actions").click();
     await timedWaitForMenu(ctx, "menuClickWait");
     setup(`opened Edit Actions for ${importable.name}`);
 
-    await syncItemActionLists(
-        ctx,
-        importable,
-        session,
-        trustPlan,
-        start
-    );
+    await syncItemActionLists(ctx, importable, session, trustPlan, start);
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
@@ -225,9 +224,9 @@ function chooseItemStart(
         };
     }
 
-    const cachedImportable = cachedEntry?.importable;
+    const cachedImportable = cachedEntry.importable;
     if (
-        cachedImportable?.type === "ITEM" &&
+        cachedImportable.type === "ITEM" &&
         itemShellMatchesCached(cachedImportable, importable)
     ) {
         const cachedInteractData = readCachedInteractData(
@@ -277,7 +276,10 @@ async function clearHotbarZero(ctx: TaskContext): Promise<void> {
 }
 
 async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
-    const stack = item.getItemStack();
+    const stack = item.getItemStack() as unknown as
+        | HtswMinecraftItemStack
+        | null
+        | undefined;
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
     }
@@ -285,12 +287,10 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     await closeOpenScreen(ctx);
     await clearHotbarZero(ctx);
 
-    sendCreativeInventoryAction(
-        ctx,
-        HOTBAR_ZERO_PACKET_SLOT,
-        stack,
+    sendCreativeInventoryAction(ctx, HOTBAR_ZERO_PACKET_SLOT, stack);
+    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () =>
+        hotbarZeroLanded(stack)
     );
-    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => hotbarZeroLanded(stack));
     if (!landed) {
         const observed = summarizeItemStack(hotbarSlotStack(0));
         throw new Error(
@@ -334,11 +334,11 @@ async function syncItemActionLists(
     );
 
     if (leftNeedsSync) {
-        let actionsEditorOpened = false;
+        const editor = { opened: false };
         const openActionsEditor = async (): Promise<void> => {
             ctx.getItemSlot("Left Click Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
-            actionsEditorOpened = true;
+            editor.opened = true;
         };
         const leftSync = await prepareActionListSync(ctx, {
             desired: leftDesired,
@@ -348,7 +348,7 @@ async function syncItemActionLists(
             open: openActionsEditor,
         });
         if (leftSync.kind === "planned") {
-            if (!actionsEditorOpened) await openActionsEditor();
+            if (!editor.opened) await openActionsEditor();
             await applyActionListPlan(ctx, leftSync.plan, { session });
         }
 
@@ -358,11 +358,11 @@ async function syncItemActionLists(
     }
 
     if (rightNeedsSync) {
-        let actionsEditorOpened = false;
+        const editor = { opened: false };
         const openActionsEditor = async (): Promise<void> => {
             ctx.getItemSlot("Right Click Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
-            actionsEditorOpened = true;
+            editor.opened = true;
         };
         const rightSync = await prepareActionListSync(ctx, {
             desired: rightDesired,
@@ -372,7 +372,7 @@ async function syncItemActionLists(
             open: openActionsEditor,
         });
         if (rightSync.kind === "planned") {
-            if (!actionsEditorOpened) await openActionsEditor();
+            if (!editor.opened) await openActionsEditor();
             await applyActionListPlan(ctx, rightSync.plan, { session });
         }
     }

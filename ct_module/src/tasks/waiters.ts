@@ -2,7 +2,7 @@ import type TaskContext from "./context";
 import type { TaskWaiter } from "./context";
 import type { WaitForPromise } from "./specifics/waitFor";
 
-type AnyWaiter = TaskWaiter<any>;
+type AnyWaiter = TaskWaiter<unknown>;
 type WaiterKey<T> = Extract<keyof T, string>;
 type WaiterResults<T extends Record<string, AnyWaiter>> = {
     [K in keyof T]: T[K] extends TaskWaiter<infer R> ? R : never;
@@ -102,7 +102,7 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
                                 cleanupWaiters(waiters);
                                 resolve(key);
                             },
-                            (error) => {
+                            (error: unknown) => {
                                 if (settled) return;
                                 remaining--;
                                 failures.push(`${key}: ${errorMessage(error)}`);

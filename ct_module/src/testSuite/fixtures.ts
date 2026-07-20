@@ -1,6 +1,7 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 
 import { FileSystemFileLoader } from "../utils/fileLoaders";
+import { javaType } from "../utils/java";
 import {
     collectImportablesCoverage,
     coverageMatchesSlice,
@@ -102,9 +103,9 @@ function readModuleEnvValue(key: string): string | null {
 }
 
 function listFixtureImportJsonPaths(root: string): string[] {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
-    const rootPath = Paths.get(String(root));
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const rootPath = Paths.get(root);
     if (!Files.isDirectory(rootPath)) return [];
 
     const out: string[] = [];
@@ -116,7 +117,9 @@ function listFixtureImportJsonPaths(root: string): string[] {
             if (!Files.isDirectory(child)) continue;
             const importJson = child.resolve("import.json");
             if (Files.exists(importJson)) {
-                out.push(String(importJson.toAbsolutePath().normalize().toString()));
+                out.push(
+                    String(importJson.toAbsolutePath().normalize().toString())
+                );
             }
         }
     } finally {

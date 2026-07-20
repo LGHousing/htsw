@@ -5,6 +5,7 @@ import {
     setAutoUpdatePreference,
     type AutoUpdatePreference,
 } from "../settings";
+import { javaType, runtimeString, type RuntimeString } from "../utils/java";
 
 const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
 const BASE_URL = "https://legendarygames.dev/htsw/ct";
@@ -28,6 +29,10 @@ type UpdateOptions = {
 };
 
 let updateInProgress = false;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object";
+}
 
 export function initAutoUpdate(): void {
     const preference = getAutoUpdatePreference();
@@ -68,7 +73,9 @@ export function commandUpdate(args: string[]): void {
 
     if (command === "disable" || command === "off" || command === "decline") {
         setAutoUpdatePreference("disabled");
-        ChatLib.chat("&7[htsw] Auto-updates disabled. Manual &f/htsw update&7 still works.");
+        ChatLib.chat(
+            "&7[htsw] Auto-updates disabled. Manual &f/htsw update&7 still works."
+        );
         return;
     }
 
@@ -100,9 +107,17 @@ function showAutoUpdatePrompt(): void {
     );
     ChatLib.chat(
         new Message([
-            commandLink("&a[Enable]", "/htsw update enable", "&7Enable auto-updates and check now."),
+            commandLink(
+                "&a[Enable]",
+                "/htsw update enable",
+                "&7Enable auto-updates and check now."
+            ),
             " ",
-            commandLink("&c[Disable]", "/htsw update disable", "&7Keep automatic checks off."),
+            commandLink(
+                "&c[Disable]",
+                "/htsw update disable",
+                "&7Keep automatic checks off."
+            ),
             " ",
             commandLink("&8[Status]", "/htsw update status", "&7Show updater status."),
         ])
@@ -120,11 +135,17 @@ function printAutoUpdateStatus(): void {
     const status = formatPreference(preference);
     const version = readLocalVersion();
     ChatLib.chat(`&7[htsw] Auto-update: ${status}&7.`);
-    ChatLib.chat(`&7[htsw] Installed version: &f${version === null ? "unknown" : version}&7.`);
+    ChatLib.chat(
+        `&7[htsw] Installed version: &f${version === null ? "unknown" : version}&7.`
+    );
     if (preference === "unset") {
-        ChatLib.chat("&7Run &f/htsw update enable&7 or &f/htsw update disable&7 to choose.");
+        ChatLib.chat(
+            "&7Run &f/htsw update enable&7 or &f/htsw update disable&7 to choose."
+        );
     } else {
-        ChatLib.chat("&7Run &f/htsw update check&7 to check without changing this setting.");
+        ChatLib.chat(
+            "&7Run &f/htsw update check&7 to check without changing this setting."
+        );
     }
 }
 
@@ -144,8 +165,8 @@ function startAutoUpdate(options: UpdateOptions): void {
 
     updateInProgress = true;
     try {
-        const Thread = Java.type("java.lang.Thread");
-        const Runnable = Java.type("java.lang.Runnable");
+        const Thread = javaType("java.lang.Thread");
+        const Runnable = javaType("java.lang.Runnable");
         const t = new Thread(
             new Runnable({
                 run: function () {
@@ -189,7 +210,7 @@ function runUpdateCheck(options: UpdateOptions): void {
     if (options.checkOnly) {
         ChatLib.chat(
             `&eHTSW &f${manifest.version}&e is available &7(you have &f${local}&7). ` +
-            "&7Run &f/htsw update&7 to install."
+                "&7Run &f/htsw update&7 to install."
         );
         showReleaseNotes(manifest);
         return;
@@ -233,9 +254,14 @@ function reportUpdateFailure(options: UpdateOptions, reason: string): void {
 
 export function readLocalVersion(): string | null {
     try {
-        const raw = String(FileLib.read(MODULE_DIR + "/metadata.json") || "");
+        const value: RuntimeString | null | undefined = FileLib.read(
+            MODULE_DIR + "/metadata.json"
+        );
+        const raw = runtimeString(value);
         if (raw.length === 0) return null;
-        const v = JSON.parse(raw).version;
+        const parsed: unknown = JSON.parse(raw);
+        if (!isRecord(parsed)) return null;
+        const v = parsed.version;
         return typeof v === "string" ? v : null;
     } catch (_e) {
         return null;
@@ -244,9 +270,14 @@ export function readLocalVersion(): string | null {
 
 function fetchManifest(): Manifest | null {
     try {
-        const raw = String(FileLib.getUrlContent(MANIFEST_URL, USER_AGENT) || "");
+        const value: RuntimeString | null | undefined = FileLib.getUrlContent(
+            MANIFEST_URL,
+            USER_AGENT
+        );
+        const raw = runtimeString(value);
         if (raw.length === 0 || raw.charAt(0) !== "{") return null;
-        const parsed = JSON.parse(raw);
+        const parsed: unknown = JSON.parse(raw);
+        if (!isRecord(parsed)) return null;
         if (
             typeof parsed.version !== "string" ||
             typeof parsed.zip !== "string" ||
@@ -254,9 +285,12 @@ function fetchManifest(): Manifest | null {
         ) {
             return null;
         }
-        const manifest = parsed as Manifest;
-        if (typeof manifest.notes !== "string") delete manifest.notes;
-        return manifest;
+        return {
+            version: parsed.version,
+            zip: parsed.zip,
+            sha256: parsed.sha256,
+            ...(typeof parsed.notes === "string" ? { notes: parsed.notes } : {}),
+        };
     } catch (_e) {
         return null;
     }
@@ -290,7 +324,9 @@ function normalizeReleaseNoteLine(line: string): string | null {
     text = text.replace(/^[-*]\s+/, "");
     text = text.replace(/\*\*/g, "");
     text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 $2");
-    if (/^Full Changelog:\s*https:\/\/github\.com\/LGHousing\/htsw\/compare\//i.test(text)) {
+    if (
+        /^Full Changelog:\s*https:\/\/github\.com\/LGHousing\/htsw\/compare\//i.test(text)
+    ) {
         return null;
     }
     return text;
@@ -333,13 +369,14 @@ function urlLink(url: string): TextComponent {
 
 function download(url: string, destPath: string): boolean {
     try {
-        const URL = Java.type("java.net.URL");
-        const Files = Java.type("java.nio.file.Files");
-        const Paths = Java.type("java.nio.file.Paths");
-        const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
+        const URL = javaType("java.net.URL");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const StandardCopyOption = javaType("java.nio.file.StandardCopyOption");
 
         const dest = Paths.get(destPath);
-        Files.createDirectories(dest.getParent());
+        const parent = dest.getParent();
+        if (parent !== null) Files.createDirectories(parent);
 
         const conn = new URL(url).openConnection();
         conn.setRequestProperty("User-Agent", USER_AGENT);
@@ -358,9 +395,9 @@ function download(url: string, destPath: string): boolean {
 }
 
 function sha256Hex(path: string): string {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
-    const MessageDigest = Java.type("java.security.MessageDigest");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const MessageDigest = javaType("java.security.MessageDigest");
 
     const bytes = Files.readAllBytes(Paths.get(path));
     const digest = MessageDigest.getInstance("SHA-256").digest(bytes);
@@ -375,11 +412,11 @@ function sha256Hex(path: string): string {
 }
 
 function unzipInto(zipPath: string, destDir: string): boolean {
-    const FileInputStream = Java.type("java.io.FileInputStream");
-    const ZipInputStream = Java.type("java.util.zip.ZipInputStream");
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
-    const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
+    const FileInputStream = javaType("java.io.FileInputStream");
+    const ZipInputStream = javaType("java.util.zip.ZipInputStream");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const StandardCopyOption = javaType("java.nio.file.StandardCopyOption");
 
     const destRoot = Paths.get(destDir).toAbsolutePath().normalize();
     const zis = new ZipInputStream(new FileInputStream(zipPath));
@@ -396,7 +433,9 @@ function unzipInto(zipPath: string, destDir: string): boolean {
             if (entry.isDirectory()) {
                 Files.createDirectories(target);
             } else {
-                Files.createDirectories(target.getParent());
+                const parent = target.getParent();
+                if (parent === null) return false;
+                Files.createDirectories(parent);
                 Files.copy(zis, target, StandardCopyOption.REPLACE_EXISTING);
             }
             zis.closeEntry();
@@ -415,11 +454,11 @@ function unzipInto(zipPath: string, destDir: string): boolean {
 }
 
 function replaceModuleContents(stagedDir: string): boolean {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
-    const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
-    let moduleRoot: any;
-    let backupRoot: any;
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const StandardCopyOption = javaType("java.nio.file.StandardCopyOption");
+    let moduleRoot: HtswJavaPath | undefined;
+    let backupRoot: HtswJavaPath | undefined;
     try {
         moduleRoot = Paths.get(MODULE_DIR).toAbsolutePath().normalize();
         let stagedRoot = Paths.get(stagedDir).toAbsolutePath().normalize();
@@ -432,7 +471,9 @@ function replaceModuleContents(stagedDir: string): boolean {
         // Park the old module in .update/backup instead of deleting it, so a
         // failure mid-swap can roll back to a working module. The caller
         // deletes the whole .update dir afterward in every outcome.
-        backupRoot = stagedRoot.getParent().resolve("backup");
+        const updateRoot = stagedRoot.getParent();
+        if (updateRoot === null) return false;
+        backupRoot = updateRoot.resolve("backup");
         Files.createDirectories(backupRoot);
 
         moveChildren(Files, StandardCopyOption, moduleRoot, backupRoot, ".update", false);
@@ -442,7 +483,14 @@ function replaceModuleContents(stagedDir: string): boolean {
     } catch (_e) {
         try {
             if (moduleRoot !== undefined && backupRoot !== undefined) {
-                moveChildren(Files, StandardCopyOption, backupRoot, moduleRoot, null, true);
+                moveChildren(
+                    Files,
+                    StandardCopyOption,
+                    backupRoot,
+                    moduleRoot,
+                    null,
+                    true
+                );
             }
         } catch (_e2) {
             // Rollback itself failed; leave the disk state for manual repair.
@@ -452,10 +500,10 @@ function replaceModuleContents(stagedDir: string): boolean {
 }
 
 function restoreLocalState(
-    Files: any,
-    StandardCopyOption: any,
-    backupRoot: any,
-    moduleRoot: any
+    Files: HtswJavaFilesClass,
+    StandardCopyOption: HtswJavaCopyOptionsClass,
+    backupRoot: HtswJavaPath,
+    moduleRoot: HtswJavaPath
 ): void {
     for (let i = 0; i < LOCAL_STATE_FILES.length; i++) {
         const source = backupRoot.resolve(LOCAL_STATE_FILES[i]);
@@ -467,10 +515,10 @@ function restoreLocalState(
 }
 
 function moveChildren(
-    Files: any,
-    StandardCopyOption: any,
-    from: any,
-    to: any,
+    Files: HtswJavaFilesClass,
+    StandardCopyOption: HtswJavaCopyOptionsClass,
+    from: HtswJavaPath,
+    to: HtswJavaPath,
     skipName: string | null,
     clobber: boolean
 ): void {
@@ -479,10 +527,12 @@ function moveChildren(
         const it = stream.iterator();
         while (it.hasNext()) {
             const child = it.next();
-            if (skipName !== null && String(child.getFileName().toString()) === skipName) {
+            const childName = child.getFileName();
+            if (childName === null) continue;
+            if (skipName !== null && String(childName.toString()) === skipName) {
                 continue;
             }
-            const target = to.resolve(child.getFileName());
+            const target = to.resolve(childName);
             // Files.move REPLACE_EXISTING can't replace a non-empty directory,
             // so the rollback pass deletes partially-moved targets first.
             if (clobber) deleteNioPath(Files, target);
@@ -493,7 +543,7 @@ function moveChildren(
     }
 }
 
-function deleteNioPath(Files: any, path: any): void {
+function deleteNioPath(Files: HtswJavaFilesClass, path: HtswJavaPath): void {
     if (Files.isDirectory(path)) {
         const stream = Files.newDirectoryStream(path);
         try {
@@ -528,7 +578,7 @@ function isNewer(remote: string, local: string): boolean {
 }
 
 function parseVersion(v: string): number[] {
-    const parts = String(v).split(".");
+    const parts = v.split(".");
     const out: number[] = [];
     for (let i = 0; i < parts.length; i++) {
         const n = parseInt(parts[i], 10);

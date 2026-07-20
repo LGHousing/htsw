@@ -16,7 +16,7 @@ import {
 } from "../right-panel/import-tab/queue";
 
 function isImportJsonPath(filePath: string): boolean {
-    const normalized = String(filePath).split("\\").join("/").toLowerCase();
+    const normalized = filePath.split("\\").join("/").toLowerCase();
     const slash = normalized.lastIndexOf("/");
     const base = slash < 0 ? normalized : normalized.substring(slash + 1);
     return base === "import.json";

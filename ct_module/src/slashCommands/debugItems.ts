@@ -3,14 +3,15 @@ import { resolveModuleRelativePath } from "../project/paths";
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
 import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
+import { javaType, sendPacket } from "../utils/java";
 
-function javaPath(path: string): any {
-    return Java.type("java.nio.file.Paths").get(String(path));
+function javaPath(path: string): HtswJavaPath {
+    return javaType("java.nio.file.Paths").get(path);
 }
 
 function isRegularFile(path: string): boolean {
     try {
-        const Files = Java.type("java.nio.file.Files");
+        const Files = javaType("java.nio.file.Files");
         return Files.isRegularFile(javaPath(path));
     } catch (_e) {
         return false;
@@ -19,7 +20,7 @@ function isRegularFile(path: string): boolean {
 
 function isDirectory(path: string): boolean {
     try {
-        const Files = Java.type("java.nio.file.Files");
+        const Files = javaType("java.nio.file.Files");
         return Files.isDirectory(javaPath(path));
     } catch (_e) {
         return false;
@@ -28,7 +29,7 @@ function isDirectory(path: string): boolean {
 
 function listSnbtFiles(path: string): string[] {
     const out: string[] = [];
-    const Files = Java.type("java.nio.file.Files");
+    const Files = javaType("java.nio.file.Files");
     const stream = Files.newDirectoryStream(javaPath(path));
     try {
         const it = stream.iterator();
@@ -47,7 +48,8 @@ function listSnbtFiles(path: string): string[] {
 }
 
 function emptyInventorySlots(): number[] {
-    const inv = Player.getInventory()!;
+    const inv = Player.getInventory();
+    if (inv === null) return [];
     const slots: number[] = [];
     for (let i = 0; i < 36; i++) {
         if (inv.getStackInSlot(i) === null) slots.push(i);
@@ -62,9 +64,10 @@ function packetSlotForInventorySlot(slot: number): number {
 function giveItemFromFile(path: string, slot: number): boolean {
     let snbt: string;
     try {
-        snbt = String(FileLib.read(path) ?? "");
+        const stored = FileLib.read(path) as unknown as string | null;
+        snbt = stored ?? "";
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not read ${path}: ${err}`);
+        ChatLib.chat(`&c[htsw] Could not read ${path}: ${String(err)}`);
         return false;
     }
     if (snbt.trim() === "") {
@@ -74,11 +77,16 @@ function giveItemFromFile(path: string, slot: number): boolean {
 
     try {
         const item = getItemFromSnbt(snbt);
-        Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), item.getItemStack()));
+        sendPacket(
+            new C10PacketCreativeInventoryAction(
+                packetSlotForInventorySlot(slot),
+                item.getItemStack()
+            )
+        );
         ChatLib.chat(`&a[htsw] Gave item from ${path}`);
         return true;
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not give item from ${path}: ${err}`);
+        ChatLib.chat(`&c[htsw] Could not give item from ${path}: ${String(err)}`);
         return false;
     }
 }
@@ -121,7 +129,7 @@ function giveFolderItems(rawPath: string, skip: number): void {
     try {
         files = listSnbtFiles(dirPath);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not list folder ${dirPath}: ${err}`);
+        ChatLib.chat(`&c[htsw] Could not list folder ${dirPath}: ${String(err)}`);
         return;
     }
     if (files.length === 0) {
@@ -163,7 +171,9 @@ export function clearInv(_args: string[]): void {
     let cleared = 0;
     for (let slot = 9; slot < 36; slot++) {
         if (Player.getInventory()?.getStackInSlot(slot) === null) continue;
-        Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), null));
+        sendPacket(
+            new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), null)
+        );
         cleared++;
     }
     ChatLib.chat(`&7[htsw] Cleared ${cleared} main-inventory slot${cleared === 1 ? "" : "s"} (hotbar untouched).`);

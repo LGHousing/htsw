@@ -2,16 +2,8 @@
 
 import { Element } from "../lib/layout";
 import { Button, Row } from "../lib/components";
-import {
-    COLOR_BUTTON,
-    COLOR_BUTTON_HOVER,
-    GLYPH_CHEVRON_DOWN,
-} from "../lib/theme";
-import {
-    getLastOpenTarget,
-    openOpenTargetMenu,
-    runOpenTarget,
-} from "./openTargetMenu";
+import { COLOR_BUTTON, COLOR_BUTTON_HOVER, GLYPH_CHEVRON_DOWN } from "../lib/theme";
+import { getLastOpenTarget, openOpenTargetMenu, runOpenTarget } from "./openTargetMenu";
 
 /**
  * Slim strip under the inventory cutout. Only the Housing Menu shortcut
@@ -48,7 +40,7 @@ export function BottomToolbar(height: number = 26): Element {
                     try {
                         ChatLib.command("hmenu");
                     } catch (err) {
-                        ChatLib.chat(`&c[htsw] /hmenu failed: ${err}`);
+                        ChatLib.chat(`&c[htsw] /hmenu failed: ${String(err)}`);
                     }
                 },
             }),

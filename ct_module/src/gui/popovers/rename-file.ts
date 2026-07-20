@@ -42,8 +42,8 @@ function save(fullPath: string): void {
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
-        const src = Paths.get(String(fullPath));
-        const dst = Paths.get(String(target));
+        const src = Paths.get(fullPath);
+        const dst = Paths.get(target);
         if (Files.exists(dst)) {
             ChatLib.chat(`&c[htsw] ${trimmed} already exists.`);
             return;
@@ -51,7 +51,7 @@ function save(fullPath: string): void {
         Files.move(src, dst);
         ChatLib.chat(`&a[htsw] Renamed → ${trimmed}`);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Rename failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Rename failed: ${String(err)}`);
         return;
     }
     editingPath = "";

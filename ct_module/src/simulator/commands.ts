@@ -132,7 +132,7 @@ function commandTeamVars(args: string[]) {
 }
 
 function printVarTable(
-    holder: { keys(): Set<string>; get(key: string): { type: string; toDisplayString(): string; value: any } },
+    holder: { keys(): Set<string>; get(key: string): { type: string; toDisplayString(): string } },
     label: string,
     filter?: string,
 ) {
