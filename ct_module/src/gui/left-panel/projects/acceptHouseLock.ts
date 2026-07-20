@@ -19,7 +19,11 @@ function acceptProjectLock(importJsonPath: string): void {
     TaskManager.run(async (ctx) => {
         const cached = parseImportJsonBlocking(importJsonPath);
         if (cached.parsed === null) {
-            showToast(`Project parse failed: ${cached.error ?? "unknown error"}`, 0xffe85c5c, 8000);
+            showToast(
+                `Project parse failed: ${cached.error ?? "unknown error"}`,
+                0xffe85c5c,
+                8000
+            );
             return;
         }
         const blocking = cached.parsed.diagnostics.filter(
@@ -57,11 +61,16 @@ function acceptProjectLock(importJsonPath: string): void {
             return;
         }
         if (result.accepted.length === 0) {
-            showToast("No current project entries match this house lock", 0xffe5bc4b, 8000);
+            showToast(
+                "No current project entries match this house lock",
+                0xffe5bc4b,
+                8000
+            );
             return;
         }
         const trustSaved = setHouseTrust(result.housingUuid, true);
-        const skipped = result.skipped > 0 ? `; ${result.skipped} changed or unlocked` : "";
+        const skipped =
+            result.skipped > 0 ? `; ${result.skipped} changed or unlocked` : "";
         showToast(
             trustSaved
                 ? `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}${skipped}`
@@ -70,7 +79,7 @@ function acceptProjectLock(importJsonPath: string): void {
             8000
         );
     }).catch((err: unknown) => {
-        showToast(`Couldn't accept project lock: ${err}`, 0xffe85c5c, 8000);
+        showToast(`Couldn't accept project lock: ${String(err)}`, 0xffe85c5c, 8000);
     });
 }
 

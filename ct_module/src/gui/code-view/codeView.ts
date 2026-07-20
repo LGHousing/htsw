@@ -59,7 +59,7 @@ type FollowMeta = {
     lastResolvedIdx: number;
 };
 
-const followStates: { [id: string]: FollowMeta } = {};
+const followStates: { [id: string]: FollowMeta | undefined } = {};
 
 type DecoratedLine = {
     line: RenderableLine;
@@ -78,9 +78,9 @@ type LineModel = {
     entryRowStart: number[];
     entryRowEnd: number[];
     totalRows: number;
-    lineIdToIndex: { [id: string]: number };
+    lineIdToIndex: { [id: string]: number | undefined };
     orderedLines: RenderableLine[];
-    idToOrdinal: { [id: string]: number };
+    idToOrdinal: { [id: string]: number | undefined };
     showStatusGutters: boolean;
     gutterW: number;
     lineNumDigits: number;
@@ -94,7 +94,7 @@ type ModelCacheEntry = {
     model: LineModel;
 };
 
-const modelCache: { [scrollId: string]: ModelCacheEntry } = {};
+const modelCache: { [scrollId: string]: ModelCacheEntry | undefined } = {};
 
 function buildLineModel(
     scrollId: string,
@@ -139,11 +139,11 @@ function buildLineModel(
     // Count visual rows per entry (each line can wrap into multiple rows)
     // and build the lineIdToIndex map needed by autoFollow — without
     // constructing Element trees for anything.
-    const lineIdToIndex: { [id: string]: number } = {};
-    const entryRowStart: number[] = new Array(decorated.length);
-    const entryRowEnd: number[] = new Array(decorated.length);
+    const lineIdToIndex: { [id: string]: number | undefined } = {};
+    const entryRowStart = new Array<number>(decorated.length);
+    const entryRowEnd = new Array<number>(decorated.length);
     const orderedLines: RenderableLine[] = [];
-    const idToOrdinal: { [id: string]: number } = {};
+    const idToOrdinal: { [id: string]: number | undefined } = {};
     let totalRows = 0;
     for (let i = 0; i < decorated.length; i++) {
         const line = decorated[i].line;
@@ -231,13 +231,13 @@ function cachedLineRows(
     const selKey = selectionKey(selection);
     const cached = rowCache.get(line);
     if (
-        cached !== undefined
-        && cached.decorations === decorations
-        && cached.selKey === selKey
-        && cached.gutterWidth === opts.gutterWidth
-        && cached.lineNumDigits === opts.lineNumDigits
-        && cached.bodyMaxWidth === opts.bodyMaxWidth
-        && cached.showStatusGutters === opts.showFocusGutter
+        cached !== undefined &&
+        cached.decorations === decorations &&
+        cached.selKey === selKey &&
+        cached.gutterWidth === opts.gutterWidth &&
+        cached.lineNumDigits === opts.lineNumDigits &&
+        cached.bodyMaxWidth === opts.bodyMaxWidth &&
+        cached.showStatusGutters === opts.showFocusGutter
     ) {
         return cached.rows;
     }
@@ -260,7 +260,10 @@ function cachedLineRows(
  * so this is a binary search. Returns `entryRowEnd.length` when every
  * entry ends at or before `row`.
  */
-export function firstEntryIntersecting(entryRowEnd: readonly number[], row: number): number {
+export function firstEntryIntersecting(
+    entryRowEnd: readonly number[],
+    row: number
+): number {
     let lo = 0;
     let hi = entryRowEnd.length;
     while (lo < hi) {
@@ -326,9 +329,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         delete modelCache[props.scrollId];
         publishCodeView(props.scrollId, viewIdentity, []);
         return buildEmptyMessageRows(
-            props.emptyMessage === undefined
-                ? "(no file)"
-                : extract(props.emptyMessage),
+            props.emptyMessage === undefined ? "(no file)" : extract(props.emptyMessage),
             bodyWidthForScroll(props.scrollId, 0, false, false)
         );
     }
@@ -342,11 +343,11 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     const cachedModel = modelCache[props.scrollId];
     let model: LineModel;
     if (
-        decoratorKey !== null
-        && cachedModel !== undefined
-        && cachedModel.lines === lines
-        && cachedModel.decoratorKey === decoratorKey
-        && cachedModel.viewportW === viewportW
+        decoratorKey !== null &&
+        cachedModel !== undefined &&
+        cachedModel.lines === lines &&
+        cachedModel.decoratorKey === decoratorKey &&
+        cachedModel.viewportW === viewportW
     ) {
         model = cachedModel.model;
     } else {
@@ -385,10 +386,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     // ── Visibility window ────────────────────────────────────
     const scrollState = getScrollState(props.scrollId);
     const offset = scrollState.offset;
-    const viewportH =
-        scrollState.viewportRect.h > 0
-            ? scrollState.viewportRect.h
-            : 0;
+    const viewportH = scrollState.viewportRect.h > 0 ? scrollState.viewportRect.h : 0;
     const BUFFER_ROWS = 8;
     const haveViewport = viewportH > 0;
     // Without a viewport (first render before measurement) keep
@@ -458,11 +456,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     }
 
     if (props.autoFollow === true) {
-        applyAutoFollow(
-            props.scrollId,
-            lineDecorator,
-            lineIdToIndex
-        );
+        applyAutoFollow(props.scrollId, lineDecorator, lineIdToIndex);
     }
     return out;
 }
@@ -474,12 +468,13 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
  * calls this for every line every frame; without a cache that's the
  * dominant scroll-frame cost on long files.
  */
-const wrapRowCountCache = new WeakMap<
-    RenderableLine,
-    { width: number; count: number }
->();
+const wrapRowCountCache = new WeakMap<RenderableLine, { width: number; count: number }>();
 
-function wrapRowCount(line: RenderableLine, bodyMaxWidth: number, dec: LineDecorations): number {
+function wrapRowCount(
+    line: RenderableLine,
+    bodyMaxWidth: number,
+    dec: LineDecorations
+): number {
     const effective = effectiveBodyWidth(bodyMaxWidth, dec);
     const cached = wrapRowCountCache.get(line);
     if (cached !== undefined && cached.width === effective) {
@@ -525,8 +520,13 @@ type ResolvedSelection = {
 };
 
 function resolveSelection(
-    sel: { anchorId: string; anchorCol: number; focusId: string; focusCol: number } | null,
-    idToOrdinal: { [id: string]: number }
+    sel: {
+        anchorId: string;
+        anchorCol: number;
+        focusId: string;
+        focusCol: number;
+    } | null,
+    idToOrdinal: { [id: string]: number | undefined }
 ): ResolvedSelection | null {
     if (sel === null) return null;
     const aOrd = idToOrdinal[sel.anchorId];
@@ -546,11 +546,12 @@ function resolveSelection(
 function lineSelectionFor(
     line: RenderableLine,
     resolved: ResolvedSelection | null,
-    idToOrdinal: { [id: string]: number }
+    idToOrdinal: { [id: string]: number | undefined }
 ): LineSelection | null {
     if (resolved === null) return null;
     const ord = idToOrdinal[line.id];
-    if (ord === undefined || ord < resolved.startOrd || ord > resolved.endOrd) return null;
+    if (ord === undefined || ord < resolved.startOrd || ord > resolved.endOrd)
+        return null;
     const len = joinTokenText(line.tokens).length;
     const start = ord === resolved.startOrd ? resolved.startCol : 0;
     const end = ord === resolved.endOrd ? resolved.endCol : len;
@@ -561,9 +562,9 @@ function lineSelectionFor(
 
 function hasStatusGutterContent(dec: LineDecorations): boolean {
     return (
-        dec.state !== undefined
-        || dec.isFocused === true
-        || dec.cursorColumnBackground !== undefined
+        dec.state !== undefined ||
+        dec.isFocused === true ||
+        dec.cursorColumnBackground !== undefined
     );
 }
 
@@ -610,7 +611,7 @@ function buildEmptyMessageRows(message: string, bodyMaxWidth: number): Element[]
 function applyAutoFollow(
     scrollId: string,
     lineDecorator: LineDecorator,
-    lineIdToIndex: { [id: string]: number }
+    lineIdToIndex: { [id: string]: number | undefined }
 ): void {
     const focusedId = lineDecorator.focusedLineId();
     if (focusedId === null) return;

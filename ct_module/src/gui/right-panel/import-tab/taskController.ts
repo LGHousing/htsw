@@ -79,6 +79,22 @@ import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === "string") return error;
+    if (error !== null && typeof error === "object") {
+        if ("message" in error && typeof error.message === "string") {
+            return error.message;
+        }
+        try {
+            const serialized: unknown = JSON.stringify(error);
+            if (typeof serialized === "string") return serialized;
+        } catch (_e) {}
+        return "Unknown error";
+    }
+    return String(error);
+}
+
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
     if (total < 60) return `${total}s`;
@@ -163,6 +179,7 @@ async function confirmImportConflicts(
     const decide = (value: boolean): void => {
         if (decision === null) decision = value;
     };
+    const currentDecision = (): boolean | null => decision;
 
     openConfirmPopover({
         title: "Housing changed since your last import",
@@ -178,14 +195,17 @@ async function confirmImportConflicts(
         onClose: () => decide(false),
     });
     try {
-        while (decision === null) await ctx.sleep(50);
-        return decision;
+        for (;;) {
+            const current = currentDecision();
+            if (current !== null) return current;
+            await ctx.sleep(50);
+        }
     } finally {
         closeConfirmPopover();
     }
 }
 
-const BODY_LIST_PROPS: Record<string, true> = {
+const BODY_LIST_PROPS: Record<string, true | undefined> = {
     ifActions: true,
     elseActions: true,
     actions: true,
@@ -288,7 +308,7 @@ function createSyncEventHandler(args: {
                     markPlannedAdd(activeViewPath, op.path, op.desired, op.toIndex);
                 } else if (op.op === "edit") {
                     markPlannedEdit(activeViewPath, op.path, op.observed, op.desired);
-                } else if (op.op === "move") {
+                } else {
                     markPlannedMove(activeViewPath, op.path, op.fromIndex, op.toIndex);
                 }
             }
@@ -586,6 +606,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
         gmcOnImportStart();
         let importSucceeded = false;
         let cancelled = false;
+        const sessionCancelled = (): boolean => cancelled;
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
@@ -647,7 +668,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
                 totalFailed += c.failed;
-                if (cancelled) break;
+                if (sessionCancelled()) break;
                 // A failed importable can leave the Housing menu mid-edit, so
                 // the menu state for the next batch is unknown. Abort the run
                 // rather than drive unrelated files from an uncertain menu.
@@ -689,7 +710,9 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 const failure = getTaskProgress()?.failure;
                 failureMessage =
                     failure?.message ??
-                    String(unexpectedError ?? `${totalFailed} failed`);
+                    (unexpectedError === null
+                        ? `${totalFailed} failed`
+                        : errorMessage(unexpectedError));
                 showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
             }
             finishTaskProgress(failureMessage);
@@ -716,12 +739,15 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 }
             }, 1500);
         }
-        if (unexpectedError !== null) throw unexpectedError;
+        if (unexpectedError !== null) {
+            if (unexpectedError instanceof Error) throw unexpectedError;
+            throw new Error(errorMessage(unexpectedError));
+        }
     })
         .then(() => {
             if (reviewRequest !== null) startConflictReview(reviewRequest);
         })
         .catch((err: unknown) => {
-            ChatLib.chat(`&c[htsw] Import failed: ${err}`);
+            ChatLib.chat(`&c[htsw] Import failed: ${String(err)}`);
         });
 }

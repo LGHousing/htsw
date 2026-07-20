@@ -41,7 +41,7 @@ const DISPLAY_SECTION = "&";
 // grammar paints (editors/code/package.json) so item text reads the same in
 // both editors. Style codes (k–o) and reset (r) aren't here — they don't set a
 // color.
-const MC_FORMAT_COLOR: { [code: string]: number } = {
+const MC_FORMAT_COLOR: { [code: string]: number | undefined } = {
     "0": 0xff000000 | 0,
     "1": 0xff0000aa | 0,
     "2": 0xff00aa00 | 0,
@@ -63,7 +63,7 @@ const MC_FORMAT_COLOR: { [code: string]: number } = {
 export type SyntaxToken = { text: string; color: number };
 
 // Storage-class style — these introduce variable bindings.
-const TYPE_WORDS: { [k: string]: true } = {
+const TYPE_WORDS: { [k: string]: true | undefined } = {
     globalvar: true,
     var: true,
     teamvar: true,
@@ -74,7 +74,7 @@ const TYPE_WORDS: { [k: string]: true } = {
 };
 
 // Control-flow / built-in actions.
-const KEYWORDS: { [k: string]: true } = {
+const KEYWORDS: { [k: string]: true | undefined } = {
     actionBar: true,
     applyLayout: true,
     applyPotion: true,
@@ -259,8 +259,8 @@ export function tokenizeHtsl(line: string): SyntaxToken[] {
             while (j < n && isIdentCont(line.charAt(j))) j++;
             const text = line.substring(i, j);
             let color = COLOR_DEFAULT;
-            if (TYPE_WORDS[text] === true) color = COLOR_TYPE;
-            else if (KEYWORDS[text] === true) color = COLOR_KEYWORD;
+            if (TYPE_WORDS[text]) color = COLOR_TYPE;
+            else if (KEYWORDS[text]) color = COLOR_KEYWORD;
             tokens.push({ text, color });
             i = j;
             continue;

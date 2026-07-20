@@ -13,6 +13,7 @@ import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
 import { resolveLocation } from "./locations";
 import { getSimulatorImportables } from "./session";
+import { getPlayer, showTitle } from "../utils/java";
 
 export function createActionBehaviors(vars: runtime.simple.Vars): runtime.ActionBehaviors {
     return new runtime.simple.SimpleActionBehaviors(vars)
@@ -55,14 +56,26 @@ function behaviorSendChatMessage(_rt: runtime.Runtime, action: ActionSendMessage
 
 function behaviorPlaySound(rt: runtime.Runtime, action: ActionPlaySound) {
     if (action.location?.type === "Invokers Location") {
-        Player.getPlayer().func_85030_a /*playSound*/(
+        getPlayer().func_85030_a /*playSound*/(
             action.sound, action.volume ?? 0.7, action.pitch ?? 1.0
         );
     } else {
         const location = resolveLocation(rt, action.location ?? { "type": "Invokers Location" });
 
         const pos = new BlockPos(location.x, location.y, location.z);
-        World.getWorld().func_175731_a /*playSoundAtPos*/(
+        (
+            World as unknown as {
+                getWorld(): {
+                    func_175731_a(
+                        position: unknown,
+                        sound: string,
+                        volume: number,
+                        pitch: number,
+                        distanceDelay: boolean
+                    ): void;
+                };
+            }
+        ).getWorld().func_175731_a /*playSoundAtPos*/(
             pos.toMCBlock(),
             action.sound, action.volume ?? 0.7, action.pitch ?? 1.0,
             false // distanceDelay
@@ -76,10 +89,10 @@ function behaviorTeleport(rt: runtime.Runtime, action: ActionTeleport) {
     ChatLib.say(`/tp ${location.x} ${location.y} ${location.z}`);
 
     if (location.yaw !== undefined) {
-        Player.getPlayer().field_70177_z /*rotationYaw*/ = location.yaw;
+        getPlayer().field_70177_z /*rotationYaw*/ = location.yaw;
     }
     if (location.pitch !== undefined) {
-        Player.getPlayer().field_70125_A /*rotationPitch*/ = location.pitch;
+        getPlayer().field_70125_A /*rotationPitch*/ = location.pitch;
     }
 }
 
@@ -92,7 +105,7 @@ function behaviorSetVelocity(rt: runtime.Runtime, action: ActionSetVelocity) {
     const y = coerce(runtime.parseValue(rt, action.y).toDouble());
     const z = coerce(runtime.parseValue(rt, action.z).toDouble());
 
-    const player = Player.getPlayer();
+    const player = getPlayer();
 
     player.field_71075_bZ /*capabilities*/.field_75100_b /*isFlying*/ = true;
     player
@@ -108,7 +121,7 @@ function behaviorSetVelocity(rt: runtime.Runtime, action: ActionSetVelocity) {
 }
 
 function behaviorTitle(_rt: runtime.Runtime, action: ActionTitle) {
-    Client.showTitle(
+    showTitle(
         replacePlaceholders(action.title),
         replacePlaceholders(action.subtitle ?? ""),
         (action.fadein ?? 1) * 20,

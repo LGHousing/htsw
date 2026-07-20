@@ -1,13 +1,15 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { javaType, runtimeString } from "./java";
+
 // OS shell helpers. The process-spawning helpers (showInExplorer, openInVSCode)
 // run on a daemon thread so spawning doesn't block the MC render thread.
 
 function runDetached(args: string[]): void {
-    const Thread = Java.type("java.lang.Thread");
-    const Runnable = Java.type("java.lang.Runnable");
-    const ProcessBuilder = Java.type("java.lang.ProcessBuilder");
-    const ArrayList = Java.type("java.util.ArrayList");
+    const Thread = javaType("java.lang.Thread");
+    const Runnable = javaType("java.lang.Runnable");
+    const ProcessBuilder = javaType("java.lang.ProcessBuilder");
+    const ArrayList = javaType("java.util.ArrayList");
     const t = new Thread(
         new Runnable({
             run: function () {
@@ -28,21 +30,21 @@ function runDetached(args: string[]): void {
 }
 
 function toWindowsPath(p: string): string {
-    return String(p).replace(/\//g, "\\");
+    return runtimeString(p).replace(/\//g, "\\");
 }
 
 function isDirectory(p: string): boolean {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
     try {
-        return Files.isDirectory(Paths.get(String(p)));
+        return Files.isDirectory(Paths.get(runtimeString(p)));
     } catch (_e) {
         return false;
     }
 }
 
 function osFamily(): "windows" | "mac" | "linux" {
-    const System = Java.type("java.lang.System");
+    const System = javaType("java.lang.System");
     const name = String(System.getProperty("os.name")).toLowerCase();
     if (name.indexOf("win") >= 0) return "windows";
     if (name.indexOf("mac") >= 0 || name.indexOf("darwin") >= 0) return "mac";
@@ -50,42 +52,42 @@ function osFamily(): "windows" | "mac" | "linux" {
 }
 
 function pathExists(p: string): boolean {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
     try {
-        return Files.exists(Paths.get(String(p)));
+        return Files.exists(Paths.get(runtimeString(p)));
     } catch (_e) {
         return false;
     }
 }
 
 function parentDir(p: string): string {
-    const Paths = Java.type("java.nio.file.Paths");
+    const Paths = javaType("java.nio.file.Paths");
     try {
-        const parent = Paths.get(String(p)).getParent();
-        return parent === null ? String(p) : String(parent.toString());
+        const parent = Paths.get(runtimeString(p)).getParent();
+        return parent === null ? runtimeString(p) : String(parent.toString());
     } catch (_e) {
-        return String(p);
+        return runtimeString(p);
     }
 }
 
 function asPathList(fullPath: string | string[]): string[] {
-    if (typeof fullPath === "string") return [String(fullPath)];
+    if (typeof fullPath === "string") return [runtimeString(fullPath)];
     const out: string[] = [];
-    for (let i = 0; i < fullPath.length; i++) out.push(String(fullPath[i]));
+    for (let i = 0; i < fullPath.length; i++) out.push(runtimeString(fullPath[i]));
     return out;
 }
 
-let _GuiScreen: any = null;
+let _GuiScreen: HtswGuiScreenClass | null = null;
 
 export function setClipboardString(text: string): boolean {
     try {
-        if (_GuiScreen === null) _GuiScreen = Java.type("net.minecraft.client.gui.GuiScreen");
-        _GuiScreen.setClipboardString(String(text));
+        if (_GuiScreen === null) _GuiScreen = javaType("net.minecraft.client.gui.GuiScreen");
+        _GuiScreen.setClipboardString(runtimeString(text));
         return true;
     } catch (e) {
         try {
-            ChatLib.chat(`&c[htsw] clipboard failed: ${e}`);
+            ChatLib.chat(`&c[htsw] clipboard failed: ${String(e)}`);
         } catch (_e) {
             /* ignore */
         }
@@ -97,9 +99,9 @@ export function setClipboardString(text: string): boolean {
 // in-process path, unlike showInExplorer which shells out to select the file in
 // the OS file manager. Throws if Desktop is unsupported so callers can report it.
 export function openPathInOS(fullPath: string): void {
-    const Desktop = Java.type("java.awt.Desktop");
-    const FileClass = Java.type("java.io.File");
-    Desktop.getDesktop().open(new FileClass(String(fullPath)));
+    const Desktop = javaType("java.awt.Desktop");
+    const FileClass = javaType("java.io.File");
+    Desktop.getDesktop().open(new FileClass(runtimeString(fullPath)));
 }
 
 export function revealInFilesLabel(): string {
@@ -115,14 +117,14 @@ export function showInExplorer(fullPath: string): void {
         // `open -R` reveals and selects a file in Finder; a folder just opens.
         runDetached(
             isDirectory(fullPath)
-                ? ["open", String(fullPath)]
-                : ["open", "-R", String(fullPath)]
+                ? ["open", runtimeString(fullPath)]
+                : ["open", "-R", runtimeString(fullPath)]
         );
         return;
     }
     if (fam === "linux") {
         // No portable way to select a file in the manager; open its folder.
-        const dir = isDirectory(fullPath) ? String(fullPath) : parentDir(fullPath);
+        const dir = isDirectory(fullPath) ? runtimeString(fullPath) : parentDir(fullPath);
         runDetached(["xdg-open", dir]);
         return;
     }
@@ -136,7 +138,7 @@ export function showInExplorer(fullPath: string): void {
 // /usr/local/bin, so `code` often isn't resolvable by name. Probe the known
 // install locations and invoke the binary by absolute path instead.
 function macVSCodeBinary(): string | null {
-    const System = Java.type("java.lang.System");
+    const System = javaType("java.lang.System");
     const home = String(System.getProperty("user.home"));
     const candidates = [
         "/usr/local/bin/code",

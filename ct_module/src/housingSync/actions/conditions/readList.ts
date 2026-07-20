@@ -235,8 +235,8 @@ async function captureConditionItems(
     }
     if (entries.length === 0) return;
 
-    const phaseUnits = options?.phaseUnits;
-    const progress = options?.progress;
+    const phaseUnits = options.phaseUnits;
+    const progress = options.progress;
     const baseCompletedUnits =
         phaseUnits === undefined ? 0 : phaseUnits.reading + phaseUnits.hydrating;
     let totalCaptureUnits = 0;

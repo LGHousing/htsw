@@ -5,7 +5,7 @@ import {
     getContainerBounds,
     getOpenContainerBounds,
 } from "./bounds";
-import { javaType } from "./java";
+import { getMinecraft, javaType } from "./java";
 
 // The overlay renders at MC's current GUI scale, capped at `OVERLAY_SCALE_TARGET` (4) so a
 // modded scale of 5+ doesn't make the overlay unusably large. The per-frame effective scale is
@@ -38,9 +38,9 @@ export function getEffectiveOverlayScale(): number {
 // untouched, so the cached integer is wrong. Computing from realW / scaledW gives the actual
 // effective ratio. The result can be non-integer if the mod uses fractional scales.
 export function getMcScale(): number {
-    const mc = Client.getMinecraft();
+    const mc = getMinecraft();
     const sr = new ScaledResolutionClass(mc);
-    const realW = (mc as any).field_71443_c;
+    const realW = mc.field_71443_c;
     const scaledW = sr.func_78326_a();
     if (typeof scaledW === "number" && scaledW > 0) {
         return realW / scaledW;
@@ -56,12 +56,12 @@ export function mcToOverlay(coord: number): number {
 
 // Overlay-space screen dimensions (= real pixels / effective overlay scale).
 export function getOverlayScreenW(): number {
-    const dw = (Client.getMinecraft() as any).field_71443_c;
+    const dw = getMinecraft().field_71443_c;
     return Math.floor(dw / getEffectiveOverlayScale());
 }
 
 export function getOverlayScreenH(): number {
-    const dh = (Client.getMinecraft() as any).field_71440_d;
+    const dh = getMinecraft().field_71440_d;
     return Math.floor(dh / getEffectiveOverlayScale());
 }
 // Same as `getContainerBounds` from `bounds.ts`, but with every field converted into overlay

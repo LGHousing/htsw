@@ -1,4 +1,6 @@
-const Runnable = Java.type("java.lang.Runnable");
+import { getMinecraft, javaType } from "./java";
+
+const Runnable = javaType("java.lang.Runnable");
 
 /**
  * Run `fn` on the main client thread — inline when already there, otherwise
@@ -13,12 +15,7 @@ const Runnable = Java.type("java.lang.Runnable");
  * Client IO" followed by a client crash mid-import.
  */
 export function runOnMainThread(fn: () => void): void {
-    const mc = Client.getMinecraft() as unknown as {
-        // func_152345_ab = isCallingFromMinecraftThread
-        func_152345_ab(): boolean;
-        // func_152344_a = addScheduledTask(Runnable)
-        func_152344_a(task: unknown): unknown;
-    };
+    const mc = getMinecraft();
     if (mc.func_152345_ab()) {
         fn();
         return;

@@ -180,6 +180,10 @@ export const readRegions = makeReadHouse<RegionListEntry>({
             entry.name,
             options.newExportTargetImportJson
         );
+        const inventorySnapshot = state.inventorySnapshot;
+        if (inventorySnapshot === null) {
+            throw new Error("Region export requires an inventory snapshot");
+        }
         await exportRegionWithSharedState(
             ctx,
             {
@@ -192,10 +196,9 @@ export const readRegions = makeReadHouse<RegionListEntry>({
                 readOnly: options.readOnly,
                 onReadProgress,
             },
-            // capturesActionItems guarantees a non-null snapshot here.
             {
                 itemCaptures: state.itemCaptures,
-                inventorySnapshot: state.inventorySnapshot!,
+                inventorySnapshot,
             }
         );
     },

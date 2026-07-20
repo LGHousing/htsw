@@ -13,10 +13,7 @@ import {
 } from "../../parsing/parses";
 import { importableDeclaringPath } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importables/identity";
-import {
-    moveImportableEntry,
-    type Section,
-} from "../../../project/importJsonMutations";
+import { moveImportableEntry, type Section } from "../../../project/importJsonMutations";
 import { createIncludedFolderInTree } from "../../../project/paths";
 import { openTextPromptPopover } from "../../popovers/text-prompt";
 import { closeTab } from "../../right-panel/selection";
@@ -82,7 +79,7 @@ function newFolderRow(): Element {
                     const created = createIncludedFolderInTree(ctx.entryPath, folderPath);
                     performMoveTo(created.importJsonPath);
                 } catch (err) {
-                    ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
+                    ChatLib.chat(`&c[htsw] New folder failed: ${String(err)}`);
                 }
             },
         });
@@ -127,7 +124,8 @@ export function openMoveDestinationPicker(
             moveTreeRoots.push(buildPickerNode(root.includes[i], projectDir, 0, current));
         }
         total = 0;
-        for (let i = 0; i < moveTreeRoots.length; i++) total += moveTreeRoots[i].selectableCount;
+        for (let i = 0; i < moveTreeRoots.length; i++)
+            total += moveTreeRoots[i].selectableCount;
     } else {
         const rootNode = buildPickerNode(root, projectDir, 0, current);
         moveTreeRoots = [rootNode];
@@ -145,7 +143,8 @@ export function openMoveDestinationPicker(
     // Expand the top-level folders so the picker opens showing real
     // destinations rather than a near-empty box; deeper levels stay collapsed.
     for (let i = 0; i < moveTreeRoots.length; i++) {
-        if (moveTreeRoots[i].children.length > 0) moveExpansion.add(moveTreeRoots[i].path);
+        if (moveTreeRoots[i].children.length > 0)
+            moveExpansion.add(moveTreeRoots[i].path);
     }
 
     moveFilter = "";

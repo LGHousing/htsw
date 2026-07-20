@@ -37,7 +37,8 @@ function readMap(): BindingMap {
 function readMapFromDisk(): BindingMap {
     try {
         if (!FileLib.exists(BINDINGS_FILE)) return {};
-        const raw = String(FileLib.read(BINDINGS_FILE) ?? "");
+        const stored = FileLib.read(BINDINGS_FILE) as unknown as string | null;
+        const raw = stored ?? "";
         if (raw.trim() === "") return {};
         const parsed = JSON.parse(raw) as unknown;
         if (parsed === null || typeof parsed !== "object") return {};

@@ -1,14 +1,15 @@
 import * as htsw from "htsw";
+import { javaType } from "./utils/java";
 
-const Paths = Java.type("java.nio.file.Paths");
-const URL = Java.type("java.net.URL");
-const URLClassLoader = Java.type("java.net.URLClassLoader");
-const Array = Java.type("java.lang.reflect.Array");
-const JString = Java.type("java.lang.String");
-const JDouble = Java.type("java.lang.Double");
-const JInteger = Java.type("java.lang.Integer");
+const Paths = javaType("java.nio.file.Paths");
+const URL = javaType("java.net.URL");
+const URLClassLoader = javaType("java.net.URLClassLoader");
+const ReflectArray = javaType("java.lang.reflect.Array");
+const JString = javaType("java.lang.String");
+const JDouble = javaType("java.lang.Double");
+const JInteger = javaType("java.lang.Integer");
 
-const urls = Array.newInstance(URL, 1);
+const urls = ReflectArray.newInstance<HtswJavaUrl>(URL, 1);
 urls[0] = Paths.get("./config/ChatTriggers/modules/HTSW").toUri().toURL();
 const classLoader = new URLClassLoader(urls);
 const longClass = classLoader.loadClass("LongValue");
@@ -23,29 +24,29 @@ htsw.setLongImplementation({
     fromNumber: (n) => mFromNumber.invoke(null, n),
     fromBits: (low, high) => mFromBits.invoke(null, low, high),
 
-    toString: (v) => v.toString(),
-    toNumber: (v) => v.toNumber(),
+    toString: (v: HtswLongValue) => v.toString(),
+    toNumber: (v: HtswLongValue) => v.toNumber(),
 
-    high: (v) => v.high(),
-    low: (v) => v.low(),
+    high: (v: HtswLongValue) => v.high(),
+    low: (v: HtswLongValue) => v.low(),
 
-    add: (a, b) => a.add(b),
-    sub: (a, b) => a.sub(b),
-    mul: (a, b) => a.mul(b),
-    div: (a, b) => a.div(b),
-    mod: (a, b) => a.mod(b),
+    add: (a: HtswLongValue, b: HtswLongValue) => a.add(b),
+    sub: (a: HtswLongValue, b: HtswLongValue) => a.sub(b),
+    mul: (a: HtswLongValue, b: HtswLongValue) => a.mul(b),
+    div: (a: HtswLongValue, b: HtswLongValue) => a.div(b),
+    mod: (a: HtswLongValue, b: HtswLongValue) => a.mod(b),
 
-    shl: (a, bits) => a.shl(bits),
-    shr: (a, bits) => a.shr(bits),
-    shru: (a, bits) => a.shru(bits),
+    shl: (a: HtswLongValue, bits) => a.shl(bits),
+    shr: (a: HtswLongValue, bits) => a.shr(bits),
+    shru: (a: HtswLongValue, bits) => a.shru(bits),
 
-    and: (a, b) => a.and(b),
-    or: (a, b) => a.or(b),
-    xor: (a, b) => a.xor(b),
+    and: (a: HtswLongValue, b: HtswLongValue) => a.and(b),
+    or: (a: HtswLongValue, b: HtswLongValue) => a.or(b),
+    xor: (a: HtswLongValue, b: HtswLongValue) => a.xor(b),
 
-    eq: (a, b) => a.eq(b),
-    gt: (a, b) => a.gt(b),
-    lt: (a, b) => a.lt(b),
+    eq: (a: HtswLongValue, b: HtswLongValue) => a.eq(b),
+    gt: (a: HtswLongValue, b: HtswLongValue) => a.gt(b),
+    lt: (a: HtswLongValue, b: HtswLongValue) => a.lt(b),
 
     zero: () => mZero.invoke(null),
 });

@@ -1,8 +1,9 @@
 import { removedFormatting } from "../utils/helpers";
+import { javaType } from "../utils/java";
 
 export type ItemStackSummary = {
-    name: string | null;
-    cleanName: string | null;
+    name: string;
+    cleanName: string;
     id: string | null;
     damage: number | null;
     count: number | null;
@@ -19,10 +20,9 @@ function javaStringHash(value: string): string {
     return String(hash);
 }
 
-function stackName(stack: unknown): string | null {
-    if (stack === null || stack === undefined) return null;
+function stackName(stack: unknown): string {
     try {
-        return String((stack as { func_82833_r(): string }).func_82833_r());
+        return String((stack as { func_82833_r(): unknown }).func_82833_r());
     } catch (_e) {
         return "<stack>";
     }
@@ -30,10 +30,13 @@ function stackName(stack: unknown): string | null {
 
 function stackId(stack: unknown): string | null {
     try {
-        const ItemClass = Java.type("net.minecraft.item.Item");
-        const item = (stack as { func_77973_b(): unknown }).func_77973_b();
-        const key = (ItemClass as any).field_150901_e.func_148750_c(item);
-        return key === null || key === undefined ? null : String(key);
+        const ItemClass = javaType("net.minecraft.item.Item");
+        const item = (
+            stack as { func_77973_b(): HtswMinecraftItem | null }
+        ).func_77973_b();
+        if (item === null) return null;
+        const key = ItemClass.field_150901_e.func_148750_c(item);
+        return key === null ? null : key.toString();
     } catch (_e) {
         return null;
     }
@@ -59,8 +62,10 @@ function stackCount(stack: unknown): number | null {
 
 function stackTagText(stack: unknown): string | null {
     try {
-        const tag = (stack as { func_77978_p(): unknown }).func_77978_p();
-        return tag === null || tag === undefined ? null : String(tag);
+        const tag = (
+            stack as { func_77978_p(): HtswMinecraftNbtCompound | null }
+        ).func_77978_p();
+        return tag === null ? null : tag.toString();
     } catch (_e) {
         return null;
     }
@@ -72,7 +77,7 @@ export function summarizeItemStack(stack: unknown): ItemStackSummary | null {
     const tagText = stackTagText(stack);
     const summary: ItemStackSummary = {
         name,
-        cleanName: name === null ? null : removedFormatting(name),
+        cleanName: removedFormatting(name),
         id: stackId(stack),
         damage: stackDamage(stack),
         count: stackCount(stack),

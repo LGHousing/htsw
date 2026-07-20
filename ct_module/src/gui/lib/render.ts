@@ -21,6 +21,7 @@ import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { getIconImage, renderMcItem } from "./images";
+import { getMinecraft } from "./java";
 
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
@@ -82,6 +83,12 @@ function truncateToWidthUncached(text: string, maxW: number): string {
 // full text where it sits, spilling over the siblings to its right.
 type QueuedTooltip = { text: string; color: number; anchor: Rect; inPlace?: boolean };
 let queuedTooltip: QueuedTooltip | null = null;
+
+function takeQueuedTooltip(): QueuedTooltip | null {
+    const tooltip = queuedTooltip;
+    queuedTooltip = null;
+    return tooltip;
+}
 
 // The tooltip to paint this frame, drawn by the postGuiRender pass in overlay.ts
 // (on top of everything, including popovers). Draw-then-clear there resets it
@@ -185,10 +192,8 @@ export function drawLaid(
         renderScrollbar(item.element.id, mouseX, mouseY);
     }
 
-    if (queuedTooltip !== null) {
-        deferredTooltip = queuedTooltip;
-        queuedTooltip = null;
-    }
+    const tooltip = takeQueuedTooltip();
+    if (tooltip !== null) deferredTooltip = tooltip;
 }
 
 function drawTooltip(t: QueuedTooltip): void {
@@ -217,7 +222,7 @@ function drawTooltip(t: QueuedTooltip): void {
     if (x < 2) x = 2;
     Renderer.drawRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
     Renderer.drawRect(COLOR_PANEL, x, y, w, h);
-    Client.getMinecraft().field_71466_p.func_175065_a(
+    getMinecraft().field_71466_p.func_175065_a(
         t.text,
         x + padX,
         y + padY,
@@ -329,7 +334,7 @@ function renderItem(
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
         const color = e.color !== undefined ? extract(e.color) : undefined;
         if (color !== undefined) {
-            Client.getMinecraft().field_71466_p.func_175065_a(
+            getMinecraft().field_71466_p.func_175065_a(
                 text,
                 r.x,
                 ty,
@@ -440,7 +445,7 @@ function renderItem(
                 r
             );
         }
-    } else if (e.kind === "mcItem") {
+    } else {
         renderMcItem(e.item, e.count, e.metadata, r.x, r.y);
     }
 }

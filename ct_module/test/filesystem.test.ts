@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { atomicWriteText } from "../src/utils/filesystem";
 
-const globals = globalThis as unknown as { Java: any; FileLib: any };
+const globals = globalThis as typeof globalThis & {
+    Java: Java;
+    FileLib: typeof FileLib;
+};
 const originalJava = globals.Java;
 const originalFileLib = globals.FileLib;
 
@@ -33,8 +36,8 @@ function stubFilesystem(
             if (name === "java.nio.file.Files") return files;
             return options;
         },
-    };
-    globals.FileLib = { ...originalFileLib, write, read };
+    } as unknown as Java;
+    globals.FileLib = { write, read } as unknown as typeof FileLib;
 }
 
 describe("atomicWriteText", () => {
@@ -48,17 +51,16 @@ describe("atomicWriteText", () => {
         expect(atomicWriteText("cache/state.json", "contents")).toBe(true);
         // Temp names carry a unique per-write suffix so concurrent writers
         // (two game clients on a shared cache) can't collide on one temp.
-        const tempName = expect.stringMatching(/^cache\/state\.json\..+\.tmp$/);
         expect(move).toHaveBeenNthCalledWith(
             1,
-            tempName,
+            expect.stringMatching(/^cache\/state\.json\..+\.tmp$/),
             "cache/state.json",
             "atomic",
             "replace"
         );
         expect(move).toHaveBeenNthCalledWith(
             2,
-            tempName,
+            expect.stringMatching(/^cache\/state\.json\..+\.tmp$/),
             "cache/state.json",
             "replace"
         );

@@ -44,13 +44,16 @@ export function scanHouseRegions(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Region scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Region scan failed: ${err}`);
+        showToast(`Region scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Region scan failed: ${String(err)}`);
     });
 }
 
 // Liveness: regions announce create/delete/rename in chat, all carrying names.
-register("chat", (event: any) => {
+register("chat", (...args: (string | ForgeClientChatReceivedEvent)[]) => {
+    if (args.length === 0) return;
+    const event = args[args.length - 1];
+    if (typeof event === "string") return;
     const msg = ChatLib.getChatMessage(event, false);
     if (typeof msg !== "string") return;
     const uuid = getHousingUuid();

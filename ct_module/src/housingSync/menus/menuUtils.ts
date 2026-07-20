@@ -18,27 +18,45 @@ import {
     stripHousingEditorValuePrefix,
     stripWrapInheritedColor,
 } from "../fields/loreParsing";
-import {
-    timedWaitForMenu,
-    waitForKnownMenu,
-    waitForMenu,
-} from "./menuWait";
+import { timedWaitForMenu, waitForKnownMenu, waitForMenu } from "./menuWait";
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { decideStringWrite } from "./stringValueDecision";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
 import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
+import { getMinecraft, javaType, sendPacket } from "../../utils/java";
 
-const GuiEditSign = Java.type("net.minecraft.client.gui.inventory.GuiEditSign");
-const C12PacketUpdateSign = Java.type("net.minecraft.network.play.client.C12PacketUpdateSign");
-const ChatComponentText = Java.type("net.minecraft.util.ChatComponentText");
-const IChatComponent = Java.type("net.minecraft.util.IChatComponent");
-const JavaArray = Java.type("java.lang.reflect.Array");
+const GuiEditSign = javaType("net.minecraft.client.gui.inventory.GuiEditSign");
+const C12PacketUpdateSign = javaType(
+    "net.minecraft.network.play.client.C12PacketUpdateSign"
+);
+
+const ChatComponentText = javaType("net.minecraft.util.ChatComponentText");
+const IChatComponent = javaType("net.minecraft.util.IChatComponent");
+const JavaArray = javaType("java.lang.reflect.Array");
 
 type SignTile = {
     func_174877_v(): unknown;
 };
+
+type RhinoJavaObject = {
+    class: HtswJavaClass;
+};
+
+type OpenContainer = {
+    container: RhinoJavaObject;
+    click(slot: number, shift: boolean): void;
+};
+
+function getOpenContainer(): OpenContainer | null {
+    const container = (
+        Player as unknown as {
+            getContainer(): OpenContainer | null | undefined;
+        }
+    ).getContainer();
+    return container ?? null;
+}
 
 function describeVisibleOptions(ctx: TaskContext): string {
     const names: string[] = [];
@@ -63,13 +81,15 @@ function describeAllMenuSlots(ctx: TaskContext): string {
         let label = removedFormatting(item.getName()).trim();
         if (label.length === 0) {
             const lore = item.getLore();
-            label = lore.length > 0 ? `lore:"${removedFormatting(lore[0]).trim()}"` : "<unnamed>";
+            label =
+                lore.length > 0
+                    ? `lore:"${removedFormatting(lore[0]).trim()}"`
+                    : "<unnamed>";
         }
         parts.push(`${slot.getSlotId()}:${label}`);
     }
     return parts.length === 0 ? "<empty>" : parts.join(", ");
 }
-
 
 async function scanPagesForOption(
     ctx: TaskContext,
@@ -114,7 +134,9 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
     }
 
     const detail = `${menuStateDescription()} — all slots: [${describeAllMenuSlots(ctx)}]`;
-    throw new Error(`Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`);
+    throw new Error(
+        `Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`
+    );
 }
 
 // Like getSlotPaginate, but matches by predicate and returns null instead of
@@ -192,7 +214,9 @@ export async function clickGoBack(ctx: TaskContext): Promise<void> {
         // a top-level editor (the region editor has "Close", not "Go Back") or a
         // nav unwind that popped one level too far. Name the menu so the desync's
         // origin is visible instead of a bare "Could not find Go Back".
-        throw new Error(`Could not find "Go Back" to click back from${menuStateDescription()}`);
+        throw new Error(
+            `Could not find "Go Back" to click back from${menuStateDescription()}`
+        );
     }
     slot.click();
     await timedWaitForMenu(ctx, "goBackWait");
@@ -204,25 +228,26 @@ export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<v
 }
 
 function setAnvilItemName(newName: string) {
-    const inventory = Player.getContainer();
+    const inventory = getOpenContainer();
     if (inventory == null) {
         throw new Error("No open container found");
     }
     const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
-    // @ts-expect-error Rhino reflection return types do not expose Java members.
     outputSlotField.setAccessible(true);
-    const outputSlot = outputSlotField.get(inventory.container);
+    const outputSlot = outputSlotField.get(inventory.container) as RhinoJavaObject;
 
     const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
     outputSlotItemField.setAccessible(true);
-    const outputSlotItem = outputSlotItemField.get(outputSlot);
+    const outputSlotItem = outputSlotItemField.get(
+        outputSlot
+    ) as HtswJavaObjectArray<unknown>;
 
     outputSlotItem[0] = new Item(339).setName(newName).itemStack;
     outputSlotItemField.set(outputSlot, outputSlotItem);
 }
 
 function acceptNewAnvilItem(): void {
-    const inventory = Player.getContainer();
+    const inventory = getOpenContainer();
     if (inventory == null) {
         throw new Error("No open container found");
     }
@@ -230,33 +255,34 @@ function acceptNewAnvilItem(): void {
 }
 
 function currentScreen(): unknown {
-    return Client.getMinecraft().field_71462_r;
+    return getMinecraft().field_71462_r;
 }
 
 function isSignEditorOpen(): boolean {
     return currentScreen() instanceof GuiEditSign;
 }
 
-function getDeclaredFieldInHierarchy(obj: unknown, name: string) {
-    let cls = (obj as { class: { getDeclaredField(name: string): unknown; getSuperclass(): unknown } }).class;
+function getDeclaredFieldInHierarchy(obj: unknown, name: string): HtswJavaReflectField {
+    let cls: HtswJavaClass | null = (obj as RhinoJavaObject).class;
     while (cls !== null) {
         try {
-            const field = cls.getDeclaredField(name) as {
-                setAccessible(value: boolean): void;
-                get(target: unknown): unknown;
-                set(target: unknown, value: unknown): void;
-            };
+            const field = cls.getDeclaredField(name);
             field.setAccessible(true);
             return field;
         } catch (_e) {
-            cls = cls.getSuperclass() as typeof cls;
+            cls = cls.getSuperclass();
         }
     }
     throw new Error(`Could not find field ${name}`);
 }
 
-function chatComponentLines(lines: string[]) {
-    const array = JavaArray.newInstance(IChatComponent.class, 4);
+function chatComponentLines(
+    lines: string[]
+): HtswJavaObjectArray<HtswMinecraftChatComponent> {
+    const array = JavaArray.newInstance<HtswMinecraftChatComponent>(
+        IChatComponent.class,
+        4
+    );
     for (let i = 0; i < 4; i++) {
         JavaArray.set(array, i, new ChatComponentText(lines[i] ?? ""));
     }
@@ -269,11 +295,13 @@ function submitSignValue(value: string): void {
         throw new Error("Sign input was expected, but the sign editor is not open.");
     }
 
-    const sign = getDeclaredFieldInHierarchy(screen, "field_146848_f").get(screen) as SignTile;
+    const sign = getDeclaredFieldInHierarchy(screen, "field_146848_f").get(
+        screen
+    ) as SignTile;
     const lines = chatComponentLines([value, "", "", ""]);
     getDeclaredFieldInHierarchy(sign, "field_145915_a").set(sign, lines);
-    Client.sendPacket(new C12PacketUpdateSign(sign.func_174877_v(), lines));
-    Client.getMinecraft().func_147108_a(null);
+    sendPacket(new C12PacketUpdateSign(sign.func_174877_v(), lines));
+    getMinecraft().func_147108_a(null);
 }
 
 export async function setListItemNote(
@@ -362,10 +390,7 @@ function normalizeSelectedOption(line: string): string {
         .trim();
 }
 
-function readSelectedOption(
-    slot: ItemSlot,
-    options: readonly string[]
-): string | null {
+function readSelectedOption(slot: ItemSlot, options: readonly string[]): string | null {
     const optionSet = new Set(options);
 
     for (const line of slot.getItem().getLore()) {
@@ -436,7 +461,8 @@ function isAlreadySelectedOption(slot: ItemSlot): boolean {
 export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
     const newValue = value ? "Enabled" : "Disabled";
     const currentValue = readCurrentValue(slot);
-    const currentStripped = currentValue === null ? null : removedFormatting(currentValue);
+    const currentStripped =
+        currentValue === null ? null : removedFormatting(currentValue);
     if (currentStripped === newValue) return;
 
     slot.click();
@@ -525,7 +551,10 @@ export async function setCycleValue(
     throw new Error(`Could not set "${slotName}" to "${value}".`);
 }
 
-export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL" | "SIGN"> {
+export async function enterValue(
+    ctx: TaskContext,
+    value: string
+): Promise<"CHAT" | "ANVIL" | "SIGN"> {
     const chatWait = waitForChatInputPrompt(ctx);
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
         return (
@@ -559,8 +588,8 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     if (value.length > ANVIL_NAME_MAX) {
         throw new Error(
             `Value is ${value.length} characters — too long for Housing's anvil ` +
-            `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
-            `Housing settings, then re-import.`
+                `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
+                `Housing settings, then re-import.`
         );
     }
     await waitForKnownMenu(ctx, inputMode.windowId, true);
@@ -587,7 +616,7 @@ function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
 }
 
 export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: number) {
-    const newValue = value.toString();
+    const newValue = String(value);
     const currentValue = readCurrentValue(slot);
     if (currentValue !== null) {
         const currentNumber = Number(
@@ -611,7 +640,7 @@ export async function setStringValue(
     slot: ItemSlot,
     value: string
 ): Promise<void> {
-    const newValue = value.toString();
+    const newValue = value;
     const currentValue = readStringValue(slot);
     const action = decideStringWrite(currentValue, newValue);
     if (action === "skip") return;
@@ -619,7 +648,7 @@ export async function setStringValue(
         const slotName = removedFormatting(slot.getItem().getName()).trim();
         throw new Error(
             `Cannot set "${slotName}" to an empty value through Housing's chat input. ` +
-            `Use a formatting-only value like "&k" instead of an empty one.`
+                `Use a formatting-only value like "&k" instead of an empty one.`
         );
     }
 
@@ -636,7 +665,7 @@ export async function setStringOrPaginatedOptionValue(
     slot: ItemSlot,
     value: string
 ): Promise<void> {
-    const newValue = value.toString();
+    const newValue = value;
     const currentValue = readStringValue(slot);
     if (currentValue !== null && currentValue === newValue) {
         return;
@@ -748,8 +777,6 @@ export async function setNoteOnLastVisibleSlot(
 ): Promise<void> {
     if (!note) return;
     const slots = getVisiblePaginatedItemSlots(ctx);
-    const last = slots[slots.length - 1];
-    if (last) {
-        await setListItemNote(ctx, last, note, options);
-    }
+    if (slots.length === 0) return;
+    await setListItemNote(ctx, slots[slots.length - 1], note, options);
 }

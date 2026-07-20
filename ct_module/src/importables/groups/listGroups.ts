@@ -48,7 +48,6 @@ function readGroupSlots(ctx: TaskContext): { entry: GroupListEntry; slot: ItemSl
     const out: { entry: GroupListEntry; slot: ItemSlot }[] = [];
     for (let i = 0; i < slots.length; i++) {
         const item = slots[i].getItem();
-        if (item === null || item === undefined) continue;
         const displayName = item.getName();
         const name = groupNameFromDisplayName(displayName);
         if (name === null) continue;

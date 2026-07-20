@@ -103,10 +103,10 @@ export function createItemDiffContext(
     ): boolean => {
         if (observedFieldsDiffer(observed, desired)) return true;
         const fields = (
-            ACTION_MAPPINGS as unknown as Record<
+            ACTION_MAPPINGS as unknown as Partial<Record<
                 string,
                 { loreFields: Record<string, { prop: string; kind: string }> }
-            >
+            >>
         )[desired.type]?.loreFields;
         if (fields === undefined) return false;
         const observedRecord = observed as Record<string, unknown>;

@@ -2,8 +2,9 @@
 
 import type TaskContext from "../tasks/context";
 import { pollTicks } from "../tasks/poll";
+import { getMinecraft, getPlayer, javaType } from "../utils/java";
 
-const KeyBinding = Java.type("net.minecraft.client.settings.KeyBinding") as any;
+const KeyBinding = javaType("net.minecraft.client.settings.KeyBinding");
 
 /**
  * Side effects coordinating the importer with the surrounding game:
@@ -22,16 +23,16 @@ export function isInCreativeMode(): boolean {
     // field_71075_bZ = PlayerCapabilities, field_75098_d = isCreativeMode.
     // This is the flag the server checks before honouring a creative-inventory
     // spawn, so it's the one that tells us a spawn will actually land.
-    return Player.getPlayer().field_71075_bZ.field_75098_d === true;
+    return getPlayer().field_71075_bZ.field_75098_d;
 }
 
 function isFlying(): boolean {
-    return Player.getPlayer().field_71075_bZ.field_75100_b === true;
+    return getPlayer().field_71075_bZ.field_75100_b;
 }
 
 function getJumpKeyCode(): number | null {
     try {
-        const settings = Client.getMinecraft().field_71474_y;
+        const settings = getMinecraft().field_71474_y;
         const binding = settings?.field_74314_A;
         if (binding === undefined || binding === null) return null;
         try {
@@ -56,7 +57,7 @@ const FLY_TOGGLE_MAX_TICKS = 20;
 const FLY_TAP_ATTEMPTS = 2;
 
 function currentScreenIsOpen(): boolean {
-    return (Client.getMinecraft() as { field_71462_r?: unknown }).field_71462_r != null;
+    return getMinecraft().field_71462_r !== null;
 }
 
 // Jump taps and creative set-slot packets only take effect while no screen is
@@ -66,7 +67,7 @@ export async function closeOpenScreen(ctx: TaskContext): Promise<void> {
     if (!currentScreenIsOpen()) return;
     // func_71053_j = EntityPlayer.closeScreen — same as pressing Esc on a
     // container, including notifying the server.
-    (Player.getPlayer() as unknown as { func_71053_j(): void }).func_71053_j();
+    getPlayer().func_71053_j();
     await ctx.waitFor("tick");
 }
 

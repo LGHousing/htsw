@@ -11,5 +11,5 @@ export type ApplyChildActionList = (
 ) => Promise<void>;
 
 export type ActionListApplyResult = {
-    readonly currentSnapshot: ReadonlyArray<Action | Observed<Action> | null>;
+    readonly currentSnapshot: ReadonlyArray<Action | Observed | null>;
 };

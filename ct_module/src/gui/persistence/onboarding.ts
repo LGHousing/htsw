@@ -7,6 +7,8 @@
  * its fresh-install state.
  */
 
+import { runtimeString, type RuntimeString } from "../lib/java";
+
 const ONBOARDING_PATH = "./config/ChatTriggers/modules/HTSW/gui-onboarding.json";
 
 type OnboardingState = {
@@ -22,7 +24,8 @@ function load(): void {
     loaded = true;
     try {
         if (!FileLib.exists(ONBOARDING_PATH)) return;
-        const raw = String(FileLib.read(ONBOARDING_PATH) ?? "");
+        const stored = FileLib.read(ONBOARDING_PATH) as RuntimeString | null | undefined;
+        const raw = runtimeString(stored);
         if (raw.trim() === "") return;
         const parsed = JSON.parse(raw) as Partial<OnboardingState>;
         state = {

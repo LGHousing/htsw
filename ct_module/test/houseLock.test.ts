@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
-import { readHouseLock, upsertHouseLockImportable } from "../src/importCache/houseLock";
+import {
+    readHouseLock,
+    upsertHouseLockImportable,
+    type HouseLock,
+} from "../src/importCache/houseLock";
 import {
     ACTION_LIST_SCAN_HASH_VERSION,
     actionListScanHashFromActions,
@@ -19,7 +23,7 @@ function functionEntry(): ImportableFunction {
     };
 }
 
-function stubFiles(files: Record<string, string>): void {
+function stubFiles(files: Partial<Record<string, string>>): void {
     vi.stubGlobal("FileLib", {
         exists: (path: string) => files[path] !== undefined,
         read: (path: string) => files[path] ?? null,
@@ -64,7 +68,7 @@ describe("house lock scan hashes", () => {
     });
 
     it("writes and reads current scan hashes", () => {
-        const files: Record<string, string> = {};
+        const files: Partial<Record<string, string>> = {};
         stubFiles(files);
         const importable = functionEntry();
         const itemDependencies: ItemDependencySnapshot = {
@@ -85,7 +89,7 @@ describe("house lock scan hashes", () => {
                 itemDependencies
             )
         ).toBe(true);
-        const written = JSON.parse(files[lockPath]);
+        const written = JSON.parse(files[lockPath]!) as HouseLock;
         expect(written.scanHashVersion).toBe(ACTION_LIST_SCAN_HASH_VERSION);
         expect(written.importables["FUNCTION:Debug"].listScanHashes).toEqual({
             actions: actionListScanHashFromActions(importable.actions ?? []),

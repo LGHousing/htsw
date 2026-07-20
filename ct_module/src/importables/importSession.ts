@@ -342,7 +342,7 @@ export async function importSelectedImportables(
                 if (trace)
                     traceNote(
                         "read-stack",
-                        String(trace).split("\n").slice(0, 8).join(" | ")
+                        trace.split("\n").slice(0, 8).join(" | ")
                     );
             }
             ctx.displayMessage(

@@ -26,8 +26,8 @@ function runExportTask(task: (ctx: TaskContext) => Promise<void>): void {
         traceRecord("exportTask", { stage: "start" });
         await task(ctx);
         traceRecord("exportTask", { stage: "success" });
-    }).catch((err) => {
+    }).catch((err: unknown) => {
         traceError("exportTask", err);
-        ChatLib.chat(`&cExport failed: ${err}`);
+        ChatLib.chat(`&cExport failed: ${String(err)}`);
     });
 }

@@ -109,7 +109,6 @@ function readVisibleNpcEntries(ctx: TaskContext): NpcListEntry[] {
 
 function readNpcEntryFromSlot(slot: ItemSlot, index: number): NpcListEntry | null {
     const item = slot.getItem();
-    if (item === null || item === undefined) return null;
     const name = extractNpcName(item.getName());
     const pos = parseNpcPos(item.getLore());
     if (name === null || pos === null) return null;

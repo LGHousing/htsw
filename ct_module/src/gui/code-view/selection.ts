@@ -36,7 +36,7 @@ type Published = {
 };
 
 let active: Selection | null = null;
-const published: { [scrollId: string]: Published } = {};
+const published: { [scrollId: string]: Published | undefined } = {};
 
 /**
  * Called by the code view each frame with the lines it rendered, in display
@@ -115,7 +115,7 @@ export function onRowDrag(
 export function selectWord(scrollId: string, lineId: string, col: number): void {
     const pub = published[scrollId];
     const line = pub === undefined ? null : findLine(pub.lines, lineId);
-    if (pub === null || pub === undefined || line === null) {
+    if (pub === undefined || line === null) {
         beginSelection(scrollId, lineId, col);
         return;
     }
@@ -168,7 +168,7 @@ export function copyActiveSelection(): void {
     if (pub === undefined || pub.identity !== active.identity) return;
     const lines = pub.lines;
 
-    const ordinal: { [id: string]: number } = {};
+    const ordinal: { [id: string]: number | undefined } = {};
     for (let i = 0; i < lines.length; i++) {
         if (ordinal[lines[i].id] === undefined) ordinal[lines[i].id] = i;
     }
@@ -198,7 +198,9 @@ export function copyActiveSelection(): void {
 
     if (setClipboard(text)) {
         const n = end.ord - start.ord + 1;
-        ChatLib.chat(`&7[htsw] copied ${n} line${n === 1 ? "" : "s"} (${text.length} chars)`);
+        ChatLib.chat(
+            `&7[htsw] copied ${n} line${n === 1 ? "" : "s"} (${text.length} chars)`
+        );
     }
 }
 
@@ -260,12 +262,12 @@ function setClipboard(text: string): boolean {
     try {
         const Toolkit = javaType("java.awt.Toolkit");
         const StringSelection = javaType("java.awt.datatransfer.StringSelection");
-        const selection = new StringSelection(String(text));
+        const selection = new StringSelection(text);
         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
         return true;
     } catch (e) {
         try {
-            ChatLib.chat(`&c[htsw] clipboard failed: ${e}`);
+            ChatLib.chat(`&c[htsw] clipboard failed: ${String(e)}`);
         } catch (_e) {
             // ignore
         }

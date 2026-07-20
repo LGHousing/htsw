@@ -193,10 +193,11 @@ export async function applyFunctionSettings(
     ctx: TaskContext,
     importable: ImportableFunction
 ): Promise<void> {
-    if (importable.icon !== undefined && !(await functionIconMatches(ctx, importable))) {
+    const icon = importable.icon;
+    if (icon !== undefined && !(await functionIconMatches(ctx, importable))) {
         await functionSettingsStep(
             `setting icon for function ${importable.name}`,
-            () => setFunctionIconIfNeeded(ctx, importable.icon!)
+            () => setFunctionIconIfNeeded(ctx, icon)
         );
     }
     await functionSettingsStep(

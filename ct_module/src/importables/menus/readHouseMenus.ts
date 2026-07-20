@@ -75,7 +75,9 @@ async function exportMenu(
         options.newExportTargetImportJson
     );
     const rootDir =
-        importJsonPath === options.importJsonPath ? options.rootDir : parentDirOf(importJsonPath);
+        importJsonPath === options.importJsonPath
+            ? options.rootDir
+            : parentDirOf(importJsonPath);
     // Inside the menus section folder the per-menu folder sits directly
     // beside its import.json — a "menus/" prefix there would nest menus/menus/.
     const inSectionFolder =
@@ -106,13 +108,10 @@ async function exportMenu(
         // produces, so the drift hash compares like with like.
         cacheSlots.push({
             slot: liveSlot.slot,
-            nbt: htsw.nbt.parseSnbtText(liveSlot.snbt) as MenuSlot["nbt"],
+            nbt: htsw.nbt.parseSnbtText(liveSlot.snbt),
             ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
         });
-        const itemName = slotItemCaptures.register(
-            liveSlot.snbt,
-            liveSlot.nameHint
-        );
+        const itemName = slotItemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
         // Read-only (deep read) records the live menu in the cache but writes no
         // item/.htsl/import.json files.
         if (options.readOnly !== undefined) continue;
@@ -161,7 +160,13 @@ async function exportMenu(
     };
 
     if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        writeImportableCache(
+            ctx,
+            options.readOnly.housingUuid,
+            importable,
+            "reader",
+            true
+        );
         ctx.displayMessage(
             `&aRead menu '${name}' (${cacheSlots.length} slot${cacheSlots.length === 1 ? "" : "s"})`
         );
@@ -180,7 +185,7 @@ async function exportMenu(
         const housingUuid = await getCurrentHousingUuid(ctx);
         writeImportableCache(ctx, housingUuid, importable, "exporter");
     } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
+        ctx.displayMessage(`&7[export] &eCache write skipped: ${String(error)}`);
     }
 
     const withActions = jsonSlots.filter((s) => s.actions !== undefined).length;

@@ -1,5 +1,4 @@
 import type {
-    Action,
     ActionActionBar,
     ActionApplyInventoryLayout,
     ActionConditional,
@@ -37,7 +36,7 @@ import type { ActionReadArgs } from "./io";
 
 export function refreshTruncatedScalarFields(
     ctx: TaskContext,
-    current: Observed<Action>,
+    current: Observed,
     fields: ActionScalarFieldToRead[] = getActionScalarLoreFields(current.type)
 ): void {
     for (let i = 0; i < fields.length; i++) {
@@ -346,7 +345,7 @@ export async function readOpenMessage({
 
 function refreshStringFieldFromEditor(
     ctx: TaskContext,
-    base: Observed<Action>,
+    base: Observed,
     fieldLabel: string,
     prop: string
 ): void {
@@ -359,7 +358,7 @@ function refreshStringFieldFromEditor(
 
 function refreshLocationFromEditor(
     ctx: TaskContext,
-    base: Observed<Action>,
+    base: Observed,
     fieldLabel: string
 ): void {
     const slot = ctx.tryGetItemSlot(fieldLabel);

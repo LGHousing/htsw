@@ -298,25 +298,21 @@ function htslRenderableLines(
 
     const diagnostics = diagnosticIndexForFile(path, importJsonPath);
     const out: RenderableLine[] = [];
-    const seenPaths: { [p: string]: number } = {};
+    const seenPaths: { [p: string]: number | undefined } = {};
     for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
         const lineText = indentedText(ln);
         // Main's HtslLine has no fieldSpans yet — bucket B (printActionSpans) lands separately.
         // Pass undefined so tokens carry text + color but no per-field metadata.
         const tokens: TokenSpan[] = attachFieldSpans(tokenizeHtsl(lineText), undefined);
+        const pathKey = ActionPath.key(ln.actionPath);
+        const seenAt = seenPaths[pathKey];
         let id: string;
-        if (ln.actionPath !== undefined) {
-            const pathKey = ActionPath.key(ln.actionPath);
-            const seenAt = seenPaths[pathKey];
-            if (seenAt === undefined) {
-                seenPaths[pathKey] = i;
-                id = `htsl:${pathKey}`;
-            } else {
-                id = `htsl:${pathKey}:c${i - seenAt}`;
-            }
+        if (seenAt === undefined) {
+            seenPaths[pathKey] = i;
+            id = `htsl:${pathKey}`;
         } else {
-            id = `htsl:line${i}`;
+            id = `htsl:${pathKey}:c${i - seenAt}`;
         }
         const lineNum = i + 1;
         const renderableLine: RenderableLine = {
@@ -349,7 +345,7 @@ function readPlainLines(path: string): string[] {
         // Friendly two-liner instead of the raw exception: the exception text
         // repeats the absolute path twice and wraps into an unreadable wall.
         lines = pathExists(path)
-            ? [`// Couldn't read ${shortPath(path)}`, `// ${e}`]
+            ? [`// Couldn't read ${shortPath(path)}`, `// ${String(e)}`]
             : [
                   `// ${shortPath(path)} no longer exists.`,
                   "// Close this tab, or recreate the file.",
@@ -394,7 +390,7 @@ function plainTextRenderableLines(
 function jsonStringValue(tokenText: string): string | null {
     if (tokenText.length < 2 || tokenText.charAt(0) !== '"') return null;
     try {
-        const parsed = JSON.parse(tokenText);
+        const parsed: unknown = JSON.parse(tokenText);
         return typeof parsed === "string" ? parsed : null;
     } catch (_e) {
         return null;
@@ -528,7 +524,6 @@ function collectActionLineRanges(
     ): void {
         for (let i = 0; i < list.length; i++) {
             const a = list[i];
-            if (a === null || a === undefined) continue;
             const actionPath = ActionPath.at(listPath, i);
             const range = actionLineRange(file, spans, a);
             if (range === null) continue;
@@ -540,18 +535,18 @@ function collectActionLineRanges(
             });
             if (a.type === "CONDITIONAL") {
                 visit(
-                    a.ifActions ?? [],
+                    a.ifActions,
                     ActionListPath.childOf(actionPath, "ifActions"),
                     depth + 1
                 );
                 visit(
-                    a.elseActions ?? [],
+                    a.elseActions,
                     ActionListPath.childOf(actionPath, "elseActions"),
                     depth + 1
                 );
             } else if (a.type === "RANDOM") {
                 visit(
-                    a.actions ?? [],
+                    a.actions,
                     ActionListPath.childOf(actionPath, "actions"),
                     depth + 1
                 );
@@ -570,8 +565,8 @@ function pathPerLine(
     lineCount: number,
     ranges: readonly ActionLineRange[]
 ): Array<ActionPath | undefined> {
-    const paths: Array<ActionPath | undefined> = new Array(lineCount);
-    const depths: Array<number> = new Array(lineCount);
+    const paths = new Array<ActionPath | undefined>(lineCount);
+    const depths = new Array<number>(lineCount);
     for (let i = 0; i < lineCount; i++) {
         paths[i] = undefined;
         depths[i] = -1;
@@ -591,7 +586,7 @@ function pathPerLine(
 }
 
 function depthPerLine(lineCount: number, ranges: readonly ActionLineRange[]): number[] {
-    const depths: number[] = new Array(lineCount);
+    const depths = new Array<number>(lineCount);
     for (let i = 0; i < lineCount; i++) depths[i] = 0;
     for (let r = 0; r < ranges.length; r++) {
         const range = ranges[r];
@@ -640,7 +635,7 @@ function htslRawRenderableLines(
     const lineDepths = depthPerLine(rawLines.length, ranges);
     const diagnostics = diagnosticIndexForFile(path, importJsonPath);
 
-    const seenPaths: { [p: string]: number } = {};
+    const seenPaths: { [p: string]: number | undefined } = {};
     const out: RenderableLine[] = [];
     for (let i = 0; i < rawLines.length; i++) {
         const text = rawLines[i];

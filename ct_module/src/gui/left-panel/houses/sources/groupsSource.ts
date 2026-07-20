@@ -52,7 +52,7 @@ export function scanHouseGroups(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Group scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Group scan failed: ${err}`);
+        showToast(`Group scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Group scan failed: ${String(err)}`);
     });
 }

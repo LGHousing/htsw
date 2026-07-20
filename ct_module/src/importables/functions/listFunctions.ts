@@ -86,7 +86,6 @@ export async function listAllFunctionEntries(ctx: TaskContext): Promise<Function
             for (let i = 0; i < slots.length; i++) {
                 if (isEmptyPaginatedPlaceholder(slots[i], FUNCTION_LIST_CONFIG)) continue;
                 const item = slots[i].getItem();
-                if (item === null || item === undefined) continue;
                 const extracted = extractFunctionNameFromSlot(
                     removedFormatting(item.getName()),
                 );

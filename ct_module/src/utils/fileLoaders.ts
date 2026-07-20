@@ -1,37 +1,38 @@
 import { FileLoader } from "htsw";
+import { javaType, runtimeString, type RuntimeString } from "./java";
 
 export class FileSystemFileLoader implements FileLoader {
-    private rootPath(): any {
+    private rootPath(): HtswJavaPath {
         // Root at the JVM working directory — for CT modules running inside
         // Minecraft this is the `.minecraft` install root. Matches what
         // FileLib + the explore tab's NIO walk already do, so a path like
         // `./htsw/projects/foo/import.json` resolves the same way everywhere.
-        return Java.type("java.nio.file.Paths")
-            .get(String("."))
+        return javaType("java.nio.file.Paths")
+            .get(runtimeString("."))
             .toAbsolutePath()
             .normalize();
     }
 
     private normalizePath(path: string): string {
-        const Paths = Java.type("java.nio.file.Paths");
-        const p = Paths.get(String(path));
+        const Paths = javaType("java.nio.file.Paths");
+        const p = Paths.get(runtimeString(path));
         if (p.isAbsolute()) return String(p.normalize().toString());
         return String(this.rootPath().resolve(p).normalize().toString());
     }
 
     fileExists(path: string): boolean {
-        const Files = Java.type("java.nio.file.Files");
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         return Files.exists(Paths.get(this.normalizePath(path)));
     }
 
     readFile(path: string): string {
         const normalized = this.normalizePath(path);
-        let content: string | null = FileLib.read(normalized);
+        let content = FileLib.read(normalized) as RuntimeString | null;
         if (content === null) {
-            const Files = Java.type("java.nio.file.Files");
-            const Paths = Java.type("java.nio.file.Paths");
-            const JString = Java.type("java.lang.String");
+            const Files = javaType("java.nio.file.Files");
+            const Paths = javaType("java.nio.file.Paths");
+            const JString = javaType("java.lang.String");
             const p = Paths.get(normalized);
             if (Files.exists(p)) {
                 content = String(new JString(Files.readAllBytes(p)));
@@ -40,23 +41,24 @@ export class FileSystemFileLoader implements FileLoader {
         if (content === null) {
             throw new Error(`File at path ${path} does not exist`);
         }
-        return String(content);
+        return runtimeString(content);
     }
 
     getParentPath(base: string): string {
-        const Paths = Java.type("java.nio.file.Paths");
-        const basePath = Paths.get(String(base));
+        const Paths = javaType("java.nio.file.Paths");
+        const basePath = Paths.get(runtimeString(base));
         const normalized = basePath.isAbsolute()
             ? basePath.normalize()
             : this.rootPath().resolve(basePath).normalize();
 
-        return String(normalized.getParent().toAbsolutePath().toString());
+        const parent = normalized.getParent();
+        return String((parent === null ? normalized : parent).toAbsolutePath().toString());
     }
 
     resolvePath(base: string, other: string): string {
-        const Paths = Java.type("java.nio.file.Paths");
-        const basePath = Paths.get(String(base));
-        const otherPath = Paths.get(String(other));
+        const Paths = javaType("java.nio.file.Paths");
+        const basePath = Paths.get(runtimeString(base));
+        const otherPath = Paths.get(runtimeString(other));
         const normalizedBase = basePath.isAbsolute()
             ? basePath.normalize()
             : this.rootPath().resolve(basePath).normalize();

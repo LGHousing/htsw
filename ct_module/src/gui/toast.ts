@@ -2,6 +2,7 @@
 
 import { getOverlayScreenW, getOverlayScreenH } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
+import { getMinecraft } from "./lib/java";
 
 type Toast = {
     message: string;
@@ -55,7 +56,7 @@ export function renderToast(): void {
 
     beginHtswOverlayDraw();
     Renderer.drawRect(bg, x, y, boxW, boxH);
-    Client.getMinecraft().field_71466_p.func_175065_a(
+    getMinecraft().field_71466_p.func_175065_a(
         active.message,
         x + PADDING_X,
         y + PADDING_Y + 2,

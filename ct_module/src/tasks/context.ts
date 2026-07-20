@@ -9,7 +9,9 @@ import {
 } from "./specifics/slots";
 import { waitFor, waitForTimeout, type WaitForPromise } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
+import { sendPacket } from "../utils/java";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
+import { createTaskCancelledError } from "./cancellation";
 
 /**
  * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
@@ -86,7 +88,7 @@ export default class TaskContext {
 
     public checkCancelled() {
         if (this.cancelled) {
-            throw { __taskCancelled: true, reason: "Task cancelled" };
+            throw createTaskCancelledError();
         }
     }
 
@@ -161,7 +163,7 @@ export default class TaskContext {
         const messageField = packet.class.getDeclaredField("field_149440_a");
         messageField.setAccessible(true);
         messageField.set(packet, capped);
-        Client.sendPacket(packet);
+        sendPacket(packet);
         recordRuntimeDebug("chatInput", { length: capped.length });
     }
 
@@ -178,7 +180,7 @@ export default class TaskContext {
         }
 
         const end = Date.now() + duration;
-        while (true) {
+        for (;;) {
             this.checkCancelled();
             if (abortCheck && abortCheck()) {
                 throw new Error("Sleep aborted by custom check");
@@ -200,10 +202,9 @@ export default class TaskContext {
         duration: number = 2000
     ): WaitForPromise<T> {
         if (this.cancelled) {
-            const rejected = Promise.reject({
-                __taskCancelled: true,
-                reason: "Task cancelled",
-            }) as WaitForPromise<T>;
+            const rejected = Promise.reject(
+                createTaskCancelledError()
+            ) as WaitForPromise<T>;
             rejected.cleanupWaiter = () => {};
             rejected.catch(() => {});
             return rejected;
@@ -223,7 +224,7 @@ export default class TaskContext {
                 timeout.cleanupWaiter?.();
                 return value;
             },
-            (error): never => {
+            (error: unknown): never => {
                 timeout.cleanupWaiter?.();
                 throw error;
             }
@@ -237,7 +238,7 @@ export default class TaskContext {
     }
 
     public async expectAfter<T>(
-        action: () => void | Promise<unknown>,
+        action: () => unknown,
         waiterFactory: TaskWaiter<T>,
         duration: number = 8000
     ): Promise<T> {
@@ -277,7 +278,7 @@ export default class TaskContext {
                 cleanupAll();
                 return value;
             },
-            (err) => {
+            (err: unknown) => {
                 cleanupAll();
                 throw err;
             }

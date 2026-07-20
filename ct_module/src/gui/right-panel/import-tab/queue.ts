@@ -65,7 +65,7 @@ export function queueItemKey(item: QueueItem): string {
     if (item.operation === "import" && item.kind === "importable") {
         return `imp:${item.sourcePath}|${item.type}:${item.identity}`;
     }
-    if (item.operation === "import" && item.kind === "importJson") {
+    if (item.kind === "importJson") {
         return `json:${item.sourcePath}`;
     }
     return `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;

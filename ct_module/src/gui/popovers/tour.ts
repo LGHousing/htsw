@@ -239,6 +239,7 @@ function content(): Element {
         style: { padding: 8, gap: 4, height: { kind: "grow" } },
         children: () => {
             const s = STEPS[step];
+            const action = s.action;
             const out: (Element | false)[] = [
                 Row({
                     style: { gap: 4 },
@@ -256,12 +257,12 @@ function content(): Element {
                 }),
                 ...s.lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM })),
                 Col({ style: { height: { kind: "grow" } }, children: [] }),
-                s.action !== undefined &&
+                action !== undefined &&
                     Container({
                         style: { height: { kind: "px", value: 18 } },
                         children: [
-                            navButton(s.action.label, true, () => {
-                                s.action!.run();
+                            navButton(action.label, true, () => {
+                                action.run();
                                 if (step < STEPS.length - 1) goTo(step + 1);
                             }),
                         ],

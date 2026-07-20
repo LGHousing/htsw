@@ -13,7 +13,7 @@ let cachedMcRoot: string | null = null;
 // path primitives — never re-implement slash conversion or basename inline
 // (an inline `/\\/g` regex is exactly the unsafe form).
 export function toForwardSlashes(s: string): string {
-    return String(s).split("\\").join("/");
+    return s.split("\\").join("/");
 }
 
 /** Lowercased forward-slash form — the key to use for path comparisons. */
@@ -52,7 +52,7 @@ function mcRoot(): string {
     try {
         const Paths = javaType("java.nio.file.Paths");
         cachedMcRoot = toForwardSlashes(
-            Paths.get(".").toAbsolutePath().normalize().toString()
+            String(Paths.get(".").toAbsolutePath().normalize().toString())
         );
     } catch (_e) {
         cachedMcRoot = "";
@@ -69,7 +69,6 @@ function mcRoot(): string {
  * the file browser) collapse to the canonical `./htsw/...` form.
  */
 export function normalizeHtswPath(p: string): string {
-    if (p === undefined || p === null) return p;
     const norm = toForwardSlashes(p);
     const idx = norm.lastIndexOf("/htsw/");
     if (idx >= 0) return `.${norm.substring(idx)}`;

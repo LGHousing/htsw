@@ -65,12 +65,20 @@ import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
 import type { WriteActionOptions } from "./io";
 
-function actionDefault<T>(type: Action["type"], prop: string): T {
-    return getActionFieldDefault(type, prop) as T;
+function booleanActionDefault(type: Action["type"], prop: string): boolean {
+    return getActionFieldDefault(type, prop) as boolean;
+}
+
+function numberActionDefault(type: Action["type"], prop: string): number {
+    return getActionFieldDefault(type, prop) as number;
+}
+
+function stringActionDefault(type: Action["type"], prop: string): string {
+    return getActionFieldDefault(type, prop) as string;
 }
 
 function observedActionListsEqual(
-    observed: Array<Observed<Action> | null> | undefined,
+    observed: Array<Observed | null> | undefined,
     desired: readonly Action[]
 ): boolean {
     if (observed === undefined || observed.length !== desired.length) return false;
@@ -187,7 +195,7 @@ export async function writeSetGroup(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_GROUP", "demotionProtection")),
         action.demotionProtection ??
-            actionDefault<boolean>("SET_GROUP", "demotionProtection")
+            booleanActionDefault("SET_GROUP", "demotionProtection")
     );
 }
 
@@ -201,25 +209,25 @@ export async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "subtitle")),
-        action.subtitle ?? actionDefault<string>("TITLE", "subtitle")
+        action.subtitle ?? stringActionDefault("TITLE", "subtitle")
     );
 
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "fadein")),
-        action.fadein ?? actionDefault<number>("TITLE", "fadein")
+        action.fadein ?? numberActionDefault("TITLE", "fadein")
     );
 
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "stay")),
-        action.stay ?? actionDefault<number>("TITLE", "stay")
+        action.stay ?? numberActionDefault("TITLE", "stay")
     );
 
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "fadeout")),
-        action.fadeout ?? actionDefault<number>("TITLE", "fadeout")
+        action.fadeout ?? numberActionDefault("TITLE", "fadeout")
     );
 }
 
@@ -269,11 +277,11 @@ export async function writeGiveItem(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("GIVE_ITEM", "allowMultiple")),
-        action.allowMultiple ?? actionDefault<boolean>("GIVE_ITEM", "allowMultiple")
+        action.allowMultiple ?? booleanActionDefault("GIVE_ITEM", "allowMultiple")
     );
 
     const slotLabel = getActionFieldLabel("GIVE_ITEM", "slot");
-    const slotValue = String(action.slot ?? actionDefault<string>("GIVE_ITEM", "slot"));
+    const slotValue = String(action.slot ?? stringActionDefault("GIVE_ITEM", "slot"));
     if (/^\d+$/.test(slotValue) || slotValue.indexOf("%") >= 0) {
         await openSubmenu(ctx, slotLabel);
         const manualSlot = await getSlotPaginate(ctx, "Manual Input");
@@ -287,7 +295,7 @@ export async function writeGiveItem(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("GIVE_ITEM", "replaceExisting")),
-        action.replaceExisting ?? actionDefault<boolean>("GIVE_ITEM", "replaceExisting")
+        action.replaceExisting ?? booleanActionDefault("GIVE_ITEM", "replaceExisting")
     );
 }
 
@@ -341,19 +349,19 @@ export async function writeApplyPotionEffect(
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "level")),
-        action.level ?? actionDefault<number>("APPLY_POTION_EFFECT", "level")
+        action.level ?? numberActionDefault("APPLY_POTION_EFFECT", "level")
     );
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "override")),
-        action.override ?? actionDefault<boolean>("APPLY_POTION_EFFECT", "override")
+        action.override ?? booleanActionDefault("APPLY_POTION_EFFECT", "override")
     );
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "showIcon")),
-        action.showIcon ?? actionDefault<boolean>("APPLY_POTION_EFFECT", "showIcon")
+        action.showIcon ?? booleanActionDefault("APPLY_POTION_EFFECT", "showIcon")
     );
 }
 
@@ -453,16 +461,14 @@ export async function writeChangeVar(
     ctx: TaskContext,
     action: ActionChangeVar
 ): Promise<void> {
-    if (action.holder) {
-        await setCycleValue(
-            ctx,
-            getActionFieldLabel("CHANGE_VAR", "holder"),
-            getActionFieldCycleOptions("CHANGE_VAR", "holder"),
-            action.holder.type
-        );
-        if (action.holder.type === "Team" && action.holder.team !== undefined) {
-            await setSelectValue(ctx, "Team", action.holder.team);
-        }
+    await setCycleValue(
+        ctx,
+        getActionFieldLabel("CHANGE_VAR", "holder"),
+        getActionFieldCycleOptions("CHANGE_VAR", "holder"),
+        action.holder.type
+    );
+    if (action.holder.type === "Team" && action.holder.team !== undefined) {
+        await setSelectValue(ctx, "Team", action.holder.team);
     }
 
     if (action.key) {
@@ -473,9 +479,7 @@ export async function writeChangeVar(
         );
     }
 
-    if (action.op) {
-        await setChangeVarOperation(ctx, action.op);
-    }
+    await setChangeVarOperation(ctx, action.op);
     if (action.op === "Unset") return;
 
     if (action.value) {
@@ -489,7 +493,7 @@ export async function writeChangeVar(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_VAR", "unset")),
-        action.unset ?? actionDefault<boolean>("CHANGE_VAR", "unset")
+        action.unset ?? booleanActionDefault("CHANGE_VAR", "unset")
     );
 }
 
@@ -506,7 +510,7 @@ export async function writeTeleport(
             getActionFieldLabel("TELEPORT", "preventTeleportInsideBlocks")
         ),
         action.preventTeleportInsideBlocks ??
-            actionDefault<boolean>("TELEPORT", "preventTeleportInsideBlocks")
+            booleanActionDefault("TELEPORT", "preventTeleportInsideBlocks")
     );
 }
 
@@ -546,13 +550,13 @@ export async function writePlaySound(
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("PLAY_SOUND", "volume")),
-        action.volume ?? actionDefault<number>("PLAY_SOUND", "volume")
+        action.volume ?? numberActionDefault("PLAY_SOUND", "volume")
     );
 
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("PLAY_SOUND", "pitch")),
-        action.pitch ?? actionDefault<number>("PLAY_SOUND", "pitch")
+        action.pitch ?? numberActionDefault("PLAY_SOUND", "pitch")
     );
 
     if (action.location !== undefined) {
@@ -639,7 +643,7 @@ export async function writeFunction(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("FUNCTION", "global")),
-        action.global ?? actionDefault<boolean>("FUNCTION", "global")
+        action.global ?? booleanActionDefault("FUNCTION", "global")
     );
 }
 
@@ -715,13 +719,13 @@ export async function writeDropItem(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "dropNaturally")),
-        action.dropNaturally ?? actionDefault<boolean>("DROP_ITEM", "dropNaturally")
+        action.dropNaturally ?? booleanActionDefault("DROP_ITEM", "dropNaturally")
     );
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "disableMerging")),
-        action.disableMerging ?? actionDefault<boolean>("DROP_ITEM", "disableMerging")
+        action.disableMerging ?? booleanActionDefault("DROP_ITEM", "disableMerging")
     );
 
     await setStringValue(
@@ -729,7 +733,7 @@ export async function writeDropItem(
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "despawnDurationTicks")),
         String(
             action.despawnDurationTicks ??
-                actionDefault<number>("DROP_ITEM", "despawnDurationTicks")
+                numberActionDefault("DROP_ITEM", "despawnDurationTicks")
         )
     );
 
@@ -738,21 +742,21 @@ export async function writeDropItem(
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "pickupDelayTicks")),
         String(
             action.pickupDelayTicks ??
-                actionDefault<number>("DROP_ITEM", "pickupDelayTicks")
+                numberActionDefault("DROP_ITEM", "pickupDelayTicks")
         )
     );
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "prioritizePlayer")),
-        action.prioritizePlayer ?? actionDefault<boolean>("DROP_ITEM", "prioritizePlayer")
+        action.prioritizePlayer ?? booleanActionDefault("DROP_ITEM", "prioritizePlayer")
     );
 
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "inventoryFallback")),
         action.inventoryFallback ??
-            actionDefault<boolean>("DROP_ITEM", "inventoryFallback")
+            booleanActionDefault("DROP_ITEM", "inventoryFallback")
     );
 }
 

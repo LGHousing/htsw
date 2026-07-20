@@ -62,7 +62,7 @@ export async function prereadImportableFunction(
     });
 
     const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
-    let actionsEditorOpened = false;
+    const navigation = { actionsEditorOpened: false };
 
     const actionsSync = await prepareActionListSync(ctx, {
         desired: importable.actions,
@@ -76,7 +76,7 @@ export async function prereadImportableFunction(
         },
         open: async () => {
             await ensureFunctionExists(ctx, importable.name);
-            actionsEditorOpened = true;
+            navigation.actionsEditorOpened = true;
             setup(`opened function ${importable.name}`);
         },
     });
@@ -148,7 +148,7 @@ export async function prereadImportableFunction(
 
     let settingsPlan: FunctionSettingsPlan | null = null;
     if (!settingsTrusted) {
-        if (actionsEditorOpened) {
+        if (navigation.actionsEditorOpened) {
             settingsPlan = await readFunctionSettingsPlanAfterActionEditor(
                 ctx,
                 importable

@@ -74,7 +74,7 @@ export function confirmRebind(fullPath: string, uuid: string | null): void {
         "Writes a houseUuid key into the file; entering",
         `${houseDisplayName(uuid)} then auto-selects it as destination.`,
     ];
-    if (rebinding && bound !== null) {
+    if (rebinding) {
         lines.unshift(`Currently bound to ${houseDisplayName(bound)}.`);
     }
     openConfirmPopover({

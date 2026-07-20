@@ -55,7 +55,7 @@ export type ActionReadContext = {
     readChildActions(
         prop: ChildActionListName,
         mode?: ActionListReadMode
-    ): Promise<Array<Observed<Action> | null>>;
+    ): Promise<Array<Observed | null>>;
     readConditions(prop: ChildConditionListName): Promise<Array<Condition | null>>;
     emitSnapshot(): void;
 };
@@ -114,13 +114,13 @@ export function createActionReadContext({
         async readChildActions(prop, mode = { kind: "full" }) {
             const path = ActionListPath.childOf(actionPath, prop);
             focusChildField(path);
-            const actions: Array<Observed<Action> | null> = [];
+            const actions: Array<Observed | null> = [];
             const entries = await readChildActions(ctx, mode, {
                 ...itemRead,
                 events,
                 listPath: path,
                 emitSnapshot,
-                ...(childListProgress?.(prop as ChildListName) ?? {}),
+                ...(childListProgress?.(prop) ?? {}),
             });
             for (const entry of entries) {
                 actions.push(entry.action);
@@ -133,7 +133,7 @@ export function createActionReadContext({
             const conditions: Array<Condition | null> = [];
             const entries = await readConditionList(ctx, {
                 ...itemRead,
-                ...(childListProgress?.(prop as ChildListName) ?? {}),
+                ...(childListProgress?.(prop) ?? {}),
             });
             for (const entry of entries) {
                 conditions.push(entry.condition);

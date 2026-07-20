@@ -60,7 +60,7 @@ function detectHousing(): void {
         return;
     }
     task.catch((err: unknown) => {
-        ChatLib.chat(`&c[htsw] Detect failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Detect failed: ${String(err)}`);
     });
 }
 
@@ -70,7 +70,7 @@ function listCachedHousingUuids(): string[] {
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
-        const root = Paths.get(String(IMPORT_CACHE_ROOT));
+        const root = Paths.get(IMPORT_CACHE_ROOT);
         if (!Files.exists(root) || !Files.isDirectory(root)) return [];
         const stream = Files.newDirectoryStream(root);
         const out: string[] = [];
@@ -79,11 +79,17 @@ function listCachedHousingUuids(): string[] {
             while (it.hasNext()) {
                 const entry = it.next();
                 if (!Files.isDirectory(entry)) continue;
-                const name = String(entry.getFileName().toString());
+                const fileName = entry.getFileName();
+                if (fileName === null) continue;
+                const name = String(fileName.toString());
                 out.push(name);
             }
         } finally {
-            try { stream.close(); } catch (_e) { /* ignore */ }
+            try {
+                stream.close();
+            } catch (_e) {
+                /* ignore */
+            }
         }
         return out;
     } catch (_e) {
@@ -138,7 +144,9 @@ function deleteHouse(uuid: string): void {
     if (!aliasCleared) failures.push("the alias");
     if (!trustCleared) failures.push("the trust setting");
     if (failures.length > 0) {
-        ChatLib.chat(`&c[htsw] Could not fully remove ${label}. Still present: ${failures.join(", ")}.`);
+        ChatLib.chat(
+            `&c[htsw] Could not fully remove ${label}. Still present: ${failures.join(", ")}.`
+        );
     } else if (cacheResult === "deleted") {
         ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
     } else {
@@ -203,7 +211,10 @@ function houseDropdownRow(uuid: string): Element {
                     color,
                     tooltip: `Bound: ${shortPath(bound)}`,
                     tooltipColor: color,
-                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                    style: {
+                        width: { kind: "px", value: 10 },
+                        height: { kind: "px", value: 10 },
+                    },
                 });
             })(),
             Container({
@@ -223,7 +234,10 @@ function houseDropdownRow(uuid: string): Element {
                     Icon({
                         name: Icons.trash2,
                         color: ACCENT_DANGER,
-                        style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+                        style: {
+                            width: { kind: "px", value: 12 },
+                            height: { kind: "px", value: 12 },
+                        },
                         tooltip: "Remove this house",
                         tooltipColor: ACCENT_DANGER,
                     }),
@@ -252,7 +266,10 @@ function openHouseDropdown(rect: Rect): void {
                   children: [
                       Scroll({
                           id: "houses-house-dropdown-scroll",
-                          style: { gap: DROPDOWN_GAP, height: { kind: "px", value: listH } },
+                          style: {
+                              gap: DROPDOWN_GAP,
+                              height: { kind: "px", value: listH },
+                          },
                           children: houses.map(houseDropdownRow),
                       }),
                   ],
@@ -299,7 +316,11 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
         children: [
             Icon({
                 name: trusted ? Icons.shieldCheck : Icons.shield,
-                color: trusted ? TRUST_ICON_ON : enabled ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
+                color: trusted
+                    ? TRUST_ICON_ON
+                    : enabled
+                      ? COLOR_TEXT_DIM
+                      : COLOR_TEXT_FAINT,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -329,7 +350,10 @@ function houseSelector(viewed: string | null): Element {
             if (info.button === 1) {
                 if (viewed !== null) {
                     const actions = [
-                        { label: "Set alias", onClick: () => openAliasPopover(rect, viewed) },
+                        {
+                            label: "Set alias",
+                            onClick: () => openAliasPopover(rect, viewed),
+                        },
                     ];
                     const exportProject = getExportImportJsonPath();
                     if (exportProject.trim() !== "") {
@@ -341,7 +365,10 @@ function houseSelector(viewed: string | null): Element {
                     openMenu(info.x, info.y, [
                         ...actions,
                         { kind: "separator" },
-                        { label: "Delete tracked house", onClick: () => confirmDeleteHouse(viewed) },
+                        {
+                            label: "Delete tracked house",
+                            onClick: () => confirmDeleteHouse(viewed),
+                        },
                     ]);
                 }
                 return;
@@ -379,7 +406,10 @@ function houseActionButton(
         children: [
             Icon({
                 name: icon,
-                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
             }),
         ],
         style: {
@@ -422,7 +452,6 @@ function housePickerRow(): Element {
         },
     });
 }
-
 
 function emptyState(): Element {
     return Col({

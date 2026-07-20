@@ -188,7 +188,6 @@ function labelPrefixMatch(label: string): (slot: ItemSlot) => boolean {
     const prefix = `${label}: `;
     return (slot) => {
         const item = slot.getItem();
-        if (item === null || item === undefined) return false;
         const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
         return name.indexOf(prefix) === 0;
     };
@@ -239,7 +238,6 @@ export async function readGroupPermissionMenu(
         if (slots === null) return;
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
-            if (item === null || item === undefined) continue;
             const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
             // Cycle labels are checked before the boolean parse: a chat speed of
             // "Off"/"On" makes the name "Chat: Off"/"Chat: On", which would

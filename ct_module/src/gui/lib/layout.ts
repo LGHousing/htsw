@@ -1,6 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Extractable, extract } from "./extractable";
+import { getMinecraft } from "./java";
 
 type PaddingSide = "all" | "x" | "y" | "top" | "right" | "bottom" | "left";
 
@@ -220,7 +221,8 @@ const textWidthCache = new Map<string, number>();
 function measureStringWidth(text: string): number {
     const cached = textWidthCache.get(text);
     if (cached !== undefined) return cached;
-    const w = Number(Client.getMinecraft().field_71466_p.func_78256_a(text));
+    const measured: unknown = getMinecraft().field_71466_p.func_78256_a(text);
+    const w = Number(measured);
     if (textWidthCache.size >= 8192) textWidthCache.clear();
     textWidthCache.set(text, w);
     return w;
@@ -340,11 +342,11 @@ type ScrollState = {
      */
     userOverridden: boolean;
 };
-const scrollStates: { [id: string]: ScrollState } = {};
+const scrollStates: { [id: string]: ScrollState | undefined } = {};
 
 export function getScrollState(id: string): ScrollState {
     let s = scrollStates[id];
-    if (!s) {
+    if (s === undefined) {
         s = {
             offset: 0,
             target: 0,
@@ -396,6 +398,7 @@ export function anyScrollAnimating(): boolean {
     const now = Date.now();
     for (const id in scrollStates) {
         const s = scrollStates[id];
+        if (s === undefined) continue;
         if (now - s.animAt > 80) continue;
         const d = s.target - s.offset;
         if (d > 0.5 || d < -0.5) return true;
@@ -526,7 +529,7 @@ function layoutContainer(
         }
         if (lastGrowIdx >= 0) {
             mainSizes[lastGrowIdx] =
-                (mainSizes[lastGrowIdx] as number) + (leftover - assigned);
+                (mainSizes[lastGrowIdx] ?? 0) + (leftover - assigned);
         }
     } else {
         for (let i = 0; i < n; i++) if (mainSizes[i] === null) mainSizes[i] = 0;
@@ -538,7 +541,7 @@ function layoutContainer(
     let cursor = isRow ? innerX : innerY;
     if (growTotal === 0 && justify !== "start" && leftover > 0) {
         if (justify === "center") cursor += Math.floor(leftover / 2);
-        else if (justify === "end") cursor += leftover;
+        else cursor += leftover;
     }
     for (let i = 0; i < n; i++) {
         const ch = children[i];

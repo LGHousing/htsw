@@ -1,3 +1,4 @@
+import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
@@ -37,7 +38,7 @@ import type { ActionListApplyResult, ApplyChildActionList } from "./types";
 
 type LiveActionListEntry = {
     entryId: number;
-    action: Observed<Action> | null;
+    action: Observed | null;
 };
 
 type ErrorWithActionListApplyResult = {
@@ -64,7 +65,11 @@ function throwWithActionListApplyResult(
     error: unknown,
     result: ActionListApplyResult
 ): never {
-    if (error !== null && (typeof error === "object" || typeof error === "function")) {
+    if (error instanceof Error) {
+        (error as ErrorWithActionListApplyResult).__htswActionListApplyResult = result;
+        throw error;
+    }
+    if (error instanceof Diagnostic) {
         (error as ErrorWithActionListApplyResult).__htswActionListApplyResult = result;
         throw error;
     }
@@ -74,7 +79,11 @@ function throwWithActionListApplyResult(
 }
 
 function throwWithoutActionListApplyResult(error: unknown): never {
-    if (error !== null && (typeof error === "object" || typeof error === "function")) {
+    if (error instanceof Error) {
+        delete (error as ErrorWithActionListApplyResult).__htswActionListApplyResult;
+        throw error;
+    }
+    if (error instanceof Diagnostic) {
         delete (error as ErrorWithActionListApplyResult).__htswActionListApplyResult;
         throw error;
     }
@@ -229,10 +238,10 @@ export class ActionListApplyRun {
             );
 
             if (op.noteOnly) {
-                let snapshotUpdated = false;
+                const snapshot = { updated: false };
                 const updateSnapshot = (): void => {
                     this.updateCurrentAction(currentIndex, op.desired);
-                    snapshotUpdated = true;
+                    snapshot.updated = true;
                 };
                 this.markSnapshotUnsafe();
                 await setListItemNote(this.ctx, actionSlot, op.desired.note, {
@@ -241,7 +250,7 @@ export class ActionListApplyRun {
                         this.markSnapshotSafe();
                     },
                 });
-                if (!snapshotUpdated) {
+                if (!snapshot.updated) {
                     updateSnapshot();
                     this.markSnapshotSafe();
                 }
@@ -252,10 +261,10 @@ export class ActionListApplyRun {
             const spec = getActionIo(op.desired.type);
             const actionWithCurrentNote = (): Action =>
                 actionWithNote(op.desired, op.baselineAction.note);
-            let desiredSnapshotUpdated = false;
+            const desiredSnapshot = { updated: false };
             const updateEditSnapshot = (action: Action, isDesired: boolean): void => {
                 this.updateCurrentAction(currentIndex, action);
-                if (isDesired) desiredSnapshotUpdated = true;
+                if (isDesired) desiredSnapshot.updated = true;
             };
             if (spec.write) {
                 actionSlot.click();
@@ -281,7 +290,7 @@ export class ActionListApplyRun {
                     this.markSnapshotSafe();
                 },
             });
-            if (!desiredSnapshotUpdated) {
+            if (!desiredSnapshot.updated) {
                 updateEditSnapshot(op.desired, true);
                 this.markSnapshotSafe();
             }
@@ -316,11 +325,11 @@ export class ActionListApplyRun {
 
             const actionToImport = actionWithNote(op.desired, undefined);
 
-            let actionAdded = false;
+            const added = { value: false };
             const updateAddedSnapshot = (): void => {
-                if (actionAdded) return;
+                if (added.value) return;
                 this.appendCurrentAction(actionToImport);
-                actionAdded = true;
+                added.value = true;
             };
             const apply = this.writerHooksFor(op, applyChildActionList);
             this.markSnapshotUnsafe();
@@ -330,7 +339,7 @@ export class ActionListApplyRun {
                     this.markSnapshotSafe();
                 },
             });
-            if (!actionAdded) {
+            if (!added.value) {
                 updateAddedSnapshot();
                 this.markSnapshotSafe();
             }
@@ -353,10 +362,10 @@ export class ActionListApplyRun {
                     currentLength,
                     ACTION_LIST_CONFIG
                 );
-                let noteSnapshotUpdated = false;
+                const noteSnapshot = { updated: false };
                 const updateNoteSnapshot = (): void => {
                     this.updateCurrentAction(op.toIndex, op.desired);
-                    noteSnapshotUpdated = true;
+                    noteSnapshot.updated = true;
                 };
                 this.markSnapshotUnsafe();
                 await setListItemNote(this.ctx, addedSlot, op.desired.note, {
@@ -365,7 +374,7 @@ export class ActionListApplyRun {
                         this.markSnapshotSafe();
                     },
                 });
-                if (!noteSnapshotUpdated) {
+                if (!noteSnapshot.updated) {
                     updateNoteSnapshot();
                     this.markSnapshotSafe();
                 }
@@ -407,7 +416,7 @@ export class ActionListApplyRun {
         });
     }
 
-    private appendCurrentAction(action: Observed<Action>): number {
+    private appendCurrentAction(action: Observed): number {
         const index = this.current.length;
         this.current.push({
             entryId: this.nextEntryId++,
@@ -417,7 +426,7 @@ export class ActionListApplyRun {
         return index;
     }
 
-    private updateCurrentAction(index: number, action: Observed<Action>): void {
+    private updateCurrentAction(index: number, action: Observed): void {
         this.current[index].action = action;
         this.markSnapshotSafe();
     }

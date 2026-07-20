@@ -1,5 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import { runtimeString } from "../../utils/java";
+
 export type TimedOperationKind =
     | "commandMenuWait"
     | "commandMessageWait"
@@ -130,7 +132,7 @@ export function timed<T>(
         // otherwise-failed operation isn't a representative duration — recording
         // its (often multi-second) elapsed time poisons the EWMA cost model and
         // wrecks the ETA. Only successful completions calibrate cost.
-        (e): T => { throw e; }
+        (e: unknown): T => { throw e; }
     ) as Promise<T> & { cleanupWaiter?: () => void };
     // Forward cleanupWaiter from the inner waiter (if present) so a racing
     // caller can cancel the underlying waitFor container before it leaks.
@@ -185,7 +187,7 @@ function loadPersistedStats(): void {
     loadedPersistedStats = true;
     if (!FileLib.exists(PERSIST_PATH)) return;
     try {
-        const raw = String(FileLib.read(PERSIST_PATH) ?? "");
+        const raw = runtimeString(FileLib.read(PERSIST_PATH));
         const parsed = JSON.parse(raw) as {
             stats?: { [kind: string]: PersistedEntry | undefined };
         };

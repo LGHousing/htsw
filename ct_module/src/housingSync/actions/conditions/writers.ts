@@ -44,8 +44,12 @@ import {
 import { setItemValue } from "../../items/injectItem";
 import { resolveImportableItem } from "../../items/resolveItem";
 
-function conditionDefault<T>(type: Condition["type"], prop: string): T {
-    return getConditionFieldDefault(type, prop) as T;
+function booleanConditionDefault(type: Condition["type"], prop: string): boolean {
+    return getConditionFieldDefault(type, prop) as boolean;
+}
+
+function stringConditionDefault(type: Condition["type"], prop: string): string {
+    return getConditionFieldDefault(type, prop) as string;
 }
 
 export async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
@@ -108,7 +112,7 @@ export async function writeRequireGroup(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
-        condition.includeHigherGroups ?? conditionDefault<boolean>("REQUIRE_GROUP", "includeHigherGroups")
+        condition.includeHigherGroups ?? booleanConditionDefault("REQUIRE_GROUP", "includeHigherGroups")
     );
 }
 
@@ -155,7 +159,7 @@ export async function writeCompareVar(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
-        condition.fallback ?? conditionDefault<string>("COMPARE_VAR", "fallback")
+        condition.fallback ?? stringConditionDefault("COMPARE_VAR", "fallback")
     );
 }
 
@@ -203,20 +207,20 @@ export async function writeRequireItem(
         ctx,
         getConditionFieldLabel("REQUIRE_ITEM", "whatToCheck"),
         getConditionFieldCycleOptions("REQUIRE_ITEM", "whatToCheck"),
-        condition.whatToCheck ?? conditionDefault<string>("REQUIRE_ITEM", "whatToCheck")
+        condition.whatToCheck ?? stringConditionDefault("REQUIRE_ITEM", "whatToCheck")
     );
 
     await setSelectValue(
         ctx,
         getConditionFieldLabel("REQUIRE_ITEM", "whereToCheck"),
-        condition.whereToCheck ?? conditionDefault<string>("REQUIRE_ITEM", "whereToCheck")
+        condition.whereToCheck ?? stringConditionDefault("REQUIRE_ITEM", "whereToCheck")
     );
 
     await setCycleValue(
         ctx,
         getConditionFieldLabel("REQUIRE_ITEM", "amount"),
         getConditionFieldCycleOptions("REQUIRE_ITEM", "amount"),
-        condition.amount ?? conditionDefault<string>("REQUIRE_ITEM", "amount")
+        condition.amount ?? stringConditionDefault("REQUIRE_ITEM", "amount")
     );
 }
 

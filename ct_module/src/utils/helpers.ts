@@ -1,4 +1,5 @@
 import { helpers } from "htsw";
+import { getMinecraft } from "./java";
 
 export function removedFormatting(str: string): string {
     return helpers.stripFormatting(str);
@@ -12,7 +13,7 @@ export function chatWidth(string: string, removeFormatting: boolean = true): num
     const raw = removeFormatting
         ? ChatLib.removeFormatting(ChatLib.replaceFormatting(string))
         : string;
-    return Client.getMinecraft().field_71466_p.func_78256_a(raw);
+    return getMinecraft().field_71466_p.func_78256_a(raw);
 }
 
 export function spaceWidth() {
@@ -52,7 +53,7 @@ export function cyrb53(str: string, seed: number = 0) {
 }
 
 export function unique(values: readonly string[]): string[] {
-    const seen: Record<string, boolean> = Object.create(null);
+    const seen = Object.create(null) as unknown as Record<string, boolean>;
     const result: string[] = [];
     for (const value of values) {
         if (seen[value]) continue;

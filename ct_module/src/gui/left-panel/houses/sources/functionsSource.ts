@@ -44,7 +44,13 @@ export function scanHouseFunctions(): void {
                 const icon = functionIconFromSnapshot(entries[i].icon);
                 if (icon !== undefined) icons.set(entries[i].name, icon);
             }
-            recordHouseScan(uuid, "FUNCTION", entries.map((e) => e.name), undefined, icons);
+            recordHouseScan(
+                uuid,
+                "FUNCTION",
+                entries.map((e) => e.name),
+                undefined,
+                icons
+            );
             markGuiDirty();
             showToast(
                 `Scanned ${entries.length} function${entries.length === 1 ? "" : "s"}`,
@@ -54,14 +60,17 @@ export function scanHouseFunctions(): void {
             scanInFlight = false;
         }
     }).catch((err: unknown) => {
-        showToast(`Function scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Function scan failed: ${err}`);
+        showToast(`Function scan failed: ${String(err)}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] Function scan failed: ${String(err)}`);
     });
 }
 
 // Liveness: Hypixel announces create/delete/rename in chat. Only the house we're
 // standing in can change, so every mutation targets the current UUID.
-register("chat", (event: any) => {
+register("chat", (...args: (string | ForgeClientChatReceivedEvent)[]) => {
+    if (args.length === 0) return;
+    const event = args[args.length - 1];
+    if (typeof event === "string") return;
     const msg = ChatLib.getChatMessage(event, false);
     if (typeof msg !== "string") return;
     const uuid = getHousingUuid();

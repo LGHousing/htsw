@@ -55,7 +55,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
     if (raw === null) return null;
     let parsed: unknown;
     try {
-        parsed = JSON.parse(String(raw));
+        parsed = JSON.parse(raw);
     } catch (_e) {
         return null;
     }

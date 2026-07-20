@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { ensureParentDirs } from "../utils/filesystem";
+import { javaType, runtimeString } from "../utils/java";
 
 export type JsonlTrace = {
     start(options?: { clear?: boolean }): string;
@@ -70,14 +71,14 @@ export function createJsonlTrace(path: string): JsonlTrace {
 }
 
 function appendLine(path: string, line: string): void {
-    const Files = Java.type("java.nio.file.Files");
-    const Paths = Java.type("java.nio.file.Paths");
-    const StandardOpenOption = Java.type("java.nio.file.StandardOpenOption");
-    const StandardCharsets = Java.type("java.nio.charset.StandardCharsets");
-    const JString = Java.type("java.lang.String");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const StandardOpenOption = javaType("java.nio.file.StandardOpenOption");
+    const StandardCharsets = javaType("java.nio.charset.StandardCharsets");
+    const JString = javaType("java.lang.String");
     Files.write(
-        Paths.get(String(path)),
-        new JString(String(line)).getBytes(StandardCharsets.UTF_8),
+        Paths.get(runtimeString(path)),
+        new JString(runtimeString(line)).getBytes(StandardCharsets.UTF_8),
         StandardOpenOption.CREATE,
         StandardOpenOption.APPEND
     );

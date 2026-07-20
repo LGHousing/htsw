@@ -154,7 +154,7 @@ export function commandExport(args: string[]): void {
             y = parseIntegerToken(tokens[3], "y");
             z = parseIntegerToken(tokens[4], "z");
         } catch (error) {
-            ChatLib.chat(`&c${error}`);
+            ChatLib.chat(`&c${String(error)}`);
             ChatLib.chat("&cUsage: /export npc <name> <x> <y> <z> [path]");
             return;
         }

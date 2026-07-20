@@ -18,7 +18,7 @@ const canonicalMemo = new WeakMap<object, string>();
 function slotCanonical(slot: MenuSlot): string {
     const hit = canonicalMemo.get(slot);
     if (hit !== undefined) return hit;
-    const v = menuSlotCanonical(slot as unknown as Record<string, unknown>);
+    const v = menuSlotCanonical(slot);
     canonicalMemo.set(slot, v);
     return v;
 }

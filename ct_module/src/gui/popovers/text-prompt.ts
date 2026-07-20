@@ -47,7 +47,7 @@ function submit(): void {
         try {
             opts.onSubmit(trimmed);
         } catch (err) {
-            ChatLib.chat(`&c[htsw] ${err}`);
+            ChatLib.chat(`&c[htsw] ${String(err)}`);
         }
     }
 }
@@ -64,7 +64,11 @@ function popoverContent(opts: TextPromptOptions): Element {
     return Col({
         style: { padding: 6, gap: 4 },
         children: [
-            Text({ text: opts.title, truncate: true, style: { width: { kind: "grow" } } }),
+            Text({
+                text: opts.title,
+                truncate: true,
+                style: { width: { kind: "grow" } },
+            }),
             ...hintLines,
             Input({
                 id: "text-prompt-input",
@@ -85,12 +89,18 @@ function popoverContent(opts: TextPromptOptions): Element {
                 children: [
                     Button({
                         text: opts.submitLabel ?? "OK",
-                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                        },
                         onClick: () => submit(),
                     }),
                     Button({
                         text: "Cancel",
-                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                        },
                         onClick: () => {
                             draft = "";
                             options = null;

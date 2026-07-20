@@ -82,7 +82,7 @@ export function mouseIsOverHoverCard(mouseX: number, mouseY: number): boolean {
     return isHoverCardVisible() && lastRect !== null && pointInRect(lastRect, mouseX, mouseY);
 }
 
-function cardRect(content: HoverCardContent): Rect {
+function cardRect(anchor: Rect, content: HoverCardContent): Rect {
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
     const maxWidth = Math.min(MAX_W, Math.floor(screenW * MAX_W_SCREEN_RATIO));
@@ -93,7 +93,7 @@ function cardRect(content: HoverCardContent): Rect {
         maxHeight,
         Math.max(LINE_H + PAD * 2 + TEXT_TOP_INSET, content.height * LINE_H + PAD * 2 + TEXT_TOP_INSET)
     );
-    return placeAnchoredRect(card!.anchor, width, height, screenW, screenH, "left");
+    return placeAnchoredRect(anchor, width, height, screenW, screenH, "left");
 }
 
 function maxScroll(rect: Rect, content: HoverCardContent): number {
@@ -118,7 +118,7 @@ export function drawHoverCard(mouseX: number, mouseY: number): void {
     }
     if (now - card.offeredAt < OPEN_DELAY_MS) return;
 
-    const rect = cardRect(card.content);
+    const rect = cardRect(card.anchor, card.content);
     lastRect = rect;
     card.scrollOffset = Math.min(card.scrollOffset, maxScroll(rect, card.content));
     Renderer.drawRect(COLOR_PANEL_BORDER, rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2);

@@ -20,9 +20,7 @@ import { readImportableCache } from "../../importCache/cache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { npcPosIdentity } from "../identity";
-import {
-    createExportItemCaptureRegistry,
-} from "../exportContext";
+import { createExportItemCaptureRegistry } from "../exportContext";
 import {
     createNpcLookupCache,
     findNpcByPos,
@@ -116,7 +114,7 @@ async function exportAllNpcsInner(
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
-            ctx.displayMessage(`&7[export] &eInventory restore failed: ${error}`);
+            ctx.displayMessage(`&7[export] &eInventory restore failed: ${String(error)}`);
         }
         return { total: 0, succeeded: 0, failed: 0 };
     }
@@ -154,6 +152,7 @@ async function exportAllNpcsInner(
                 ctx.displayMessage(
                     `&7[${i + 1}/${exportEntries.length}] &f${verb} NPC '${label}'`
                 );
+                const itemProgress = sink?.itemProgress?.bind(sink);
 
                 await exportNpcWithSharedState(
                     ctx,
@@ -166,9 +165,9 @@ async function exportAllNpcsInner(
                         rootDir,
                         readOnly: options.readOnly,
                         onReadProgress:
-                            sink?.itemProgress === undefined
+                            itemProgress === undefined
                                 ? undefined
-                                : (payload) => sink.itemProgress!(i, payload),
+                                : (payload) => itemProgress(i, payload),
                     },
                     { itemCaptures, inventorySnapshot, npcLookup }
                 );
@@ -191,7 +190,9 @@ async function exportAllNpcsInner(
                 }
                 failed++;
                 sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(`&c[export-all] failed on NPC '${label}': ${error}`);
+                ctx.displayMessage(
+                    `&c[export-all] failed on NPC '${label}': ${String(error)}`
+                );
             }
         }
     } finally {
@@ -212,7 +213,7 @@ async function exportAllNpcsInner(
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
             } catch (error) {
                 ctx.displayMessage(
-                    `&7[export] &eInventory restore failed (export results still written): ${error}`
+                    `&7[export] &eInventory restore failed (export results still written): ${String(error)}`
                 );
             }
         }

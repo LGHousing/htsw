@@ -20,6 +20,13 @@ import { setFocusedInput } from "../lib/focus";
 import { getChatKeyName } from "../keybinds";
 import { isSimulatorActive } from "../../simulator/session";
 import { getChatLines } from "./mcChat";
+import {
+    getMinecraft,
+    javaListAt,
+    javaListLength,
+    runtimeString,
+    type RuntimeString,
+} from "../lib/java";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 const CHAT_SCROLL_ID = "htsw-chat-scroll";
@@ -70,7 +77,7 @@ function submitChat(): void {
             ChatLib.say(text);
         }
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Send failed: ${err}`);
+        ChatLib.chat(`&c[htsw] Send failed: ${String(err)}`);
     }
     chatText = "";
     setFocusedInput(null);
@@ -94,35 +101,11 @@ function stickScrollbackToBottom(): void {
     setScrollOffset(CHAT_SCROLL_ID, maxOffset);
 }
 
-function javaListLength(v: any): number {
-    try {
-        if (typeof v.size === "function") return Number(v.size());
-    } catch (_e) {
-    }
-    try {
-        if (typeof v.length === "number") return Number(v.length);
-    } catch (_e) {
-    }
-    return -1;
-}
-
-function javaListAt(v: any, i: number): any {
-    try {
-        if (typeof v.get === "function") return v.get(i);
-    } catch (_e) {
-    }
-    try {
-        return v[i];
-    } catch (_e) {
-        return null;
-    }
-}
-
 function wrapFormattedLine(line: string, maxWidth: number): string[] {
     if (maxWidth <= 0) return [line];
-    let wrapped: any;
+    let wrapped: unknown;
     try {
-        const font = Client.getMinecraft().field_71466_p as any;
+        const font = getMinecraft().field_71466_p;
         wrapped = font.func_78271_c(line, Math.floor(maxWidth));
     } catch (_e) {
         return [line];
@@ -131,8 +114,8 @@ function wrapFormattedLine(line: string, maxWidth: number): string[] {
     if (n <= 0) return [line];
     const out: string[] = [];
     for (let i = 0; i < n; i++) {
-        const part = javaListAt(wrapped, i);
-        if (part !== null && part !== undefined) out.push(String(part));
+        const part = javaListAt(wrapped, i) as RuntimeString | null | undefined;
+        if (part !== null && part !== undefined) out.push(runtimeString(part));
     }
     return out.length === 0 ? [line] : out;
 }

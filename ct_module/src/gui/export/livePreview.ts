@@ -29,10 +29,12 @@ export function createExportLivePreview(
 ): ExportLivePreview {
     let paths: string[] = [];
     let activeIndex: number | null = null;
-    const latestSnapshots: Array<readonly ObservedNode[] | null> = [];
+    const latestSnapshots: Array<readonly ObservedNode[] | null | undefined> = [];
 
-    const activePath = (): string | null =>
-        activeIndex === null ? null : (paths[activeIndex] ?? null);
+    const activePath = (): string | null => {
+        if (activeIndex === null || activeIndex < 0 || activeIndex >= paths.length) return null;
+        return paths[activeIndex];
+    };
 
     const events: SyncEventHandler = {
         emit(event) {
@@ -72,8 +74,8 @@ export function createExportLivePreview(
             }
         },
         activate(index, reset) {
+            if (index < 0 || index >= paths.length) return;
             const path = paths[index];
-            if (path === undefined) return;
             activeIndex = index;
             if (reset) {
                 latestSnapshots[index] = null;
@@ -83,8 +85,8 @@ export function createExportLivePreview(
             setActiveTaskPath(path);
         },
         finish(index) {
+            if (index < 0 || index >= paths.length) return;
             const path = paths[index];
-            if (path === undefined) return;
             const snapshot = latestSnapshots[index];
             if (snapshot !== null && snapshot !== undefined) {
                 setObservedTopLevel(path, snapshot, { force: true });

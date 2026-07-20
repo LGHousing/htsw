@@ -84,7 +84,6 @@ export async function listAllMenuNames(ctx: TaskContext): Promise<string[]> {
             for (let i = 0; i < slots.length; i++) {
                 if (isEmptyPaginatedPlaceholder(slots[i], MENU_LIST_CONFIG)) continue;
                 const item = slots[i].getItem();
-                if (item === null || item === undefined) continue;
                 const extracted = extractMenuNameFromSlot(
                     removedFormatting(item.getName())
                 );

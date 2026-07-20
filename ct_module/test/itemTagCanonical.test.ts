@@ -145,7 +145,7 @@ describe("canonicalItemTag", () => {
                 }),
             }),
         });
-        const snapshot = JSON.parse(JSON.stringify(withBlank));
+        const snapshot = JSON.parse(JSON.stringify(withBlank)) as TagLike;
         expect(canonicalItemTag(withBlank)).toEqual(canonicalItemTag(houseForm));
         expect(withBlank).toEqual(snapshot);
     });

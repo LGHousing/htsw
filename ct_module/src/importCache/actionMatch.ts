@@ -11,13 +11,13 @@ export function matchByHash(
     cacheHashes: readonly string[] | undefined
 ): (number | null)[] {
     const n = sourceHashes.length;
-    const result: (number | null)[] = new Array(n);
+    const result = new Array<number | null>(n);
     for (let i = 0; i < n; i++) result[i] = null;
     if (cacheHashes === undefined || cacheHashes.length === 0) return result;
     const m = cacheHashes.length;
 
     const dp: number[][] = [];
-    for (let i = 0; i <= n; i++) dp.push(new Array(m + 1).fill(0));
+    for (let i = 0; i <= n; i++) dp.push(new Array<number>(m + 1).fill(0));
     for (let i = 1; i <= n; i++) {
         for (let j = 1; j <= m; j++) {
             dp[i][j] =

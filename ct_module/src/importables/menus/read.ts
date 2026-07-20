@@ -96,7 +96,6 @@ function snapshotMenuSlots(
         if (slotId >= menuSlotCount) continue;
 
         const item = itemSlot.getItem();
-        if (item === null || item === undefined) continue;
         if (isEmptySlotFiller(item)) continue;
 
         // Build SNBT from the item's Tag (not getRawNBT) so it's valid htsw

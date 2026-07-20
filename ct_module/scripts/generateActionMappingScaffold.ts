@@ -15,6 +15,10 @@ type ExistingLoreField = {
     kind: string;
 };
 
+type ExistingLoreFields = Partial<
+    Record<string, Partial<Record<string, ExistingLoreField>>>
+>;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
@@ -71,7 +75,9 @@ const ACTION_TYPE_ORDER_INDEX = new Map<string, number>(
     ACTION_TYPE_ORDER.map((type, index) => [type, index])
 );
 
-const DEFAULT_ACTION_LORE_FIELD_LABELS: Record<string, Record<string, string>> = {
+const DEFAULT_ACTION_LORE_FIELD_LABELS: Partial<
+    Record<string, Partial<Record<string, string>>>
+> = {
     DROP_ITEM: {
         itemName: "Item",
         location: "Location",
@@ -199,7 +205,7 @@ function parseExistingActionMappingEntries(source: string): Record<string, strin
 
     for (const match of source.matchAll(entryRegex)) {
         const [raw, type] = match;
-        const openBraceIndex = (match.index ?? 0) + raw.lastIndexOf("{");
+        const openBraceIndex = match.index + raw.lastIndexOf("{");
         const closeBraceIndex = findMatchingBrace(source, openBraceIndex);
         if (closeBraceIndex === -1) {
             continue;
@@ -227,8 +233,8 @@ function parseExistingActionMappingDisplayNames(source: string): Record<string, 
 
 function parseExistingActionMappingLoreFields(
     source: string
-): Record<string, Record<string, ExistingLoreField>> {
-    const mappings: Record<string, Record<string, ExistingLoreField>> = {};
+): ExistingLoreFields {
+    const mappings: ExistingLoreFields = {};
     const entries = parseExistingActionMappingEntries(source);
 
     for (const type in entries) {
@@ -250,7 +256,7 @@ function parseExistingActionMappingLoreFields(
         const fieldRegex = /^\s*("[^"]+"|[A-Za-z][A-Za-z0-9 ]*):\s*\{/gm;
         for (const fieldMatch of loreFieldsBlock.matchAll(fieldRegex)) {
             const [raw, rawLabel] = fieldMatch;
-            const fieldOpenBraceIndex = (fieldMatch.index ?? 0) + raw.lastIndexOf("{");
+            const fieldOpenBraceIndex = fieldMatch.index + raw.lastIndexOf("{");
             const fieldCloseBraceIndex = findMatchingBrace(
                 loreFieldsBlock,
                 fieldOpenBraceIndex
@@ -282,7 +288,7 @@ function parseExistingActionMappingLoreFields(
 function parseActionTypeDefs(
     source: string,
     actionNames: Record<string, string>,
-    existingLoreFields: Record<string, Record<string, ExistingLoreField>>
+    existingLoreFields: ExistingLoreFields
 ): ActionTypeDef[] {
     const defs: ActionTypeDef[] = [];
     const typeBlockRegex = /export type (Action\w+) = \{([\s\S]*?)\n\};/g;
@@ -333,7 +339,7 @@ function sortActionTypeDefs(defs: ActionTypeDef[]): ActionTypeDef[] {
 
 function renderMappingEntry(
     def: ActionTypeDef,
-    existingLoreFields: Record<string, Record<string, ExistingLoreField>>
+    existingLoreFields: ExistingLoreFields
 ): string {
     const fieldLines = def.fields.map((field) => {
         const existing = existingLoreFields[def.type]?.[field.name];

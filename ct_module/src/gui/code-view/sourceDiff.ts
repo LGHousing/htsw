@@ -213,10 +213,7 @@ function computeFor(
         ghostsBeforeLine: new Map(),
         ghostsAtEnd: [],
     };
-    const changedItems = changedItemsByAction(
-        match.importable,
-        cache.itemDependencies
-    );
+    const changedItems = changedItemsByAction(match.importable, cache.itemDependencies);
     walk(
         out,
         cachedPrefix,
@@ -239,10 +236,10 @@ function changedItemsByAction(
     const dependencies = itemDependencyIndexFor(importable);
     if (dependencies === undefined) return result;
     const invalidations = dependencies.invalidationsFor(importable, cached);
-    visitItemReferences(importable, use => {
+    visitItemReferences(importable, (use) => {
         if (!invalidations.isFieldInvalidated(use.owner, use.property)) return;
+        if (use.actionAncestors.length === 0) return;
         const action = use.actionAncestors[use.actionAncestors.length - 1];
-        if (action === undefined) return;
         result.add(action);
     });
     return result;
@@ -351,7 +348,7 @@ function walk(
     sourceListPath: ActionListPath | undefined,
     items: readonly Action[],
     cachedItems: readonly Action[],
-    lists: { [k: string]: string[] },
+    lists: { [k: string]: string[] | undefined },
     sourceFile: ReturnType<typeof parseHtslFile>,
     changedItemsByAction: WeakSet<Action>
 ): void {
@@ -503,7 +500,7 @@ function addDeletedGhosts(
     matched: readonly (number | null)[],
     sourceFile: ReturnType<typeof parseHtslFile>
 ): void {
-    const used: boolean[] = new Array(cachedItems.length).fill(false);
+    const used = new Array<boolean>(cachedItems.length).fill(false);
     for (let i = 0; i < matched.length; i++) {
         const cachedIndex = matched[i];
         if (cachedIndex !== null) used[cachedIndex] = true;

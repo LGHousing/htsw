@@ -6,8 +6,79 @@ import { debugLog, debugLogError, flushGuiDebug } from "../gui/lib/debugLog";
 import { TaskManager } from "../tasks/manager";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
 
-// Rhino's bare package global (see images.ts for the same pattern).
-declare const java: any;
+type RhinoString = string | { toString(): string };
+
+interface RhinoAtomicBoolean {
+    compareAndSet(expected: boolean, next: boolean): boolean;
+    get(): unknown;
+    set(value: boolean): void;
+}
+
+interface RhinoAtomicBooleanClass {
+    new (initial: boolean): RhinoAtomicBoolean;
+}
+
+interface RhinoGcBean {
+    getCollectionCount(): unknown;
+    getCollectionTime(): unknown;
+}
+
+interface RhinoGcBeanCollection {
+    readonly length?: number;
+    [index: number]: RhinoGcBean;
+    get(index: number): RhinoGcBean;
+    size(): number;
+}
+
+interface RhinoRuntime {
+    freeMemory(): unknown;
+    totalMemory(): unknown;
+}
+
+interface RhinoStackTraceElement {
+    toString(): RhinoString;
+}
+
+interface RhinoThread {
+    getStackTrace(): { readonly length: unknown; [index: number]: RhinoStackTraceElement };
+    setDaemon(daemon: boolean): void;
+    start(): void;
+}
+
+interface RhinoThreadClass {
+    new (run: () => void, name: string): RhinoThread;
+    currentThread(): RhinoThread;
+    sleep(milliseconds: number): void;
+}
+
+interface RhinoQueue<T> {
+    add(value: T): boolean;
+    poll(): T | null;
+}
+
+interface RhinoQueueClass {
+    new <T = string>(): RhinoQueue<T>;
+}
+
+interface RhinoJavaPackages {
+    lang: {
+        Thread: RhinoThreadClass;
+        Runtime: { getRuntime(): RhinoRuntime };
+        management: {
+            ManagementFactory: {
+                getGarbageCollectorMXBeans(): RhinoGcBeanCollection;
+            };
+        };
+    };
+    util: {
+        concurrent: {
+            ConcurrentLinkedQueue: RhinoQueueClass;
+            atomic: { AtomicBoolean: RhinoAtomicBooleanClass };
+        };
+    };
+}
+
+declare const java: RhinoJavaPackages;
 
 type WaiterCounts = {
     [k: string]: number;
@@ -44,7 +115,7 @@ const samples: LagSample[] = [];
 // getters themselves are plain counter reads). Reached through Rhino's bare
 // `java` package global — the same route `images.ts` uses — because
 // `Java.type` lookups of some platform classes have failed in this CT build.
-let gcBeans: any = null;
+let gcBeans: RhinoGcBeanCollection | null = null;
 let gcFailures = 0;
 let lastGcCount = 0;
 let lastGcMs = 0;
@@ -88,8 +159,16 @@ function heapUsedMB(): number {
 
 function screenName(): string {
     try {
-        const screen = (Client.getMinecraft() as any).field_71462_r;
-        if (screen === null || screen === undefined) return "none";
+        const screen = (
+            Client as unknown as {
+                getMinecraft(): {
+                field_71462_r: {
+                    getClass(): { getName(): RhinoString };
+                } | null;
+                };
+            }
+        ).getMinecraft().field_71462_r;
+        if (screen === null) return "none";
         const name = String(screen.getClass().getName());
         const dot = name.lastIndexOf(".");
         return dot >= 0 ? name.substring(dot + 1) : name;
@@ -144,22 +223,28 @@ function record(
 // drain on the client thread into `stallStacks` + gui-debug.log.
 const MAX_STACKS = 6;
 const stallStacks: string[][] = [];
-let clientThread: any = null;
-let stackQueue: any = null;
+let clientThread: RhinoThread | null = null;
+let stackQueue: RhinoQueue<RhinoString> | null = null;
 
 function startWatchdog(): void {
     if (!watchdogRunning.compareAndSet(false, true)) return;
     try {
         const ConcurrentLinkedQueue = java.util.concurrent.ConcurrentLinkedQueue;
         if (stackQueue === null) stackQueue = new ConcurrentLinkedQueue();
+        const queue = stackQueue;
+        const observedClientThread = clientThread;
+        if (observedClientThread === null) {
+            watchdogRunning.set(false);
+            return;
+        }
         let capturedForStepAt = 0;
         let capturesThisStall = 0;
         const t = new java.lang.Thread(function () {
             try {
-                while (probeEnabled.get()) {
+                while (Boolean(probeEnabled.get())) {
                     try {
                         java.lang.Thread.sleep(60);
-                        if (!probeEnabled.get()) break;
+                        if (!Boolean(probeEnabled.get())) break;
                         const stalledSince = lastStepAt;
                         const stalledForMs = Date.now() - stalledSince;
                         if (stalledForMs < STALL_MS) continue;
@@ -171,11 +256,11 @@ function startWatchdog(): void {
                         // ~300ms of the same stall — long stalls get phase samples.
                         if (stalledForMs < STALL_MS + 300 * capturesThisStall) continue;
                         capturesThisStall++;
-                        const trace = clientThread.getStackTrace();
+                        const trace = observedClientThread.getStackTrace();
                         const lines: string[] = [`stack ${stalledForMs}ms into stall:`];
                         const n = Math.min(Number(trace.length), 30);
                         for (let i = 0; i < n; i++) lines.push(String(trace[i].toString()));
-                        stackQueue.add(lines.join("\n"));
+                        queue.add(lines.join("\n"));
                     } catch (_e) {
                         // never let the watchdog die; next loop retries
                     }
@@ -194,7 +279,7 @@ function startWatchdog(): void {
 
 function drainStallStacks(): void {
     if (stackQueue === null) return;
-    while (true) {
+    for (;;) {
         const item = stackQueue.poll();
         if (item === null) break;
         const lines = String(item).split("\n");

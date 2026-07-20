@@ -2,17 +2,51 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
     {
-        ignores: [
-            "dist/**",
-            "node_modules/**",
-            "CTAutocomplete/**",
-        ],
+        ignores: ["dist/**", "node_modules/**", "CTAutocomplete/**"],
     },
-    ...tseslint.configs.recommended,
     {
         files: ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+        extends: tseslint.configs.strictTypeChecked,
+        languageOptions: {
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
         rules: {
-            "@typescript-eslint/no-explicit-any": "off",
+            "@typescript-eslint/require-await": "off",
+            "@typescript-eslint/restrict-template-expressions": [
+                "error",
+                {
+                    allowBoolean: true,
+                    allowNumber: true,
+                },
+            ],
+            "@typescript-eslint/restrict-plus-operands": [
+                "error",
+                {
+                    allowNumberAndString: true,
+                },
+            ],
+            "@typescript-eslint/no-confusing-void-expression": [
+                "error",
+                {
+                    ignoreArrowShorthand: true,
+                },
+            ],
+            "@typescript-eslint/no-dynamic-delete": "off",
+            "@typescript-eslint/no-extraneous-class": [
+                "error",
+                {
+                    allowStaticOnly: true,
+                },
+            ],
+            "@typescript-eslint/only-throw-error": [
+                "error",
+                {
+                    allow: ["Diagnostic"],
+                },
+            ],
             "@typescript-eslint/no-unused-vars": [
                 "error",
                 {
@@ -21,6 +55,12 @@ export default tseslint.config(
                     varsIgnorePattern: "^_",
                 },
             ],
+        },
+    },
+    {
+        files: ["test/**/*.ts"],
+        rules: {
+            "@typescript-eslint/no-non-null-assertion": "off",
         },
     }
 );

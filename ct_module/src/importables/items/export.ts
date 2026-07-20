@@ -1,6 +1,4 @@
-import {
-    snbtFromItem,
-} from "../../housingSync/itemCapture";
+import { snbtFromItem } from "../../housingSync/itemCapture";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import type { ReadFn } from "../read";
@@ -15,7 +13,6 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
         throw new Error("Please hold the item you wish to export!");
     }
     const snbt = snbtFromItem(stack, { pretty: false });
-    if (snbt === null) throw new Error("Could not read the held item's NBT.");
 
     const housingUuid = await getCurrentHousingUuid(ctx);
     const registry = createExportItemCaptureRegistry(
@@ -23,7 +20,11 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
         housingUuid,
         options.projectItems
     );
-    const name = registry.register(snbt, removedFormatting(stack.getName()).trim() || "item", slotId);
+    const name = registry.register(
+        snbt,
+        removedFormatting(stack.getName()).trim() || "item",
+        slotId
+    );
     if (!registry.needsWrite(name)) {
         ctx.displayMessage(`&7[export] Held item is already declared as '${name}'.`);
         return { total: 1, succeeded: 1, failed: 0 };

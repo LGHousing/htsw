@@ -51,7 +51,7 @@ function runChestExport(
             );
         })
         .catch((error: unknown) => {
-            showToast(`Chest export failed: ${error}`, 0xffe85c5c, 8000);
+            showToast(`Chest export failed: ${String(error)}`, 0xffe85c5c, 8000);
         });
 }
 
@@ -105,7 +105,7 @@ export function startChestExport(): void {
     try {
         captured = captureOpenChest();
     } catch (error) {
-        showToast(`Chest export failed: ${error}`, 0xffe85c5c, 8000);
+        showToast(`Chest export failed: ${String(error)}`, 0xffe85c5c, 8000);
         return;
     }
     if (captured === null) {

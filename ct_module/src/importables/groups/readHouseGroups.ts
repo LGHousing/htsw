@@ -1,4 +1,4 @@
-import type { ChatSpeed, Color, DefaultGameMode, ImportableGroup, Permission } from "htsw/types";
+import type { ChatSpeed, Color, DefaultGameMode, ImportableGroup } from "htsw/types";
 
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
@@ -39,7 +39,7 @@ function buildGroupImportable(name: string, read: GroupRead): ImportableGroup {
         ...(settings.color !== null ? { color: settings.color as Color } : {}),
         ...(settings.priority !== null ? { priority: settings.priority } : {}),
         ...(Object.keys(read.permissions).length > 0
-            ? { permissions: read.permissions as Record<Permission, boolean> }
+            ? { permissions: read.permissions }
             : {}),
         ...(read.chatSpeed !== null ? { chatSpeed: read.chatSpeed as ChatSpeed } : {}),
         ...(read.defaultGameMode !== null
@@ -80,7 +80,13 @@ export const readGroups = makeReadHouse<string>({
         const read = await readGroup(ctx, name);
         const importable = buildGroupImportable(name, read);
         if (options.readOnly !== undefined) {
-            writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+            writeImportableCache(
+                ctx,
+                options.readOnly.housingUuid,
+                importable,
+                "reader",
+                true
+            );
         } else {
             const targetImportJson = importJsonTargetForSectionEntry(
                 options.importJsonPath,
@@ -88,7 +94,11 @@ export const readGroups = makeReadHouse<string>({
                 name,
                 options.newExportTargetImportJson
             );
-            upsertImportableEntry(targetImportJson, "groups", buildGroupJsonEntry(name, read));
+            upsertImportableEntry(
+                targetImportJson,
+                "groups",
+                buildGroupJsonEntry(name, read)
+            );
             await tryWriteImportableCache(ctx, importable, "exporter");
         }
     },

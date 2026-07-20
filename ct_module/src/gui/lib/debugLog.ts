@@ -32,9 +32,12 @@ export function debugLog(line: string): void {
 }
 
 export function debugLogError(where: string, e: unknown): void {
-    const err = e as { message?: string; stack?: string } | null;
-    const msg = err && err.message ? err.message : String(e);
-    const stack = err && err.stack ? ` :: ${String(err.stack).split("\n").slice(0, 6).join(" | ")}` : "";
+    const err = e as { message?: unknown; stack?: unknown } | null;
+    const msg = err && typeof err.message === "string" && err.message ? err.message : String(e);
+    const stack =
+        err && typeof err.stack === "string" && err.stack
+            ? ` :: ${err.stack.split("\n").slice(0, 6).join(" | ")}`
+            : "";
     debugLog(`EXCEPTION in ${where}: ${msg}${stack}`);
     flushGuiDebug();
 }

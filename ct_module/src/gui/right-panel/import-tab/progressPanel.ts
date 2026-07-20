@@ -36,6 +36,7 @@ import {
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
+    parkedTaskFor,
     phaseFractions,
     setActiveTaskPath,
     setTaskProgress,
@@ -83,7 +84,7 @@ function progressElapsedText(): string {
     return `§7${formatEtaSeconds(ms / 1000)}`;
 }
 
-const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } } = {
+const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } | undefined } = {
     setup: { title: "Reading", etaSuffix: "read" },
     reading: { title: "Reading", etaSuffix: "read" },
     hydrating: { title: "Hydrating", etaSuffix: "hydrate" },
@@ -218,7 +219,7 @@ function activeRowPhaseChildren(): Element[] {
 function parkedRowPhaseChildren(key: string): Element[] {
     const p = getTaskProgress();
     if (p === null) return [];
-    const parked = p.parked[key];
+    const parked = parkedTaskFor(p, key);
     if (parked === undefined) return [];
     return taskPhaseSegments(parked);
 }
@@ -283,7 +284,7 @@ function progressBar(): Element {
                             children: activeRowPhaseChildren(),
                         })
                     );
-                } else if (p.parked[row.key] !== undefined) {
+                } else if (parkedTaskFor(p, row.key) !== undefined) {
                     // Pass-1 finished read/hydrate for this row but pass-2
                     // hasn't reached it yet. Show the parked phase fill so
                     // the segment doesn't visually rewind.

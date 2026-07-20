@@ -23,7 +23,7 @@ import {
 
 const ALIAS_FILE_NAME = "housing-aliases.json";
 
-type AliasMap = { [uuid: string]: string };
+type AliasMap = Partial<Record<string, string>>;
 
 let cachedMap: AliasMap | null = null;
 let cachedAt = 0;

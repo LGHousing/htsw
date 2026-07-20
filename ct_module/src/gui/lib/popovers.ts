@@ -117,7 +117,7 @@ export function closeAllPopovers(includeSticky: boolean = false): void {
     }
     openPopovers = kept;
     for (let i = 0; i < closing.length; i++) {
-        if (closing[i].onClose) closing[i].onClose!();
+        closing[i].onClose?.();
     }
 }
 
@@ -208,7 +208,7 @@ export function tryDispatchPopoverClick(
         openPopovers = fresh;
         for (let i = 0; i < stale.length; i++) {
             if (stale[i].placement === "modal") closedModal = true;
-            if (stale[i].onClose) stale[i].onClose!();
+            stale[i].onClose?.();
         }
     }
     // Modals are interaction-blocking: absorb the click if any modal is still open OR if

@@ -41,7 +41,7 @@ function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
     if (tag.type !== "compound") return tag;
     const value = compoundEntries(tag);
     const key = path[0];
-    if (value[key] === undefined) return tag;
+    if (!Object.prototype.hasOwnProperty.call(value, key)) return tag;
     const out: Record<string, TagLike> = {};
     if (path.length === 1) {
         for (const k of Object.keys(value)) {
@@ -92,7 +92,10 @@ export function normalizeBlankLoreSeparators(tag: TagLike): TagLike {
     }
     const newLore: TagLike = { type: "list", value: { type: "string", value: newLines } };
     const display = tagChild(tagChild(tag, "tag"), "display") as TagLike;
-    const newDisplay: Record<string, TagLike> = { ...compoundEntries(display), Lore: newLore };
+    const newDisplay: Record<string, TagLike> = {
+        ...compoundEntries(display),
+        Lore: newLore,
+    };
     const inner = tagChild(tag, "tag") as TagLike;
     const newInner: Record<string, TagLike> = {
         ...compoundEntries(inner),
@@ -133,7 +136,7 @@ function normalizeIntegralTypes(tag: TagLike): TagLike {
                 (entry) =>
                     normalizeIntegralTypes({
                         type: "compound",
-                        value: entry as Record<string, TagLike>,
+                        value: entry,
                     }).value
             );
             return { type: "list", value: { type: "compound", value: items } };
@@ -160,9 +163,11 @@ function normalizeItemDefaults(tag: TagLike): TagLike {
     const value: Record<string, TagLike> = { ...compoundEntries(tag) };
     if (isNumericTagWithValue(value["Damage"], 0)) delete value["Damage"];
     if (isNumericTagWithValue(value["Count"], 1)) delete value["Count"];
-    const id = value["id"];
+    const id: TagLike | undefined = Object.prototype.hasOwnProperty.call(value, "id")
+        ? value["id"]
+        : undefined;
     if (id !== undefined && id.type === "string" && String(id.value).indexOf(":") < 0) {
-        value["id"] = { type: "string", value: `minecraft:${id.value}` };
+        value["id"] = { type: "string", value: `minecraft:${String(id.value)}` };
     }
     return { type: "compound", value };
 }

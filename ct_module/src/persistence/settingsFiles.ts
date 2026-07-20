@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { atomicWriteText } from "../utils/filesystem";
+import { runtimeString, type RuntimeString } from "../utils/java";
 
 const SETTINGS_ROOT = "./htsw/.settings";
 const LEGACY_ROOTS = ["./htsw/.state", "./htsw/.cache"];
@@ -21,11 +22,11 @@ function removeLegacyFiles(fileName: string): void {
 export function readSettingsFile(fileName: string): string | null {
     const path = settingsFilePath(fileName);
     if (FileLib.exists(path)) {
-        const value = FileLib.read(path);
+        const value = FileLib.read(path) as RuntimeString | null | undefined;
         if (value === null || value === undefined) {
             throw new Error(`Could not read settings file: ${path}`);
         }
-        const raw = String(value);
+        const raw = runtimeString(value);
         removeLegacyFiles(fileName);
         return raw;
     }
@@ -33,11 +34,11 @@ export function readSettingsFile(fileName: string): string | null {
     for (let i = 0; i < LEGACY_ROOTS.length; i++) {
         const legacyPath = `${LEGACY_ROOTS[i]}/${fileName}`;
         if (!FileLib.exists(legacyPath)) continue;
-        const value = FileLib.read(legacyPath);
+        const value = FileLib.read(legacyPath) as RuntimeString | null | undefined;
         if (value === null || value === undefined) {
             throw new Error(`Could not read settings file: ${legacyPath}`);
         }
-        const raw = String(value);
+        const raw = runtimeString(value);
         if (atomicWriteText(path, raw)) removeLegacyFiles(fileName);
         return raw;
     }

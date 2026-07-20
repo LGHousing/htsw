@@ -15,6 +15,7 @@ import {
 import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
 import type { ItemDependencySnapshot } from "../importables/itemDependencyIndex";
+import { javaType } from "../utils/java";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -139,7 +140,8 @@ function houseDisplayLabel(importable: Importable): string | undefined {
 }
 
 function houseDisplayColor(importable: Importable): Color | undefined {
-    if (importable.type === "TEAM" || importable.type === "GROUP") return importable.color;
+    if (importable.type === "TEAM" || importable.type === "GROUP")
+        return importable.color;
     return undefined;
 }
 
@@ -160,13 +162,9 @@ export function writeImportableCache(
     const options: ImportableCacheWriteOptions =
         typeof quietOrOptions === "boolean"
             ? { quiet: quietOrOptions, itemDependencies }
-            : quietOrOptions ?? {};
+            : (quietOrOptions ?? {});
     const path = cachePathFor(housingUuid, importable);
-    const entry = buildImportableCacheEntry(
-        importable,
-        writer,
-        options.itemDependencies
-    );
+    const entry = buildImportableCacheEntry(importable, writer, options.itemDependencies);
     try {
         if (!atomicWriteText(path, JSON.stringify(entry, null, 4))) {
             throw new Error("write failed");
@@ -189,7 +187,9 @@ export function writeImportableCache(
         if (options.quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
         return true;
     } catch (error) {
-        ctx.displayMessage(`&7[cache] &eFailed to write cache at ${path}: ${error}`);
+        ctx.displayMessage(
+            `&7[cache] &eFailed to write cache at ${path}: ${String(error)}`
+        );
         return false;
     }
 }
@@ -215,9 +215,12 @@ export async function tryWriteImportableCache(
         writeImportableCache(ctx, housingUuid, importable, writer, options);
     } catch (error) {
         if (writer === "exporter") {
-            ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
+            ctx.displayMessage(`&7[export] &eCache write skipped: ${String(error)}`);
         } else {
-            traceNote("cache", `skipped cache write for ${importable.type}: ${error}`);
+            traceNote(
+                "cache",
+                `skipped cache write for ${importable.type}: ${String(error)}`
+            );
         }
     }
 }
@@ -272,7 +275,9 @@ export function writePresence(
         writtenAt: new Date().toISOString(),
         name,
         verified: false,
-        ...((label ?? existing?.label) !== undefined ? { label: label ?? existing?.label } : {}),
+        ...((label ?? existing?.label) !== undefined
+            ? { label: label ?? existing?.label }
+            : {}),
         ...(icon !== undefined ? { icon } : {}),
         ...(color !== undefined ? { color } : {}),
     };
@@ -303,7 +308,7 @@ function parseCacheEntry(raw: string | null): ImportableCacheEntry | null {
     if (raw === null) return null;
     let parsed: unknown;
     try {
-        parsed = JSON.parse(String(raw));
+        parsed = JSON.parse(raw);
     } catch {
         return null;
     }
@@ -376,9 +381,9 @@ export function deleteImportableCache(
 ): boolean {
     const path = cachePathForId(housingUuid, type, identity);
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        Files.deleteIfExists(Paths.get(String(path)));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        Files.deleteIfExists(Paths.get(path));
     } catch {
         return false;
     }
@@ -395,9 +400,9 @@ export type HousingCacheDeleteResult = "deleted" | "missing" | "partial";
 export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResult {
     let result: HousingCacheDeleteResult = "partial";
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const root = Paths.get(String(`${IMPORT_CACHE_ROOT}/${housingUuid}`));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const root = Paths.get(`${IMPORT_CACHE_ROOT}/${housingUuid}`);
         if (!Files.exists(root)) {
             result = Files.notExists(root) ? "missing" : "partial";
         } else {
@@ -422,7 +427,7 @@ export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResul
     return result;
 }
 
-function deletePathRecursive(Files: any, path: any): void {
+function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): void {
     if (Files.isDirectory(path)) {
         const stream = Files.newDirectoryStream(path);
         try {
@@ -431,7 +436,11 @@ function deletePathRecursive(Files: any, path: any): void {
                 deletePathRecursive(Files, it.next());
             }
         } finally {
-            try { stream.close(); } catch (_e) { /* ignore */ }
+            try {
+                stream.close();
+            } catch (_e) {
+                /* ignore */
+            }
         }
     }
     Files.deleteIfExists(path);
@@ -468,22 +477,19 @@ function enumKey(uuid: string, type: Importable["type"]): string {
     return `${uuid}|${type}`;
 }
 
-function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseImportable | null {
+function parseHouseRecord(
+    raw: string | null,
+    type: Importable["type"]
+): HouseImportable | null {
     if (raw === null) return null;
-    let obj: {
-        schemaVersion?: unknown;
-        importable?: unknown;
-        name?: unknown;
-        label?: unknown;
-        icon?: unknown;
-        color?: unknown;
-    };
+    let parsed: unknown;
     try {
-        obj = JSON.parse(String(raw));
+        parsed = JSON.parse(raw);
     } catch {
         return null;
     }
-    if (!obj || typeof obj !== "object") return null;
+    if (parsed === null || typeof parsed !== "object") return null;
+    const obj = parsed as Record<string, unknown>;
     if (
         typeof obj.schemaVersion !== "number" ||
         ACCEPTED_SCHEMA_VERSIONS.indexOf(obj.schemaVersion) === -1
@@ -538,15 +544,17 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
     const out: HouseImportable[] = [];
     const dirRel = cacheTypeDir(uuid, type);
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const dir = Paths.get(String(dirRel));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const dir = Paths.get(dirRel);
         if (!Files.exists(dir) || !Files.isDirectory(dir)) return out;
         const stream = Files.newDirectoryStream(dir);
         try {
             const it = stream.iterator();
             while (it.hasNext()) {
-                const fname = String(it.next().getFileName().toString());
+                const fileName = it.next().getFileName();
+                if (fileName === null) continue;
+                const fname = String(fileName.toString());
                 const suffix = ".knowledge.json";
                 if (
                     fname.length < suffix.length ||
@@ -564,7 +572,11 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
                 if (parsed !== null) out.push(parsed);
             }
         } finally {
-            try { stream.close(); } catch (_e) { /* ignore */ }
+            try {
+                stream.close();
+            } catch (_e) {
+                /* ignore */
+            }
         }
     } catch (_e) {
         // best-effort
@@ -585,7 +597,11 @@ function ensureEnumLoaded(uuid: string, type: Importable["type"]): HouseImportab
 
 // Keep the in-memory index current on writes/deletes. No-ops when the (uuid,
 // type) hasn't been scanned yet — the lazy scan will pick the file up.
-function indexUpsert(uuid: string, type: Importable["type"], entry: HouseImportable): void {
+function indexUpsert(
+    uuid: string,
+    type: Importable["type"],
+    entry: HouseImportable
+): void {
     const list = enumIndex.get(enumKey(uuid, type));
     if (list === undefined) return;
     for (let i = 0; i < list.length; i++) {
@@ -620,10 +636,7 @@ export function listCachedImportables(
     return ensureEnumLoaded(uuid, type).slice();
 }
 
-export function houseTypeScanned(
-    uuid: string | null,
-    type: Importable["type"]
-): boolean {
+export function houseTypeScanned(uuid: string | null, type: Importable["type"]): boolean {
     if (uuid === null) return false;
     const key = enumKey(uuid, type);
     const cached = scanMarkerCache.get(key);
@@ -666,7 +679,9 @@ export function recordHouseScan(
     for (let i = 0; i < known.length; i++) {
         if (!present.has(known[i].name)) {
             if (!deleteImportableCache(uuid, type, known[i].name)) {
-                throw new Error(`Could not remove stale ${type.toLowerCase()} cache data`);
+                throw new Error(
+                    `Could not remove stale ${type.toLowerCase()} cache data`
+                );
             }
         }
     }
@@ -694,9 +709,9 @@ export function recordHouseScan(
 
 function removeScanMarker(path: string): boolean {
     try {
-        const Paths = Java.type("java.nio.file.Paths");
-        const Files = Java.type("java.nio.file.Files");
-        const marker = Paths.get(String(path));
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const marker = Paths.get(path);
         Files.deleteIfExists(marker);
         return !Files.exists(marker);
     } catch (_e) {

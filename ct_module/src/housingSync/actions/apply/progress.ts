@@ -142,7 +142,7 @@ export function fieldsChangedForEdit(
                     field.prop
                 )
             ) {
-                fields.push(String(field.prop));
+                fields.push(field.prop);
             }
         }
         for (let i = 0; i < op.childListDiffs.length; i++) {

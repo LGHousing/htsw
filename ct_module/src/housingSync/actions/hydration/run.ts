@@ -76,7 +76,7 @@ export async function hydrateActionListScan(
     const { slots, plan, isRootList } = scan;
     await hydrateActionDetails(ctx, plan, slots, isRootList, read);
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    if (read?.itemRegistry !== undefined) {
+    if (read.itemRegistry !== undefined) {
         for (const entry of slots) {
             if (entry.action !== null) {
                 canonicalizeActionItemName(entry.action, read.itemRegistry);
@@ -84,7 +84,7 @@ export async function hydrateActionListScan(
         }
     }
     if (isRootList) {
-        emitObservedSnapshot(slots, read?.events);
+        emitObservedSnapshot(slots, read.events);
     }
 }
 
@@ -95,10 +95,10 @@ async function hydrateActionDetails(
     isRootList: boolean = false,
     read: ListReadOptions
 ): Promise<void> {
-    const progress = read?.progress;
-    const phaseUnits = read?.phaseUnits;
-    const events = read?.events;
-    const listPath = read?.listPath;
+    const progress = read.progress;
+    const phaseUnits = read.phaseUnits;
+    const events = read.events;
+    const listPath = read.listPath;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
@@ -107,7 +107,7 @@ async function hydrateActionDetails(
         totalHydrateUnits += hydrationEntryUnits(
             entry,
             work,
-            read?.exactHydrationEstimate !== true
+            read.exactHydrationEstimate !== true
         );
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
@@ -143,13 +143,13 @@ async function hydrateActionDetails(
         currentEntryEstimate = hydrationEntryUnits(
             entry,
             work,
-            read?.exactHydrationEstimate !== true
+            read.exactHydrationEstimate !== true
         );
         currentAccount = createHydrationEntryAccount(
             entry,
             work,
             emit,
-            read?.exactHydrationEstimate !== true
+            read.exactHydrationEstimate !== true
         );
         emit();
         events?.emit({
@@ -195,7 +195,7 @@ async function hydrateActionDetail(
     account?: HydrationEntryAccount
 ): Promise<void> {
     try {
-        return await hydrateActionDetailFromEditor(
+        await hydrateActionDetailFromEditor(
             ctx,
             entry,
             work,
@@ -204,12 +204,11 @@ async function hydrateActionDetail(
             entryPath,
             emitSnapshot,
             account
-        );
+        ); return;
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const inner = error instanceof Error ? error.message : String(error);
-        const path =
-            entryPath === undefined ? `index ${entry.index}` : ActionPath.key(entryPath);
+        const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);
     }
@@ -254,7 +253,7 @@ async function hydrateActionDetailFromEditor(
             actionPath: entryPath,
             actionType: entry.action.type,
             itemRead: read,
-            events: read?.events,
+            events: read.events,
             emitSnapshot,
             readChildActions: readActionList,
             readConditions: readConditionList,
@@ -293,8 +292,7 @@ async function hydrateActionDetailFromEditor(
     const itemFieldObservations =
         read.itemReadMode === "sync" ? read.itemFieldObservations : undefined;
     if (
-        (itemCaptures !== undefined || itemFieldObservations !== undefined) &&
-        entry.action !== null
+        itemCaptures !== undefined || itemFieldObservations !== undefined
     ) {
         const itemFields = work.itemFieldsToCapture;
         for (let i = 0; i < itemFields.length; i++) {
@@ -333,6 +331,5 @@ async function hydrateActionDetailFromEditor(
     }
 
     await clickGoBack(ctx);
-    entry.hydrated =
-        entry.action !== null && presentChildListsContainNoNulls(entry.action);
+    entry.hydrated = presentChildListsContainNoNulls(entry.action);
 }

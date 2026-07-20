@@ -1,8 +1,6 @@
 import TaskContext from "../../tasks/context";
-import {
-    C10PacketCreativeInventoryAction,
-    S2FPacketSetSlot,
-} from "../../utils/packets";
+import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../../utils/packets";
+import { getPlayer, sendPacket } from "../../utils/java";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -19,18 +17,18 @@ export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
 export function sendCreativeInventoryAction(
     ctx: TaskContext,
     packetSlot: number,
-    stack: any,
+    stack: HtswMinecraftItemStack | null
 ): void {
-    Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlot, stack));
+    sendPacket(new C10PacketCreativeInventoryAction(packetSlot, stack));
 }
 
 export function selectHotbarSlot(ctx: TaskContext, hotbarSlot: number): void {
     // field_71071_by = InventoryPlayer, field_70461_c = selected hotbar index.
     // Vanilla sends C09PacketHeldItemChange once on the next tick when this changes.
-    Player.getPlayer().field_71071_by.field_70461_c = hotbarSlot;
+    getPlayer().field_71071_by.field_70461_c = hotbarSlot;
 }
 
 export function selectedHotbarSlot(): number {
     // field_71071_by = InventoryPlayer, field_70461_c = selected hotbar index.
-    return Player.getPlayer().field_71071_by.field_70461_c;
+    return getPlayer().field_71071_by.field_70461_c;
 }

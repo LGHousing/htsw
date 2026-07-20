@@ -42,7 +42,7 @@ export type ProgressReducerState = {
      * then moves on to B (saving A's bookkeeping here); pass-2 later
      * re-activates A from this map without resetting its progress.
      */
-    parkedRows: { [key: string]: ActiveBookkeeping };
+    parkedRows: Partial<Record<string, ActiveBookkeeping>>;
     completedSessionUnits: number;
     totalSessionUnits: number;
 };
@@ -504,7 +504,9 @@ type ParkedDerived = {
 
 const parkedDerivedCache = new WeakMap<object, ParkedDerived>();
 
-function deriveParked(parkedRows: { [key: string]: ActiveBookkeeping }): ParkedDerived {
+function deriveParked(
+    parkedRows: Partial<Record<string, ActiveBookkeeping>>
+): ParkedDerived {
     const cached = parkedDerivedCache.get(parkedRows);
     if (cached !== undefined) return cached;
     let refinement = 0;
@@ -538,8 +540,8 @@ function replaceRow(
     status: TaskProgressEntry["status"],
     totalUnits?: number
 ): readonly TaskProgressEntry[] {
+    if (index < 0 || index >= rows.length) return rows;
     const current = rows[index];
-    if (current === undefined) return rows;
     if (
         current.status === status &&
         (totalUnits === undefined || current.totalUnits === totalUnits)

@@ -59,6 +59,6 @@ export function dumpEtaToFile(): void {
         FileLib.write(path, JSON.stringify(dump, null, 2), true);
         ChatLib.chat(`&a[eta] wrote ${path}`);
     } catch (e) {
-        ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
+        ChatLib.chat(`&c[eta] failed to write ${path}: ${String(e)}`);
     }
 }

@@ -267,7 +267,7 @@ const ACTION_IO = {
 export async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
-    opts: WriteActionOptions<Action>
+    opts: WriteActionOptions
 ): Promise<void> {
     const spec = getActionIo(desired.type);
     let resolvedCurrent = opts.current;

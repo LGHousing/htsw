@@ -24,6 +24,19 @@ export type HtslLine = {
 
 const fileLoader = new FileSystemFileLoader();
 
+function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (
+        error !== null &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+    ) {
+        return error.message;
+    }
+    return String(error);
+}
+
 export type ParsedFile = {
     mtime: number;
     actions: Action[];
@@ -73,7 +86,7 @@ export function parseHtslFile(path: string): ParsedFile {
             file = null;
         }
     } catch (err) {
-        parseError = err && (err as any).message ? (err as any).message : String(err);
+        parseError = errorMessage(err);
     }
     const entry: ParsedFile = { mtime, actions, parseError, spans, file };
     parseCache.set(path, entry);
@@ -124,7 +137,7 @@ function actionToLines(action: Action, actionIndex: number): HtslLine[] {
                 actionIndex,
                 actionPath: basePath,
                 depth: 0,
-                text: `// <print failed: ${err}>`,
+                text: `// <print failed: ${String(err)}>`,
             },
         ];
     }

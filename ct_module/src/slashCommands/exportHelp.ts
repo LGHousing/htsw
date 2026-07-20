@@ -6,7 +6,7 @@ import { HOUSE_EXPORT_TYPES } from "../importables/houseExportTypes";
 export function printExportHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &fExporter &f&l${VERSION}`;
-    ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
+    ChatLib.chat(ChatLib.getCenteredText(title));
     ChatLib.chat("");
 
     for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {

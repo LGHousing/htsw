@@ -5,6 +5,7 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry, getMemoizedHousingUuid } from "../../importables/itemRegistry";
 import { itemWithInteractData } from "../../utils/nbt";
 import { interactDataCachePath } from "../../importCache";
+import { runtimeString } from "../../utils/java";
 
 type Owner = Action | Condition;
 
@@ -59,6 +60,6 @@ export async function resolveImportableItem(
                 `or import it before whatever ${kind} references it.`
         );
     }
-    const interactDataSnbt = String(FileLib.read(cachePath));
+    const interactDataSnbt = runtimeString(FileLib.read(cachePath));
     return itemWithInteractData(importable.nbt, interactDataSnbt);
 }

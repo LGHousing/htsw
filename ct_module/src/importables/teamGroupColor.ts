@@ -1,6 +1,6 @@
 import type { Color } from "htsw/types";
 
-const COLOR_BY_CODE: { [code: string]: Color } = {
+const COLOR_BY_CODE: Partial<Record<string, Color>> = {
     "1": "Dark Blue",
     "2": "Dark Green",
     "3": "Dark Aqua",
