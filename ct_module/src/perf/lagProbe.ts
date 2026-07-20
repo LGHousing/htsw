@@ -23,11 +23,9 @@ interface RhinoGcBean {
     getCollectionTime(): unknown;
 }
 
-interface RhinoGcBeanCollection {
-    readonly length?: number;
+interface RhinoGcBeanArray {
+    readonly length: number;
     [index: number]: RhinoGcBean;
-    get(index: number): RhinoGcBean;
-    size(): number;
 }
 
 interface RhinoRuntime {
@@ -66,7 +64,7 @@ interface RhinoJavaPackages {
         Runtime: { getRuntime(): RhinoRuntime };
         management: {
             ManagementFactory: {
-                getGarbageCollectorMXBeans(): RhinoGcBeanCollection;
+                getGarbageCollectorMXBeans(): RhinoGcBeanArray;
             };
         };
     };
@@ -115,7 +113,7 @@ const samples: LagSample[] = [];
 // getters themselves are plain counter reads). Reached through Rhino's bare
 // `java` package global — the same route `images.ts` uses — because
 // `Java.type` lookups of some platform classes have failed in this CT build.
-let gcBeans: RhinoGcBeanCollection | null = null;
+let gcBeans: RhinoGcBeanArray | null = null;
 let gcFailures = 0;
 let lastGcCount = 0;
 let lastGcMs = 0;
@@ -129,11 +127,9 @@ function gcTotals(): { count: number; ms: number } | null {
         }
         let count = 0;
         let ms = 0;
-        // Rhino hands the List back as a Java Object[] in this CT build, so
-        // index with .length, not List.size().
-        const n = typeof gcBeans.length === "number" ? gcBeans.length : gcBeans.size();
+        const n = gcBeans.length;
         for (let i = 0; i < n; i++) {
-            const b = typeof gcBeans.length === "number" ? gcBeans[i] : gcBeans.get(i);
+            const b = gcBeans[i];
             count += Number(b.getCollectionCount());
             ms += Number(b.getCollectionTime());
         }

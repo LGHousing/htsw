@@ -42,7 +42,10 @@ declare global {
             dropShadow: boolean
         ): number;
         func_78256_a(text: string): number;
-        func_78271_c(text: string, width: number): unknown;
+        func_78271_c(
+            text: string,
+            width: number
+        ): HtswJavaObjectArray<string | { toString(): string }>;
     }
 
     interface HtswMinecraftKeyBinding {

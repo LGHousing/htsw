@@ -467,14 +467,10 @@ declare global {
         func_150302_c(): HtswJavaNumberArray;
     }
 
-    interface HtswJavaNbtKeySet {
-        toArray(): HtswJavaObjectArray<string | { toString(): string }>;
-    }
-
     interface HtswMinecraftNbtCompound extends HtswMinecraftNbtBase {
         func_74781_a(key: string): HtswMinecraftNbtBase | null;
         func_74782_a(key: string, value: HtswMinecraftNbtBase): void;
-        func_150296_c(): HtswJavaNbtKeySet;
+        func_150296_c(): HtswJavaObjectArray<string | { toString(): string }>;
     }
 
     interface HtswMinecraftNbtList extends HtswMinecraftNbtBase {

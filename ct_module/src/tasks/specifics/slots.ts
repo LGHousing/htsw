@@ -301,28 +301,6 @@ export function menuItemDebugSnapshot(limit: number = 54): MenuItemDebugSnapshot
     return out;
 }
 
-function listSize(value: unknown): number {
-    try {
-        const n = (value as { size(): number }).size();
-        if (typeof n === "number") return n;
-    } catch (_e) {}
-    try {
-        const n = (value as { length?: number }).length;
-        if (typeof n === "number") return n;
-    } catch (_e) {}
-    return 0;
-}
-
-function listItem(value: unknown, index: number): unknown {
-    try {
-        return (value as { get(i: number): unknown }).get(index);
-    } catch (_e) {}
-    try {
-        return (value as unknown[])[index];
-    } catch (_e) {}
-    return null;
-}
-
 export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
     try {
         const mc = getMinecraft();
@@ -340,19 +318,15 @@ export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
                 windowId: null,
             };
         const c = container as {
-            func_75138_a(): {
-                length?: number;
-                size?: () => number;
-                get?: (i: number) => unknown;
-            };
+            func_75138_a(): HtswJavaObjectArray<unknown>;
             field_75152_c?: number;
         };
         const inv = c.func_75138_a();
-        const size = listSize(inv);
+        const size = inv.length;
         const end = size < 36 ? size : size - 36;
         let n = 0;
         for (let i = 0; i < end; i++) {
-            if (listItem(inv, i) != null) n++;
+            if (inv[i] != null) n++;
         }
         const id = c.field_75152_c;
         return {

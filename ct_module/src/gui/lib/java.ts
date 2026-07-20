@@ -9,33 +9,24 @@ export {
     type RuntimeString,
 } from "../../utils/java";
 
-type JavaListLike = {
-    readonly length?: unknown;
+type JavaArrayLike = {
+    readonly length: unknown;
     [index: number]: unknown;
-    get?(index: number): unknown;
-    size?(): unknown;
 };
 
-export function javaListLength(value: unknown): number {
+export function javaArrayLength(value: unknown): number {
     if (value === null || value === undefined) return -1;
-    const list = value as JavaListLike;
+    const array = value as JavaArrayLike;
     try {
-        if (typeof list.size === "function") return Number(list.size());
-    } catch (_error) {}
-    try {
-        if (typeof list.length === "number") return list.length;
+        if (typeof array.length === "number") return array.length;
     } catch (_error) {}
     return -1;
 }
 
-export function javaListAt(value: unknown, index: number): unknown {
+export function javaArrayAt(value: unknown, index: number): unknown {
     if (value === null || value === undefined) return null;
-    const list = value as JavaListLike;
     try {
-        if (typeof list.get === "function") return list.get(index);
-    } catch (_error) {}
-    try {
-        return list[index];
+        return (value as JavaArrayLike)[index];
     } catch (_error) {
         return null;
     }

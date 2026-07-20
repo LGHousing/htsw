@@ -22,8 +22,8 @@ import { isSimulatorActive } from "../../simulator/session";
 import { getChatLines } from "./mcChat";
 import {
     getMinecraft,
-    javaListAt,
-    javaListLength,
+    javaArrayAt,
+    javaArrayLength,
     runtimeString,
     type RuntimeString,
 } from "../lib/java";
@@ -110,11 +110,11 @@ function wrapFormattedLine(line: string, maxWidth: number): string[] {
     } catch (_e) {
         return [line];
     }
-    const n = javaListLength(wrapped);
+    const n = javaArrayLength(wrapped);
     if (n <= 0) return [line];
     const out: string[] = [];
     for (let i = 0; i < n; i++) {
-        const part = javaListAt(wrapped, i) as RuntimeString | null | undefined;
+        const part = javaArrayAt(wrapped, i) as RuntimeString | null | undefined;
         if (part !== null && part !== undefined) out.push(runtimeString(part));
     }
     return out.length === 0 ? [line] : out;

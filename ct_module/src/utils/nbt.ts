@@ -128,8 +128,7 @@ function fromMinecraftTag(tag: HtswMinecraftNbtBase): Tag {
     }
     if (hasMinecraftTagKind(tag, kind, "NBTTagCompound")) {
         const value: Record<string, Tag | undefined> = {};
-        const keys = tag.func_150296_c();
-        const keyArray = keys.toArray();
+        const keyArray = tag.func_150296_c();
         const length: number = keyArray.length;
         for (let i = 0; i < length; i++) {
             const key = runtimeString(keyArray[i]);

@@ -2,8 +2,8 @@
 
 import {
     getMinecraft,
-    javaListAt,
-    javaListLength,
+    javaArrayAt,
+    javaArrayLength,
 } from "../lib/java";
 
 // The overlay scrollback mirrors Minecraft's own chat buffer so it shows the
@@ -125,7 +125,7 @@ function mcChatList(): { list: unknown; len: number } | null {
     const list = reflectLineList(chat);
     if (list === null) return null;
 
-    const len = javaListLength(list);
+    const len = javaArrayLength(list);
     if (len < 0) return null;
     return { list, len };
 }
@@ -138,7 +138,7 @@ function buildMcLines(list: unknown, len: number): string[] | null {
     const lines: string[] = [];
     let nonEmpty = 0;
     for (let i = limit - 1; i >= 0; i--) {
-        const el = javaListAt(list, i);
+        const el = javaArrayAt(list, i);
         if (el === null || el === undefined) continue;
         const s = formattedTextOf(el);
         if (s.length > 0) nonEmpty++;
@@ -157,11 +157,11 @@ function readCtFallback(): string[] | null {
             }
         ).getChatLines();
         if (raw === null || raw === undefined) return null;
-        const n = javaListLength(raw);
+        const n = javaArrayLength(raw);
         const limit = Math.min(n, MAX_LINES);
         const lines: string[] = [];
         for (let i = limit - 1; i >= 0; i--) {
-            lines.push(String(javaListAt(raw, i)));
+            lines.push(String(javaArrayAt(raw, i)));
         }
         return lines;
     } catch (_e) {
@@ -184,7 +184,7 @@ export function refreshChatLines(): boolean {
         return replaceCache(fb);
     }
 
-    const newest = mc.len > 0 ? formattedTextOf(javaListAt(mc.list, 0)) : "";
+    const newest = mc.len > 0 ? formattedTextOf(javaArrayAt(mc.list, 0)) : "";
     if (mc.len === lastLen && newest === lastNewest && cacheLines.length > 0) {
         return false;
     }
