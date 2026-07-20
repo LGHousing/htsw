@@ -20,6 +20,7 @@ function leafValues(tag: TagLike, path: string, output: Map<string, unknown>): v
     if (tag.type === "compound") {
         const value = tag.value as Record<string, TagLike>;
         const keys = Object.keys(value).sort();
+        if (keys.length === 0) output.set(path, {});
         for (const key of keys) {
             leafValues(value[key], path === "" ? key : `${path}.${key}`, output);
         }

@@ -149,4 +149,64 @@ describe("canonicalItemTag", () => {
         expect(canonicalItemTag(withBlank)).toEqual(canonicalItemTag(houseForm));
         expect(withBlank).toEqual(snapshot);
     });
+
+    test("Drop Item's empty ExtraAttributes remains part of exact metadata identity", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const marked = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ ExtraAttributes: compound({}) }),
+        });
+        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(marked));
+    });
+
+    test("authored empty compounds are preserved regardless of their key", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const custom = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ custom: compound({}) }),
+        });
+        const nestedExtraAttributes = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ container: compound({ ExtraAttributes: compound({}) }) }),
+        });
+        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(custom));
+        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(nestedExtraAttributes));
+    });
+
+    test("known empty server shells are stripped", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const emptyTag = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({}),
+        });
+        const emptyDisplay = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ display: compound({}) }),
+        });
+        expect(canonicalItemTag(plain)).toEqual(canonicalItemTag(emptyTag));
+        expect(canonicalItemTag(plain)).toEqual(canonicalItemTag(emptyDisplay));
+    });
+
+    test("server-only fields do not erase unrelated empty compounds", () => {
+        const source = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({
+                ItemModel: str("minecraft:netherite_spear"),
+                ExtraAttributes: compound({
+                    interact_data: str("blob"),
+                    marker: compound({}),
+                }),
+            }),
+        });
+        const expected = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({
+                ExtraAttributes: compound({ marker: compound({}) }),
+            }),
+        });
+        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(expected));
+        expect(canonicalItemTag(source)).not.toEqual(
+            canonicalItemTag(compound({ id: str("minecraft:diamond_sword") }))
+        );
+    });
 });

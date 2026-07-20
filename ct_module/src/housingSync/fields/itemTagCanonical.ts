@@ -18,25 +18,11 @@ function compoundEntries(tag: TagLike): Record<string, TagLike> {
     return tag.value as Record<string, TagLike>;
 }
 
-function stripEmptyCompounds(tag: TagLike): TagLike {
-    if (tag.type !== "compound") return tag;
-    const value = compoundEntries(tag);
-    const out: Record<string, TagLike> = {};
-    for (const key of Object.keys(value)) {
-        const child = stripEmptyCompounds(value[key]);
-        if (
-            child.type === "compound" &&
-            Object.keys(child.value as Record<string, unknown>).length === 0
-        ) {
-            continue;
-        }
-        out[key] = child;
-    }
-    return { type: "compound", value: out };
+function isEmptyCompound(tag: TagLike | undefined): boolean {
+    return tag?.type === "compound" && Object.keys(compoundEntries(tag)).length === 0;
 }
 
-// Remove the tag at `path`, rebuilding only the compounds on that path
-// (copy-on-write). Returns the input unchanged when the path doesn't resolve.
+// Remove the tag at `path`, pruning only compounds emptied by that removal.
 function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
     if (tag.type !== "compound") return tag;
     const value = compoundEntries(tag);
@@ -52,9 +38,27 @@ function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
     const child = withoutTagAtPath(value[key], path.slice(1));
     if (child === value[key]) return tag;
     for (const k of Object.keys(value)) {
-        out[k] = k === key ? child : value[k];
+        if (k !== key) {
+            out[k] = value[k];
+        } else if (!isEmptyCompound(child)) {
+            out[k] = child;
+        }
     }
     return { type: "compound", value: out };
+}
+
+// Live reads add empty `tag` and `tag.display` shells. Normalize only those
+// known paths; other empty compounds are authored item data.
+function stripEmptyServerShells(tag: TagLike): TagLike {
+    let normalized = tag;
+    const display = tagChild(tagChild(normalized, "tag"), "display");
+    if (isEmptyCompound(display)) {
+        normalized = withoutTagAtPath(normalized, ["tag", "display"]);
+    }
+    if (isEmptyCompound(tagChild(normalized, "tag"))) {
+        normalized = withoutTagAtPath(normalized, ["tag"]);
+    }
+    return normalized;
 }
 
 // Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
@@ -173,7 +177,7 @@ function normalizeItemDefaults(tag: TagLike): TagLike {
 }
 
 export function canonicalItemTag(tag: TagLike): TagLike {
-    return stripEmptyCompounds(
+    return stripEmptyServerShells(
         normalizeBlankLoreSeparators(
             normalizeItemDefaults(
                 normalizeIntegralTypes(stripItemModel(stripInteractData(tag)))
