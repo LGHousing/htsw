@@ -6,7 +6,7 @@
     "dependencies": {
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
-        "monaco-editor": "^0.55.1"
+        "monaco-editor": "^0.56.0"
     },
     "devDependencies": {
         "typescript": "~7.0.2"
