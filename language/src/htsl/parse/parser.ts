@@ -157,7 +157,7 @@ export class Parser {
 
         if (this.check("ident")) {
 
-            addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`)
+            addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`);
 
             const optionsToDisplay = Math.min(5, options.length);
             for (let i = 0; i < optionsToDisplay; i++) {

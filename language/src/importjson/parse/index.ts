@@ -53,7 +53,7 @@ export function parseImportJson(
 }
 
 function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[] {
-    const importables: Importable[] = []
+    const importables: Importable[] = [];
 
     parseEntryList(p, "include", (sp) => {
         parseInclude(sp, fileNode);

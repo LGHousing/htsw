@@ -398,7 +398,7 @@ export type HousingCacheDeleteResult = "deleted" | "missing" | "partial";
 
 /** Delete every cache file for one house and report what remains. */
 export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResult {
-    let result: HousingCacheDeleteResult = "partial";
+    let result: HousingCacheDeleteResult;
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");

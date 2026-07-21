@@ -778,7 +778,7 @@ async function addImportable(
 
         const section = SECTION_BY_KIND[kind];
         const result = await runProjectMutation((fs) => {
-            let targetImportJson = importJsonPath;
+            let targetImportJson: string;
             const entry: Record<string, unknown> = {};
             const created: string[] = [];
 

@@ -85,7 +85,6 @@ function parseMinecraftItemId(p: Parser): string {
     return value;
 }
 
-const HOUSE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TAG_RE = /^[a-z0-9 ]*$/i;
 
 export function parseTag(p: Parser): string {
@@ -99,18 +98,6 @@ export function parseTag(p: Parser): string {
     }
 
     return tag;
-}
-
-function parseUuid(p: Parser): string {
-    const uuid = p.parseString();
-
-    if (!HOUSE_UUID_RE.test(uuid)) {
-        p.gcx.addDiagnostic(
-            Diagnostic.error("Expected UUID").addPrimarySpan(p.span())
-        );
-    }
-
-    return uuid;
 }
 
 export function parsePos(p: Parser): Pos {

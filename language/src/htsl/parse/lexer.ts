@@ -234,7 +234,7 @@ export class Lexer {
         if (/[a-zA-Z_]/.test(c)) {
             let value = c;
             while (this.hasNext()) {
-                if (!/[a-zA-Z_/\-0-9.#@$:-]/.test(this.peek())) break;
+                if (!/[a-zA-Z_/0-9.#@$:-]/.test(this.peek())) break;
                 value += this.next();
             }
             return token("ident", new Span(lo, this.posWithOffset), { value });

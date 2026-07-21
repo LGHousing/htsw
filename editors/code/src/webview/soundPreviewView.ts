@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import * as htsw from "htsw";
 import { SoundCache } from "../sounds/soundCache";
 import { SOUND_NAME_1_8_TO_1_21, soundEventForVersion } from "../sounds/soundMap";
-import { renderWebviewHtml } from "./html";
 import type {
     SoundEntry,
     SoundPreviewFromHostMessage,
@@ -13,30 +12,6 @@ import type {
 const VERSION_KEY = "htsw.soundPreviewer.version";
 const PITCH_KEY = "htsw.soundPreviewer.pitch";
 const VOLUME_KEY = "htsw.soundPreviewer.volume";
-
-class SoundPreviewViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = "htsw.soundPreviewer";
-    private readonly controller: SoundPreviewController;
-
-    public constructor(
-        private readonly extensionUri: vscode.Uri,
-        globalStorageUri: vscode.Uri,
-        globalState: vscode.Memento,
-    ) {
-        this.controller = new SoundPreviewController(globalStorageUri, globalState);
-    }
-
-    public resolveWebviewView(view: vscode.WebviewView): void {
-        view.webview.html = renderWebviewHtml(view.webview, this.extensionUri, {
-            scriptName: "soundPreviewer.js",
-            extraLocalResourceRoots: [this.controller.cacheRootUri()],
-        });
-
-        view.webview.onDidReceiveMessage((message: SoundPreviewToHostMessage) => {
-            void this.controller.handleMessage(view.webview, message);
-        });
-    }
-}
 
 export class SoundPreviewController {
     private readonly cache: SoundCache;

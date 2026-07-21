@@ -304,13 +304,6 @@ function shrLongStates(
     throw Error("Unreachable");
 }
 
-function shlULongStates(
-    lhs: KnownNumericState<Long>,
-    rhs: KnownNumericState<Long>
-): NumericState<Long> {
-    return shlLongStates(lhs, rhs);
-}
-
 function shrULongStates(
     lhs: KnownNumericState<Long>,
     rhs: KnownNumericState<Long>

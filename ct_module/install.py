@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import suppress
 import os
 import re
 import shutil
@@ -113,10 +114,8 @@ def build_stage(destination: Path, env: dict[str, str]) -> Path:
                     shutil.copy2(source, stage / name)
         return stage
     except Exception:
-        try:
+        with suppress(OSError):
             remove_tree(stage)
-        except OSError:
-            pass
         raise
 
 
