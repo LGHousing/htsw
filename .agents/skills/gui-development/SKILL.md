@@ -73,7 +73,7 @@ Use the existing `javaType` helper for new Java class lookups. Follow nearby int
 ## ChatTriggers and Minecraft traps
 
 - ChatTriggers' `guiOpened` trigger drops events whose new GUI is `null`. Subscribe to Forge's `GuiOpenEvent` directly when screen closure matters.
-- A running Housing task may open its first container before the idle `/wtfmap` presence probe can run. Allow the fullscreen task overlay while presence is still unknown, but keep it hidden after an explicit out-of-house verdict.
+- An active Housing sync task owns the fullscreen task overlay while it runs, even when the cached `/wtfmap` verdict is unknown or stale. Use live presence to gate idle containers, not active task UI.
 - Protected `GuiContainer` bounds require reflection. Preserve the cached field lookup; repeated failed reflection walks create expensive Rhino-wrapped exceptions.
 - Use `Renderer.getStringWidth` for proportional text measurement. Never substitute character count times a constant.
 - `ChatLib.chat()` output does not re-enter ChatTriggers' chat trigger, and bridge chat readback cannot see it. Write runtime probes to `gui-debug.log`.

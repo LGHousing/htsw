@@ -141,8 +141,8 @@ function frameBounds(): Rect {
 
 function frameVisible(): boolean {
     if (!enabled) return false;
-    // A running Housing sync task can only drive menus inside a house, so show
-    // the frame during any task regardless of the cached presence verdict.
+    // An active sync task owns the fullscreen task UI. Live Housing presence
+    // only decides whether the frame appears over idle containers.
     if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return getTaskProgress() !== null && getImportCachedBounds() !== null;
@@ -805,10 +805,9 @@ export function initHtswGui(): void {
                 mc.func_147108_a(null);
             }
         }
-        // Learn the housing UUID whenever a container is open, even before the
-        // overlay shows — frameVisible() now gates on a known UUID, so the
-        // fetch has to run independently of it or the overlay could never
-        // appear (null UUID → hidden → never fetched).
+        // Check live Housing presence whenever a container is open, even before
+        // the idle overlay appears. If the check depended on frameVisible(), an
+        // unknown verdict could never become "in".
         if (getOpenContainerBounds() !== null) {
             maybeAutoFetchHousingUuid();
         }
