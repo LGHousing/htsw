@@ -10,7 +10,9 @@ import {
 } from "../importCache";
 import { importableCanonicalParts } from "../importCache/hash";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { createItemRegistry } from "../importables/itemRegistry";
+import { createProjectItemIndex } from "../importables/items/projectItems";
+import { createItemDependencyIndex } from "../importables/items/dependencyIndex";
+import { createItemFieldResolver } from "../importables/items/resolveItem";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
@@ -44,11 +46,11 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "../housingSync/menus/packets";
+import { ItemCaptureRegistry } from "../importables/items/captureRegistry";
 import {
-    ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
-} from "../housingSync/itemCapture";
+    restorePlayerInventory,
+    snapshotPlayerInventory,
+} from "../housingSync/items/playerInventory";
 import { gmcOnImportStart, waitForCreativeMode } from "../housingSync/sideEffects";
 import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
 import { projectItemsFromParsedImportJson } from "../importables/exportContext";
@@ -190,7 +192,7 @@ async function verifyFixture(
     const itemCaptures = createFixtureItemCaptures(fixture);
     const session: ImportSession = {
         parsed: fixture.parsed,
-        items: createItemRegistry(fixture.parsed.value, fixture.parsed.gcx),
+        ...fixtureItemSessionFields(fixture, housingUuid),
         housingUuid,
         trust: buildTrustPlan(housingUuid, ordered, false),
         conflicts: [],
@@ -200,7 +202,7 @@ async function verifyFixture(
     };
 
     const failures: string[] = [];
-    const inventorySnapshot = snapshotInventory();
+    const inventorySnapshot = snapshotPlayerInventory();
     try {
         for (let i = 0; i < ordered.length; i++) {
             const importable = ordered[i];
@@ -214,7 +216,7 @@ async function verifyFixture(
         }
     } finally {
         try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+            await restorePlayerInventory(ctx, inventorySnapshot);
         } catch (e) {
             failures.push(`inventory restore failed: ${String(e)}`);
         }
@@ -370,7 +372,7 @@ function trustModeSessionFor(
 ): ImportSession {
     return {
         parsed: fixture.parsed,
-        items: createItemRegistry(fixture.parsed.value, fixture.parsed.gcx),
+        ...fixtureItemSessionFields(fixture, housingUuid),
         housingUuid,
         trust: buildTrustPlan(housingUuid, importables, true),
         conflicts: [],
@@ -380,6 +382,23 @@ function trustModeSessionFor(
             captures: createFixtureItemCaptures(fixture),
         },
         npcLookup: createNpcLookupCache(),
+    };
+}
+
+function fixtureItemSessionFields(
+    fixture: ParsedTestFixture,
+    housingUuid: string
+): Pick<
+    ImportSession,
+    "items" | "itemDependencies" | "canonicalizeItemName" | "resolveItem"
+> {
+    const items = createProjectItemIndex(fixture.parsed.value, fixture.parsed.gcx);
+    const itemDependencies = createItemDependencyIndex(fixture.parsed.value, items);
+    return {
+        items,
+        itemDependencies,
+        canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+        resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),
     };
 }
 
@@ -524,7 +543,7 @@ function appendHashDiffDetail(
 }
 
 function createFixtureItemCaptures(fixture: ParsedTestFixture): ItemCaptureRegistry {
-    const captures = new ItemCaptureRegistry();
+    const captures = new ItemCaptureRegistry("live");
     const importables = fixture.parsed.value;
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];

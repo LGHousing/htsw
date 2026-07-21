@@ -1,5 +1,4 @@
 import {
-    canonKey,
     collectFileRefs,
     readEntryValue,
     refsOfOtherEntries,
@@ -43,7 +42,7 @@ export function planDeleteImportableEntry(
     for (let i = 0; i < refSlots.length; i++) {
         const filePath = fs.resolvePath(dir, refSlots[i].ref);
         if (!fs.exists(filePath)) continue;
-        const key = canonKey(filePath);
+        const key = fs.pathKey(filePath);
         if (otherRefs.has(key)) {
             shared.set(key, filePath);
         } else {

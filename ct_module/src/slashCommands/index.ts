@@ -1,14 +1,6 @@
-import {
-    SourceMap,
-    parseActionsResult,
-    parseImportablesResult,
-    Diagnostic,
-} from "htsw";
+import { SourceMap, parseActionsResult, parseImportablesResult, Diagnostic } from "htsw";
 
-import {
-    chatSeparator,
-    stripSurroundingQuotes,
-} from "../utils/helpers";
+import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 import { recompile } from "./recompile";
@@ -16,23 +8,14 @@ import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
 import { getMinecraft, javaType } from "../utils/java";
-import {
-    clickHtswOverlay,
-    scrollHtswOverlay,
-    toggleHtswGui,
-} from "../gui/overlay";
+import { clickHtswOverlay, scrollHtswOverlay, toggleHtswGui } from "../gui/overlay";
 import { resetTimingStats } from "../housingSync/progress/timing";
-import {
-    getEventContainerCounts,
-} from "../tasks/specifics/waitFor";
+import { getEventContainerCounts } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/projects/tree";
 import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
 import { resetOnboarding } from "../gui/persistence/onboarding";
 import { rearmTourAutoStart } from "../gui/popovers/tour";
-import {
-    getTaskTracePath,
-    setTaskTraceEnabled,
-} from "../housingSync/trace/taskTrace";
+import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
 import {
     getProgressTracePath,
     setProgressTraceEnabled,
@@ -46,15 +29,13 @@ import {
 } from "../perf/lagProbe";
 import { commandTest } from "../testSuite/command";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
-import { createItemRegistry } from "../importables/itemRegistry";
+import { createProjectItemIndex } from "../importables/items/projectItems";
+import { createItemFieldResolver } from "../importables/items/resolveItem";
 import { startImport } from "../gui/right-panel/import-tab/taskController";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
-import {
-    PROJECTS_ROOT,
-    resolveModuleRelativePath,
-} from "../project/paths";
+import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, clearInv } from "./debugItems";
@@ -295,7 +276,9 @@ function commandBridge(args: string[]): void {
         const buttons: Partial<Record<string, number>> = { left: 0, right: 1, middle: 2 };
         const button = buttons[buttonName];
         if (button === undefined) {
-            ChatLib.chat("&cUsage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]");
+            ChatLib.chat(
+                "&cUsage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]"
+            );
             return;
         }
         clickHtswOverlay(point.x, point.y, button);
@@ -304,7 +287,9 @@ function commandBridge(args: string[]): void {
     if (action === "scroll") {
         const delta = Number(args[3]);
         if (!isFinite(delta) || delta === 0) {
-            ChatLib.chat("&cUsage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]");
+            ChatLib.chat(
+                "&cUsage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]"
+            );
             return;
         }
         scrollHtswOverlay(point.x, point.y, delta);
@@ -329,7 +314,12 @@ function bridgePoint(args: string[]): { x: number; y: number } | null {
         ChatLib.chat("&cHTSW bridge coordinate space must be framebuffer or gui.");
         return null;
     }
-    if (x < 0 || y < 0 || x >= Renderer.screen.getWidth() || y >= Renderer.screen.getHeight()) {
+    if (
+        x < 0 ||
+        y < 0 ||
+        x >= Renderer.screen.getWidth() ||
+        y >= Renderer.screen.getHeight()
+    ) {
         ChatLib.chat("&cHTSW bridge coordinates are outside the current screen.");
         return null;
     }
@@ -375,12 +365,12 @@ function commandWaiters(): void {
     const counts = getEventContainerCounts();
     ChatLib.chat(
         `&7[waiters] live waitFor predicates — ` +
-        `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
-        `packetSent: ${counts.packetSent}, message: ${counts.message}`
+            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+            `packetSent: ${counts.packetSent}, message: ${counts.message}`
     );
     ChatLib.chat(
         `&7[waiters] Idle baseline should be ~0 across the board; ` +
-        `non-zero between imports = a leaked waiter.`
+            `non-zero between imports = a leaked waiter.`
     );
 }
 
@@ -389,14 +379,16 @@ function commandTour(): void {
     rearmTourAutoStart();
     ChatLib.chat(
         "&a[htsw] Onboarding reset — open a Housing menu to start the tour. " +
-        "The sample-project button is back too."
+            "The sample-project button is back too."
     );
 }
 
 function commandGuiPerf(args: string[]): void {
     if (args.length > 0 && args[0].toLowerCase() === "clear") {
         clearFramePerf();
-        ChatLib.chat("&7[guiperf] samples cleared. Scroll around, then run /htsw debug guiperf.");
+        ChatLib.chat(
+            "&7[guiperf] samples cleared. Scroll around, then run /htsw debug guiperf."
+        );
         return;
     }
     const s = getFramePerfStats();
@@ -407,14 +399,14 @@ function commandGuiPerf(args: string[]): void {
     const fps = s.avgGapMs > 0 ? Math.round(1000 / s.avgGapMs) : 0;
     ChatLib.chat(
         `&7[guiperf] last ${s.frames} painted frames: ` +
-        `avg gap ${s.avgGapMs.toFixed(1)}ms (~${fps}fps), ` +
-        `p95 ${s.p95GapMs}ms, max ${s.maxGapMs}ms.`
+            `avg gap ${s.avgGapMs.toFixed(1)}ms (~${fps}fps), ` +
+            `p95 ${s.p95GapMs}ms, max ${s.maxGapMs}ms.`
     );
     ChatLib.chat(
         `&7[guiperf] overlay render: rebuild frames ${s.rebuiltFrames}/${s.frames} ` +
-        `avg ${s.avgRebuildMs.toFixed(1)}ms (max ${s.maxRebuildMs}ms), ` +
-        `draw-only avg ${s.avgDrawOnlyMs.toFixed(1)}ms. ` +
-        `Scrolling rebuilds every frame — smooth needs rebuild avg well under the frame budget.`
+            `avg ${s.avgRebuildMs.toFixed(1)}ms (max ${s.maxRebuildMs}ms), ` +
+            `draw-only avg ${s.avgDrawOnlyMs.toFixed(1)}ms. ` +
+            `Scrolling rebuilds every frame — smooth needs rebuild avg well under the frame budget.`
     );
     if (s.phases.length > 0) {
         let parts = "";
@@ -424,7 +416,7 @@ function commandGuiPerf(args: string[]): void {
         }
         ChatLib.chat(
             `&7[guiperf] timed rebuild slices: ${parts}. ` +
-            `layout-total includes child builders such as tree/codeview.`
+                `layout-total includes child builders such as tree/codeview.`
         );
     }
 }
@@ -433,8 +425,8 @@ function commandTreePerf(): void {
     const s = getTreePerfStats();
     ChatLib.chat(
         `&7[treeperf] importables tree: ${s.rows} rows, ` +
-        `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
-        `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
+            `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
+            `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
     );
 }
 
@@ -493,14 +485,16 @@ function commandLagProbe(args: string[]): void {
             s.heapBeforeMB < 0 ? "heap n/a" : `heap ${s.heapBeforeMB}→${s.heapAfterMB}MB`;
         ChatLib.chat(
             `&7  &f${s.gapMs}ms&7 ${age}s ago ${gc} ${heap} screen=${s.screen} ` +
-            `import=${s.importing ? "yes" : "no"} task=${s.taskRunning ? "yes" : "no"} ` +
-            `waiters t${s.waiters.tick}/pr${s.waiters.packetReceived}/ps${s.waiters.packetSent}/m${s.waiters.message}`
+                `import=${s.importing ? "yes" : "no"} task=${s.taskRunning ? "yes" : "no"} ` +
+                `waiters t${s.waiters.tick}/pr${s.waiters.packetReceived}/ps${s.waiters.packetSent}/m${s.waiters.message}`
         );
         ChatLib.chat(`&8    last parse: ${s.lastParse}`);
     }
     const stacks = getStallStacks();
     if (stacks.length > 0) {
-        ChatLib.chat("&7[lagprobe] mid-stall client-thread stacks (also in gui-debug.log):");
+        ChatLib.chat(
+            "&7[lagprobe] mid-stall client-thread stacks (also in gui-debug.log):"
+        );
         for (let i = Math.max(0, stacks.length - 2); i < stacks.length; i++) {
             const lines = stacks[i];
             for (let j = 0; j < Math.min(lines.length, 9); j++) {
@@ -543,7 +537,9 @@ function commandImport(args: string[]) {
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
         ChatLib.chat("&f/htsw import <import.json|actions.htsl>");
-        ChatLib.chat("&f/htsw import raw <actions.htsl> &7- Append into the open action menu");
+        ChatLib.chat(
+            "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
+        );
         ChatLib.chat(`&7${chatSeparator()}`);
         return;
     }
@@ -555,7 +551,9 @@ function commandImport(args: string[]) {
     }
 
     const pathArgs = rawMode ? args.slice(1) : args;
-    const importPath = resolveModuleRelativePath(stripSurroundingQuotes(pathArgs.join(" ")));
+    const importPath = resolveModuleRelativePath(
+        stripSurroundingQuotes(pathArgs.join(" "))
+    );
     if (!FileLib.exists(importPath)) {
         ChatLib.chat(`&cFile does not exist '${importPath}'`);
         return;
@@ -594,7 +592,9 @@ function isRawImportToken(token: string | undefined): boolean {
 
 function startRawHtslImport(path: string): void {
     if (TaskManager.isBusy()) {
-        ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish first.");
+        ChatLib.chat(
+            "&c[htsw] An import (or another task) is already running — wait for it to finish first."
+        );
         return;
     }
 
@@ -618,7 +618,8 @@ function startRawHtslImport(path: string): void {
         return;
     }
 
-    const items = createItemRegistry([], result.gcx);
+    const items = createProjectItemIndex([], result.gcx);
+    const resolveItem = createItemFieldResolver(items);
     runHousingSyncTask("import", async (ctx) => {
         if (ctx.tryGetMenuItemSlot("Add Action") === null) {
             throw new Error("Open a Housing action-list menu first.");
@@ -628,7 +629,7 @@ function startRawHtslImport(path: string): void {
         ChatLib.chat(
             `&7[htsw] Appending ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
         );
-        await appendActionsToOpenActionList(ctx, result.value, items);
+        await appendActionsToOpenActionList(ctx, result.value, resolveItem);
         ChatLib.chat(
             `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
         );
@@ -652,7 +653,9 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("&7While a simulation is active:");
         ChatLib.chat("&f/function run <function> &7- Run a function");
         ChatLib.chat("&f// <htsl> &7- Evaluate HTSL code");
-        ChatLib.chat("&f/var <var|global:var|team:team:var> <set|inc|dec|mul|div> <value> &7- Change a variable");
+        ChatLib.chat(
+            "&f/var <var|global:var|team:team:var> <set|inc|dec|mul|div> <value> &7- Change a variable"
+        );
         ChatLib.chat("&f/vars [filter] &7- Dump player variables");
         ChatLib.chat("&f/globalvars [filter] &7- Dump global variables");
         ChatLib.chat("&f/teamvars <team> [filter] &7- Dump team variables");

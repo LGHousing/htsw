@@ -4,6 +4,7 @@ import { getActionLoreFields, getChildListFields } from "../../fields/actionMapp
 import type { ChildListName } from "../../actionPath";
 import type { ObservedActionSlot } from "../../observedActions";
 import { isChildListFieldKind } from "../../fields/loreSpecs";
+import { notesEqual, scalarFieldDiffers } from "../comparison";
 
 const CHILD_LIST_COST_WEIGHT = 20;
 const SCALAR_FIELD_COST_WEIGHT = 2;
@@ -54,11 +55,7 @@ export function matchObservedToDesired(
                     ? entry.childListsToRead.size > 0
                     : getChildListFields(entry.action.type).some(
                           (field) =>
-                              (
-                                  entry.childListSummaries?.[
-                                      field.prop
-                                  ] ?? []
-                              ).length > 0
+                              (entry.childListSummaries?.[field.prop] ?? []).length > 0
                       ))
         );
         if (observedBucket.length === 0) continue;
@@ -121,15 +118,12 @@ function shallowChildListOwnerCost(
             continue;
         }
 
-        if (
-            JSON.stringify((observed.action as Record<string, unknown>)[field.prop]) !==
-            JSON.stringify((desired.action as Record<string, unknown>)[field.prop])
-        ) {
+        if (scalarFieldDiffers(observed.action, desired.action, actionType, field.prop)) {
             cost += SCALAR_FIELD_COST_WEIGHT;
         }
     }
 
-    if (observed.action.note !== desired.action.note) {
+    if (!notesEqual(observed.action.note, desired.action.note)) {
         cost += NOTE_COST_WEIGHT;
     }
 

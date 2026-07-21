@@ -21,7 +21,7 @@ import {
 } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
-import { type ItemRegistry } from "../../../importables/itemRegistry";
+import type { ResolveItemField } from "../../items/itemReferences";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -41,8 +41,7 @@ import {
     getConditionFieldDefault,
     getConditionFieldLabel,
 } from "../../fields/conditionMappings";
-import { setItemValue } from "../../items/injectItem";
-import { resolveImportableItem } from "../../items/resolveItem";
+import { setItemValue } from "../../items/itemPicker";
 
 function booleanConditionDefault(type: Condition["type"], prop: string): boolean {
     return getConditionFieldDefault(type, prop) as boolean;
@@ -111,8 +110,11 @@ export async function writeRequireGroup(
 
     await setBooleanValue(
         ctx,
-        ctx.getMenuItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
-        condition.includeHigherGroups ?? booleanConditionDefault("REQUIRE_GROUP", "includeHigherGroups")
+        ctx.getMenuItemSlot(
+            getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")
+        ),
+        condition.includeHigherGroups ??
+            booleanConditionDefault("REQUIRE_GROUP", "includeHigherGroups")
     );
 }
 
@@ -193,13 +195,13 @@ export async function writeRequireItem(
     ctx: TaskContext,
     condition: ConditionRequireItem,
     _current: ConditionRequireItem | undefined,
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("REQUIRE_ITEM", "itemName"),
-            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
+            await resolveItem(condition, condition.itemName, "condition")
         );
     }
 
@@ -321,7 +323,9 @@ export async function writeComparePlaceholder(
     if (condition.placeholder) {
         await setStringValue(
             ctx,
-            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "placeholder")),
+            ctx.getMenuItemSlot(
+                getConditionFieldLabel("COMPARE_PLACEHOLDER", "placeholder")
+            ),
             condition.placeholder
         );
     }
@@ -400,13 +404,13 @@ export async function writeBlockType(
     ctx: TaskContext,
     condition: ConditionBlockType,
     _current: ConditionBlockType | undefined,
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("BLOCK_TYPE", "itemName"),
-            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
+            await resolveItem(condition, condition.itemName, "condition")
         );
     }
 }
@@ -415,13 +419,13 @@ export async function writeIsItem(
     ctx: TaskContext,
     condition: ConditionIsItem,
     _current: ConditionIsItem | undefined,
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("IS_ITEM", "itemName"),
-            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
+            await resolveItem(condition, condition.itemName, "condition")
         );
     }
 }

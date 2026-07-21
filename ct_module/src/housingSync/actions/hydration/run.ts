@@ -7,7 +7,7 @@ import { timedWaitForMenu } from "../../menus/menuWait";
 import {
     captureItemFromOpenEditorField,
     observeItemFromOpenEditorField,
-} from "../../itemCapture";
+} from "../../items/capture";
 import { refreshTruncatedScalarFields } from "../readers";
 import type { ActionHydrationPlan, ActionHydrationWork } from "./plan";
 import type { ChildListName } from "../../actionPath";
@@ -76,10 +76,10 @@ export async function hydrateActionListScan(
     const { slots, plan, isRootList } = scan;
     await hydrateActionDetails(ctx, plan, slots, isRootList, read);
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    if (read.itemRegistry !== undefined) {
+    if (read.canonicalizeItemName !== undefined) {
         for (const entry of slots) {
             if (entry.action !== null) {
-                canonicalizeActionItemName(entry.action, read.itemRegistry);
+                canonicalizeActionItemName(entry.action, read.canonicalizeItemName);
             }
         }
     }
@@ -204,7 +204,8 @@ async function hydrateActionDetail(
             entryPath,
             emitSnapshot,
             account
-        ); return;
+        );
+        return;
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const inner = error instanceof Error ? error.message : String(error);
@@ -287,13 +288,10 @@ async function hydrateActionDetailFromEditor(
         refreshTruncatedScalarFields(ctx, entry.action, work.scalarFieldsToRead);
     }
 
-    const itemCaptures =
-        read.itemReadMode === "sync" ? undefined : read.itemCaptures;
+    const itemCaptures = read.itemReadMode === "sync" ? undefined : read.itemCaptures;
     const itemFieldObservations =
         read.itemReadMode === "sync" ? read.itemFieldObservations : undefined;
-    if (
-        itemCaptures !== undefined || itemFieldObservations !== undefined
-    ) {
+    if (itemCaptures !== undefined || itemFieldObservations !== undefined) {
         const itemFields = work.itemFieldsToCapture;
         for (let i = 0; i < itemFields.length; i++) {
             const field = itemFields[i];

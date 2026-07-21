@@ -1,6 +1,6 @@
 import type { Action } from "htsw/types";
 
-import { hashHex } from "../../importCache/hash";
+import { hashHex } from "../../utils/hash";
 import type { ChildListName } from "../actionPath";
 import type { ObservedActionSlot } from "../observedActions";
 import { getChildListFields } from "../fields/actionMappings";

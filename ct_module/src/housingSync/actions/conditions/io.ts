@@ -1,11 +1,11 @@
 import type { Condition } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
-import { type ItemRegistry } from "../../../importables/itemRegistry";
+import type { ResolveItemField } from "../../items/itemReferences";
 import { ItemSlot } from "../../../tasks/specifics/slots";
 import { removedFormatting } from "../../../utils/helpers";
 import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
-import { conditionOnlyNoteDiffers } from "../../fields/compare";
+import { conditionOnlyNoteDiffers } from "../comparison";
 import {
     readRequireGroup,
     writeRequireGroup,
@@ -35,7 +35,7 @@ export type ConditionIo<T extends Condition> = {
         ctx: TaskContext,
         desired: T,
         current: T | undefined,
-        itemRegistry: ItemRegistry
+        resolveItem: ResolveItemField
     ) => Promise<void>;
 };
 
@@ -148,7 +148,7 @@ export async function writeOpenCondition(
     ctx: TaskContext,
     condition: Condition,
     current: Condition | undefined,
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     if (current && conditionOnlyNoteDiffers(condition, current)) {
         return;
@@ -162,6 +162,6 @@ export async function writeOpenCondition(
     }
 
     if (spec.write) {
-        await spec.write(ctx, condition, resolvedCurrent, itemRegistry);
+        await spec.write(ctx, condition, resolvedCurrent, resolveItem);
     }
 }

@@ -2,10 +2,8 @@ import type { Action, ImportableRegion } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionListFully } from "../../housingSync/actions/hydration/run";
-import {
-    ItemCaptureRegistry,
-    type InventorySnapshot,
-} from "../../housingSync/itemCapture";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
+import type { PlayerInventorySnapshot } from "../../housingSync/items/playerInventory";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
@@ -36,7 +34,7 @@ type ExportRegionWithSharedStateOptions = {
 
 type SharedRegionExportState = {
     itemCaptures: ItemCaptureRegistry;
-    inventorySnapshot: InventorySnapshot;
+    inventorySnapshot: PlayerInventorySnapshot;
 };
 
 function requireRegionBounds(entry: RegionListEntry): ImportableRegion["bounds"] {

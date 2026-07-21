@@ -1,8 +1,16 @@
 import type { Action, Bounds, Condition, FunctionIcon, Importable } from "htsw/types";
 
-import { cyrb53, stableStringify } from "../utils/helpers";
-import { canonicalStringify } from "../housingSync/fields/compare";
-import { type TagLike, canonicalItemTag } from "../housingSync/fields/itemTagCanonical";
+import { stableStringify } from "../utils/helpers";
+import { hashHex } from "../utils/hash";
+import {
+    actionCompareKey,
+    actionListCompareKey,
+    conditionCompareKey,
+} from "../housingSync/actions/comparison";
+import { commandCompareShape } from "../importables/commands/settings";
+import { functionIconCompareKey } from "../importables/functions/iconComparison";
+import { menuSlotCompareKey } from "../importables/menus/slotComparison";
+import { regionBoundsCompareKey } from "../importables/regions/bounds";
 import { actionListsOfImportable } from "./actionLists";
 
 /**
@@ -13,26 +21,20 @@ import { actionListsOfImportable } from "./actionLists";
  * hashes for identical importables — otherwise a later run would think the
  * importable had changed when it hadn't, and redo work it could have skipped.
  *
- * To keep that guarantee, every value flows through the same
- * `normalizeActionCompare` / `normalizeConditionCompare` the importer uses
- * for its diff equality checks. As long as those two normalizers stay
- * equivalent (they're the same function via `normalizeValue`), the hash and
- * the diff comparator cannot disagree about whether two importables match.
+ * Housing-normalized fields use comparison keys owned by their importable
+ * domains. This remains a cache fingerprint: applying an importable can also
+ * depend on directional rules and item-dependency snapshots that do not belong
+ * in this hash.
  */
-
-/** Hex-encoded 53-bit cyrb53 digest, prefixed with "0x" for clarity in JSON. */
-export function hashHex(input: string): string {
-    return "0x" + cyrb53(input).toString(16);
-}
 
 /** Hash a single normalized action. */
 export function actionHash(action: Action): string {
-    return hashHex(canonicalStringify(action));
+    return hashHex(actionCompareKey(action));
 }
 
 /** Hash a single normalized condition. */
 export function conditionHash(cond: Condition): string {
-    return hashHex(canonicalStringify(cond));
+    return hashHex(conditionCompareKey(cond));
 }
 
 /**
@@ -85,10 +87,6 @@ export function listHashes(importable: Importable): Record<string, string[]> {
     return out;
 }
 
-const DEFAULT_FUNCTION_ICON_CANONICAL = functionIconCompareKeyOf({
-    item: "minecraft:map",
-});
-
 // Parser-stamped file locations (which file the content was parsed FROM),
 // not Housing content. House reads never set them, and parse-side and
 // house-side hashes must stay equal for identical content.
@@ -113,7 +111,7 @@ export function importableCanonicalParts(
     importable: Importable
 ): ImportableCanonicalPart[] {
     const subject =
-        importable.type === "COMMAND" ? commandCanonical(importable) : importable;
+        importable.type === "COMMAND" ? commandCompareShape(importable) : importable;
     const keys = Object.keys(subject).sort();
     const parts: ImportableCanonicalPart[] = [];
     for (let ki = 0; ki < keys.length; ki++) {
@@ -134,7 +132,7 @@ export function importableCanonicalParts(
                 key === "rightClickActions") &&
             Array.isArray(value)
         ) {
-            serialized = actionListCanonical(value as Action[]);
+            serialized = actionListCompareKey(value as Action[]);
         } else if (
             importable.type === "MENU" &&
             key === "slots" &&
@@ -150,7 +148,7 @@ export function importableCanonicalParts(
                 .sort((a, b) => Number(a.slot) - Number(b.slot));
             const slotParts: string[] = [];
             for (let si = 0; si < sortedSlots.length; si++) {
-                slotParts.push(menuSlotCanonical(sortedSlots[si]));
+                slotParts.push(menuSlotCompareKey(sortedSlots[si]));
             }
             serialized = "[" + slotParts.join(",") + "]";
         } else if (
@@ -159,8 +157,13 @@ export function importableCanonicalParts(
             value !== null &&
             typeof value === "object"
         ) {
-            serialized = boundsCanonical(value as Bounds);
-        } else if (key === "icon" && value !== null && typeof value === "object") {
+            serialized = regionBoundsCompareKey(value as Bounds);
+        } else if (
+            importable.type === "FUNCTION" &&
+            key === "icon" &&
+            value !== null &&
+            typeof value === "object"
+        ) {
             const iconKey = functionIconCompareKey(value as FunctionIcon);
             // Housing assigns every function a plain map icon at creation, so a
             // live read of a function whose source declares no icon reports
@@ -190,107 +193,4 @@ export function importableHash(importable: Importable): string {
     }
     const str = "{" + joined.join(",") + "}";
     return hashHex(str);
-}
-
-// Housing normalizes a region's corners to per-axis min/max, so any corner
-// pairing that spans the same box must hash alike.
-function boundsCanonical(bounds: Bounds): string {
-    const lo = {
-        x: Math.min(bounds.from.x, bounds.to.x),
-        y: Math.min(bounds.from.y, bounds.to.y),
-        z: Math.min(bounds.from.z, bounds.to.z),
-    };
-    const hi = {
-        x: Math.max(bounds.from.x, bounds.to.x),
-        y: Math.max(bounds.from.y, bounds.to.y),
-        z: Math.max(bounds.from.z, bounds.to.z),
-    };
-    return stableStringify({ from: lo, to: hi });
-}
-
-// A live read always returns concrete command settings, while an import.json
-// may omit them; drop Housing's defaults (mode Self, requiredPriority 0,
-// listed true) so both sides hash alike.
-function commandCanonical(command: Importable): Importable {
-    const norm: Record<string, unknown> = { ...command };
-    if (norm.mode === "Self") delete norm.mode;
-    if (norm.requiredPriority === 0) delete norm.requiredPriority;
-    if (norm.listed === true) delete norm.listed;
-    return norm as unknown as Importable;
-}
-
-// Normalize in place rather than rebuilding from a named field list: spreading
-// the whole icon keeps every field in the hash (a rebuild silently drops any
-// field it doesn't name); then drop the optional defaults a live read omits so
-// `{item}` and `{item, count: 1}` hash alike. The item id DOES need
-// normalization: current loader and live reads emit `minecraft:<lowercase>`,
-// but cache entries written by older versions stored bare ids ("map") — a
-// stored entry freezes the convention of its write time, and comparing it
-// un-normalized manufactured a phantom icon diff against every current file.
-function functionIconCompareKeyOf(icon: FunctionIcon): string {
-    const norm: Record<string, unknown> = { ...icon };
-    if (typeof norm.item === "string" && norm.item.indexOf(":") < 0) {
-        norm.item = "minecraft:" + norm.item.toLowerCase();
-    }
-    if (norm.count === 1) delete norm.count;
-    if (norm.enchanted !== true) delete norm.enchanted;
-    return stableStringify(norm);
-}
-
-export function functionIconCompareKey(icon: FunctionIcon | undefined): string | null {
-    if (icon === undefined) return null;
-    const key = functionIconCompareKeyOf(icon);
-    return key === DEFAULT_FUNCTION_ICON_CANONICAL ? null : key;
-}
-
-export function functionIconsEqual(
-    a: FunctionIcon | undefined,
-    b: FunctionIcon | undefined
-): boolean {
-    return functionIconCompareKey(a) === functionIconCompareKey(b);
-}
-
-function actionListCanonical(actions: readonly Action[]): string {
-    const parts: string[] = [];
-    for (let i = 0; i < actions.length; i++) {
-        parts.push(canonicalStringify(actions[i]));
-    }
-    return "[" + parts.join(",") + "]";
-}
-
-export function menuSlotCanonical(slot: Record<string, unknown>): string {
-    const keys = Object.keys(slot).sort();
-    const parts: string[] = [];
-    for (let i = 0; i < keys.length; i++) {
-        const key = keys[i];
-        if (PARSE_PATH_KEYS.has(key)) continue;
-        const value = slot[key];
-        if (value === undefined) continue;
-        if (Array.isArray(value) && value.length === 0) continue;
-        let serialized: string;
-        if (key === "actions" && Array.isArray(value)) {
-            serialized = actionListCanonical(value as Action[]);
-        } else if (key === "nbt") {
-            serialized = menuSlotNbtCanonical(value);
-        } else {
-            serialized = stableStringify(value);
-        }
-        parts.push(JSON.stringify(key) + ":" + serialized);
-    }
-    return "{" + parts.join(",") + "}";
-}
-
-// A live menu-slot read hands back vanilla defaults and Housing noise a
-// source snbt never writes; both sides go through the ONE shared item
-// canonicalization (fields/itemTagCanonical.ts) so this hash and the
-// import-time capture matching cannot disagree about item identity.
-function menuSlotNbtCanonical(nbt: unknown): string {
-    if (
-        nbt === null ||
-        typeof nbt !== "object" ||
-        (nbt as { type?: unknown }).type !== "compound"
-    ) {
-        return stableStringify(nbt);
-    }
-    return stableStringify(canonicalItemTag(nbt as TagLike));
 }

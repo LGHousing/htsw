@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ImportableItem } from "htsw/types";
 
-import {
-    itemChangeLines,
-    itemChanges,
-} from "../src/importables/itemChanges";
+import { itemChangeLines, itemChanges } from "../src/importables/items/changes";
+import type { TagLike } from "../src/housingSync/items/itemTag";
 import { message } from "./utils";
 
 function item(name: string, displayName: string): ImportableItem {
@@ -39,12 +37,25 @@ describe("itemChanges", () => {
 
         const changes = itemChanges(file, house);
 
-        expect(changes.nbt).toEqual([
-            'tag.display.Name: "Old name" -> "New name"',
-        ]);
+        expect(changes.nbt).toEqual(['tag.display.Name: "Old name" -> "New name"']);
         expect(itemChangeLines(changes)).toEqual([
             'tag.display.Name: "Old name" -> "New name"',
             "Right click actions changed",
+        ]);
+    });
+
+    it("reports added and removed empty compounds", () => {
+        const plain = item("glass", "Same name");
+        const marked = item("glass", "Same name");
+        const root = marked.nbt.value as Record<string, TagLike>;
+        const tag = root["tag"].value as Record<string, TagLike>;
+        tag["ExtraAttributes"] = { type: "compound", value: {} };
+
+        expect(itemChanges(marked, plain).nbt).toEqual([
+            "tag.ExtraAttributes: (missing) -> {}",
+        ]);
+        expect(itemChanges(plain, marked).nbt).toEqual([
+            "tag.ExtraAttributes: {} -> (missing)",
         ]);
     });
 });

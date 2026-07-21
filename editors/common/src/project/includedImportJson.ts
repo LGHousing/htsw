@@ -60,11 +60,11 @@ export function createIncludedFolderInTree(
         throw new Error(`${rel}/import.json already exists.`);
     }
 
-    const targetKey = includeCanonKey(targetDir);
+    const targetKey = fs.pathKey(targetDir);
     let parent = entryImportJsonPath;
     let parentDepth = 0;
     walkImportJsonTree(fs, entryImportJsonPath, (filePath) => {
-        const dirKey = includeCanonKey(fs.parentDir(filePath));
+        const dirKey = fs.pathKey(fs.parentDir(filePath));
         if (targetKey !== dirKey && targetKey.indexOf(`${dirKey}/`) !== 0) return undefined;
         const depth = dirKey.split("/").length;
         if (depth > parentDepth) {
@@ -97,13 +97,13 @@ export function removeIncludeFromImportJson(
     if (!includeNode || includeNode.type !== "array") return false;
 
     const parentDirPath = parentDir(parentImportJsonPath);
-    const targetKey = includeCanonKey(includedImportJsonPath);
+    const targetKey = fs.pathKey(includedImportJsonPath);
     const items = includeNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.type !== "string") continue;
         const resolved = fs.resolvePath(parentDirPath, String(item.value));
-        if (includeCanonKey(resolved) !== targetKey) continue;
+        if (fs.pathKey(resolved) !== targetKey) continue;
         const next = json.applyEdits(text, json.modify(
             text,
             ["include", i],
@@ -114,10 +114,6 @@ export function removeIncludeFromImportJson(
         return true;
     }
     return false;
-}
-
-function includeCanonKey(path: string): string {
-    return path.split("\\").join("/").toLowerCase();
 }
 
 export function addIncludeToImportJsonSource(source: string, includePath: string): string {

@@ -64,11 +64,9 @@ export function unique(values: readonly string[]): string[] {
 }
 
 /**
- * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
- * and drops empty arrays. Used by importable hashing (`importCache/hash.ts`)
- * and item shell comparison (`importables/items/import.ts`) so identical
- * importables always serialize to identical strings regardless of insertion
- * order or incidental empty-array fields.
+ * Deterministic JSON stringify: sorts object keys and drops `undefined` fields.
+ * Domain-specific comparison code decides whether values such as empty arrays
+ * are meaningful before calling this serializer.
  */
 export function stableStringify(value: unknown): string {
     if (value === null) return "null";
@@ -82,7 +80,6 @@ export function stableStringify(value: unknown): string {
     for (const key of keys) {
         const v = record[key];
         if (v === undefined) continue;
-        if (Array.isArray(v) && v.length === 0) continue;
         parts.push(JSON.stringify(key) + ":" + stableStringify(v));
     }
     return "{" + parts.join(",") + "}";

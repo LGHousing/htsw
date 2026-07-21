@@ -12,6 +12,7 @@ import {
     type ProjectFs,
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "../nodeProjectFs";
+import { absolutePathKey } from "../pathIdentity";
 import type {
     ImportTarget,
     ItemEditorForm,
@@ -111,7 +112,7 @@ async function discoverImportTargets(): Promise<ImportTarget[]> {
 
     for (const uri of importJsons) {
         walkImportJsonTree(nodeProjectFs, uri.fsPath, (filePath) => {
-            const key = pathKey(filePath);
+            const key = absolutePathKey(filePath);
             if (!found.has(key)) {
                 found.set(key, {
                     fsPath: filePath,
@@ -215,7 +216,7 @@ async function upsertItemEntry(importJsonPath: string, entry: Record<string, unk
         writeFile(filePath, text) {
             const open = openTextDocumentForPath(filePath);
             if (open) {
-                replacements.set(pathKey(filePath), text);
+                replacements.set(absolutePathKey(filePath), text);
                 return;
             }
             nodeProjectFs.writeFile(filePath, text);
@@ -225,7 +226,7 @@ async function upsertItemEntry(importJsonPath: string, entry: Record<string, unk
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(importJsonPath));
     upsertImportableEntry(fs, importJsonPath, "items", entry);
 
-    const replacement = replacements.get(pathKey(importJsonPath));
+    const replacement = replacements.get(absolutePathKey(importJsonPath));
     if (replacement !== undefined) {
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
@@ -239,9 +240,9 @@ async function upsertItemEntry(importJsonPath: string, entry: Record<string, unk
 }
 
 function openTextDocumentForPath(filePath: string): vscode.TextDocument | undefined {
-    const key = pathKey(filePath);
+    const key = absolutePathKey(filePath);
     return vscode.workspace.textDocuments.find(
-        (document) => document.uri.scheme === "file" && pathKey(document.uri.fsPath) === key,
+        (document) => document.uri.scheme === "file" && absolutePathKey(document.uri.fsPath) === key,
     );
 }
 
@@ -251,8 +252,4 @@ async function openGeneratedItem(files: string[]): Promise<void> {
         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(first));
         await vscode.window.showTextDocument(doc, { preview: false });
     }
-}
-
-function pathKey(filePath: string): string {
-    return path.resolve(filePath).split("\\").join("/").toLowerCase();
 }

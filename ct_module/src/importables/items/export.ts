@@ -1,9 +1,13 @@
-import { snbtFromItem } from "../../housingSync/itemCapture";
+import { snbtFromItem } from "../../housingSync/items/itemNbt";
+import {
+    restorePlayerInventory,
+    snapshotPlayerInventory,
+} from "../../housingSync/items/playerInventory";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import type { ReadFn } from "../read";
 import { removedFormatting } from "../../utils/helpers";
-import { writeCapturedItems } from "./writeCapturedItems";
+import { exportCapturedItems } from "./exportCapturedItems";
 import { createExportItemCaptureRegistry } from "../exportContext";
 
 export const exportHeldItem: ReadFn = async (ctx, options) => {
@@ -22,20 +26,24 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
     );
     const name = registry.register(
         snbt,
-        removedFormatting(stack.getName()).trim() || "item",
-        slotId
+        removedFormatting(stack.getName()).trim() || "item"
     );
     if (!registry.needsWrite(name)) {
         ctx.displayMessage(`&7[export] Held item is already declared as '${name}'.`);
         return { total: 1, succeeded: 1, failed: 0 };
     }
-    await writeCapturedItems(
-        ctx,
-        registry,
-        options.rootDir,
-        options.importJsonPath,
-        housingUuid,
-        options.newExportTargetImportJson
-    );
+    const inventorySnapshot = snapshotPlayerInventory();
+    try {
+        await exportCapturedItems(
+            ctx,
+            registry,
+            options.rootDir,
+            options.importJsonPath,
+            housingUuid,
+            options.newExportTargetImportJson
+        );
+    } finally {
+        await restorePlayerInventory(ctx, inventorySnapshot);
+    }
     return { total: 1, succeeded: 1, failed: 0 };
 };

@@ -7,11 +7,11 @@ import type {
     ImportableTeam,
 } from "htsw/types";
 
-import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
-import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
-import { interactDataCachePath } from "../importCache";
-import type { ItemDependencyIndex } from "./itemDependencyIndex";
-import type { ItemRegistry } from "./itemRegistry";
+import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
+import { CONDITION_MAPPINGS } from "../../housingSync/fields/conditionMappings";
+import type { ItemDependencyIndex } from "./dependencyIndex";
+import type { ProjectItemIndex } from "./projectItems";
+import { hasInteractDataCache, hasItemClickActions } from "./interactDataCache";
 
 type FieldSpec = { prop: string; kind: string };
 type MappingTable = Record<string, { loreFields: Record<string, FieldSpec> } | undefined>;
@@ -36,9 +36,7 @@ function visitConditionItemReferences(
     for (const label in fields) {
         if (fields[label].kind !== "item") continue;
         const property = fields[label].prop;
-        const value = (condition as unknown as Record<string, unknown>)[
-            property
-        ];
+        const value = (condition as unknown as Record<string, unknown>)[property];
         if (typeof value === "string") {
             visitor({
                 owner: condition,
@@ -230,7 +228,7 @@ function collectTeamAndGroupFromActions(
 /** Every item name referenced by a `kind: "item"` field anywhere in the importable's action trees. */
 export function referencedItemNames(importable: Importable): string[] {
     const names: string[] = [];
-    visitItemReferences(importable, use => names.push(use.itemName));
+    visitItemReferences(importable, (use) => names.push(use.itemName));
     return names;
 }
 
@@ -329,12 +327,12 @@ export function expandDeclaredTeamAndGroupDependencies(
  * imports first. A stale cache entry (the declaration changed, so its hash
  * moved) counts as missing.
  *
- * Items without click actions resolve from the registry's stripped form and
+ * Items without click actions resolve from the project index's stripped form and
  * need no expansion; references that don't resolve to a declared item are
  * left for the writer's existing diagnostics.
  */
 export function expandClickActionItemDependencies(
-    registry: ItemRegistry,
+    projectItems: ProjectItemIndex,
     dependencyIndex: ItemDependencyIndex,
     selected: readonly Importable[],
     housingUuid: string
@@ -350,16 +348,10 @@ export function expandClickActionItemDependencies(
     for (let i = 0; i < queue.length; i++) {
         const referenced = referencedItemNames(queue[i]);
         for (const name of referenced) {
-            const item = registry.resolve(name)?.importable;
+            const item = projectItems.resolve(name)?.importable;
             if (item === undefined || presentNames.has(item.name)) continue;
-            const hasClickActions =
-                (item.leftClickActions !== undefined &&
-                    item.leftClickActions.length > 0) ||
-                (item.rightClickActions !== undefined &&
-                    item.rightClickActions.length > 0);
-            if (!hasClickActions) continue;
-            const fingerprint = dependencyIndex.clickActionsFingerprint(item);
-            if (FileLib.exists(interactDataCachePath(housingUuid, fingerprint))) {
+            if (!hasItemClickActions(item)) continue;
+            if (hasInteractDataCache(item, dependencyIndex, housingUuid)) {
                 continue;
             }
             presentNames.add(item.name);

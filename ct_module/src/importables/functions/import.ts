@@ -12,7 +12,6 @@ import {
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type { ImportableTrustPlan } from "../../importCache";
-import { functionIconsEqual } from "../../importCache/hash";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
@@ -28,6 +27,7 @@ import {
     openFunctionSettings,
     readAutomaticExecutionTicks,
 } from "./shared";
+import { functionIconsEqual } from "./iconComparison";
 
 export type FunctionImportPlan = {
     kind: "FUNCTION";

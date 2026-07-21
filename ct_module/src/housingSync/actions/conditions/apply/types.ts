@@ -1,12 +1,16 @@
 import type { Condition } from "htsw/types";
 
-import type { ItemRegistry } from "../../../../importables/itemRegistry";
+import type {
+    CanonicalizeItemName,
+    ResolveItemField,
+} from "../../../items/itemReferences";
 import type { ProgressHandler } from "../../../progress/types";
 import type { ItemDiffContext } from "../../diff/itemDiffContext";
-import type { ItemFieldObservationRecorder } from "../../../itemFieldObservations";
+import type { ItemFieldObservationRecorder } from "../../../items/fieldObservations";
 
 export type ApplyConditionListOptions = {
-    itemRegistry: ItemRegistry;
+    canonicalizeItemName: CanonicalizeItemName;
+    resolveItem: ResolveItemField;
     baselineCurrent?: ReadonlyArray<Condition | null>;
     progress?: ProgressHandler;
     itemDiff?: ItemDiffContext;

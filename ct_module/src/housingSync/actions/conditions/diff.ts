@@ -1,6 +1,6 @@
 import type { Condition } from "htsw/types";
 
-import { conditionOnlyNoteDiffers, conditionsEqual } from "../../fields/compare";
+import { conditionOnlyNoteDiffers, conditionsEqual } from "../comparison";
 import type {
     ConditionListDiff,
     ConditionListOperation,
@@ -42,7 +42,6 @@ function indexOfEqualCondition(
 ): number {
     for (let i = 0; i < entries.length; i++) {
         if (
-            !itemDiff?.hasCondition(desired) &&
             !itemDiff?.conditionsDiffer(entries[i].condition, desired) &&
             conditionsEqual(entries[i].condition, desired)
         ) {
@@ -59,7 +58,6 @@ function indexOfNoteOnlyCondition(
 ): number {
     for (let i = 0; i < entries.length; i++) {
         if (
-            !itemDiff?.hasCondition(desired) &&
             !itemDiff?.conditionsDiffer(entries[i].condition, desired) &&
             conditionOnlyNoteDiffers(desired, entries[i].condition)
         ) {

@@ -9,8 +9,9 @@ import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
+    notesEqual,
     scalarFieldDiffers,
-} from "../../fields/compare";
+} from "../comparison";
 import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
 import {
     baselineConditionListFromConditions,
@@ -74,10 +75,7 @@ function itemActionDiffers(
     observed: Action | Observed,
     desired: Action
 ): boolean {
-    return (
-        itemDiff?.hasAction(desired) === true ||
-        itemDiff?.actionsDiffer(observed, desired) === true
-    );
+    return itemDiff?.actionsDiffer(observed, desired) === true;
 }
 
 function itemConditionDiffers(
@@ -85,10 +83,7 @@ function itemConditionDiffers(
     observed: Condition | null,
     desired: Condition
 ): boolean {
-    return (
-        itemDiff?.hasCondition(desired) === true ||
-        itemDiff?.conditionsDiffer(observed, desired) === true
-    );
+    return itemDiff?.conditionsDiffer(observed, desired) === true;
 }
 
 function getFieldValue(value: object, key: string): unknown {
@@ -165,7 +160,7 @@ function conditionCost(
         fieldDifferenceCost(observed, desired, observed.type, scalarProps) +
         (itemDiffers ? FIELD_KIND_COST.item : 0) +
         (observed.inverted === desired.inverted ? 0 : 1) +
-        (observed.note === desired.note ? 0 : 1)
+        (notesEqual(observed.note, desired.note) ? 0 : 1)
     );
 }
 
@@ -382,7 +377,7 @@ function actionCost(
         scalarProps
     );
     const forcedItemCost = itemDiffers ? FIELD_KIND_COST.item : 0;
-    const noteCost = current.action.note === desired.action.note ? 0 : 1;
+    const noteCost = notesEqual(current.action.note, desired.action.note) ? 0 : 1;
 
     // Add open/close overhead only if any editing is needed
     if (scalarCost > 0 || noteCost > 0 || forcedItemCost > 0) {
@@ -722,7 +717,7 @@ function createEditOperation(
         baselineAction: match.current.action,
         desired: match.desired,
         noteOnly,
-        noteDiffers: match.current.action.note !== match.desired.note,
+        noteDiffers: !notesEqual(match.current.action.note, match.desired.note),
         childListDiffs: noteOnly
             ? []
             : getChildListDiffs(match.current, match.desired, itemDiff),
@@ -742,7 +737,7 @@ function createChildListEditOperation(
         baselineAction: match.current.action,
         desired: match.desired,
         noteOnly,
-        noteDiffers: match.current.action.note !== match.desired.note,
+        noteDiffers: !notesEqual(match.current.action.note, match.desired.note),
         childListDiffs: noteOnly
             ? []
             : getChildListDiffs(match.current, match.desired, itemDiff),

@@ -75,13 +75,3 @@ export function cachePathForId(
 ): string {
     return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
 }
-
-/**
- * Per-housing cache of an item's `interact_data` (the housing-scoped encoding of
- * its click actions), keyed by the actions and every item they reference. Two
- * items with the same resolved click actions share one blob, which is spliced
- * onto the source cosmetic item instead of caching a whole item snapshot.
- */
-export function interactDataCachePath(housingUuid: string, fingerprint: string): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/interact_data/${fingerprint}.snbt`;
-}

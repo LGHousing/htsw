@@ -1,14 +1,14 @@
 import type { ImportableItem } from "htsw/types";
 
 import {
-    restoreInventoryToSnapshot,
-    snapshotInventory,
-    type InventorySnapshot,
-} from "../../housingSync/itemCapture";
+    restorePlayerInventory,
+    snapshotPlayerInventory,
+    type PlayerInventorySnapshot,
+} from "../../housingSync/items/playerInventory";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import TaskContext from "../../tasks/context";
-import { writeCapturedItems } from "../items/writeCapturedItems";
+import { exportCapturedItems } from "../items/exportCapturedItems";
 import {
     htslTargetsForNpcExport,
     npcExportReferencesExist,
@@ -90,7 +90,7 @@ async function exportAllNpcsInner(
     const lockHousingUuid =
         options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
 
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
+    const inventorySnapshot: PlayerInventorySnapshot = snapshotPlayerInventory();
     const itemCaptures = createExportItemCaptureRegistry(
         importJsonPath,
         lockHousingUuid,
@@ -112,7 +112,7 @@ async function exportAllNpcsInner(
     if (exportEntries.length === 0) {
         ctx.displayMessage(`&7No NPCs to ${readOnly ? "read" : "export"}.`);
         try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+            await restorePlayerInventory(ctx, inventorySnapshot);
         } catch (error) {
             ctx.displayMessage(`&7[export] &eInventory restore failed: ${String(error)}`);
         }
@@ -199,7 +199,7 @@ async function exportAllNpcsInner(
         options.progress?.done();
         try {
             if (!readOnly) {
-                await writeCapturedItems(
+                await exportCapturedItems(
                     ctx,
                     itemCaptures,
                     rootDir,
@@ -210,7 +210,7 @@ async function exportAllNpcsInner(
             }
         } finally {
             try {
-                await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+                await restorePlayerInventory(ctx, inventorySnapshot);
             } catch (error) {
                 ctx.displayMessage(
                     `&7[export] &eInventory restore failed (export results still written): ${String(error)}`

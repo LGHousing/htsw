@@ -64,8 +64,8 @@ import {
 import {
     itemDependencyIndexFor,
     type ItemDependencySnapshot,
-} from "../../importables/itemDependencyIndex";
-import { visitItemReferences } from "../../importables/itemDependencies";
+} from "../../importables/items/dependencyIndex";
+import { visitItemReferences } from "../../importables/items/dependencies";
 
 export type SourceDiffGhost = {
     id: string;

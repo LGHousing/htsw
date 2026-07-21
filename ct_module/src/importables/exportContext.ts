@@ -2,9 +2,9 @@ import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "
 import type { ImportableItem } from "htsw/types";
 
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { ItemCaptureRegistry } from "../housingSync/itemCapture";
-import { createItemRegistry } from "./itemRegistry";
-import { createItemDependencyIndex } from "./itemDependencyIndex";
+import { ItemCaptureRegistry } from "./items/captureRegistry";
+import { createProjectItemIndex } from "./items/projectItems";
+import { createItemDependencyIndex } from "./items/dependencyIndex";
 import { expectedInteractData } from "./items/interactDataCache";
 
 export type ExportProjectContext = {
@@ -13,7 +13,10 @@ export type ExportProjectContext = {
     projectItems: readonly ImportableItem[];
 };
 
-export type ExportProjectTarget = Pick<ExportProjectContext, "rootDir" | "importJsonPath">;
+export type ExportProjectTarget = Pick<
+    ExportProjectContext,
+    "rootDir" | "importJsonPath"
+>;
 
 export function exportProjectContextFromParsedImportJson(
     target: ExportProjectTarget,
@@ -26,7 +29,9 @@ export function exportProjectContextFromParsedImportJson(
     };
 }
 
-export function readExportProjectContext(target: ExportProjectTarget): ExportProjectContext {
+export function readExportProjectContext(
+    target: ExportProjectTarget
+): ExportProjectContext {
     return {
         rootDir: target.rootDir,
         importJsonPath: target.importJsonPath,
@@ -70,10 +75,10 @@ export function createExportItemCaptureRegistry(
     housingUuid: string,
     fallbackItems: readonly ImportableItem[] = []
 ): ItemCaptureRegistry {
-    const captures = new ItemCaptureRegistry();
+    const captures = new ItemCaptureRegistry("live");
     const parsed = readParsedImportablesForExport(importJsonPath);
     if (parsed !== null) {
-        const items = createItemRegistry(parsed.value, parsed.gcx);
+        const items = createProjectItemIndex(parsed.value, parsed.gcx);
         const dependencies = createItemDependencyIndex(parsed.value, items);
         for (const importable of parsed.value) {
             if (importable.type !== "ITEM") continue;

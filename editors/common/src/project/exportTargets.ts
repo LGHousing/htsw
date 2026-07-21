@@ -17,10 +17,6 @@ export type NpcExportEntry = {
     pos: PosLike;
 };
 
-function pathCompareKey(path: string): string {
-    return path.split("\\").join("/").toLowerCase();
-}
-
 // Resolve a path to the fs's own canonical form before comparing. The include
 // walk yields whatever `fs.resolvePath`/`parentDir` produce (absolute, OS
 // separators under the real ct fs), while a sticky target comes in relative
@@ -28,7 +24,7 @@ function pathCompareKey(path: string): string {
 function fsCanonicalKey(fs: ProjectFs, path: string): string {
     const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
     const base = slash < 0 ? path : path.substring(slash + 1);
-    return pathCompareKey(fs.resolvePath(fs.parentDir(path), base));
+    return fs.pathKey(fs.resolvePath(fs.parentDir(path), base));
 }
 
 // The sticky "new exports land here" file chosen for a destination, but only
@@ -896,13 +892,13 @@ export function snbtTargetForItemExport(
     preferredNewTargetImportJson?: string
 ): SnbtExportTarget {
     const sectionJson = sectionFolderImportJson(fs, entryImportJsonPath, "items");
-    const sectionKey = sectionJson !== null ? pathCompareKey(sectionJson) : null;
+    const sectionKey = sectionJson !== null ? fs.pathKey(sectionJson) : null;
 
     function freshTarget(baseDir: string, importJsonPath: string): SnbtExportTarget {
         // Inside the items section folder the file sits beside its
         // import.json — a `<subdir>/` there would nest items/items/.
         const effectiveSubdir =
-            pathCompareKey(importJsonPath) === sectionKey ? "" : subdir;
+            fs.pathKey(importJsonPath) === sectionKey ? "" : subdir;
         const dir =
             effectiveSubdir.length > 0 ? fs.resolvePath(baseDir, effectiveSubdir) : baseDir;
         const filename = snbtFilenameForItemExport(fs, dir, itemName);

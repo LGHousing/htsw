@@ -26,6 +26,7 @@ import {
 } from "htsw-editor-common/project";
 import { itemFieldsFromTag } from "htsw-editor-common/item/buildItemNbt";
 import { nodeProjectFs } from "../nodeProjectFs";
+import { absolutePathKey } from "../pathIdentity";
 import {
     planProjectMutation,
     projectFsWithOpenDocuments,
@@ -161,14 +162,14 @@ async function moveImportable(
     try {
         const section = SECTION_BY_KIND[kind];
         const roots = await discoverProjectTree();
-        const sourceKey = pathKey(importJsonPath);
+        const sourceKey = absolutePathKey(importJsonPath);
 
         const destinations: Array<vscode.QuickPickItem & { fsPath: string }> = [];
         const treeRootOf = new Map<string, string>();
         const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
             if (node.missing || node.cycle || node.reference) return;
-            treeRootOf.set(pathKey(node.fsPath), treeRoot);
-            if (pathKey(node.fsPath) !== sourceKey) {
+            treeRootOf.set(absolutePathKey(node.fsPath), treeRoot);
+            if (absolutePathKey(node.fsPath) !== sourceKey) {
                 destinations.push({
                     label: vscode.workspace.asRelativePath(node.fsPath, false),
                     fsPath: node.fsPath,
@@ -411,8 +412,8 @@ async function deleteImportable(
             removeImportableEntryForDelete(fs, entryJsonPath, section, identity)
         );
         if (!result.ok) throw new Error(result.message);
-        const approvedOwnedFiles = new Set(plan.ownedFiles.map(pathKey));
-        const filesToDelete = result.ownedFiles.filter((filePath) => approvedOwnedFiles.has(pathKey(filePath)));
+        const approvedOwnedFiles = new Set(plan.ownedFiles.map(absolutePathKey));
+        const filesToDelete = result.ownedFiles.filter((filePath) => approvedOwnedFiles.has(absolutePathKey(filePath)));
 
         let filesDeleted = 0;
         const fileFailures: string[] = [];
@@ -500,7 +501,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
         const treeRootOf = new Map<string, string>();
         const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
             if (node.missing || node.cycle || node.reference) return;
-            treeRootOf.set(pathKey(node.fsPath), treeRoot);
+            treeRootOf.set(absolutePathKey(node.fsPath), treeRoot);
             destinations.push({
                 label: vscode.workspace.asRelativePath(node.fsPath, false),
                 fsPath: node.fsPath,
@@ -543,13 +544,13 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
             prepared.push({
                 item,
                 section: SECTION_BY_KIND[item.kind],
-                entryJsonPath: treeRootOf.get(pathKey(item.importJsonPath))
+                entryJsonPath: treeRootOf.get(absolutePathKey(item.importJsonPath))
                     ?? await treeRootForImportJson(item.importJsonPath),
             });
         }
 
         const selectedDestination = pick.fsPath;
-        const anchorRoot = treeRootOf.get(pathKey(items[0].importJsonPath)) ?? roots[0]?.fsPath;
+        const anchorRoot = treeRootOf.get(absolutePathKey(items[0].importJsonPath)) ?? roots[0]?.fsPath;
         if (selectedDestination === null && !anchorRoot) {
             throw new Error("No project root to create a folder in.");
         }
@@ -559,11 +560,11 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
                 anchorRoot!,
                 newFolderPath!,
             ).importJsonPath;
-            const destKey = pathKey(destJsonPath);
+            const destKey = absolutePathKey(destJsonPath);
             let moved = 0;
             for (const { item, section, entryJsonPath } of prepared) {
                 const current = resolveImportableFile(fs, entryJsonPath, section, item.identity);
-                if (pathKey(current) === destKey) continue;
+                if (absolutePathKey(current) === destKey) continue;
                 try {
                     moveImportableOrThrow(fs, entryJsonPath, section, item.identity, destJsonPath);
                     moved++;
@@ -615,9 +616,9 @@ async function deleteImportables(webview: vscode.Webview, items: SelectedImporta
         if (!choice) return;
 
         const committedOwnedFiles = await runProjectMutation((fs) => removeSelectedImportables(fs, plans));
-        const approvedOwnedFiles = new Set(ownedFiles.map(pathKey));
+        const approvedOwnedFiles = new Set(ownedFiles.map(absolutePathKey));
         const filesToDelete = committedOwnedFiles.filter(
-            (filePath) => approvedOwnedFiles.has(pathKey(filePath)),
+            (filePath) => approvedOwnedFiles.has(absolutePathKey(filePath)),
         );
 
         let filesDeleted = 0;
@@ -663,7 +664,7 @@ function removeSelectedImportables(
     for (const { item, section, entryJsonPath } of plans) {
         const result = removeImportableEntryForDelete(fs, entryJsonPath, section, item.identity);
         if (!result.ok) throw new Error(`${item.kind} "${item.identity}": ${result.message}`);
-        for (const filePath of result.ownedFiles) owned.set(pathKey(filePath), filePath);
+        for (const filePath of result.ownedFiles) owned.set(absolutePathKey(filePath), filePath);
     }
     return [...owned.values()];
 }
@@ -733,12 +734,12 @@ function parseSelectedImportables(context: ImportableContext | undefined): Selec
 }
 
 async function treeRootForImportJson(importJsonPath: string): Promise<string> {
-    const sourceKey = pathKey(importJsonPath);
+    const sourceKey = absolutePathKey(importJsonPath);
     const roots = await discoverProjectTree();
     let found: string | undefined;
     const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
         if (found || node.missing || node.cycle || node.reference) return;
-        if (pathKey(node.fsPath) === sourceKey) {
+        if (absolutePathKey(node.fsPath) === sourceKey) {
             found = treeRoot;
             return;
         }
@@ -925,7 +926,7 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
         "**/{import.json,*.import.json}",
         "**/{node_modules,.git}/**",
     );
-    const importJsonKeys = new Set(importJsons.map((uri) => pathKey(uri.fsPath)));
+    const importJsonKeys = new Set(importJsons.map((uri) => absolutePathKey(uri.fsPath)));
     const includedKeys = new Set<string>();
     const fs = projectFsWithOpenDocuments();
 
@@ -933,7 +934,7 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
         collectIncludedKeys(fs, uri.fsPath, importJsonKeys, includedKeys, new Set<string>());
     }
 
-    const rootUris = importJsons.filter((uri) => !includedKeys.has(pathKey(uri.fsPath)));
+    const rootUris = importJsons.filter((uri) => !includedKeys.has(absolutePathKey(uri.fsPath)));
     const roots = rootUris.length > 0 ? rootUris : importJsons;
     const projectRoots = roots
         .map((uri) => rootNodeFromParse(uri.fsPath))
@@ -1038,13 +1039,13 @@ function mapFileNode(
 function patchReferenceNodes(root: ProjectImportJsonNode): void {
     const homes = new Map<string, ProjectImportJsonNode>();
     const collect = (node: ProjectImportJsonNode): void => {
-        if (!node.reference && !node.missing) homes.set(pathKey(node.fsPath), node);
+        if (!node.reference && !node.missing) homes.set(absolutePathKey(node.fsPath), node);
         node.children.forEach(collect);
     };
     collect(root);
     const patch = (node: ProjectImportJsonNode): void => {
         if (node.reference) {
-            const home = homes.get(pathKey(node.fsPath));
+            const home = homes.get(absolutePathKey(node.fsPath));
             if (home) {
                 node.importableCount = subtreeImportableCount(home);
                 node.errors = home.errors;
@@ -1183,7 +1184,7 @@ function externalImportableSourcePath(
     declaringPath: string,
 ): string | undefined {
     const sourcePath = htsw.importableSourcePath(imp);
-    return sourcePath !== undefined && pathKey(sourcePath) !== pathKey(declaringPath)
+    return sourcePath !== undefined && absolutePathKey(sourcePath) !== absolutePathKey(declaringPath)
         ? sourcePath
         : undefined;
 }
@@ -1231,11 +1232,11 @@ function mapSubEntries(
     parse: ContextParse,
 ): ProjectImportableSub[] {
     const out: ProjectImportableSub[] = [];
-    const declaringKey = pathKey(declaringPath);
+    const declaringKey = absolutePathKey(declaringPath);
     // Inline JSON lists resolve to the import.json itself — no sub-row, same
     // as when these rows were read from `...Path: "file.htsl"` refs only.
     const pushActions = (label: string, fsPath: string | undefined): void => {
-        if (fsPath === undefined || pathKey(fsPath) === declaringKey) return;
+        if (fsPath === undefined || absolutePathKey(fsPath) === declaringKey) return;
         out.push(subEntryFor(label, fsPath, "actions", parse));
     };
 
@@ -1247,7 +1248,7 @@ function mapSubEntries(
     if (imp.type === "MENU") {
         for (const slot of imp.slots) {
             const tag = `Slot ${slot.slot}`;
-            if (slot.nbtPath !== undefined && pathKey(slot.nbtPath) !== declaringKey) {
+            if (slot.nbtPath !== undefined && absolutePathKey(slot.nbtPath) !== declaringKey) {
                 out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", parse, slot.nbt));
             }
             if (slot.actions !== undefined) {
@@ -1363,12 +1364,12 @@ function collectIncludedKeys(
     includedKeys: Set<string>,
     stack: Set<string>,
 ): void {
-    const key = pathKey(filePath);
+    const key = absolutePathKey(filePath);
     if (stack.has(key) || !fs.exists(filePath)) return;
     stack.add(key);
     for (const includePath of readIncludePaths(fs, filePath)) {
         const resolved = fs.resolvePath(fs.parentDir(filePath), includePath);
-        const resolvedKey = pathKey(resolved);
+        const resolvedKey = absolutePathKey(resolved);
         if (knownImportJsons.has(resolvedKey)) includedKeys.add(resolvedKey);
         collectIncludedKeys(fs, resolved, knownImportJsons, includedKeys, stack);
     }
@@ -1510,8 +1511,4 @@ function readIncludePathsFromTree(tree: json.Node | null): string[] {
     return (includeNode.children ?? [])
         .filter((node) => node.type === "string" && typeof node.value === "string")
         .map((node) => String(node.value));
-}
-
-function pathKey(filePath: string): string {
-    return path.resolve(filePath).split("\\").join("/").toLowerCase();
 }

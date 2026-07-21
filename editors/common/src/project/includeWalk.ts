@@ -9,17 +9,13 @@ export function walkImportJsonTree(
     walkFile(fs, entryPath, visit, new Set<string>());
 }
 
-function pathKey(path: string): string {
-    return path.split("\\").join("/").toLowerCase();
-}
-
 function walkFile(
     fs: ProjectFs,
     filePath: string,
     visit: (filePath: string, tree: json.Node) => boolean | undefined,
     visited: Set<string>
 ): boolean {
-    const key = pathKey(filePath);
+    const key = fs.pathKey(filePath);
     if (visited.has(key)) return false;
     visited.add(key);
     if (!fs.exists(filePath)) return false;

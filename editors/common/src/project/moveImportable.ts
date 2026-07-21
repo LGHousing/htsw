@@ -7,7 +7,7 @@ import {
     upsertImportableEntry,
     type Section,
 } from "./importJsonMutations";
-import type { ProjectFs } from "./fs";
+import { normalizePathSeparators, type ProjectFs } from "./fs";
 
 export const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "teams", "groups", "commands", "npcs"];
 
@@ -45,14 +45,10 @@ export function collectFileRefs(value: unknown, out: RefSlot[]): void {
     }
 }
 
-export function canonKey(path: string): string {
-    return path.split("\\").join("/").toLowerCase();
-}
-
-function pathWithinDir(dir: string, path: string): string | null {
-    const dirKey = canonKey(dir);
-    const pathNorm = path.split("\\").join("/");
-    if (canonKey(pathNorm).indexOf(`${dirKey}/`) !== 0) return null;
+function pathWithinDir(fs: ProjectFs, dir: string, path: string): string | null {
+    const dirKey = fs.pathKey(dir);
+    const pathNorm = normalizePathSeparators(path);
+    if (fs.pathKey(pathNorm).indexOf(`${dirKey}/`) !== 0) return null;
     return pathNorm.substring(dirKey.length + 1);
 }
 
@@ -78,7 +74,7 @@ export function refsOfOtherEntries(
                 const refs: RefSlot[] = [];
                 collectFileRefs(json.getNodeValue(items[i]), refs);
                 for (let j = 0; j < refs.length; j++) {
-                    out.add(canonKey(fs.resolvePath(dir, refs[j].ref)));
+                    out.add(fs.pathKey(fs.resolvePath(dir, refs[j].ref)));
                 }
             }
         }
@@ -122,7 +118,7 @@ export function moveImportableEntry(
     destJsonPath: string
 ): MoveImportableResult {
     const sourceJsonPath = resolveImportableFile(fs, entryJsonPath, section, identity);
-    if (canonKey(sourceJsonPath) === canonKey(destJsonPath)) {
+    if (fs.pathKey(sourceJsonPath) === fs.pathKey(destJsonPath)) {
         return { ok: false, message: `'${identity}' is already declared in that file.` };
     }
     if (!fs.exists(destJsonPath)) {
@@ -149,7 +145,7 @@ export function moveImportableEntry(
         // A file already inside the destination folder stays put; only its
         // reference shortens. Copying it would nest it one folder deeper
         // (e.g. "menus/x.htsl" moved into menus/ becoming menus/menus/x.htsl).
-        const insideDest = pathWithinDir(destDir, srcAbs);
+        const insideDest = pathWithinDir(fs, destDir, srcAbs);
         if (insideDest !== null) {
             if (insideDest !== slot.ref) {
                 (slot.holder as Record<string | number, unknown>)[slot.key] = insideDest;
@@ -158,7 +154,7 @@ export function moveImportableEntry(
         }
         let ref = slot.ref;
         let destAbs = fs.resolvePath(destDir, ref);
-        if (canonKey(srcAbs) === canonKey(destAbs)) continue;
+        if (fs.pathKey(srcAbs) === fs.pathKey(destAbs)) continue;
         for (let n = 2; fs.exists(destAbs); n++) {
             ref = suffixedRef(slot.ref, n);
             destAbs = fs.resolvePath(destDir, ref);
@@ -169,7 +165,7 @@ export function moveImportableEntry(
         fileOps.push({
             from: srcAbs,
             to: destAbs,
-            deleteSource: !otherRefs.has(canonKey(srcAbs)),
+            deleteSource: !otherRefs.has(fs.pathKey(srcAbs)),
         });
     }
 

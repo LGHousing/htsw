@@ -5,10 +5,12 @@ import { type SyncEvent, type SyncEventHandler } from "../src/housingSync/syncEv
 import { ActionPath, ActionListPath } from "../src/housingSync/actionPath";
 import type { ActionListDiff } from "../src/housingSync/actions/diff/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
-import { createItemRegistry } from "../src/importables/itemRegistry";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
-import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/itemDependencies";
+import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/items/dependencies";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type {
     ImportableFunction,
@@ -44,9 +46,14 @@ function emptyPlan(): ActionListPlan {
 }
 
 function sessionWith(handler: SyncEventHandler): ImportSession {
+    const items = createProjectItemIndex([]);
+    const itemDependencies = createItemDependencyIndex([], items);
     return {
         parsed: { value: [] } as never,
-        items: createItemRegistry([]),
+        items,
+        itemDependencies,
+        canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+        resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
         housingUuid: "test-house",
         trust: {
             housingUuid: "test-house",

@@ -9,7 +9,7 @@ import {
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
-import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
 import { tryWriteImportableCache } from "../../importCache";
 import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";

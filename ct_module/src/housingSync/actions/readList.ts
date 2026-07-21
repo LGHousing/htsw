@@ -1,7 +1,7 @@
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ItemRegistry } from "../../importables/itemRegistry";
+import type { CanonicalizeItemName } from "../items/itemReferences";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -14,7 +14,7 @@ import {
     CONDITION_MAPPINGS,
     tryGetConditionTypeFromDisplayName,
 } from "../fields/conditionMappings";
-import { canonicalizeItemFields } from "../fields/canonicalizeItems";
+import { canonicalizeItemFields } from "../items/canonicalizeFields";
 import type { ActionHydrationPlan } from "./hydration/plan";
 import type { ActionListTrust } from "./applyTrust";
 import type {
@@ -179,8 +179,7 @@ export async function scanActionList(
     read: ListReadOptions
 ): Promise<ActionListScan> {
     const needsItemHydration =
-        read.itemReadMode !== "sync" ||
-        read.itemFieldObservations !== undefined;
+        read.itemReadMode !== "sync" || read.itemFieldObservations !== undefined;
     const progress = read.progress;
     const events = read.events;
     const desiredTotal = mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
@@ -203,11 +202,7 @@ export async function scanActionList(
     observed = await readPaginatedList(
         ctx,
         ACTION_LIST_CONFIG,
-        () =>
-            readActionsListPage(
-                ctx,
-                needsItemHydration
-            ),
+        () => readActionsListPage(ctx, needsItemHydration),
         ({ totalEntries, pagesRead }) => {
             readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
             if (phaseUnits === undefined) return;
@@ -309,9 +304,9 @@ export function emitObservedSnapshot(
 
 export function canonicalizeActionItemName(
     action: Observed | Action,
-    itemRegistry: ItemRegistry
+    canonicalizeItemName: CanonicalizeItemName
 ): void {
-    canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);
+    canonicalizeItemFields(action, ACTION_MAPPINGS, canonicalizeItemName);
 
     // Only CONDITIONAL/RANDOM carry child lists, and their child actions
     // are guaranteed non-CONDITIONAL/non-RANDOM by spec — so the child
@@ -325,7 +320,11 @@ export function canonicalizeActionItemName(
                 : ACTION_MAPPINGS;
         for (const child of value) {
             if (child === null) continue;
-            canonicalizeItemFields(child as { type: string }, childMapping, itemRegistry);
+            canonicalizeItemFields(
+                child as { type: string },
+                childMapping,
+                canonicalizeItemName
+            );
         }
     }
 }

@@ -7,7 +7,7 @@ import type TaskContext from "../src/tasks/context";
 import type {
     ItemDependencyIndex,
     ItemDependencySnapshot,
-} from "../src/importables/itemDependencyIndex";
+} from "../src/importables/items/dependencyIndex";
 
 function fn(name: string, message: string): ImportableFunction {
     const actions: Action[] = [{ type: "MESSAGE", message }];

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
-    itemInteractDataMatches,
     normalizeItemSnbtForExport,
     portableItemSnbt,
     prettySnbt,
-} from "../src/housingSync/itemCapture";
+} from "../src/housingSync/items/itemNbt";
+import { itemInteractDataMatches } from "../src/importables/items/interactDataCache";
 
 describe("item SNBT export normalization", () => {
     test("uses one representation for blank lore separators", () => {

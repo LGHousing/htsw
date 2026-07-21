@@ -15,14 +15,16 @@ import {
 } from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
 import { prepareActionListSync } from "../src/housingSync/actions/prepareSync";
-import { createItemRegistry } from "../src/importables/itemRegistry";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportSession } from "../src/importables/imports";
 import type TaskContext from "../src/tasks/context";
-import type {
-    ItemDependencyIndex,
-    ItemDependencySnapshot,
-} from "../src/importables/itemDependencyIndex";
+import {
+    createItemDependencyIndex,
+    type ItemDependencyIndex,
+    type ItemDependencySnapshot,
+} from "../src/importables/items/dependencyIndex";
 import { buildCacheStatusRow } from "../src/importCache/status";
 
 function chat(message: string): Action {
@@ -209,8 +211,9 @@ describe("buildTrustPlan house lock gating", () => {
         const uuid = "dependency-cache-empty";
         const desired = fn([chat("same")]);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
-                JSON.stringify(cacheEntry(desired)),
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(
+                cacheEntry(desired)
+            ),
         };
         vi.stubGlobal("FileLib", {
             exists: (path: string) => files[path] !== undefined,
@@ -340,9 +343,14 @@ describe("trusted action-list planning", () => {
         const desired = fn([chat("new")]);
         const entry = cacheEntry(cached);
         const open = vi.fn(async () => undefined);
+        const items = createProjectItemIndex([]);
+        const itemDependencies = createItemDependencyIndex([], items);
         const session: ImportSession = {
             parsed: { value: [] } as never,
-            items: createItemRegistry([]),
+            items,
+            itemDependencies,
+            canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+            resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
             housingUuid: "test-house",
             trust: {
                 housingUuid: "test-house",

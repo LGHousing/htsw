@@ -395,7 +395,7 @@ export function getActionLoreFields(
 /**
  * Returns the GUI default for a single action lore field, or undefined if
  * the type/prop combination doesn't exist or has no declared default.
- * Used by normalizeActionCompare to treat a default-valued observed field
+ * Used by action comparison to treat a default-valued observed field
  * as equivalent to an omitted field in desired source.
  */
 export function getActionFieldDefault(type: string, prop: string): unknown {

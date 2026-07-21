@@ -7,9 +7,9 @@ import { houseLockEntryFor, readHouseLock } from "./houseLock";
 import { writeImportableCache } from "./cache";
 import {
     itemDependencyIndexFor,
+    sameItemDependencySnapshot,
     type ItemDependencyIndex,
-} from "../importables/itemDependencyIndex";
-import { sameItemDependencySnapshot } from "./status";
+} from "../importables/items/dependencyIndex";
 
 export type AcceptHouseLockResult =
     | { ok: false; reason: "missing-lock" }
@@ -42,15 +42,12 @@ export function acceptHouseLockAsCurrent(
             importable.type,
             importableIdentity(importable)
         );
-        const dependencyIndex =
-            itemDependencies ?? itemDependencyIndexFor(importable);
+        const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
         const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
-        const dependenciesMatch = dependencySnapshot === undefined
-            ? entry?.itemDependencies === undefined
-            : sameItemDependencySnapshot(
-                  entry?.itemDependencies,
-                  dependencySnapshot
-              );
+        const dependenciesMatch =
+            dependencySnapshot === undefined
+                ? entry?.itemDependencies === undefined
+                : sameItemDependencySnapshot(entry?.itemDependencies, dependencySnapshot);
         if (
             entry === null ||
             entry.hash !== importableHash(importable) ||

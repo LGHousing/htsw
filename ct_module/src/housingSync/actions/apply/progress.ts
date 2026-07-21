@@ -15,7 +15,7 @@ import {
     type PhaseUnits,
 } from "../../progress/costs";
 import { getActionScalarLoreFields } from "../../fields/actionMappings";
-import { scalarFieldDiffers } from "../../fields/compare";
+import { scalarFieldDiffers } from "../comparison";
 
 export function emitDiffPlanned(
     events: SyncEventHandler | undefined,

@@ -24,10 +24,7 @@ export class ItemFieldObservationRecorder {
         fields.set(prop, observation);
     }
 
-    get(
-        node: Action | Condition,
-        prop: string
-    ): ItemFieldObservation | undefined {
+    get(node: Action | Condition, prop: string): ItemFieldObservation | undefined {
         return this.byNode.get(node)?.get(prop);
     }
 }

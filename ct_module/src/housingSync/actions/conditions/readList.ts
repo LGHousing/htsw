@@ -1,15 +1,15 @@
 import type { Condition } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
-import { type ItemRegistry } from "../../../importables/itemRegistry";
-import { canonicalizeItemFields } from "../../fields/canonicalizeItems";
+import type { CanonicalizeItemName } from "../../items/itemReferences";
+import { canonicalizeItemFields } from "../../items/canonicalizeFields";
 import {
     captureItemFromOpenEditorField,
     observeItemFromOpenEditorField,
-    type ItemCaptureRegistry,
-} from "../../itemCapture";
+    type ItemCaptureSink,
+} from "../../items/capture";
 import type { ItemReadOptions } from "../../context/actionReadContext";
-import type { ItemFieldObservationRecorder } from "../../itemFieldObservations";
+import type { ItemFieldObservationRecorder } from "../../items/fieldObservations";
 import {
     CONDITION_MAPPINGS,
     getConditionScalarLoreFields,
@@ -81,18 +81,22 @@ export async function readConditionList(
     await hydrateScalarConditions(ctx, observed, options);
     await captureConditionItems(ctx, observed, options);
     await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
-    canonicalizeObservedConditionSlots(observed, options.itemRegistry);
+    canonicalizeObservedConditionSlots(observed, options.canonicalizeItemName);
     return observed;
 }
 
 function canonicalizeObservedConditionSlots(
     observed: readonly ObservedConditionSlot[],
-    itemRegistry?: ItemRegistry
+    canonicalizeItemName?: CanonicalizeItemName
 ): void {
-    if (itemRegistry === undefined) return;
+    if (canonicalizeItemName === undefined) return;
     for (const entry of observed) {
         if (entry.condition !== null) {
-            canonicalizeItemFields(entry.condition, CONDITION_MAPPINGS, itemRegistry);
+            canonicalizeItemFields(
+                entry.condition,
+                CONDITION_MAPPINGS,
+                canonicalizeItemName
+            );
         }
     }
 }
@@ -217,12 +221,9 @@ async function captureConditionItems(
     observed: readonly ObservedConditionSlot[],
     options: ReadConditionListOptions
 ): Promise<void> {
-    const registry =
-        options.itemReadMode === "sync" ? undefined : options.itemCaptures;
+    const registry = options.itemReadMode === "sync" ? undefined : options.itemCaptures;
     const observations =
-        options.itemReadMode === "sync"
-            ? options.itemFieldObservations
-            : undefined;
+        options.itemReadMode === "sync" ? options.itemFieldObservations : undefined;
     if (registry === undefined && observations === undefined) return;
 
     const entries: ObservedConditionSlot[] = [];
@@ -280,7 +281,7 @@ async function captureConditionItemFields(
     ctx: TaskContext,
     entry: ObservedConditionSlot,
     listLength: number,
-    registry: ItemCaptureRegistry | undefined,
+    registry: ItemCaptureSink | undefined,
     observations: ItemFieldObservationRecorder | undefined,
     captureRequired: boolean
 ): Promise<void> {

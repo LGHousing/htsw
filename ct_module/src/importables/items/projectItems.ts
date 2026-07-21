@@ -1,14 +1,11 @@
 import { items as itemReferences, type GlobalCtxt } from "htsw";
 import type { Tag } from "htsw/nbt";
 import type { Importable, ImportableItem } from "htsw/types";
-import type { ItemDependencyIndex } from "./itemDependencyIndex";
 
-import TaskContext from "../tasks/context";
-import { getCurrentHousingUuid } from "../importCache";
-import { removedFormatting, unique } from "../utils/helpers";
-import { getItemFromNbt, readItemDisplayAliases } from "../utils/nbt";
+import { removedFormatting, unique } from "../../utils/helpers";
+import { getItemFromNbt, readItemDisplayAliases } from "../../utils/nbt";
 
-export interface ItemRegistryEntry {
+export interface ProjectItem {
     name: string;
     readonly item: Item;
     nbt: Tag;
@@ -18,35 +15,24 @@ export interface ItemRegistryEntry {
     path?: string;
 }
 
-export interface ItemRegistry {
-    get(name: string): ItemRegistryEntry | undefined;
-    resolve(name: string, ownerNode?: object): ItemRegistryEntry | undefined;
+export interface ProjectItemIndex {
+    get(name: string): ProjectItem | undefined;
+    resolve(name: string, ownerNode?: object): ProjectItem | undefined;
     resolveFromSourcePath(
         name: string,
         sourcePath?: string,
         ownerNode?: object
-    ): ItemRegistryEntry | undefined;
+    ): ProjectItem | undefined;
     canonicalizeObservedName(name: string): string;
-
-    /**
-     * Lazy memo for the current housing UUID, set by callers that have a
-     * TaskContext available. Keeping it here means cache-backed item
-     * resolvers (GIVE_ITEM, REQUIRE_ITEM, ...) avoid re-running `/wtfmap`
-     * for every action in a sync. See `getMemoizedHousingUuid` below.
-     */
-    cachedHousingUuid: string | undefined;
-    itemDependencies?: ItemDependencyIndex;
 }
 
-class DefaultItemRegistry implements ItemRegistry {
-    private readonly byName: Partial<Record<string, ItemRegistryEntry>> = {};
-    private readonly aliases: Partial<Record<string, ItemRegistryEntry | "ambiguous">> = {};
-    private readonly directByOwnerPath: Partial<Record<string, ItemRegistryEntry>> = {};
-    private readonly directByOwner = new WeakMap<object, Map<string, ItemRegistryEntry>>();
+class DefaultProjectItemIndex implements ProjectItemIndex {
+    private readonly byName: Partial<Record<string, ProjectItem>> = {};
+    private readonly aliases: Partial<Record<string, ProjectItem | "ambiguous">> = {};
+    private readonly directByOwnerPath: Partial<Record<string, ProjectItem>> = {};
+    private readonly directByOwner = new WeakMap<object, Map<string, ProjectItem>>();
     private readonly itemNames = new Map<string, ImportableItem>();
     private readonly gcx?: GlobalCtxt;
-
-    public cachedHousingUuid: string | undefined = undefined;
 
     public constructor(importables: readonly Importable[], gcx?: GlobalCtxt) {
         this.gcx = gcx;
@@ -62,7 +48,7 @@ class DefaultItemRegistry implements ItemRegistry {
                 removedFormatting(importable.name).trim(),
                 ...readItemDisplayAliases(importable.nbt),
             ]);
-            const entry = itemRegistryEntry({
+            const entry = projectItem({
                 name: importable.name,
                 importable,
                 nbt: importable.nbt,
@@ -83,11 +69,11 @@ class DefaultItemRegistry implements ItemRegistry {
         }
     }
 
-    public get(name: string): ItemRegistryEntry | undefined {
+    public get(name: string): ProjectItem | undefined {
         return this.byName[name];
     }
 
-    public resolve(name: string, ownerNode?: object): ItemRegistryEntry | undefined {
+    public resolve(name: string, ownerNode?: object): ProjectItem | undefined {
         const named = this.get(name);
         if (named !== undefined) {
             return named;
@@ -126,7 +112,7 @@ class DefaultItemRegistry implements ItemRegistry {
             return undefined;
         }
 
-        const entry = itemRegistryEntry({
+        const entry = projectItem({
             name,
             nbt: resolved.nbt,
             aliases: uniqueAliases(readItemDisplayAliases(resolved.nbt)),
@@ -141,7 +127,7 @@ class DefaultItemRegistry implements ItemRegistry {
         name: string,
         sourcePath?: string,
         ownerNode?: object
-    ): ItemRegistryEntry | undefined {
+    ): ProjectItem | undefined {
         const named = this.get(name);
         if (named !== undefined) return named;
         if (
@@ -171,7 +157,7 @@ class DefaultItemRegistry implements ItemRegistry {
         );
         if (resolved === undefined || resolved.kind !== "snbtPath") return undefined;
 
-        const entry = itemRegistryEntry({
+        const entry = projectItem({
             name,
             nbt: resolved.nbt,
             aliases: uniqueAliases(readItemDisplayAliases(resolved.nbt)),
@@ -186,7 +172,7 @@ class DefaultItemRegistry implements ItemRegistry {
     private bindDirectOwner(
         ownerNode: object | undefined,
         name: string,
-        entry: ItemRegistryEntry
+        entry: ProjectItem
     ): void {
         if (ownerNode === undefined) return;
         let entries = this.directByOwner.get(ownerNode);
@@ -209,9 +195,7 @@ class DefaultItemRegistry implements ItemRegistry {
     }
 }
 
-function itemRegistryEntry(
-    fields: Omit<ItemRegistryEntry, "item">
-): ItemRegistryEntry {
+function projectItem(fields: Omit<ProjectItem, "item">): ProjectItem {
     let item: Item | undefined;
     return {
         ...fields,
@@ -222,30 +206,11 @@ function itemRegistryEntry(
     };
 }
 
-export function createItemRegistry(
+export function createProjectItemIndex(
     importables: readonly Importable[],
     gcx?: GlobalCtxt
-): ItemRegistry {
-    return new DefaultItemRegistry(importables, gcx);
-}
-
-/**
- * Resolve and memoize the current housing UUID on the registry. Used by
- * cache-backed item resolvers so a single sync run does at most one
- * `/wtfmap` round trip regardless of how many GIVE_ITEM/REQUIRE_ITEM/etc.
- * fields it touches.
- */
-export async function getMemoizedHousingUuid(
-    ctx: TaskContext,
-    registry: ItemRegistry
-): Promise<string> {
-    const cached = registry.cachedHousingUuid;
-    if (cached !== undefined) {
-        return cached;
-    }
-    const uuid = await getCurrentHousingUuid(ctx);
-    registry.cachedHousingUuid = uuid;
-    return uuid;
+): ProjectItemIndex {
+    return new DefaultProjectItemIndex(importables, gcx);
 }
 
 function uniqueAliases(values: readonly string[]): string[] {

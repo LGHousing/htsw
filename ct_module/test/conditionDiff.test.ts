@@ -65,11 +65,9 @@ describe("diffConditionList", () => {
         const observed = requireItem("key");
         const desired = requireItem("key");
         const itemDiff: ItemDiffContext = {
-            hasAction: () => false,
-            hasCondition: (condition) => condition === desired,
             hasActionList: () => false,
             actionsDiffer: () => false,
-            conditionsDiffer: () => false,
+            conditionsDiffer: (_observed, condition) => condition === desired,
         };
 
         const result = diffConditionList(

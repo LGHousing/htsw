@@ -8,6 +8,7 @@ import {
     projectSectionFolders,
     restructureProjectPerSection,
     snbtTargetForItemExport,
+    walkImportJsonTree,
     type ProjectFs,
 } from "htsw-editor-common/project";
 
@@ -44,6 +45,7 @@ function memoryFs(files: Record<string, string>): ProjectFs & { store: Map<strin
             if (normalizedRef.charAt(0) === "/") return normalizedRef;
             return normalize(`${baseDir}/${normalizedRef}`);
         },
+        pathKey: normalize,
         deleteFile: (path) => {
             store.delete(normalize(path));
         },
@@ -95,6 +97,7 @@ function ctLikeFs(files: Record<string, string>, root: string): ProjectFs {
             const abs = /^[A-Za-z]:\//.test(r) || r.charAt(0) === "/";
             return toWin(norm(abs ? r : `${norm(baseDir)}/${r}`));
         },
+        pathKey: norm,
         deleteFile: (path) => {
             store.delete(norm(path));
         },
@@ -102,6 +105,28 @@ function ctLikeFs(files: Record<string, string>, root: string): ProjectFs {
 }
 
 const ROOT = "/project/import.json";
+
+test("include walking follows the filesystem's case-sensitivity policy", () => {
+    const fs = memoryFs({
+        [ROOT]: JSON.stringify({
+            include: ["Parts/import.json", "parts/import.json"],
+        }),
+        "/project/Parts/import.json": "{}",
+        "/project/parts/import.json": "{}",
+    });
+    const visited: string[] = [];
+
+    walkImportJsonTree(fs, ROOT, (filePath) => {
+        visited.push(filePath);
+        return undefined;
+    });
+
+    expect(visited).toEqual([
+        ROOT,
+        "/project/Parts/import.json",
+        "/project/parts/import.json",
+    ]);
+});
 
 describe("section folder export routing", () => {
     test("new function routes to functions/import.json when included", () => {

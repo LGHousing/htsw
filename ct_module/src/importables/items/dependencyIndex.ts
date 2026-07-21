@@ -1,18 +1,14 @@
 import type { Action, Condition, Importable, ImportableItem } from "htsw/types";
 
-import { canonicalStringify } from "../housingSync/fields/compare";
-import { canonicalItemTag } from "../housingSync/fields/itemTagCanonical";
-import { hashHex } from "../importCache/hash";
-import { stableStringify } from "../utils/helpers";
-import {
-    type ItemReferenceUse,
-    visitItemReferences,
-} from "./itemDependencies";
-import type { ItemRegistry, ItemRegistryEntry } from "./itemRegistry";
+import { actionListCompareKey } from "../../housingSync/actions/comparison";
+import { canonicalItemShellTagKey } from "../../housingSync/items/itemNbt";
+import { hashHex } from "../../utils/hash";
+import { stableStringify } from "../../utils/helpers";
+import { type ItemReferenceUse, visitItemReferences } from "./dependencies";
+import type { ProjectItemIndex, ProjectItem } from "./projectItems";
 
 export type ItemDependencyTarget =
-    | { kind: "named"; name: string }
-    | { kind: "snbtPath"; path: string };
+    { kind: "named"; name: string } | { kind: "snbtPath"; path: string };
 
 type CachedItemDependency = {
     target: ItemDependencyTarget;
@@ -24,6 +20,31 @@ export type ItemDependencySnapshot = {
     dependencies: CachedItemDependency[];
 };
 
+function validItemDependencySnapshot(
+    value: ItemDependencySnapshot | undefined
+): ItemDependencySnapshot | null | undefined {
+    if (value === undefined) return undefined;
+    const candidate = value as unknown as {
+        version?: unknown;
+        dependencies?: unknown;
+    };
+    if (candidate.version !== 1 || !Array.isArray(candidate.dependencies)) {
+        return null;
+    }
+    return value;
+}
+
+export function sameItemDependencySnapshot(
+    left: ItemDependencySnapshot | undefined,
+    right: ItemDependencySnapshot | undefined
+): boolean {
+    const validLeft = validItemDependencySnapshot(left);
+    const validRight = validItemDependencySnapshot(right);
+    if (validLeft === null || validRight === null) return false;
+    const empty: ItemDependencySnapshot = { version: 1, dependencies: [] };
+    return stableStringify(validLeft ?? empty) === stableStringify(validRight ?? empty);
+}
+
 type ItemDependencyCycle = {
     itemNames: string[];
 };
@@ -33,10 +54,7 @@ export class ItemInvalidations {
     private readonly actionSubtrees = new WeakSet<Action>();
     public hasAny = false;
 
-    public isFieldInvalidated(
-        owner: Action | Condition,
-        property: string
-    ): boolean {
+    public isFieldInvalidated(owner: Action | Condition, property: string): boolean {
         return this.fields.get(owner)?.has(property) === true;
     }
 
@@ -67,7 +85,7 @@ export interface ItemDependencyIndex {
         importable: Importable,
         cached: ItemDependencySnapshot | undefined
     ): ItemInvalidations;
-    fingerprintOf(entry: ItemRegistryEntry): string;
+    fingerprintOf(entry: ProjectItem): string;
     fingerprintOfItem(item: ImportableItem): string | undefined;
     itemByName(name: string): ImportableItem | undefined;
     clickActionsFingerprint(item: ImportableItem): string;
@@ -83,7 +101,7 @@ export function itemDependencyIndexFor(
 
 type ResolvedUse = {
     use: ItemReferenceUse;
-    entry: ItemRegistryEntry;
+    entry: ProjectItem;
     target: ItemDependencyTarget;
 };
 
@@ -98,22 +116,22 @@ type GraphNode = {
 class DefaultItemDependencyIndex implements ItemDependencyIndex {
     public readonly cycles: ItemDependencyCycle[] = [];
     private readonly cycleKeys = new Set<string>();
-    private readonly fingerprints = new Map<ItemRegistryEntry, string>();
+    private readonly fingerprints = new Map<ProjectItem, string>();
 
     public constructor(
         importables: readonly Importable[],
-        private readonly registry: ItemRegistry
+        private readonly projectItems: ProjectItemIndex
     ) {
         for (const importable of importables) {
             if (importable.type !== "ITEM") continue;
-            const entry = registry.get(importable.name);
+            const entry = projectItems.get(importable.name);
             if (entry !== undefined) this.fingerprintOf(entry);
         }
     }
 
     public snapshotOf(importable: Importable): ItemDependencySnapshot {
         const byTarget = new Map<string, CachedItemDependency>();
-        visitItemReferences(importable, use => {
+        visitItemReferences(importable, (use) => {
             const resolved = this.resolveUse(use);
             if (resolved === undefined) return;
             const dependency: CachedItemDependency = {
@@ -123,7 +141,9 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
             byTarget.set(targetKey(dependency.target), dependency);
         });
         const dependencies = Array.from(byTarget.values());
-        dependencies.sort((a, b) => targetKey(a.target).localeCompare(targetKey(b.target)));
+        dependencies.sort((a, b) =>
+            targetKey(a.target).localeCompare(targetKey(b.target))
+        );
         return { version: 1, dependencies };
     }
 
@@ -142,7 +162,7 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
             }
         }
 
-        visitItemReferences(importable, use => {
+        visitItemReferences(importable, (use) => {
             const resolved = this.resolveUse(use);
             if (resolved === undefined) {
                 if (cached === undefined) invalidations.add(use);
@@ -156,7 +176,7 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
         return invalidations;
     }
 
-    public fingerprintOf(entry: ItemRegistryEntry): string {
+    public fingerprintOf(entry: ProjectItem): string {
         const cached = this.fingerprints.get(entry);
         if (cached !== undefined) return cached;
         const fingerprint = hashHex(stableStringify(this.graphFromEntries([entry])));
@@ -165,33 +185,36 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     }
 
     public fingerprintOfItem(item: ImportableItem): string | undefined {
-        const entry = this.registry.get(item.name);
+        const entry = this.projectItems.get(item.name);
         return entry === undefined ? undefined : this.fingerprintOf(entry);
     }
 
     public itemByName(name: string): ImportableItem | undefined {
-        return this.registry.get(name)?.importable;
+        return this.projectItems.get(name)?.importable;
     }
 
     public clickActionsFingerprint(item: ImportableItem): string {
         const roots = this.resolvedUsesOf(item);
-        const graph = this.graphFromEntries(roots.map(root => root.entry));
-        return "v2-" + hashHex(
-            stableStringify({
-                version: 1,
-                leftClickActions: canonicalStringify(item.leftClickActions ?? []),
-                rightClickActions: canonicalStringify(item.rightClickActions ?? []),
-                dependencies: graph,
-            })
+        const graph = this.graphFromEntries(roots.map((root) => root.entry));
+        return (
+            "v2-" +
+            hashHex(
+                stableStringify({
+                    version: 1,
+                    leftClickActions: actionListCompareKey(item.leftClickActions ?? []),
+                    rightClickActions: actionListCompareKey(item.rightClickActions ?? []),
+                    dependencies: graph,
+                })
+            )
         );
     }
 
-    private graphFromEntries(entries: readonly ItemRegistryEntry[]): GraphNode[] {
+    private graphFromEntries(entries: readonly ProjectItem[]): GraphNode[] {
         const nodes = new Map<string, GraphNode>();
         const activeKeys: string[] = [];
         const activeNames: string[] = [];
 
-        const collect = (entry: ItemRegistryEntry): void => {
+        const collect = (entry: ProjectItem): void => {
             const target = targetOfEntry(entry);
             const key = targetKey(target);
             const activeIndex = activeKeys.indexOf(key);
@@ -203,19 +226,19 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
 
             const importable = entry.importable;
             const uses = importable === undefined ? [] : this.resolvedUsesOf(importable);
-            const references = uses.map(resolved => resolved.target);
+            const references = uses.map((resolved) => resolved.target);
             references.sort((a, b) => targetKey(a).localeCompare(targetKey(b)));
             nodes.set(key, {
                 target,
-                nbt: stableStringify(canonicalItemTag(entry.nbt)),
+                nbt: canonicalItemShellTagKey(entry.nbt),
                 leftClickActions:
                     importable === undefined
                         ? undefined
-                        : canonicalStringify(importable.leftClickActions ?? []),
+                        : actionListCompareKey(importable.leftClickActions ?? []),
                 rightClickActions:
                     importable === undefined
                         ? undefined
-                        : canonicalStringify(importable.rightClickActions ?? []),
+                        : actionListCompareKey(importable.rightClickActions ?? []),
                 references,
             });
 
@@ -234,7 +257,7 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
 
     private resolvedUsesOf(importable: Importable): ResolvedUse[] {
         const result: ResolvedUse[] = [];
-        visitItemReferences(importable, use => {
+        visitItemReferences(importable, (use) => {
             const resolved = this.resolveUse(use);
             if (resolved !== undefined) result.push(resolved);
         });
@@ -243,12 +266,11 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
 
     private resolveUse(use: ItemReferenceUse): ResolvedUse | undefined {
         const entry =
-            this.registry.resolveFromSourcePath(
+            this.projectItems.resolveFromSourcePath(
                 use.itemName,
                 use.sourcePath,
                 use.owner
-            ) ??
-            this.registry.resolve(use.itemName, use.owner);
+            ) ?? this.projectItems.resolve(use.itemName, use.owner);
         if (entry === undefined) return undefined;
         return { use, entry, target: targetOfEntry(entry) };
     }
@@ -272,7 +294,7 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     }
 }
 
-function targetOfEntry(entry: ItemRegistryEntry): ItemDependencyTarget {
+function targetOfEntry(entry: ProjectItem): ItemDependencyTarget {
     return entry.source === "named"
         ? { kind: "named", name: entry.name }
         : { kind: "snbtPath", path: entry.path as string };
@@ -284,10 +306,9 @@ function targetKey(target: ItemDependencyTarget): string {
 
 export function createItemDependencyIndex(
     importables: readonly Importable[],
-    registry: ItemRegistry
+    projectItems: ProjectItemIndex
 ): ItemDependencyIndex {
-    const index = new DefaultItemDependencyIndex(importables, registry);
-    registry.itemDependencies = index;
+    const index = new DefaultItemDependencyIndex(importables, projectItems);
     for (const importable of importables) {
         indexByImportable.set(importable, index);
     }

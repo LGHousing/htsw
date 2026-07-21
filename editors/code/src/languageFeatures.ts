@@ -9,9 +9,9 @@ import {
     type ContextParse,
     bumpWorkspaceGeneration,
     getCachedRootParse,
-    normalizedPathKey,
     workspaceGeneration,
 } from "./rootParse";
+import { absolutePathKey } from "./pathIdentity";
 import { computeBestLayout } from "./loreLineLayout";
 import {
     formatSnbtText,
@@ -50,13 +50,13 @@ class HybridFileLoader implements htsw.FileLoader {
     ) {}
 
     fileExists(filePath: string): boolean {
-        if (this.normalize(filePath) === this.normalize(this.currentPath)) return true;
+        if (absolutePathKey(filePath) === absolutePathKey(this.currentPath)) return true;
         if (this.openDocumentForPath(filePath)) return true;
         return fs.existsSync(filePath);
     }
 
     readFile(filePath: string): string {
-        if (this.normalize(filePath) === this.normalize(this.currentPath)) {
+        if (absolutePathKey(filePath) === absolutePathKey(this.currentPath)) {
             return this.currentSource;
         }
 
@@ -74,15 +74,11 @@ class HybridFileLoader implements htsw.FileLoader {
         return path.resolve(base, other);
     }
 
-    private normalize(filePath: string): string {
-        return path.resolve(filePath).toLowerCase();
-    }
-
     private openDocumentForPath(filePath: string): vscode.TextDocument | undefined {
-        const normalizedPath = this.normalize(filePath);
+        const normalizedPath = absolutePathKey(filePath);
         return vscode.workspace.textDocuments.find((document) =>
             document.uri.scheme === "file" &&
-            this.normalize(document.uri.fsPath) === normalizedPath
+            absolutePathKey(document.uri.fsPath) === normalizedPath
         );
     }
 }
@@ -153,7 +149,7 @@ export class DiagnosticsAdapter {
             path.dirname(path.dirname(globalStorageUri.fsPath)),
             "History"
         );
-        this.normalizedLocalHistoryDirectory = localHistoryDirectory.replace(/\\/g, "/").toLowerCase();
+        this.normalizedLocalHistoryDirectory = absolutePathKey(localHistoryDirectory);
         this.disposables.push(
             vscode.workspace.onDidOpenTextDocument((document) => this.scheduleValidate(document))
         );
@@ -361,7 +357,7 @@ export class DiagnosticsAdapter {
         sourceMap: htsw.SourceMap,
         diagnostics: htsw.Diagnostic[]
     ): void {
-        const rootKey = normalizedPathKey(rootPath);
+        const rootKey = absolutePathKey(rootPath);
         const previousUris = this.rootDiagnosticMarkers.get(rootKey)?.keys() ?? [];
 
         const byUri = new Map<string, vscode.Diagnostic[]>();
@@ -577,25 +573,25 @@ export class DiagnosticsAdapter {
     // transitively includes the declaring import.json; the declaring import.json
     // itself when nothing above includes it.
     private findRootContext(declaringPath: string): string {
-        const cacheKey = normalizedPathKey(declaringPath);
+        const cacheKey = absolutePathKey(declaringPath);
         const cached = this.rootContextCache.get(cacheKey);
         if (cached && cached.generation === workspaceGeneration()) return cached.rootPath;
 
         let rootPath = declaringPath;
         const workspaceRoots = this.getContainingWorkspaceFolders(vscode.Uri.file(declaringPath))
-            .map((folder) => path.resolve(folder.uri.fsPath).toLowerCase());
-        const stopAt = workspaceRoots[0] ?? path.parse(declaringPath).root.toLowerCase();
+            .map((folder) => absolutePathKey(folder.uri.fsPath));
+        const stopAt = workspaceRoots[0] ?? absolutePathKey(path.parse(declaringPath).root);
         let dir = path.dirname(declaringPath);
 
         while (true) {
             for (const candidate of this.listImportJsonFiles(dir)) {
-                if (normalizedPathKey(candidate) === cacheKey) continue;
+                if (absolutePathKey(candidate) === cacheKey) continue;
                 if (this.importJsonIncludesTransitively(candidate, declaringPath)) {
                     rootPath = candidate;
                 }
             }
 
-            const normalizedDir = path.resolve(dir).toLowerCase();
+            const normalizedDir = absolutePathKey(dir);
             const parent = path.dirname(dir);
             if (normalizedDir === stopAt || parent === dir) break;
             dir = parent;
@@ -606,11 +602,11 @@ export class DiagnosticsAdapter {
     }
 
     private importJsonIncludesTransitively(entryPath: string, targetPath: string): boolean {
-        const targetKey = normalizedPathKey(targetPath);
+        const targetKey = absolutePathKey(targetPath);
         let found = false;
         try {
             walkImportJsonTree(nodeProjectFs, entryPath, (filePath) => {
-                if (normalizedPathKey(filePath) !== targetKey) return undefined;
+                if (absolutePathKey(filePath) !== targetKey) return undefined;
                 found = true;
                 return true;
             });
@@ -623,8 +619,8 @@ export class DiagnosticsAdapter {
     private findImportJsonContexts(filePath: string): string[] {
         const contexts: string[] = [];
         const workspaceRoots = this.getContainingWorkspaceFolders(vscode.Uri.file(filePath))
-            .map((folder) => path.resolve(folder.uri.fsPath).toLowerCase());
-        const stopAt = workspaceRoots[0] ?? path.parse(filePath).root.toLowerCase();
+            .map((folder) => absolutePathKey(folder.uri.fsPath));
+        const stopAt = workspaceRoots[0] ?? absolutePathKey(path.parse(filePath).root);
         let dir = path.dirname(filePath);
 
         while (true) {
@@ -634,7 +630,7 @@ export class DiagnosticsAdapter {
                 }
             }
 
-            const normalizedDir = path.resolve(dir).toLowerCase();
+            const normalizedDir = absolutePathKey(dir);
             const parent = path.dirname(dir);
             if (normalizedDir === stopAt || parent === dir) break;
             dir = parent;
@@ -656,7 +652,7 @@ export class DiagnosticsAdapter {
     private fileTextReferencesPath(importJsonPath: string, referencedPath: string): boolean {
         const openDocument = vscode.workspace.textDocuments.find((document) =>
             document.uri.scheme === "file" &&
-            path.resolve(document.uri.fsPath).toLowerCase() === path.resolve(importJsonPath).toLowerCase()
+            absolutePathKey(document.uri.fsPath) === absolutePathKey(importJsonPath)
         );
         const src = openDocument?.getText() ?? this.readFileIfExists(importJsonPath);
         if (src === undefined) return false;
@@ -688,7 +684,7 @@ export class DiagnosticsAdapter {
 
         try {
             const sourceFile = sourceMap.getFileByPos(span.start);
-            return path.resolve(sourceFile.path).toLowerCase() === path.resolve(docPath).toLowerCase();
+            return absolutePathKey(sourceFile.path) === absolutePathKey(docPath);
         } catch {
             return true;
         }
@@ -707,7 +703,7 @@ export class DiagnosticsAdapter {
             const sourceFile = sourceMap.getFileByPos(span.start);
             if (
                 document.uri.scheme === "file" &&
-                path.resolve(sourceFile.path).toLowerCase() !== path.resolve(document.uri.fsPath).toLowerCase()
+                absolutePathKey(sourceFile.path) !== absolutePathKey(document.uri.fsPath)
             ) {
                 return undefined;
             }
@@ -737,7 +733,7 @@ export class DiagnosticsAdapter {
 
     private isExcludedUri(uri: vscode.Uri): boolean {
         if (uri.scheme !== "file") return false;
-        const normalizedUriPath = uri.fsPath.replace(/\\/g, "/").toLowerCase();
+        const normalizedUriPath = absolutePathKey(uri.fsPath);
         return isPathInExcludedDiagnosticFolder(uri.fsPath) ||
             normalizedUriPath.startsWith(`${this.normalizedLocalHistoryDirectory}/`);
     }

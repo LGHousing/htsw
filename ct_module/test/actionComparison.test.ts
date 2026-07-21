@@ -8,23 +8,20 @@ import type {
 } from "htsw/types";
 
 import {
-    normalizeActionCompare,
-    normalizeConditionCompare,
+    actionsEqual,
+    conditionsEqual,
     scalarFieldDiffers,
-} from "../src/housingSync/fields/compare";
+} from "../src/housingSync/actions/comparison";
 import { getActionScalarLoreFields } from "../src/housingSync/fields/actionMappings";
 import type { Observed } from "../src/housingSync/observedActions";
 
 import { changeVar, message, playSound } from "./utils";
 
 function actionsCompareEqual(a: Action | Observed, b: Action): boolean {
-    return (
-        JSON.stringify(normalizeActionCompare(a)) ===
-        JSON.stringify(normalizeActionCompare(b))
-    );
+    return actionsEqual(a, b);
 }
 
-describe("normalizeActionCompare — value-kind numeric coercion", () => {
+describe("action comparison — value-kind numeric coercion", () => {
     // Lore parsing produces strings; HTSL source produces numbers. These
     // tests pin the rule: equal-magnitude string/number pairs compare equal
     // for "value"-kind fields whose declared default is numeric.
@@ -141,7 +138,7 @@ describe("normalizeActionCompare — value-kind numeric coercion", () => {
     });
 });
 
-describe("normalizeActionCompare — select/cycle shape coercion", () => {
+describe("action comparison — select/cycle shape coercion", () => {
     // Lore parsing produces a bare string for select/cycle fields; HTSL
     // source produces { type: "<label>" } objects. These tests pin the
     // rule: both shapes collapse to the same canonical form.
@@ -190,7 +187,7 @@ describe("normalizeActionCompare — select/cycle shape coercion", () => {
     });
 });
 
-describe("normalizeActionCompare — boolean default-drop", () => {
+describe("action comparison — boolean default-drop", () => {
     test("CHANGE_VAR.unset = false equals omitted unset", () => {
         const observed = changeVar({ unset: false });
         const desired = changeVar(); // unset omitted
@@ -204,7 +201,7 @@ describe("normalizeActionCompare — boolean default-drop", () => {
     });
 });
 
-describe("normalizeActionCompare — VarHolder team", () => {
+describe("action comparison — VarHolder team", () => {
     test("Team holder with same team matches", () => {
         const observed = changeVar({ holder: { type: "Team", team: "Blue" } });
         const desired = changeVar({ holder: { type: "Team", team: "Blue" } });
@@ -224,7 +221,7 @@ describe("normalizeActionCompare — VarHolder team", () => {
     });
 });
 
-describe("normalizeActionCompare — note handling", () => {
+describe("action comparison — note handling", () => {
     test("identical notes match", () => {
         const observed = message("hello", { note: "&7notes" });
         const desired = message("hello", { note: "&7notes" });
@@ -238,7 +235,7 @@ describe("normalizeActionCompare — note handling", () => {
     });
 });
 
-describe("normalizeConditionCompare — same machinery as actions", () => {
+describe("condition comparison — same machinery as actions", () => {
     test("COMPARE_VAR with default fallback drops the field", () => {
         const observed: ConditionCompareVar = {
             type: "COMPARE_VAR",
@@ -255,9 +252,38 @@ describe("normalizeConditionCompare — same machinery as actions", () => {
             op: "Equal",
             amount: "1",
         };
-        expect(JSON.stringify(normalizeConditionCompare(observed))).toBe(
-            JSON.stringify(normalizeConditionCompare(desired))
-        );
+        expect(conditionsEqual(observed, desired)).toBe(true);
+    });
+});
+
+describe("canonical action keys", () => {
+    test("parsed and observed custom coordinate locations compare equally", () => {
+        const parsed = {
+            type: "PLAY_SOUND",
+            sound: "random.orb",
+            volume: 0.7,
+            pitch: 1,
+            location: {
+                type: "Custom Coordinates",
+                value: "~ ~ ~",
+                coordinates: {
+                    x: { kind: "relative", value: "0" },
+                    y: { kind: "relative", value: "0" },
+                    z: { kind: "relative", value: "0" },
+                    yaw: undefined,
+                    pitch: undefined,
+                },
+            },
+        } as Action;
+        const observed = {
+            type: "PLAY_SOUND",
+            sound: "random.orb",
+            volume: "0.7",
+            pitch: "1",
+            location: { type: "Custom Coordinates", value: "~ ~ ~" },
+        } as unknown as Action;
+
+        expect(actionsEqual(parsed, observed)).toBe(true);
     });
 });
 

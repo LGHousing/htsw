@@ -30,7 +30,7 @@ export async function applyConditionList(
     });
     const observed = await readConditionList(ctx, {
         itemReadMode: "sync",
-        itemRegistry: options.itemRegistry,
+        canonicalizeItemName: options.canonicalizeItemName,
         itemFieldObservations: options.itemFieldObservations,
         phaseUnits,
         progress,

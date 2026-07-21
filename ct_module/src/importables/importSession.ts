@@ -13,10 +13,11 @@ import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { buildTrustPlan, tryWriteImportableCache } from "../importCache";
 import { upsertHouseLockImportable } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "./identity";
-import { createItemRegistry } from "./itemRegistry";
-import { createItemDependencyIndex } from "./itemDependencyIndex";
-import { createItemDiffContext } from "./itemDiff";
-import { createItemFieldObservationRecorder } from "../housingSync/itemFieldObservations";
+import { createProjectItemIndex } from "./items/projectItems";
+import { createItemDependencyIndex } from "./items/dependencyIndex";
+import { createItemDiffContext } from "./items/diff";
+import { createItemFieldResolver } from "./items/resolveItem";
+import { createItemFieldObservationRecorder } from "../housingSync/items/fieldObservations";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import { resetMenuNameSession } from "./menus/listMenus";
 import { resetCommandNameSession } from "./commands/listCommands";
@@ -34,7 +35,7 @@ import {
     expandDeclaredTeamAndGroupDependencies,
     expandClickActionItemDependencies,
     referencedItemNames,
-} from "./itemDependencies";
+} from "./items/dependencies";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { TaskProgressEntry } from "../housingSync/progress/types";
 import { queueRowKey } from "../housingSync/progress/queueRowKey";
@@ -130,9 +131,8 @@ export async function importSelectedImportables(
             new SourceMap(new FileSystemFileLoader()),
             selection.sourcePath
         );
-    const items = createItemRegistry(parsed.value, parsed.gcx);
+    const items = createProjectItemIndex(parsed.value, parsed.gcx);
     const itemDependencies = createItemDependencyIndex(parsed.value, items);
-    items.cachedHousingUuid = selection.housingUuid;
     if (itemDependencies.cycles.length > 0) {
         throw Diagnostic.error(
             `Item click actions form a cycle: ${itemDependencies.cycles[0].itemNames.join(" -> ")}`
@@ -192,7 +192,8 @@ export async function importSelectedImportables(
         orderedImportables,
         itemDependencies,
         items,
-        importable => {
+        selection.housingUuid,
+        (importable) => {
             const identity = importableIdentity(importable);
             const entry = trustPlan.importables.get(
                 importableKey(importable.type, identity)
@@ -206,6 +207,12 @@ export async function importSelectedImportables(
     const session: ImportSession = {
         parsed,
         items,
+        canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+        resolveItem: createItemFieldResolver(
+            items,
+            itemDependencies,
+            selection.housingUuid
+        ),
         housingUuid: selection.housingUuid,
         trust: trustPlan,
         conflicts: [],
@@ -340,10 +347,7 @@ export async function importSelectedImportables(
                 const trace =
                     stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
                 if (trace)
-                    traceNote(
-                        "read-stack",
-                        trace.split("\n").slice(0, 8).join(" | ")
-                    );
+                    traceNote("read-stack", trace.split("\n").slice(0, 8).join(" | "));
             }
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`

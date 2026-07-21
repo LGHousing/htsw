@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import {
-    canonicalItemTag,
+    canonicalItemShellTag,
+    canonicalLiveItemTag,
     type TagLike,
-} from "../src/housingSync/fields/itemTagCanonical";
+} from "../src/housingSync/items/itemTag";
+import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 
 const str = (value: string): TagLike => ({ type: "string", value });
 const byte = (value: number): TagLike => ({ type: "byte", value });
@@ -17,7 +19,7 @@ const loreList = (lines: string[]): TagLike => ({
     value: { type: "string", value: lines },
 });
 
-describe("canonicalItemTag", () => {
+describe("canonicalItemShellTag", () => {
     test("source {id,Count} equals read-back with vanilla defaults", () => {
         const source = compound({ id: str("minecraft:stone"), Count: byte(1) });
         const house = compound({
@@ -26,16 +28,16 @@ describe("canonicalItemTag", () => {
             Damage: short(0),
             tag: compound({ display: compound({}) }),
         });
-        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(house));
+        expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(house));
     });
 
     test("real damage, counts, and interact_data are handled correctly", () => {
         const plain = compound({ id: str("minecraft:wool") });
         const damaged = compound({ id: str("minecraft:wool"), Damage: short(5) });
-        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(damaged));
+        expect(canonicalItemShellTag(plain)).not.toEqual(canonicalItemShellTag(damaged));
 
         const stacked = compound({ id: str("minecraft:wool"), Count: byte(16) });
-        expect(canonicalItemTag(plain)).not.toEqual(canonicalItemTag(stacked));
+        expect(canonicalItemShellTag(plain)).not.toEqual(canonicalItemShellTag(stacked));
 
         const withInteract = compound({
             id: str("minecraft:wool"),
@@ -43,7 +45,7 @@ describe("canonicalItemTag", () => {
                 ExtraAttributes: compound({ interact_data: str("blob") }),
             }),
         });
-        expect(canonicalItemTag(withInteract)).toEqual(canonicalItemTag(plain));
+        expect(canonicalItemShellTag(withInteract)).toEqual(canonicalItemShellTag(plain));
     });
 
     test("server-stripped ItemModel equals the source that carried it", () => {
@@ -60,7 +62,7 @@ describe("canonicalItemTag", () => {
             Damage: short(0),
             tag: compound({}),
         });
-        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(echoed));
+        expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(echoed));
 
         const otherModel = compound({
             id: str("minecraft:iron_sword"),
@@ -75,12 +77,14 @@ describe("canonicalItemTag", () => {
             Count: byte(1),
             tag: compound({ display: compound({ Name: str("§6Named") }) }),
         });
-        expect(canonicalItemTag(otherModel)).toEqual(canonicalItemTag(plainNamed));
+        expect(canonicalItemShellTag(otherModel)).toEqual(
+            canonicalItemShellTag(plainNamed)
+        );
     });
 
     test("bare item ids normalize to the minecraft namespace", () => {
-        expect(canonicalItemTag(compound({ id: str("stone") }))).toEqual(
-            canonicalItemTag(compound({ id: str("minecraft:stone") }))
+        expect(canonicalItemShellTag(compound({ id: str("stone") }))).toEqual(
+            canonicalItemShellTag(compound({ id: str("minecraft:stone") }))
         );
     });
 
@@ -98,7 +102,7 @@ describe("canonicalItemTag", () => {
             Damage: byte(3),
             tag: compound({ SkullOwner: compound({ hypixelPopulated: byte(1) }) }),
         });
-        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(echoed));
+        expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(echoed));
 
         // Values still matter — only the width is folded.
         const other = compound({
@@ -106,7 +110,7 @@ describe("canonicalItemTag", () => {
             Damage: short(3),
             tag: compound({ SkullOwner: compound({ hypixelPopulated: int(0) }) }),
         });
-        expect(canonicalItemTag(source)).not.toEqual(canonicalItemTag(other));
+        expect(canonicalItemShellTag(source)).not.toEqual(canonicalItemShellTag(other));
     });
 
     test("integral widths fold inside compound lists (ench entries)", () => {
@@ -123,7 +127,7 @@ describe("canonicalItemTag", () => {
             id: str("minecraft:skull"),
             tag: compound({ ench: enchList(int(1), int(17)) }),
         });
-        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(retyped));
+        expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(retyped));
     });
 
     test("blank lore separators equal Housing's §7 form, without mutating input", () => {
@@ -146,7 +150,104 @@ describe("canonicalItemTag", () => {
             }),
         });
         const snapshot = JSON.parse(JSON.stringify(withBlank)) as TagLike;
-        expect(canonicalItemTag(withBlank)).toEqual(canonicalItemTag(houseForm));
+        expect(canonicalItemShellTag(withBlank)).toEqual(
+            canonicalItemShellTag(houseForm)
+        );
         expect(withBlank).toEqual(snapshot);
+    });
+
+    test("Drop Item's empty ExtraAttributes remains part of exact metadata identity", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const marked = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ ExtraAttributes: compound({}) }),
+        });
+        expect(canonicalItemShellTag(plain)).not.toEqual(canonicalItemShellTag(marked));
+    });
+
+    test("authored empty lists remain part of item identity", () => {
+        const plain = compound({ id: str("minecraft:stone") });
+        const withEmptyList = compound({
+            id: str("minecraft:stone"),
+            tag: compound({ AuthoredValues: loreList([]) }),
+        });
+
+        expect(canonicalItemShellTagKey(withEmptyList)).not.toBe(
+            canonicalItemShellTagKey(plain)
+        );
+    });
+
+    test("authored empty compounds are preserved regardless of their key", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const custom = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ custom: compound({}) }),
+        });
+        const nestedExtraAttributes = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ container: compound({ ExtraAttributes: compound({}) }) }),
+        });
+        expect(canonicalItemShellTag(plain)).not.toEqual(canonicalItemShellTag(custom));
+        expect(canonicalItemShellTag(plain)).not.toEqual(
+            canonicalItemShellTag(nestedExtraAttributes)
+        );
+    });
+
+    test("known empty server shells are stripped", () => {
+        const plain = compound({ id: str("minecraft:diamond_sword") });
+        const emptyTag = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({}),
+        });
+        const emptyDisplay = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({ display: compound({}) }),
+        });
+        expect(canonicalItemShellTag(plain)).toEqual(canonicalItemShellTag(emptyTag));
+        expect(canonicalItemShellTag(plain)).toEqual(canonicalItemShellTag(emptyDisplay));
+    });
+
+    test("server-only fields do not erase unrelated empty compounds", () => {
+        const source = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({
+                ItemModel: str("minecraft:netherite_spear"),
+                ExtraAttributes: compound({
+                    interact_data: str("blob"),
+                    marker: compound({}),
+                }),
+            }),
+        });
+        const expected = compound({
+            id: str("minecraft:diamond_sword"),
+            tag: compound({
+                ExtraAttributes: compound({ marker: compound({}) }),
+            }),
+        });
+        expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(expected));
+        expect(canonicalItemShellTag(source)).not.toEqual(
+            canonicalItemShellTag(compound({ id: str("minecraft:diamond_sword") }))
+        );
+    });
+
+    test("portable identity ignores click actions while live identity preserves them", () => {
+        const first = compound({
+            id: str("minecraft:stone"),
+            tag: compound({
+                ExtraAttributes: compound({
+                    interact_data: compound({ version: byte(1) }),
+                }),
+            }),
+        });
+        const second = compound({
+            id: str("minecraft:stone"),
+            tag: compound({
+                ExtraAttributes: compound({
+                    interact_data: compound({ version: byte(2) }),
+                }),
+            }),
+        });
+        expect(canonicalItemShellTag(first)).toEqual(canonicalItemShellTag(second));
+        expect(canonicalLiveItemTag(first)).not.toEqual(canonicalLiveItemTag(second));
     });
 });

@@ -14,7 +14,7 @@ import {
 } from "./paths";
 import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
-import type { ItemDependencySnapshot } from "../importables/itemDependencyIndex";
+import type { ItemDependencySnapshot } from "../importables/items/dependencyIndex";
 import { javaType } from "../utils/java";
 
 /**
