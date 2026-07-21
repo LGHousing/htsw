@@ -1,11 +1,7 @@
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
 import { isUnspawnableItem } from "htsw";
 
-import {
-    clickGoBack,
-    getSlotPaginate,
-    setNumberValue,
-} from "../../housingSync/menus/menuUtils";
+import { clickGoBack, setNumberValue } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { setItemValue } from "../../housingSync/items/itemPicker";
 import { parseLoreKeyValueLine } from "../../housingSync/fields/loreParsing";
@@ -23,6 +19,7 @@ import {
 } from "./icon";
 import {
     getSessionFunctionIcon,
+    getSessionFunctionListSlot,
     getSessionFunctionNamesLower,
     noteFunctionCreated,
 } from "./listFunctions";
@@ -111,13 +108,7 @@ export async function openFunctionSettings(
     ctx: TaskContext,
     name: string
 ): Promise<void> {
-    // Warm the /functions icon-list cache now, while we're still in the list. A
-    // later functionIconMatches (inside applyFunctionSettings, with the settings
-    // menu open) would otherwise lazily read /functions and navigate out of that
-    // menu — the "Could not find Automatic Execution" failure for a function that
-    // has both actions and an icon (the actions path never warms this in preread).
-    await getSessionFunctionIcon(ctx, name);
-    const listSlot = await getSlotPaginate(ctx, name);
+    const listSlot = await getSessionFunctionListSlot(ctx, name);
     listSlot.click(MouseButton.RIGHT);
     await timedWaitForMenu(ctx, "menuClickWait");
 }

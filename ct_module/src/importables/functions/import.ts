@@ -18,7 +18,7 @@ import type { ImportSession } from "../imports";
 import { importableIdentity } from "../identity";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
-import { functionListOpened } from "../waiters";
+import { openFunctionList } from "./listFunctions";
 import {
     applyFunctionSettings,
     ensureFunctionExists,
@@ -187,11 +187,10 @@ export async function applyImportableFunctionPlan(
         await applyActionListPlan(ctx, plan.actionsPlan, {
             session,
         });
+        await clickGoBack(ctx);
+    } else if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
+        await clickGoBack(ctx);
     }
-}
-
-async function openFunctionList(ctx: TaskContext): Promise<void> {
-    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
 }
 
 async function readFunctionSettingsPlanAfterActionEditor(

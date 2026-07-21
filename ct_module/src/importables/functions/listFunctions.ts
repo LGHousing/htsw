@@ -1,10 +1,14 @@
 import TaskContext from "../../tasks/context";
+import { isAtMenuTitle } from "../../housingSync/menus/currentMenu";
 import {
+    findPaginatedListEntry,
+    getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
     type PaginatedListConfig,
 } from "../../housingSync/menus/paginatedList";
+import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
 import { extractFunctionNameFromSlot } from "./shared";
@@ -15,13 +19,15 @@ const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
     emptyPlaceholderName: "No items!",
 };
 
-// Per-import-session cache of the house's functions (lowercased name → current
-// icon snapshot), so the reference-preflight doesn't re-read the whole
-// /functions GUI once per imported function. The icon rides along for free —
-// each list slot IS the function's icon — letting an icon-only import confirm a
-// match without opening any settings menu. Populated on first need, kept in
-// sync as we create shells, reset at the start of each import session.
-let sessionFunctions: Map<string, FunctionIconSnapshot | null> | null = null;
+// Per-import-session function list, including each entry's last verified index
+// and icon. It avoids re-reading /functions for reference checks and lets
+// settings navigation move directly between the pages already being visited.
+type SessionFunction = {
+    index: number | null;
+    icon: FunctionIconSnapshot | null;
+};
+
+let sessionFunctions: Map<string, SessionFunction> | null = null;
 
 export function resetFunctionNameSession(): void {
     sessionFunctions = null;
@@ -31,18 +37,21 @@ export function noteFunctionCreated(name: string): void {
     if (sessionFunctions !== null) {
         // A freshly created shell carries the Housing default icon; record it as
         // unknown so an icon-only import treats it as a mismatch and sets the icon.
-        sessionFunctions.set(name.toLowerCase(), null);
+        sessionFunctions.set(name.toLowerCase(), { index: null, icon: null });
     }
 }
 
 async function ensureSessionFunctions(
     ctx: TaskContext
-): Promise<Map<string, FunctionIconSnapshot | null>> {
+): Promise<Map<string, SessionFunction>> {
     if (sessionFunctions !== null) return sessionFunctions;
-    const map = new Map<string, FunctionIconSnapshot | null>();
+    const map = new Map<string, SessionFunction>();
     const entries = await listAllFunctionEntries(ctx);
     for (let i = 0; i < entries.length; i++) {
-        map.set(entries[i].name.toLowerCase(), entries[i].icon);
+        map.set(entries[i].name.toLowerCase(), {
+            index: entries[i].index,
+            icon: entries[i].icon,
+        });
     }
     sessionFunctions = map;
     return map;
@@ -52,7 +61,9 @@ async function ensureSessionFunctions(
  * The set of existing function names (lowercased) for this import session.
  * Reads the /functions GUI once and caches it; subsequent calls are free.
  */
-export async function getSessionFunctionNamesLower(ctx: TaskContext): Promise<Set<string>> {
+export async function getSessionFunctionNamesLower(
+    ctx: TaskContext
+): Promise<Set<string>> {
     return new Set((await ensureSessionFunctions(ctx)).keys());
 }
 
@@ -65,42 +76,106 @@ export async function getSessionFunctionIcon(
     ctx: TaskContext,
     name: string
 ): Promise<FunctionIconSnapshot | null> {
-    return (await ensureSessionFunctions(ctx)).get(name.toLowerCase()) ?? null;
+    return (await ensureSessionFunctions(ctx)).get(name.toLowerCase())?.icon ?? null;
 }
 
-export type FunctionListEntry = { name: string; icon: FunctionIconSnapshot | null };
+export async function openFunctionList(ctx: TaskContext): Promise<void> {
+    if (isAtMenuTitle(ctx, "Functions")) return;
+    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
+}
 
-export async function listAllFunctionEntries(ctx: TaskContext): Promise<FunctionListEntry[]> {
-    await ctx.expectAfter(
-        () => ctx.runCommand("/functions"),
-        functionListOpened()
-    );
+export async function getSessionFunctionListSlot(
+    ctx: TaskContext,
+    name: string
+): Promise<ItemSlot> {
+    const functions = await ensureSessionFunctions(ctx);
+    await openFunctionList(ctx);
 
-    type Entry = { index: number; name: string; icon: FunctionIconSnapshot | null };
-    const entries = await readPaginatedList<Entry>(
+    const key = name.toLowerCase();
+    const cached = functions.get(key);
+    if (cached !== undefined && cached.index !== null) {
+        try {
+            const slot = await getPaginatedListSlotAtIndex(
+                ctx,
+                cached.index,
+                cached.index + 1,
+                FUNCTION_LIST_CONFIG
+            );
+            const live = readFunctionEntryFromSlot(slot, cached.index);
+            if (live !== null && live.name.toLowerCase() === key) {
+                rememberFunctionEntries(functions, [live]);
+                return slot;
+            }
+        } catch (_error) {
+            // Fall through to the verified full-list lookup.
+        }
+    }
+
+    const found = await findPaginatedListEntry(
         ctx,
         FUNCTION_LIST_CONFIG,
-        async () => {
-            const out: Entry[] = [];
-            const slots = getVisiblePaginatedItemSlots(ctx);
-            for (let i = 0; i < slots.length; i++) {
-                if (isEmptyPaginatedPlaceholder(slots[i], FUNCTION_LIST_CONFIG)) continue;
-                const item = slots[i].getItem();
-                const extracted = extractFunctionNameFromSlot(
-                    removedFormatting(item.getName()),
-                );
-                if (extracted === null) continue;
-                out.push({
-                    index: i,
-                    name: extracted,
-                    icon: snapshotIconStack(item.getItemStack()),
-                });
-            }
-            return out;
-        },
+        async () => readVisibleFunctionEntries(ctx),
+        (entry) => entry.name.toLowerCase() === key,
+        (entries) => rememberFunctionEntries(functions, entries)
     );
+    if (found === null) {
+        throw new Error(`Could not find function "${name}".`);
+    }
+    rememberFunctionEntries(functions, [found.entry]);
+    return found.slot;
+}
 
-    return entries.map((e) => ({ name: e.name, icon: e.icon }));
+export type FunctionListEntry = {
+    index: number;
+    name: string;
+    icon: FunctionIconSnapshot | null;
+};
+
+export async function listAllFunctionEntries(
+    ctx: TaskContext
+): Promise<FunctionListEntry[]> {
+    await openFunctionList(ctx);
+
+    return readPaginatedList<FunctionListEntry>(ctx, FUNCTION_LIST_CONFIG, async () =>
+        readVisibleFunctionEntries(ctx)
+    );
+}
+
+function readVisibleFunctionEntries(ctx: TaskContext): FunctionListEntry[] {
+    const entries: FunctionListEntry[] = [];
+    const slots = getVisiblePaginatedItemSlots(ctx);
+    for (let i = 0; i < slots.length; i++) {
+        if (isEmptyPaginatedPlaceholder(slots[i], FUNCTION_LIST_CONFIG)) continue;
+        const entry = readFunctionEntryFromSlot(slots[i], i);
+        if (entry !== null) entries.push(entry);
+    }
+    return entries;
+}
+
+function readFunctionEntryFromSlot(
+    slot: ItemSlot,
+    index: number
+): FunctionListEntry | null {
+    const item = slot.getItem();
+    const name = extractFunctionNameFromSlot(removedFormatting(item.getName()));
+    if (name === null) return null;
+    return {
+        index,
+        name,
+        icon: snapshotIconStack(item.getItemStack()),
+    };
+}
+
+function rememberFunctionEntries(
+    functions: Map<string, SessionFunction>,
+    entries: readonly FunctionListEntry[]
+): void {
+    for (let i = 0; i < entries.length; i++) {
+        functions.set(entries[i].name.toLowerCase(), {
+            index: entries[i].index,
+            icon: entries[i].icon,
+        });
+    }
 }
 
 export async function listAllFunctionNames(ctx: TaskContext): Promise<string[]> {
