@@ -229,6 +229,15 @@ function endsWith(s: string, suffix: string): boolean {
     );
 }
 
+function splitSourceLines(source: string): string[] {
+    const lines = source.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        if (endsWith(lines[i], "\r"))
+            lines[i] = lines[i].substring(0, lines[i].length - 1);
+    }
+    return lines;
+}
+
 function plainTokens(text: string, color: number): TokenSpan[] {
     return [{ text, color }];
 }
@@ -340,7 +349,7 @@ function readPlainLines(path: string): string[] {
     let lines: string[] = [];
     try {
         const src = fileLoader.readFile(path);
-        lines = src.split("\n");
+        lines = splitSourceLines(src);
     } catch (e) {
         // Friendly two-liner instead of the raw exception: the exception text
         // repeats the absolute path twice and wraps into an unreadable wall.
@@ -630,7 +639,7 @@ function htslRawRenderableLines(
     }
 
     const ranges = collectActionLineRanges(parsed.actions, parsed.spans, parsed.file);
-    const rawLines = parsed.file.src.split("\n");
+    const rawLines = splitSourceLines(parsed.file.src);
     const linePaths = pathPerLine(rawLines.length, ranges);
     const lineDepths = depthPerLine(rawLines.length, ranges);
     const diagnostics = diagnosticIndexForFile(path, importJsonPath);
