@@ -3,7 +3,8 @@ import * as htsw from "htsw";
 
 import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
 import type { ProgressHandler } from "../../housingSync/progress/types";
-import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
+import { prettySnbt } from "../../housingSync/items/itemNbt";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { upsertImportableEntry } from "../../project/importJsonMutations";

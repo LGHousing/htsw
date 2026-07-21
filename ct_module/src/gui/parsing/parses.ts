@@ -3,8 +3,8 @@
 import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { createItemRegistry } from "../../importables/itemRegistry";
-import { createItemDependencyIndex } from "../../importables/itemDependencyIndex";
+import { createProjectItemIndex } from "../../importables/items/projectItems";
+import { createItemDependencyIndex } from "../../importables/items/dependencyIndex";
 import { recordHouseBinding } from "../../importCache/houseBindings";
 import { getMtimeMs, javaType } from "../lib/java";
 import { allReferencedPaths } from "./importablePaths";
@@ -215,7 +215,7 @@ function commitParseEntry(
     if (parsed !== null) {
         createItemDependencyIndex(
             parsed.value,
-            createItemRegistry(parsed.value, parsed.gcx)
+            createProjectItemIndex(parsed.value, parsed.gcx)
         );
         recordHouseBinding(parsed.importJson.houseUuid, canon);
     }

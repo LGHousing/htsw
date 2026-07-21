@@ -37,6 +37,7 @@ function memoryFs(files: Record<string, string>): ProjectFs {
             if (normalizedRef.charAt(0) === "/") return normalizedRef;
             return normalize(`${baseDir}/${normalizedRef}`);
         },
+        pathKey: normalize,
     };
 }
 

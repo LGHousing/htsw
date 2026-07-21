@@ -2,10 +2,8 @@ import type { Action, ImportableNpc } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionListFully } from "../../housingSync/actions/hydration/run";
-import {
-    ItemCaptureRegistry,
-    type InventorySnapshot,
-} from "../../housingSync/itemCapture";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
+import type { PlayerInventorySnapshot } from "../../housingSync/items/playerInventory";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
@@ -40,7 +38,7 @@ export type ExportNpcWithSharedStateOptions = {
 
 export type SharedNpcExportState = {
     itemCaptures: ItemCaptureRegistry;
-    inventorySnapshot: InventorySnapshot;
+    inventorySnapshot: PlayerInventorySnapshot;
     npcLookup: NpcLookupCache;
 };
 

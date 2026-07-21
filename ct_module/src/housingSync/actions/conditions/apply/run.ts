@@ -132,7 +132,7 @@ export class ConditionListApplyRun {
                 this.ctx,
                 op.desired,
                 op.baselineCondition,
-                this.options.itemRegistry
+                this.options.resolveItem
             );
 
             const currentInverted = op.baselineCondition.inverted === true;
@@ -185,7 +185,7 @@ export class ConditionListApplyRun {
             await addConditionToOpenConditionList(
                 this.ctx,
                 op.desired,
-                this.options.itemRegistry
+                this.options.resolveItem
             );
             this.appendCurrentEntry();
             this.completeOperation(op);

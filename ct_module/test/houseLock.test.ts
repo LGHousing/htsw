@@ -10,7 +10,7 @@ import {
     ACTION_LIST_SCAN_HASH_VERSION,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
-import type { ItemDependencySnapshot } from "../src/importables/itemDependencyIndex";
+import type { ItemDependencySnapshot } from "../src/importables/items/dependencyIndex";
 
 const importJsonPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";

@@ -62,28 +62,32 @@ import {
     prereadImportableGroup,
     type GroupImportPlan,
 } from "./groups/import";
-import type { ItemRegistry } from "./itemRegistry";
+import type { ProjectItemIndex } from "./items/projectItems";
+import type {
+    CanonicalizeItemName,
+    ResolveItemField,
+} from "../housingSync/items/itemReferences";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
-import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
+import type { ItemCaptureRegistry } from "./items/captureRegistry";
 import type { NpcLookupCache } from "./npcs/listNpcs";
 import type { ActionListApplyResult } from "../housingSync/actions/apply";
 import type { ImportConflict } from "./importConflicts";
 import type { ItemDiffContext } from "../housingSync/actions/diff/itemDiffContext";
-import type { ItemDependencyIndex } from "./itemDependencyIndex";
-import type { ItemFieldObservationRecorder } from "../housingSync/itemFieldObservations";
+import type { ItemDependencyIndex } from "./items/dependencyIndex";
+import type { ItemFieldObservationRecorder } from "../housingSync/items/fieldObservations";
 
 export type ImportSession = {
     parsed: ImportablesParseResult;
-    items: ItemRegistry;
+    items: ProjectItemIndex;
+    canonicalizeItemName: CanonicalizeItemName;
+    resolveItem: ResolveItemField;
     housingUuid: string;
     trust: TrustPlan;
     conflicts: ImportConflict[];
     events: SyncEventHandler | undefined;
-    actionItemRead:
-        | { mode: "sync" }
-        | { mode: "verify"; captures: ItemCaptureRegistry };
+    actionItemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureRegistry };
     itemDiff?: ItemDiffContext;
-    itemDependencies?: ItemDependencyIndex;
+    itemDependencies: ItemDependencyIndex;
     itemFieldObservations?: ItemFieldObservationRecorder;
     npcLookup: NpcLookupCache;
 };

@@ -22,13 +22,12 @@ import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import {
     applyCommandSettings,
-    commandSettingsMatch,
-    desiredCommandSettings,
     ensureCommandExists,
     openCommandActionsEditor,
     openCommandSettings,
     readOpenCommandSettings,
 } from "./shared";
+import { commandSettingsMatch, desiredCommandSettings } from "./settings";
 
 export type CommandImportPlan = {
     kind: "COMMAND";

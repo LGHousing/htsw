@@ -1,9 +1,6 @@
 import type { Importable, ImportableItem } from "htsw/types";
 
-import {
-    ALL_IMPORTABLE_TYPES,
-    HOUSE_READERS,
-} from "../../importables/houseReaders";
+import { ALL_IMPORTABLE_TYPES, HOUSE_READERS } from "../../importables/houseReaders";
 import {
     getImportCacheWriteRevision,
     houseTypeScanned,
@@ -15,7 +12,7 @@ import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
 import { buildCacheStatusRow } from "../../importCache/status";
 import type { LinkStatusKey } from "./linkStatus";
-import { itemDependencyIndexFor } from "../../importables/itemDependencyIndex";
+import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
 
 type HousePresenceState = "unscanned" | "present" | "absent";
 
@@ -105,9 +102,10 @@ function housePresenceStateFor(imp: Importable): HousePresenceState {
     return "absent";
 }
 
-export function importableLinkStatus(
-    imp: Importable
-): { key: LinkStatusKey; tooltip: string } {
+export function importableLinkStatus(imp: Importable): {
+    key: LinkStatusKey;
+    tooltip: string;
+} {
     const uuid = getHousingUuid();
     if (uuid === null) return { key: "unknown", tooltip: "No house detected" };
     // Items have no house-side listing to scan; their content-type entry is
@@ -120,7 +118,10 @@ export function importableLinkStatus(
             return { key: "matches", tooltip: "Files match this house" };
         }
         if (baseline === "modified") {
-            return { key: "differs", tooltip: "Import will update the house from these files" };
+            return {
+                key: "differs",
+                tooltip: "Import will update the house from these files",
+            };
         }
         if (imp.type === "ITEM") {
             const referenced = referencedItemStatus(uuid, imp);
@@ -131,9 +132,10 @@ export function importableLinkStatus(
         // rather than "unknown" — import is the action that places/links it.
         return {
             key: "oneSided",
-            tooltip: imp.type === "ITEM"
-                ? "Not found in cached house content"
-                : "Not listed from a house — import to place it",
+            tooltip:
+                imp.type === "ITEM"
+                    ? "Not found in cached house content"
+                    : "Not listed from a house — import to place it",
         };
     }
     const presence = housePresenceStateFor(imp);
@@ -150,7 +152,10 @@ export function importableLinkStatus(
         return { key: "matches", tooltip: "Files match this house" };
     }
     if (cacheState === "modified") {
-        return { key: "differs", tooltip: "Import will update the house from these files" };
+        return {
+            key: "differs",
+            tooltip: "Import will update the house from these files",
+        };
     }
     return presence === "present"
         ? { key: "present", tooltip: "In this house; content not read yet" }

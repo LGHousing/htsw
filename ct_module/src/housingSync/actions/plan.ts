@@ -62,17 +62,18 @@ export async function prereadActionList(
                       scope: progressScope,
                       progress: event,
                   });
-    const itemRead = options.session.actionItemRead.mode === "sync"
-        ? {
-              itemReadMode: "sync" as const,
-              itemRegistry: options.session.items,
-              itemFieldObservations: options.session.itemFieldObservations,
-          }
-        : {
-              itemReadMode: "verify" as const,
-              itemRegistry: options.session.items,
-              itemCaptures: options.session.actionItemRead.captures,
-          };
+    const itemRead =
+        options.session.actionItemRead.mode === "sync"
+            ? {
+                  itemReadMode: "sync" as const,
+                  canonicalizeItemName: options.session.canonicalizeItemName,
+                  itemFieldObservations: options.session.itemFieldObservations,
+              }
+            : {
+                  itemReadMode: "verify" as const,
+                  canonicalizeItemName: options.session.canonicalizeItemName,
+                  itemCaptures: options.session.actionItemRead.captures,
+              };
     const readOptions = {
         ...itemRead,
         progress,
@@ -115,11 +116,14 @@ export async function prereadActionList(
     const observed = scan.slots;
     for (const entry of observed) {
         if (entry.action !== null) {
-            canonicalizeActionItemName(entry.action, options.session.items);
+            canonicalizeActionItemName(
+                entry.action,
+                options.session.canonicalizeItemName
+            );
         }
     }
     for (const action of desired) {
-        canonicalizeActionItemName(action, options.session.items);
+        canonicalizeActionItemName(action, options.session.canonicalizeItemName);
     }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
@@ -164,10 +168,10 @@ function knownActionListPlan(
         truncatedFields: [],
     }));
     for (const entry of observed) {
-        canonicalizeActionItemName(entry.action, options.session.items);
+        canonicalizeActionItemName(entry.action, options.session.canonicalizeItemName);
     }
     for (const action of desired) {
-        canonicalizeActionItemName(action, options.session.items);
+        canonicalizeActionItemName(action, options.session.canonicalizeItemName);
     }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),

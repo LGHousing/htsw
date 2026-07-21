@@ -1,7 +1,7 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { canonicalStringify } from "../housingSync/fields/compare";
-import { canonicalItemTag, type TagLike } from "../housingSync/fields/itemTagCanonical";
+import { actionListCompareKey } from "../../housingSync/actions/comparison";
+import { canonicalItemShellTag, type TagLike } from "../../housingSync/items/itemTag";
 
 export type ItemChanges = {
     nbt: string[];
@@ -13,13 +13,14 @@ function actionListsMatch(
     left: readonly Action[] | undefined,
     right: readonly Action[] | undefined
 ): boolean {
-    return canonicalStringify(left ?? []) === canonicalStringify(right ?? []);
+    return actionListCompareKey(left ?? []) === actionListCompareKey(right ?? []);
 }
 
 function leafValues(tag: TagLike, path: string, output: Map<string, unknown>): void {
     if (tag.type === "compound") {
         const value = tag.value as Record<string, TagLike>;
         const keys = Object.keys(value).sort();
+        if (keys.length === 0) output.set(path, {});
         for (const key of keys) {
             leafValues(value[key], path === "" ? key : `${path}.${key}`, output);
         }
@@ -57,8 +58,8 @@ function shown(value: unknown): string {
 function nbtChanges(file: TagLike, house: TagLike): string[] {
     const fileValues = new Map<string, unknown>();
     const houseValues = new Map<string, unknown>();
-    leafValues(canonicalItemTag(file), "", fileValues);
-    leafValues(canonicalItemTag(house), "", houseValues);
+    leafValues(canonicalItemShellTag(file), "", fileValues);
+    leafValues(canonicalItemShellTag(house), "", houseValues);
     const paths = new Set<string>();
     for (const path of fileValues.keys()) paths.add(path);
     for (const path of houseValues.keys()) paths.add(path);

@@ -1,7 +1,7 @@
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
 
-import type { ItemRegistry } from "../../../importables/itemRegistry";
+import type { ResolveItemField } from "../../items/itemReferences";
 import TaskContext from "../../../tasks/context";
 import { MouseButton, menuStateDescription } from "../../../tasks/specifics/slots";
 import {
@@ -18,9 +18,7 @@ import {
 import { COST } from "../../progress/costs";
 import { timed } from "../../progress/timing";
 import type { ActionApplyContext } from "../../context/actionApplyContext";
-import {
-    appendConditionsToOpenConditionList,
-} from "../conditions/apply";
+import { appendConditionsToOpenConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import { getActionIo, writeOpenAction } from "../io";
 
@@ -35,8 +33,8 @@ export function actionWithNote(action: Action, note: string | undefined): Action
 export async function addAction(
     ctx: TaskContext,
     action: Action,
-    itemRegistry: ItemRegistry,
-    apply?: ActionApplyContext,
+    resolveItem: ResolveItemField,
+    apply: ActionApplyContext,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
@@ -52,7 +50,7 @@ export async function addAction(
 
     if (spec.write) {
         await writeOpenAction(ctx, action, {
-            itemRegistry,
+            resolveItem,
             apply,
         });
         callbacks?.onActionAdded?.();
@@ -65,26 +63,22 @@ export async function addAction(
 export async function appendActionsToOpenActionList(
     ctx: TaskContext,
     desired: Action[],
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     const apply: ActionApplyContext = {
         markHeaderApplied: () => undefined,
         shouldApplyList: () => true,
 
         async applyChildActions(_prop, args) {
-            await appendActionsToOpenActionList(ctx, args.desired, itemRegistry);
+            await appendActionsToOpenActionList(ctx, args.desired, resolveItem);
         },
 
         async applyConditions(_prop, args) {
-            await appendConditionsToOpenConditionList(
-                ctx,
-                args.desired,
-                itemRegistry
-            );
+            await appendConditionsToOpenConditionList(ctx, args.desired, resolveItem);
         },
     };
     for (let i = 0; i < desired.length; i++) {
-        await addAction(ctx, desired[i], itemRegistry, apply);
+        await addAction(ctx, desired[i], resolveItem, apply);
     }
     if (desired.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -96,7 +90,12 @@ export async function deleteObservedAction(
     index: number,
     listLength: number
 ): Promise<void> {
-    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, ACTION_LIST_CONFIG);
+    const slot = await getPaginatedListSlotAtIndex(
+        ctx,
+        index,
+        listLength,
+        ACTION_LIST_CONFIG
+    );
     slot.click(MouseButton.RIGHT);
     await timedWaitForMenu(ctx, "menuClickWait");
 }
@@ -120,7 +119,12 @@ export async function moveActionToIndex(
         const button =
             leftDistance <= rightDistance ? MouseButton.LEFT : MouseButton.RIGHT;
 
-        const currentSlot = await getPaginatedListSlotAtIndex(ctx, currentIndex, listLength, ACTION_LIST_CONFIG);
+        const currentSlot = await getPaginatedListSlotAtIndex(
+            ctx,
+            currentIndex,
+            listLength,
+            ACTION_LIST_CONFIG
+        );
         currentSlot.click(button, true);
         await timed("reorderStep", COST.reorderStep, () => waitForMenu(ctx));
 

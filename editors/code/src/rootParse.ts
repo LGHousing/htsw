@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as htsw from "htsw";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { absolutePathKey } from "./pathIdentity";
 
 /**
  * The one full-project parse both consumers share: diagnostics validate
@@ -20,10 +21,6 @@ export type ContextParse = {
     result: htsw.ImportablesParseResult;
     sourceMap: htsw.SourceMap;
 };
-
-export function normalizedPathKey(filePath: string): string {
-    return path.resolve(filePath).split("\\").join("/").toLowerCase();
-}
 
 class OpenDocsFileLoader implements htsw.FileLoader {
     fileExists(filePath: string): boolean {
@@ -44,11 +41,11 @@ class OpenDocsFileLoader implements htsw.FileLoader {
     }
 
     private openDocumentForPath(filePath: string): vscode.TextDocument | undefined {
-        const key = normalizedPathKey(filePath);
+        const key = absolutePathKey(filePath);
         return vscode.workspace.textDocuments.find(
             (document) =>
                 document.uri.scheme === "file" &&
-                normalizedPathKey(document.uri.fsPath) === key,
+                absolutePathKey(document.uri.fsPath) === key,
         );
     }
 }
@@ -65,7 +62,7 @@ export function bumpWorkspaceGeneration(): void {
 }
 
 export function getCachedRootParse(rootPath: string): ContextParse {
-    const key = normalizedPathKey(rootPath);
+    const key = absolutePathKey(rootPath);
     const cached = cache.get(key);
     if (cached && cached.generation === generation) return cached;
     const sourceMap = new htsw.SourceMap(new OpenDocsFileLoader());

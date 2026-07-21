@@ -19,7 +19,7 @@ type ConditionLoreFieldSpec<T extends Condition> = {
     kind: UiFieldKind;
     /**
      * Value that the Housing UI presents when the field is unset on the
-     * desired side. Used by normalizeConditionCompare to treat an explicit
+     * desired side. Condition comparison treats an explicit
      * default-valued read as equivalent to an omitted field, which prevents
      * spurious diffs between parsed source and observed GUI state.
      */
@@ -41,7 +41,7 @@ type ActionLoreFieldSpec<T extends Action> = {
     kind: UiFieldKind;
     /**
      * Value that the Housing UI presents when the field is unset on the
-     * desired side. Used by normalizeActionCompare to treat an explicit
+     * desired side. Action comparison treats an explicit
      * default-valued read as equivalent to an omitted field, which prevents
      * spurious diffs between parsed source and observed GUI state.
      */

@@ -2,9 +2,7 @@ import type { Action } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionListFully } from "../../housingSync/actions/hydration/run";
-import type {
-    ItemReadOptions,
-} from "../../housingSync/context/actionReadContext";
+import type { ItemReadOptions } from "../../housingSync/context/actionReadContext";
 import { COST } from "../../housingSync/progress/costs";
 import type { ProgressHandler, ProgressPhase } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
@@ -12,7 +10,7 @@ import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { snbtFromItem } from "../../housingSync/itemCapture";
+import { snbtFromItem } from "../../housingSync/items/itemNbt";
 import { openMenuElements } from "./shared";
 
 const PLAYER_INVENTORY_SLOTS = 36;

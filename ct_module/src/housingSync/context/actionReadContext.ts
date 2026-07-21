@@ -1,7 +1,7 @@
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ItemRegistry } from "../../importables/itemRegistry";
+import type { CanonicalizeItemName } from "../items/itemReferences";
 import type { ActionListReadMode } from "../actions/readList";
 import type {
     Observed,
@@ -20,25 +20,25 @@ import {
     ConditionListPath,
     type NestedListPath,
 } from "../actionPath";
-import type { ItemCaptureRegistry } from "../itemCapture";
-import type { ItemFieldObservationRecorder } from "../itemFieldObservations";
+import type { ItemCaptureSink } from "../items/capture";
+import type { ItemFieldObservationRecorder } from "../items/fieldObservations";
 
 export type ItemReadOptions =
     | {
           itemReadMode: "export";
-          itemCaptures: ItemCaptureRegistry;
-          itemRegistry?: never;
+          itemCaptures: ItemCaptureSink;
+          canonicalizeItemName?: never;
           itemFieldObservations?: never;
       }
     | {
           itemReadMode: "sync";
-          itemRegistry: ItemRegistry;
+          canonicalizeItemName: CanonicalizeItemName;
           itemFieldObservations?: ItemFieldObservationRecorder;
       }
     | {
           itemReadMode: "verify";
-          itemRegistry: ItemRegistry;
-          itemCaptures: ItemCaptureRegistry;
+          canonicalizeItemName: CanonicalizeItemName;
+          itemCaptures: ItemCaptureSink;
           itemFieldObservations?: never;
       };
 

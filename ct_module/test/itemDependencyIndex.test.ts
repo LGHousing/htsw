@@ -5,12 +5,11 @@ import type { Action, Importable, ImportableItem } from "htsw/types";
 import {
     createItemDependencyIndex,
     type ItemDependencySnapshot,
-} from "../src/importables/itemDependencyIndex";
-import { createItemRegistry } from "../src/importables/itemRegistry";
-import { createItemDiffContext } from "../src/importables/itemDiff";
-import { createItemFieldObservationRecorder } from "../src/housingSync/itemFieldObservations";
-import { canonicalStringify } from "../src/housingSync/fields/compare";
-import { canonicalItemTag } from "../src/housingSync/fields/itemTagCanonical";
+} from "../src/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { createItemDiffContext } from "../src/importables/items/diff";
+import { createItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
+import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 
 function item(name: string, marker: number, actions?: Action[]): ImportableItem {
     const nbt: Tag = {
@@ -31,7 +30,7 @@ function give(itemName: string): Action {
 }
 
 function snapshot(importables: Importable[], owner: Importable): ItemDependencySnapshot {
-    const registry = createItemRegistry(importables);
+    const registry = createProjectItemIndex(importables);
     return createItemDependencyIndex(importables, registry).snapshotOf(owner);
 }
 
@@ -53,7 +52,7 @@ describe("item dependency index", () => {
         };
         const oldSnapshot = snapshot([item("key", 1), owner], owner);
         const currentImportables = [item("key", 2), owner];
-        const registry = createItemRegistry(currentImportables);
+        const registry = createProjectItemIndex(currentImportables);
         const index = createItemDependencyIndex(currentImportables, registry);
 
         const invalidations = index.invalidationsFor(owner, oldSnapshot);
@@ -69,7 +68,7 @@ describe("item dependency index", () => {
         const firstImportables = [firstKey, firstOwner];
         const firstIndex = createItemDependencyIndex(
             firstImportables,
-            createItemRegistry(firstImportables)
+            createProjectItemIndex(firstImportables)
         );
         const first = firstIndex.clickActionsFingerprint(firstOwner);
 
@@ -77,7 +76,7 @@ describe("item dependency index", () => {
         const cosmeticImportables = [firstKey, cosmeticOwnerChange];
         const cosmeticIndex = createItemDependencyIndex(
             cosmeticImportables,
-            createItemRegistry(cosmeticImportables)
+            createProjectItemIndex(cosmeticImportables)
         );
         expect(cosmeticIndex.clickActionsFingerprint(cosmeticOwnerChange)).toBe(first);
 
@@ -85,7 +84,7 @@ describe("item dependency index", () => {
         const dependencyImportables = [changedKey, cosmeticOwnerChange];
         const dependencyIndex = createItemDependencyIndex(
             dependencyImportables,
-            createItemRegistry(dependencyImportables)
+            createProjectItemIndex(dependencyImportables)
         );
         expect(dependencyIndex.clickActionsFingerprint(cosmeticOwnerChange)).not.toBe(
             first
@@ -98,10 +97,14 @@ describe("item dependency index", () => {
         const importables = [first, second];
         const index = createItemDependencyIndex(
             importables,
-            createItemRegistry(importables)
+            createProjectItemIndex(importables)
         );
 
-        expect(index.cycles.some(cycle => cycle.itemNames.join(" -> ") === "first -> second -> first")).toBe(true);
+        expect(
+            index.cycles.some(
+                (cycle) => cycle.itemNames.join(" -> ") === "first -> second -> first"
+            )
+        ).toBe(true);
     });
 
     test("trust-off observations reach item conditions inside nested actions", () => {
@@ -111,13 +114,15 @@ describe("item dependency index", () => {
         } as const;
         const desiredAction = {
             type: "RANDOM",
-            actions: [{
-                type: "CONDITIONAL",
-                matchAny: false,
-                conditions: [desiredCondition],
-                ifActions: [],
-                elseActions: [],
-            }],
+            actions: [
+                {
+                    type: "CONDITIONAL",
+                    matchAny: false,
+                    conditions: [desiredCondition],
+                    ifActions: [],
+                    elseActions: [],
+                },
+            ],
         } as Action;
         const owner: Importable = {
             type: "FUNCTION",
@@ -125,7 +130,7 @@ describe("item dependency index", () => {
             actions: [desiredAction],
         };
         const importables = [item("key", 1), owner];
-        const registry = createItemRegistry(importables);
+        const registry = createProjectItemIndex(importables);
         const index = createItemDependencyIndex(importables, registry);
         const observations = createItemFieldObservationRecorder();
         const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
@@ -143,6 +148,7 @@ describe("item dependency index", () => {
             [owner],
             index,
             registry,
+            undefined,
             () => index.snapshotOf(owner),
             observations
         );
@@ -159,18 +165,19 @@ describe("item dependency index", () => {
             actions: [desiredAction],
         };
         const importables = [key, owner];
-        const registry = createItemRegistry(importables);
+        const registry = createProjectItemIndex(importables);
         const index = createItemDependencyIndex(importables, registry);
         const observations = createItemFieldObservationRecorder();
         const observedAction = give("key");
         observations.record(observedAction, "itemName", {
             snbt: '{id:"minecraft:stone",tag:{marker:1,ExtraAttributes:{interact_data:{stale:1}}}}',
-            canonicalKey: canonicalStringify(canonicalItemTag(key.nbt)),
+            canonicalKey: canonicalItemShellTagKey(key.nbt),
         });
         const context = createItemDiffContext(
             [owner],
             index,
             registry,
+            undefined,
             () => index.snapshotOf(owner),
             observations
         );

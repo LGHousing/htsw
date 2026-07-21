@@ -4,12 +4,7 @@ import type { ImportableCacheEntry } from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
-import {
-    cacheEntryHash,
-    cacheEntryListHashes,
-    sameHashList,
-    sameItemDependencySnapshot,
-} from "./status";
+import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
 import { actionListsOfImportable, readCachedActionList } from "./actionLists";
 import type {
@@ -19,8 +14,9 @@ import type {
 import { houseLockEntryFor, readHouseLock, type HouseLock } from "./houseLock";
 import {
     itemDependencyIndexFor,
+    sameItemDependencySnapshot,
     type ItemDependencyIndex,
-} from "../importables/itemDependencyIndex";
+} from "../importables/items/dependencyIndex";
 
 export type {
     TrustedChildListPath,
@@ -88,15 +84,11 @@ export function buildTrustPlan(
             identity
         );
         const entryHash = entry === null ? null : cacheEntryHash(entry);
-        const dependencyIndex =
-            itemDependencies ?? itemDependencyIndexFor(importable);
+        const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
         const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
         const dependenciesMatch =
             dependencySnapshot === undefined ||
-            sameItemDependencySnapshot(
-                entry?.itemDependencies,
-                dependencySnapshot
-            );
+            sameItemDependencySnapshot(entry?.itemDependencies, dependencySnapshot);
         const cacheMatchesLock =
             lockEntry === null ||
             (entryHash === lockEntry.hash &&

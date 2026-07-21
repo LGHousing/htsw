@@ -1,12 +1,12 @@
 import {
-    ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
-    type InventorySnapshot,
-} from "../housingSync/itemCapture";
+    restorePlayerInventory,
+    snapshotPlayerInventory,
+    type PlayerInventorySnapshot,
+} from "../housingSync/items/playerInventory";
 import type { ProgressHandler } from "../housingSync/progress/types";
 import TaskContext from "../tasks/context";
-import { writeCapturedItems } from "./items/writeCapturedItems";
+import { ItemCaptureRegistry } from "./items/captureRegistry";
+import { exportCapturedItems } from "./items/exportCapturedItems";
 import { filterAlreadyExported } from "./exportSkip";
 import { runReadLoop, type ReadFn, type ReadOptions } from "./read";
 import { readImportableCache, writeImportableCache } from "../importCache/cache";
@@ -17,8 +17,8 @@ import {
     createExportItemCaptureRegistry,
     readParsedImportablesForExport,
 } from "./exportContext";
-import { createItemRegistry } from "./itemRegistry";
-import { createItemDependencyIndex } from "./itemDependencyIndex";
+import { createProjectItemIndex } from "./items/projectItems";
+import { createItemDependencyIndex } from "./items/dependencyIndex";
 import { importableIdentity } from "./identity";
 
 // Scratch shared across every item in one export/read run: the dedup registry
@@ -31,7 +31,7 @@ export type BatchState = {
     itemCaptures: ItemCaptureRegistry;
     menuSlotItemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
-    inventorySnapshot: InventorySnapshot | null;
+    inventorySnapshot: PlayerInventorySnapshot | null;
 };
 
 // One importable type's house-reading recipe. The driver owns everything that's
@@ -109,7 +109,7 @@ function refreshExportedItemDependencies(
     if (names.size === 0) return;
     const parsed = readParsedImportablesForExport(importJsonPath);
     if (parsed === null) return;
-    const items = createItemRegistry(parsed.value, parsed.gcx);
+    const items = createProjectItemIndex(parsed.value, parsed.gcx);
     const dependencies = createItemDependencyIndex(parsed.value, items);
 
     for (const importable of parsed.value) {
@@ -152,10 +152,10 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                 lockHousingUuid,
                 options.projectItems
             ),
-            menuSlotItemCaptures: new ItemCaptureRegistry(),
+            menuSlotItemCaptures: new ItemCaptureRegistry("shell"),
             writtenItems: new Set<string>(),
             inventorySnapshot:
-                spec.capturesActionItems === true ? snapshotInventory() : null,
+                spec.capturesActionItems === true ? snapshotPlayerInventory() : null,
         };
         const projectItems = options.projectItems ?? [];
         for (let i = 0; i < projectItems.length; i++) {
@@ -168,7 +168,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         const restoreInventory = async (): Promise<void> => {
             if (state.inventorySnapshot === null) return;
             try {
-                await restoreInventoryToSnapshot(ctx, state.inventorySnapshot);
+                await restorePlayerInventory(ctx, state.inventorySnapshot);
             } catch (error) {
                 ctx.displayMessage(
                     `&7[export] &eInventory restore failed: ${String(error)}`
@@ -270,13 +270,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                                   throw new Error(
                                       `No ${spec.noun} named "${name}" exists in this housing.`
                                   );
-                               return scanOne(
-                                  ctx,
-                                  entry,
-                                  options,
-                                  state,
-                                  onReadProgress
-                              );
+                              return scanOne(ctx, entry, options, state, onReadProgress);
                           },
                           hydrateOne: async (
                               ctx: TaskContext,
@@ -292,7 +286,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                                   throw new Error(
                                       `No ${spec.noun} named "${name}" exists in this housing.`
                                   );
-                               await hydrateOne(
+                              await hydrateOne(
                                   ctx,
                                   entry,
                                   pending,
@@ -322,7 +316,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         } finally {
             try {
                 if (!readOnly && spec.capturesActionItems === true) {
-                    await writeCapturedItems(
+                    await exportCapturedItems(
                         ctx,
                         state.itemCaptures,
                         options.rootDir,

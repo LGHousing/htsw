@@ -1,12 +1,12 @@
 import type { Importable, MenuSlot } from "htsw/types";
 
-import { menuSlotCanonical } from "../../importCache/hash";
+import { menuSlotCompareKey } from "../../importables/menus/slotComparison";
 import { readImportableCache } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
 import type { LinkStatusKey } from "./linkStatus";
-import { itemDependencyIndexFor } from "../../importables/itemDependencyIndex";
+import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
 
 export type MenuSlotCacheStatus = { key: LinkStatusKey; tooltip: string };
 
@@ -18,7 +18,7 @@ const canonicalMemo = new WeakMap<object, string>();
 function slotCanonical(slot: MenuSlot): string {
     const hit = canonicalMemo.get(slot);
     if (hit !== undefined) return hit;
-    const v = menuSlotCanonical(slot);
+    const v = menuSlotCompareKey(slot);
     canonicalMemo.set(slot, v);
     return v;
 }
@@ -48,14 +48,14 @@ export function menuSlotCacheStatus(
         }
     }
     if (cached === null) {
-        return { key: "oneSided", tooltip: "Not in the house's menu — import to place it" };
+        return {
+            key: "oneSided",
+            tooltip: "Not in the house's menu — import to place it",
+        };
     }
     const dependencies = itemDependencyIndexFor(menu);
     if (dependencies !== undefined) {
-        const invalidations = dependencies.invalidationsFor(
-            menu,
-            entry.itemDependencies
-        );
+        const invalidations = dependencies.invalidationsFor(menu, entry.itemDependencies);
         for (const action of slot.actions ?? []) {
             if (invalidations.hasInvalidatedSubtree(action)) {
                 return {

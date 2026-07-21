@@ -1,10 +1,7 @@
 import type { ImportableItem } from "htsw/types";
 
-import {
-    ItemCaptureRegistry,
-    portableItemSnbt,
-    snbtFromItem,
-} from "../../housingSync/itemCapture";
+import { portableItemSnbt, snbtFromItem } from "../../housingSync/items/itemNbt";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { importJsonTargetForSectionEntry, parentDirOf } from "../../project/paths";
 import type TaskContext from "../../tasks/context";
@@ -93,7 +90,7 @@ export async function exportCapturedChest(
     captured: CapturedChest,
     options: ChestExportOptions
 ): Promise<ChestExportCounts> {
-    const registry = new ItemCaptureRegistry();
+    const registry = new ItemCaptureRegistry("shell");
     for (let i = 0; i < options.projectItems.length; i++) {
         registry.seedNbtOnly(options.projectItems[i].name, options.projectItems[i].nbt);
     }

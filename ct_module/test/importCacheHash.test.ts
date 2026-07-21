@@ -2,8 +2,9 @@ import { describe, expect, test } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { functionIconsEqual, importableHash, listHashes } from "../src/importCache/hash";
+import { importableHash, listHashes } from "../src/importCache/hash";
 import { cacheEntryListHashes } from "../src/importCache/status";
+import { functionIconsEqual } from "../src/importables/functions/iconComparison";
 
 function fn(icon: ImportableFunction["icon"]): ImportableFunction {
     return {
@@ -21,9 +22,9 @@ describe("importableHash function icons", () => {
     });
 
     test("ignores default count and unset glint", () => {
-        expect(importableHash(fn({ item: "minecraft:map", count: 1, enchanted: false }))).toBe(
-            importableHash(fn({ item: "minecraft:map" }))
-        );
+        expect(
+            importableHash(fn({ item: "minecraft:map", count: 1, enchanted: false }))
+        ).toBe(importableHash(fn({ item: "minecraft:map" })));
     });
 
     test("treats Housing's default map icon as icon-less", () => {
@@ -39,8 +40,12 @@ describe("importableHash function icons", () => {
     });
 
     test("uses the same equality as the function metadata diff", () => {
-        expect(functionIconsEqual({ item: "minecraft:map", count: 1 }, undefined)).toBe(true);
-        expect(functionIconsEqual({ item: "minecraft:brown_mushroom_block" }, undefined)).toBe(false);
+        expect(functionIconsEqual({ item: "minecraft:map", count: 1 }, undefined)).toBe(
+            true
+        );
+        expect(
+            functionIconsEqual({ item: "minecraft:brown_mushroom_block" }, undefined)
+        ).toBe(false);
         expect(
             functionIconsEqual(
                 { item: "minecraft:brown_mushroom_block", count: 1 },
@@ -56,7 +61,9 @@ describe("importableHash function icons", () => {
     test("legacy bare item ids compare equal to prefixed ones", () => {
         expect(functionIconsEqual({ item: "map" }, undefined)).toBe(true);
         expect(functionIconsEqual({ item: "map" }, { item: "minecraft:map" })).toBe(true);
-        expect(functionIconsEqual({ item: "stone" }, { item: "minecraft:stone" })).toBe(true);
+        expect(functionIconsEqual({ item: "stone" }, { item: "minecraft:stone" })).toBe(
+            true
+        );
         expect(importableHash(fn({ item: "map" }))).toBe(importableHash(fn(undefined)));
     });
 });
@@ -126,7 +133,9 @@ describe("importableHash menu structure", () => {
 
     test("identical menus hash alike", () => {
         expect(importableHash(menu(stoneThenDiamond))).toBe(
-            importableHash(menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:diamond")]))
+            importableHash(
+                menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:diamond")])
+            )
         );
     });
 
@@ -138,7 +147,9 @@ describe("importableHash menu structure", () => {
         );
         expect(base).not.toBe(importableHash(menu([mslot(0, "minecraft:stone")])));
         expect(base).not.toBe(
-            importableHash(menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:gold")]))
+            importableHash(
+                menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:gold")])
+            )
         );
         expect(importableHash(menu([mslot(0, "minecraft:stone", [chat("x")])]))).not.toBe(
             importableHash(menu([mslot(0, "minecraft:stone", [chat("y")])]))
@@ -149,23 +160,26 @@ describe("importableHash menu structure", () => {
         // A house read returns slots sorted by id, so an import.json declaring
         // them in any order must hash the same or the menu is never trusted.
         expect(importableHash(menu(stoneThenDiamond))).toBe(
-            importableHash(menu([mslot(4, "minecraft:diamond"), mslot(0, "minecraft:stone")]))
+            importableHash(
+                menu([mslot(4, "minecraft:diamond"), mslot(0, "minecraft:stone")])
+            )
         );
     });
 });
 
 describe("importableHash region bounds", () => {
     test("corner pairings spanning the same box hash alike", () => {
-        const region = (from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }) => ({
+        const region = (
+            from: { x: number; y: number; z: number },
+            to: { x: number; y: number; z: number }
+        ) => ({
             type: "REGION" as const,
             name: "r",
             bounds: { from, to },
         });
         expect(
             importableHash(region({ x: -3, y: 108, z: -19 }, { x: 3, y: 100, z: 0 }))
-        ).toBe(
-            importableHash(region({ x: -3, y: 100, z: -19 }, { x: 3, y: 108, z: 0 }))
-        );
+        ).toBe(importableHash(region({ x: -3, y: 100, z: -19 }, { x: 3, y: 108, z: 0 })));
         expect(
             importableHash(region({ x: -3, y: 108, z: -19 }, { x: 3, y: 100, z: 0 }))
         ).not.toBe(
@@ -186,7 +200,12 @@ describe("importableHash command defaults", () => {
             })
         ).toBe(importableHash(base));
         expect(
-            importableHash({ ...base, mode: "Targeted", requiredPriority: 1, listed: false })
+            importableHash({
+                ...base,
+                mode: "Targeted",
+                requiredPriority: 1,
+                listed: false,
+            })
         ).not.toBe(importableHash(base));
     });
 });

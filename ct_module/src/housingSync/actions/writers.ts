@@ -32,7 +32,6 @@ import type {
     ActionTitle,
     ActionEnchantHeldItem,
     ActionDisplayMenu,
-    Condition,
 } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
@@ -52,7 +51,6 @@ import {
     readStringValue,
 } from "../menus/menuUtils";
 import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
-import { normalizeActionCompare, normalizeConditionCompare } from "../fields/compare";
 import {
     getActionFieldCycleOptions,
     getActionFieldDefault,
@@ -60,9 +58,7 @@ import {
 } from "../fields/actionMappings";
 import { removedFormatting } from "../../utils/helpers";
 import { normalizeSoundKey } from "../fields/sounds";
-import type { Observed } from "../observedActions";
-import { setItemValue } from "../items/injectItem";
-import { resolveImportableItem } from "../items/resolveItem";
+import { setItemValue } from "../items/itemPicker";
 import type { WriteActionOptions } from "./io";
 
 function booleanActionDefault(type: Action["type"], prop: string): boolean {
@@ -75,42 +71,6 @@ function numberActionDefault(type: Action["type"], prop: string): number {
 
 function stringActionDefault(type: Action["type"], prop: string): string {
     return getActionFieldDefault(type, prop) as string;
-}
-
-function observedActionListsEqual(
-    observed: Array<Observed | null> | undefined,
-    desired: readonly Action[]
-): boolean {
-    if (observed === undefined || observed.length !== desired.length) return false;
-    for (let i = 0; i < desired.length; i++) {
-        const observedAction = observed[i];
-        if (observedAction === null) return false;
-        if (
-            JSON.stringify(normalizeActionCompare(observedAction)) !==
-            JSON.stringify(normalizeActionCompare(desired[i]))
-        ) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function conditionListsEqual(
-    observed: Array<Condition | null> | undefined,
-    desired: readonly Condition[]
-): boolean {
-    if (observed === undefined || observed.length !== desired.length) return false;
-    for (let i = 0; i < desired.length; i++) {
-        const observedCondition = observed[i];
-        if (observedCondition === null) return false;
-        if (
-            JSON.stringify(normalizeConditionCompare(observedCondition)) !==
-            JSON.stringify(normalizeConditionCompare(desired[i]))
-        ) {
-            return false;
-        }
-    }
-    return true;
 }
 
 async function setPlayerTimeValue(ctx: TaskContext, value: number): Promise<void> {
@@ -129,19 +89,18 @@ async function setPlayerTimeValue(ctx: TaskContext, value: number): Promise<void
 export async function writeConditional(
     ctx: TaskContext,
     action: ActionConditional,
-    options?: WriteActionOptions<ActionConditional>
+    options: WriteActionOptions<ActionConditional>
 ): Promise<void> {
-    const current = options?.current;
+    const current = options.current;
 
     if (
-        (options?.apply?.shouldApplyList("conditions") ?? true) &&
-        !conditionListsEqual(current?.conditions, action.conditions) &&
+        options.apply.shouldApplyList("conditions") &&
         (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        await options?.apply?.applyConditions("conditions", {
+        await options.apply.applyConditions("conditions", {
             desired: action.conditions,
             observed: current?.conditions,
         });
@@ -154,16 +113,15 @@ export async function writeConditional(
         action.matchAny
     );
 
-    options?.apply?.markHeaderApplied();
+    options.apply.markHeaderApplied();
 
     if (
-        (options?.apply?.shouldApplyList("ifActions") ?? true) &&
-        !observedActionListsEqual(current?.ifActions, action.ifActions) &&
+        options.apply.shouldApplyList("ifActions") &&
         (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyChildActions("ifActions", {
+        await options.apply.applyChildActions("ifActions", {
             desired: action.ifActions,
             observed: current?.ifActions,
         });
@@ -171,13 +129,12 @@ export async function writeConditional(
     }
 
     if (
-        (options?.apply?.shouldApplyList("elseActions") ?? true) &&
-        !observedActionListsEqual(current?.elseActions, action.elseActions) &&
+        options.apply.shouldApplyList("elseActions") &&
         (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyChildActions("elseActions", {
+        await options.apply.applyChildActions("elseActions", {
             desired: action.elseActions,
             observed: current?.elseActions,
         });
@@ -267,11 +224,10 @@ export async function writeGiveItem(
     action: ActionGiveItem,
     options: WriteActionOptions<ActionGiveItem>
 ): Promise<void> {
-    const itemRegistry = options.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("GIVE_ITEM", "itemName"),
-        await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
+        await options.resolveItem(action, action.itemName, "action")
     );
 
     await setBooleanValue(
@@ -304,18 +260,11 @@ export async function writeRemoveItem(
     action: ActionRemoveItem,
     options: WriteActionOptions<ActionRemoveItem>
 ): Promise<void> {
-    const itemRegistry = options.itemRegistry;
     if (action.itemName !== undefined) {
         await setItemValue(
             ctx,
             getActionFieldLabel("REMOVE_ITEM", "itemName"),
-            await resolveImportableItem(
-                ctx,
-                itemRegistry,
-                action,
-                action.itemName,
-                "action"
-            )
+            await options.resolveItem(action, action.itemName, "action")
         );
     }
 }
@@ -612,18 +561,19 @@ export async function writeChangeHunger(
 export async function writeRandom(
     ctx: TaskContext,
     action: ActionRandom,
-    options?: WriteActionOptions<ActionRandom>
+    options: WriteActionOptions<ActionRandom>
 ): Promise<void> {
-    const current = options?.current;
-    if (!(options?.apply?.shouldApplyList("actions") ?? true)) return;
-    if (observedActionListsEqual(current?.actions, action.actions)) return;
+    const current = options.current;
+    if (!options.apply.shouldApplyList("actions")) {
+        return;
+    }
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
-    options?.apply?.markHeaderApplied();
+    options.apply.markHeaderApplied();
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await options?.apply?.applyChildActions("actions", {
+    await options.apply.applyChildActions("actions", {
         desired: action.actions,
         observed: current?.actions,
     });
@@ -704,11 +654,10 @@ export async function writeDropItem(
     action: ActionDropItem,
     options: WriteActionOptions<ActionDropItem>
 ): Promise<void> {
-    const itemRegistry = options.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("DROP_ITEM", "itemName"),
-        await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
+        await options.resolveItem(action, action.itemName, "action")
     );
 
     if (action.location !== undefined) {
@@ -755,8 +704,7 @@ export async function writeDropItem(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("DROP_ITEM", "inventoryFallback")),
-        action.inventoryFallback ??
-            booleanActionDefault("DROP_ITEM", "inventoryFallback")
+        action.inventoryFallback ?? booleanActionDefault("DROP_ITEM", "inventoryFallback")
     );
 }
 

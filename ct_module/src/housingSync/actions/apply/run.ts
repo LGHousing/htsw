@@ -275,7 +275,7 @@ export class ActionListApplyRun {
                 this.markSnapshotUnsafe();
                 await writeOpenAction(this.ctx, op.desired, {
                     current: op.baselineAction,
-                    itemRegistry: this.options.session.items,
+                    resolveItem: this.options.session.resolveItem,
                     apply,
                 });
                 updateEditSnapshot(actionWithCurrentNote(), false);
@@ -333,12 +333,18 @@ export class ActionListApplyRun {
             };
             const apply = this.writerHooksFor(op, applyChildActionList);
             this.markSnapshotUnsafe();
-            await addAction(this.ctx, actionToImport, this.options.session.items, apply, {
-                onActionAdded: () => {
-                    updateAddedSnapshot();
-                    this.markSnapshotSafe();
-                },
-            });
+            await addAction(
+                this.ctx,
+                actionToImport,
+                this.options.session.resolveItem,
+                apply,
+                {
+                    onActionAdded: () => {
+                        updateAddedSnapshot();
+                        this.markSnapshotSafe();
+                    },
+                }
+            );
             if (!added.value) {
                 updateAddedSnapshot();
                 this.markSnapshotSafe();
@@ -396,12 +402,12 @@ export class ActionListApplyRun {
     }
 
     private writerHooksFor(
-        op: ActionListOperation,
+        op: Extract<ActionListOperation, { kind: "add" | "edit" }>,
         applyChildActions: ApplyChildActionList
-    ): ActionApplyContext | undefined {
+    ): ActionApplyContext {
         const path = this.pathForOp(op);
-        if (path === null || (op.kind !== "add" && op.kind !== "edit")) {
-            return undefined;
+        if (path === null) {
+            throw new Error(`Cannot apply ${op.kind} operation without an action path`);
         }
         return createActionApplyContext({
             ctx: this.ctx,

@@ -11,7 +11,7 @@ import {
 import type {
     ItemDependencySnapshot,
     ItemDependencyTarget,
-} from "../importables/itemDependencyIndex";
+} from "../importables/items/dependencyIndex";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -140,9 +140,7 @@ function parseItemDependencyTarget(value: unknown): ItemDependencyTarget | null 
     return null;
 }
 
-function parseItemDependencySnapshot(
-    value: unknown
-): ItemDependencySnapshot | undefined {
+function parseItemDependencySnapshot(value: unknown): ItemDependencySnapshot | undefined {
     if (value === null || typeof value !== "object") return undefined;
     const snapshot = value as { version?: unknown; dependencies?: unknown };
     if (snapshot.version !== 1 || !Array.isArray(snapshot.dependencies)) {

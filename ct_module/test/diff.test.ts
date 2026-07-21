@@ -30,8 +30,6 @@ function kindCounts(opsList: ActionListOperation[]): Record<string, number> {
 
 function itemDiffContext(overrides: Partial<ItemDiffContext>): ItemDiffContext {
     return {
-        hasAction: () => false,
-        hasCondition: () => false,
         hasActionList: () => false,
         actionsDiffer: () => false,
         conditionsDiffer: () => false,
@@ -94,7 +92,9 @@ describe("diffActionList — edits", () => {
     test("invalidated item references force an edit when the item name is unchanged", () => {
         const observed = { type: "GIVE_ITEM", itemName: "key" } as Action;
         const desired = { type: "GIVE_ITEM", itemName: "key" } as Action;
-        const itemDiff = itemDiffContext({ hasAction: (action) => action === desired });
+        const itemDiff = itemDiffContext({
+            actionsDiffer: (_observed, action) => action === desired,
+        });
 
         const result = diffActionList(
             baselineActionListFromSlots([obs(0, observed)]),
@@ -131,8 +131,8 @@ describe("diffActionList — edits", () => {
         const observed = conditional({ conditions: [observedCondition] });
         const desired = conditional({ conditions: [desiredCondition] });
         const itemDiff = itemDiffContext({
-            hasAction: (action) => action === desired,
-            hasCondition: (condition) => condition === desiredCondition,
+            actionsDiffer: (_observed, action) => action === desired,
+            conditionsDiffer: (_observed, condition) => condition === desiredCondition,
         });
 
         const result = diffActionList(
@@ -162,8 +162,9 @@ describe("diffActionList — edits", () => {
         const observed = random({ actions: [observedConditional] });
         const desired = random({ actions: [desiredConditional] });
         const itemDiff = itemDiffContext({
-            hasAction: action => action === desired || action === desiredConditional,
-            hasCondition: condition => condition === desiredCondition,
+            actionsDiffer: (_observed, action) =>
+                action === desired || action === desiredConditional,
+            conditionsDiffer: (_observed, condition) => condition === desiredCondition,
         });
 
         const result = diffActionList(

@@ -9,14 +9,10 @@ import type { ProjectFs } from "./fs";
 // layout; newly exported importables land there instead of in the root file.
 export const SECTION_FOLDERS: Section[] = ALL_SECTIONS;
 
-function canonKey(path: string): string {
-    return path.split("\\").join("/").toLowerCase();
-}
-
 function includedFileKeys(fs: ProjectFs, entryImportJsonPath: string): Set<string> {
     const keys = new Set<string>();
     walkImportJsonTree(fs, entryImportJsonPath, (filePath) => {
-        keys.add(canonKey(filePath));
+        keys.add(fs.pathKey(filePath));
         return undefined;
     });
     return keys;
@@ -43,7 +39,7 @@ export function sectionFolderImportJson(
 ): string | null {
     const candidate = sectionCandidatePath(fs, entryImportJsonPath, section);
     const keys = includedFileKeys(fs, entryImportJsonPath);
-    return keys.has(canonKey(candidate)) ? candidate : null;
+    return keys.has(fs.pathKey(candidate)) ? candidate : null;
 }
 
 export function projectSectionFolders(
@@ -52,7 +48,7 @@ export function projectSectionFolders(
 ): Section[] {
     const keys = includedFileKeys(fs, entryImportJsonPath);
     return SECTION_FOLDERS.filter((section) =>
-        keys.has(canonKey(sectionCandidatePath(fs, entryImportJsonPath, section)))
+        keys.has(fs.pathKey(sectionCandidatePath(fs, entryImportJsonPath, section)))
     );
 }
 
@@ -100,7 +96,7 @@ export function restructureProjectPerSection(
     const existingKeys = includedFileKeys(fs, importJsonPath);
     for (const section of SECTION_FOLDERS) {
         const target = sectionCandidatePath(fs, importJsonPath, section);
-        if (existingKeys.has(canonKey(target))) continue;
+        if (existingKeys.has(fs.pathKey(target))) continue;
         if (!fs.exists(target)) {
             fs.ensureDir(fs.parentDir(target));
             fs.writeFile(target, "{}\n");

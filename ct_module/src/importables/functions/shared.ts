@@ -7,7 +7,7 @@ import {
     setNumberValue,
 } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import { setItemValue } from "../../housingSync/items/injectItem";
+import { setItemValue } from "../../housingSync/items/itemPicker";
 import { parseLoreKeyValueLine } from "../../housingSync/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
@@ -170,10 +170,7 @@ async function setFunctionIconIfNeeded(
     await setItemValue(ctx, "Edit Icon", createIconItem(icon), iconStacksEqual);
 }
 
-async function functionSettingsStep<T>(
-    label: string,
-    run: () => Promise<T>
-): Promise<T> {
+async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Promise<T> {
     try {
         return await run();
     } catch (error) {
@@ -195,9 +192,8 @@ export async function applyFunctionSettings(
 ): Promise<void> {
     const icon = importable.icon;
     if (icon !== undefined && !(await functionIconMatches(ctx, importable))) {
-        await functionSettingsStep(
-            `setting icon for function ${importable.name}`,
-            () => setFunctionIconIfNeeded(ctx, icon)
+        await functionSettingsStep(`setting icon for function ${importable.name}`, () =>
+            setFunctionIconIfNeeded(ctx, icon)
         );
     }
     await functionSettingsStep(

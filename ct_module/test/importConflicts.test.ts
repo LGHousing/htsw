@@ -3,7 +3,9 @@ import type { ImportableFunction } from "htsw/types";
 
 import { scanConflictVerdict } from "../src/importables/importConflicts";
 import { actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
-import { createItemRegistry } from "../src/importables/itemRegistry";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportSession } from "../src/importables/imports";
 import type TaskContext from "../src/tasks/context";
@@ -32,9 +34,14 @@ function sessionWithLock(
     importable: ImportableFunction,
     lockedActions: ImportableFunction["actions"]
 ): ImportSession {
+    const items = createProjectItemIndex([]);
+    const itemDependencies = createItemDependencyIndex([], items);
     return {
         parsed: { value: [] } as never,
-        items: createItemRegistry([]),
+        items,
+        itemDependencies,
+        canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+        resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
         housingUuid: "test-house",
         trust: {
             housingUuid: "test-house",

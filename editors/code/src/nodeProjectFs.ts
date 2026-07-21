@@ -27,6 +27,11 @@ export const nodeProjectFs: ProjectFs = {
         return path.resolve(baseDir, ref);
     },
 
+    pathKey(filePath: string): string {
+        const normalized = path.resolve(filePath).split("\\").join("/");
+        return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+    },
+
     deleteFile(filePath: string): void {
         fs.unlinkSync(filePath);
     },

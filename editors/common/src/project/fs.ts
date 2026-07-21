@@ -5,6 +5,8 @@ export interface ProjectFs {
     ensureDir(path: string): void;
     parentDir(path: string): string;
     resolvePath(baseDir: string, ref: string): string;
+    /** Identity key using this filesystem's path and case-sensitivity rules. */
+    pathKey(path: string): string;
     deleteFile?(path: string): void;
 }
 

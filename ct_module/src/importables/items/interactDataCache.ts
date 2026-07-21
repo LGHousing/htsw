@@ -1,11 +1,17 @@
+import * as htsw from "htsw";
 import type { ImportableItem } from "htsw/types";
 
-import type { InteractDataExpectation } from "../../housingSync/itemCapture";
-import { interactDataCachePath } from "../../importCache/paths";
+import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
+import { IMPORT_CACHE_ROOT } from "../../importCache/paths";
 import { ensureParentDirs } from "../../utils/filesystem";
-import type { ItemDependencyIndex } from "../itemDependencyIndex";
+import { stableStringify } from "../../utils/helpers";
+import { runtimeString } from "../../utils/java";
+import type { ItemDependencyIndex } from "./dependencyIndex";
 
-function hasClickActions(item: ImportableItem): boolean {
+export type InteractDataExpectation =
+    { kind: "absent" } | { kind: "cached"; snbt: string } | { kind: "uncached" };
+
+export function hasItemClickActions(item: ImportableItem): boolean {
     return (
         (item.leftClickActions?.length ?? 0) > 0 ||
         (item.rightClickActions?.length ?? 0) > 0
@@ -17,21 +23,33 @@ export function expectedInteractData(
     dependencies: ItemDependencyIndex,
     housingUuid: string | undefined
 ): InteractDataExpectation {
-    if (!hasClickActions(item)) return { kind: "absent" };
+    if (!hasItemClickActions(item)) return { kind: "absent" };
     if (housingUuid === undefined) return { kind: "uncached" };
-    const path = interactDataCachePath(
-        housingUuid,
-        dependencies.clickActionsFingerprint(item)
-    );
+    const snbt = readInteractDataCache(item, dependencies, housingUuid);
+    return snbt === undefined ? { kind: "uncached" } : { kind: "cached", snbt };
+}
+
+export function readInteractDataCache(
+    item: ImportableItem,
+    dependencies: ItemDependencyIndex,
+    housingUuid: string
+): string | undefined {
+    const path = cachePath(item, dependencies, housingUuid);
     try {
-        if (!FileLib.exists(path)) return { kind: "uncached" };
-        const snbt = FileLib.read(path) as unknown as string | null;
-        return snbt === null
-            ? { kind: "uncached" }
-            : { kind: "cached", snbt };
+        if (!FileLib.exists(path)) return undefined;
+        const value = FileLib.read(path) as unknown as string | null;
+        return value === null ? undefined : runtimeString(value);
     } catch (_error) {
-        return { kind: "uncached" };
+        return undefined;
     }
+}
+
+export function hasInteractDataCache(
+    item: ImportableItem,
+    dependencies: ItemDependencyIndex,
+    housingUuid: string
+): boolean {
+    return readInteractDataCache(item, dependencies, housingUuid) !== undefined;
 }
 
 export function writeInteractDataCache(
@@ -40,11 +58,50 @@ export function writeInteractDataCache(
     housingUuid: string,
     interactDataSnbt: string
 ): void {
-    if (!hasClickActions(item)) return;
-    const path = interactDataCachePath(
-        housingUuid,
-        dependencies.clickActionsFingerprint(item)
-    );
+    if (!hasItemClickActions(item)) return;
+    const path = cachePath(item, dependencies, housingUuid);
     ensureParentDirs(path);
     FileLib.write(path, interactDataSnbt, true);
+}
+
+function cachePath(
+    item: ImportableItem,
+    dependencies: ItemDependencyIndex,
+    housingUuid: string
+): string {
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/interact_data/${dependencies.clickActionsFingerprint(item)}.snbt`;
+}
+
+export function itemInteractDataMatches(
+    itemSnbt: string,
+    expected: InteractDataExpectation
+): boolean {
+    if (expected.kind === "uncached") return false;
+    const observed = interactDataTag(itemSnbt);
+    if (expected.kind === "absent") return observed === null;
+    if (observed === null) return false;
+    return canonicalSnbt(observed) === canonicalSnbt(expected.snbt);
+}
+
+function interactDataTag(itemSnbt: string): unknown {
+    try {
+        const item = htsw.nbt.parseSnbtText(itemSnbt) as TagLike;
+        return (
+            tagChild(
+                tagChild(tagChild(item, "tag"), "ExtraAttributes"),
+                "interact_data"
+            ) ?? null
+        );
+    } catch (_error) {
+        return null;
+    }
+}
+
+function canonicalSnbt(value: unknown): string | null {
+    try {
+        const parsed = typeof value === "string" ? htsw.nbt.parseSnbtText(value) : value;
+        return stableStringify(parsed);
+    } catch (_error) {
+        return null;
+    }
 }

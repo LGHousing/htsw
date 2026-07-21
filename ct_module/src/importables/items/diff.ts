@@ -1,22 +1,26 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
-import type { ItemDiffContext } from "../housingSync/actions/diff/itemDiffContext";
-import { itemInteractDataMatches } from "../housingSync/itemCapture";
-import { canonicalStringify } from "../housingSync/fields/compare";
-import { canonicalItemTag } from "../housingSync/fields/itemTagCanonical";
-import type { ItemFieldObservationRecorder } from "../housingSync/itemFieldObservations";
-import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
-import type { ItemDependencyIndex, ItemDependencySnapshot, ItemInvalidations } from "./itemDependencyIndex";
-import { visitItemReferences } from "./itemDependencies";
-import type { ItemRegistry, ItemRegistryEntry } from "./itemRegistry";
-import { expectedInteractData } from "./items/interactDataCache";
+import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
+import { itemInteractDataMatches } from "./interactDataCache";
+import { canonicalItemShellTagKey } from "../../housingSync/items/itemNbt";
+import type { ItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
+import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
+import type {
+    ItemDependencyIndex,
+    ItemDependencySnapshot,
+    ItemInvalidations,
+} from "./dependencyIndex";
+import { visitItemReferences } from "./dependencies";
+import type { ProjectItemIndex, ProjectItem } from "./projectItems";
+import { expectedInteractData } from "./interactDataCache";
 
-type DesiredItemFields = Map<string, ItemRegistryEntry>;
+type DesiredItemFields = Map<string, ProjectItem>;
 
 export function createItemDiffContext(
     importables: readonly Importable[],
     dependencies: ItemDependencyIndex,
-    registry: ItemRegistry,
+    projectItems: ProjectItemIndex,
+    housingUuid: string | undefined,
     cachedSnapshotOf: (importable: Importable) => ItemDependencySnapshot | undefined,
     observations?: ItemFieldObservationRecorder
 ): ItemDiffContext {
@@ -27,14 +31,13 @@ export function createItemDiffContext(
         invalidations.push(
             dependencies.invalidationsFor(importable, cachedSnapshotOf(importable))
         );
-        visitItemReferences(importable, use => {
+        visitItemReferences(importable, (use) => {
             const entry =
-                registry.resolveFromSourcePath(
+                projectItems.resolveFromSourcePath(
                     use.itemName,
                     use.sourcePath,
                     use.owner
-                ) ??
-                registry.resolve(use.itemName, use.owner);
+                ) ?? projectItems.resolve(use.itemName, use.owner);
             if (entry === undefined) return;
             let fields = desiredFields.get(use.owner);
             if (fields === undefined) {
@@ -45,14 +48,14 @@ export function createItemDiffContext(
         });
     }
 
-    const hasAction = (action: Action): boolean => {
+    const desiredActionIsInvalidated = (action: Action): boolean => {
         for (const invalidation of invalidations) {
             if (invalidation.hasInvalidatedSubtree(action)) return true;
         }
         return false;
     };
 
-    const hasCondition = (condition: Condition): boolean => {
+    const desiredConditionIsInvalidated = (condition: Condition): boolean => {
         const fields = desiredFields.get(condition);
         if (fields === undefined) return false;
         for (const property of fields.keys()) {
@@ -77,7 +80,7 @@ export function createItemDiffContext(
             );
             if (
                 observation === undefined ||
-                observation.canonicalKey !== canonicalStringify(canonicalItemTag(entry.nbt))
+                observation.canonicalKey !== canonicalItemShellTagKey(entry.nbt)
             ) {
                 return true;
             }
@@ -85,11 +88,7 @@ export function createItemDiffContext(
             const expectation =
                 item === undefined
                     ? { kind: "absent" as const }
-                    : expectedInteractData(
-                          item,
-                          dependencies,
-                          registry.cachedHousingUuid
-                      );
+                    : expectedInteractData(item, dependencies, housingUuid);
             if (!itemInteractDataMatches(observation.snbt, expectation)) {
                 return true;
             }
@@ -103,10 +102,12 @@ export function createItemDiffContext(
     ): boolean => {
         if (observedFieldsDiffer(observed, desired)) return true;
         const fields = (
-            ACTION_MAPPINGS as unknown as Partial<Record<
-                string,
-                { loreFields: Record<string, { prop: string; kind: string }> }
-            >>
+            ACTION_MAPPINGS as unknown as Partial<
+                Record<
+                    string,
+                    { loreFields: Record<string, { prop: string; kind: string }> }
+                >
+            >
         )[desired.type]?.loreFields;
         if (fields === undefined) return false;
         const observedRecord = observed as Record<string, unknown>;
@@ -147,23 +148,21 @@ export function createItemDiffContext(
     };
 
     return {
-        hasAction,
-        hasCondition,
         hasActionList(actions) {
             for (const action of actions) {
-                if (hasAction(action)) return true;
+                if (desiredActionIsInvalidated(action)) return true;
             }
             return false;
         },
         actionsDiffer(observed, desired) {
             return (
-                hasAction(desired) ||
+                desiredActionIsInvalidated(desired) ||
                 actionSubtreeObservedItemsDiffer(observed, desired)
             );
         },
         conditionsDiffer(observed, desired) {
             return (
-                hasCondition(desired) ||
+                desiredConditionIsInvalidated(desired) ||
                 (observed !== null && observedFieldsDiffer(observed, desired))
             );
         },

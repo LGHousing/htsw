@@ -16,14 +16,17 @@ import {
     baselineConditionListFromConditions,
     diffConditionList,
 } from "../actions/conditions/diff";
-import { getActionScalarLoreFields } from "../fields/actionMappings";
+import {
+    getActionScalarLoreFields,
+    getChildListFields,
+} from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";
 import {
     scalarFieldDiffers,
-    normalizeActionCompare,
-    normalizeConditionCompare,
-} from "../fields/compare";
+    scalarFieldHasNonDefaultValue,
+    notesEqual,
+} from "../actions/comparison";
 import { countReferencedShells } from "../../importables/referenceScanner";
 import { readCachedActionList } from "../../importCache/actionLists";
 import type { ImportableCacheEntry } from "../../importCache/cache";
@@ -224,19 +227,19 @@ function actionAddShellUnits(): number {
 }
 
 function conditionScalarFieldWriteUnits(condition: Condition): number {
-    const normalized = normalizeConditionCompare(condition) as {
-        [key: string]: unknown;
-    } | null;
-    if (normalized === null) return 0;
-    const kinds = new Map<string, UiFieldKind>();
     const fields = getConditionScalarLoreFields(condition.type);
-    for (let i = 0; i < fields.length; i++) kinds.set(fields[i].prop, fields[i].kind);
     let total = 0;
-    for (const key in normalized) {
-        if (key === "type" || key === "note" || key === "inverted") continue;
-        if (normalized[key] === undefined) continue;
-        const kind = kinds.get(key);
-        total += kind !== undefined ? fieldKindEditUnits(kind) : COST.chatInput;
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (
+            scalarFieldHasNonDefaultValue(
+                condition,
+                condition.type,
+                field.prop
+            )
+        ) {
+            total += fieldKindEditUnits(field.kind);
+        }
     }
     return total;
 }
@@ -284,7 +287,7 @@ export function conditionOperationUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : conditionEditUnits(op.baselineCondition, op.desired);
-    if (!op.noteOnly && op.desired.note !== op.baselineCondition.note) {
+    if (!op.noteOnly && !notesEqual(op.desired.note, op.baselineCondition.note)) {
         total += noteEditUnits();
     }
     return total;
@@ -319,32 +322,33 @@ export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
 function actionWriteRoughUnits(action: Action): number {
     let total = 0;
     let hasFields = false;
-    const scalarKinds = new Map<string, UiFieldKind>();
     const scalars = getActionScalarLoreFields(action.type);
     for (let i = 0; i < scalars.length; i++) {
-        scalarKinds.set(scalars[i].prop, scalars[i].kind);
-    }
-    // Normalize first: the writer short-circuits any field already at its
-    // (freshly-added) default, sending no input. `normalizeActionCompare`
-    // drops exactly those default-valued fields — the same rule the diff
-    // uses — so iterating the normalized action counts only the fields that
-    // are actually written. Single source of truth, no parallel default check.
-    const normalized = normalizeActionCompare(action) as { [key: string]: unknown };
-    for (const key in normalized) {
-        if (key === "type" || key === "note") continue;
-        const value = normalized[key];
-        if (value === undefined) continue;
-        hasFields = true;
-        if (Array.isArray(value)) {
-            if (key === "conditions") {
-                total += conditionListRoughUnits(value as Condition[]);
-            } else {
-                total += actionListRoughApplyUnits(value as Action[]);
-            }
+        const field = scalars[i];
+        if (
+            !scalarFieldHasNonDefaultValue(
+                action,
+                action.type,
+                field.prop
+            )
+        ) {
             continue;
         }
-        const kind = scalarKinds.get(key);
-        total += kind !== undefined ? fieldKindEditUnits(kind) : COST.chatInput;
+        hasFields = true;
+        total += fieldKindEditUnits(field.kind);
+    }
+
+    const childLists = getChildListFields(action.type);
+    for (let i = 0; i < childLists.length; i++) {
+        const childList = childLists[i];
+        const value = (action as unknown as Record<string, unknown>)[childList.prop];
+        if (!Array.isArray(value) || value.length === 0) continue;
+        hasFields = true;
+        if (childList.kind === "conditionList") {
+            total += conditionListRoughUnits(value as Condition[]);
+        } else {
+            total += actionListRoughApplyUnits(value as Action[]);
+        }
     }
     if (hasFields) total += COST.goBackWait;
     return Math.max(COST.menuClickWait, total);
@@ -394,7 +398,7 @@ export function actionOperationApplyUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
-    if (!op.noteOnly && op.desired.note !== op.baselineAction.note) {
+    if (!op.noteOnly && op.noteDiffers) {
         total += noteEditUnits();
     }
     return total;

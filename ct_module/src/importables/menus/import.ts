@@ -16,14 +16,14 @@ import {
 import type { ProgressScope } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
-import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
+import { selectItemFromOpenInventory } from "../../housingSync/items/itemPicker";
+import { canonicalItemShellKey, snbtFromItem } from "../../housingSync/items/itemNbt";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
-import type { ItemRegistry } from "../itemRegistry";
+import type { ProjectItemIndex } from "../items/projectItems";
 import type { ImportSession } from "../imports";
 import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
 import { importableIdentity } from "../identity";
@@ -217,7 +217,7 @@ export async function prereadImportableMenu(
 
     const live = await readLiveMenu(ctx, {
         itemReadMode: "sync",
-        itemRegistry: session.items,
+        canonicalizeItemName: session.canonicalizeItemName,
         itemFieldObservations: session.itemFieldObservations,
     });
     const diff = buildMenuDiff(
@@ -308,18 +308,18 @@ function buildMenuDiff(
     importable: ImportableMenu,
     baselineSlots: BaselineMenuSlot[],
     baselineSize: number | undefined,
-    itemRegistry: ItemRegistry,
+    projectItems: ProjectItemIndex,
     itemDiff?: ItemDiffContext
 ): MenuDiff {
     const desiredItems = importable.slots.map((slot) => getItemFromNbt(slot.nbt));
     const desiredSnapshots: MenuSlotSnapshot[] = importable.slots.map((slot, i) => ({
         slot: slot.slot,
-        itemKey: canonicalItemKey(desiredItems[i]),
+        itemKey: canonicalItemShellKey(desiredItems[i]),
         actions: slot.actions ?? [],
     }));
     const baselineSnapshots: MenuSlotSnapshot[] = baselineSlots.map((s) => ({
         slot: s.slot,
-        itemKey: canonicalItemKey(s.item),
+        itemKey: canonicalItemShellKey(s.item),
         actions: s.actions,
     }));
     const baselineBySlot = new Map<number, BaselineMenuSlot>();
@@ -331,7 +331,7 @@ function buildMenuDiff(
         importable.size,
         baselineSize,
         (baselineActions, desiredActions) =>
-            actionsDiffer(baselineActions, desiredActions, itemRegistry, itemDiff)
+            actionsDiffer(baselineActions, desiredActions, projectItems, itemDiff)
     );
 
     const ops: MenuSlotOp[] = [];
@@ -375,7 +375,7 @@ function buildMenuDiff(
 function actionsDiffer(
     liveActions: Action[],
     desiredActions: Action[],
-    itemRegistry: ItemRegistry,
+    projectItems: ProjectItemIndex,
     itemDiff?: ItemDiffContext
 ): boolean {
     if (itemDiff?.hasActionList(desiredActions) === true) return true;
@@ -389,8 +389,10 @@ function actionsDiffer(
     }
     const liveCopy = JSON.parse(JSON.stringify(liveActions)) as Action[];
     const desiredCopy = JSON.parse(JSON.stringify(desiredActions)) as Action[];
-    for (const a of liveCopy) canonicalizeActionItemName(a, itemRegistry);
-    for (const a of desiredCopy) canonicalizeActionItemName(a, itemRegistry);
+    const canonicalizeItemName = (name: string): string =>
+        projectItems.canonicalizeObservedName(name);
+    for (const a of liveCopy) canonicalizeActionItemName(a, canonicalizeItemName);
+    for (const a of desiredCopy) canonicalizeActionItemName(a, canonicalizeItemName);
     return (
         diffActionList(baselineActionListFromActions(liveCopy), desiredCopy).operations
             .length > 0

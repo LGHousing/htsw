@@ -9,28 +9,8 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import {
-    getSessionCommandNamesLower,
-    noteCommandCreated,
-} from "./listCommands";
-
-export type CommandSettings = {
-    mode: CommandMode;
-    requiredPriority: number;
-    listed: boolean | null;
-};
-
-export function desiredCommandSettings(importable: ImportableCommand): {
-    mode: CommandMode;
-    requiredPriority: number;
-    listed: boolean;
-} {
-    return {
-        mode: importable.mode ?? "Self",
-        requiredPriority: importable.requiredPriority ?? 0,
-        listed: importable.listed ?? true,
-    };
-}
+import { getSessionCommandNamesLower, noteCommandCreated } from "./listCommands";
+import { desiredCommandSettings, type CommandSettings } from "./settings";
 
 export async function ensureCommandExists(
     ctx: TaskContext,
@@ -70,10 +50,7 @@ export async function openExistingCommandActionsEditor(
     await timedWaitForMenu(ctx, "commandMenuWait");
 }
 
-export async function openCommandSettings(
-    ctx: TaskContext,
-    name: string
-): Promise<void> {
+export async function openCommandSettings(ctx: TaskContext, name: string): Promise<void> {
     await ctx.runCommand(`/command edit ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
 }
@@ -111,10 +88,20 @@ function readListedValue(slot: ItemSlot): boolean | null {
     if (generic !== null) return generic;
 
     const current = readCurrentLine(slot);
-    if (current === "Enabled" || current === "Listed" || current === "Yes" || current === "True") {
+    if (
+        current === "Enabled" ||
+        current === "Listed" ||
+        current === "Yes" ||
+        current === "True"
+    ) {
         return true;
     }
-    if (current === "Disabled" || current === "Unlisted" || current === "No" || current === "False") {
+    if (
+        current === "Disabled" ||
+        current === "Unlisted" ||
+        current === "No" ||
+        current === "False"
+    ) {
         return false;
     }
 
@@ -155,20 +142,11 @@ async function setListedValue(
 export function readOpenCommandSettings(ctx: TaskContext): CommandSettings {
     return {
         mode: readCommandMode(ctx.getMenuItemSlot("Toggle Command Mode")),
-        requiredPriority: readRequiredPriority(ctx.getMenuItemSlot("Required Group Priority")),
+        requiredPriority: readRequiredPriority(
+            ctx.getMenuItemSlot("Required Group Priority")
+        ),
         listed: readListedValue(ctx.getMenuItemSlot("Listed")),
     };
-}
-
-export function commandSettingsMatch(
-    actual: CommandSettings,
-    desired: ReturnType<typeof desiredCommandSettings>
-): boolean {
-    return (
-        actual.mode === desired.mode &&
-        actual.requiredPriority === desired.requiredPriority &&
-        actual.listed === desired.listed
-    );
 }
 
 export async function applyCommandSettings(

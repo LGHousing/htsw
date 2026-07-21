@@ -13,13 +13,7 @@ export {
     readImportableCache,
     deleteImportableCache,
 } from "./cache";
-export {
-    importableHash,
-} from "./hash";
-
-export {
-    interactDataCachePath,
-} from "./paths";
+export { importableHash } from "./hash";
 
 export { getCurrentHousingUuid } from "./housingId";
 

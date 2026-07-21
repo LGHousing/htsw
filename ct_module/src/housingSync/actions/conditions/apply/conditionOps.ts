@@ -2,7 +2,7 @@ import { Diagnostic } from "htsw";
 import type { Condition } from "htsw/types";
 
 import TaskContext from "../../../../tasks/context";
-import { type ItemRegistry } from "../../../../importables/itemRegistry";
+import type { ResolveItemField } from "../../../items/itemReferences";
 import {
     clickGoBack,
     isLimitExceeded,
@@ -42,7 +42,7 @@ export async function setOpenConditionInverted(
 export async function addConditionToOpenConditionList(
     ctx: TaskContext,
     condition: Condition,
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Condition").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -58,7 +58,7 @@ export async function addConditionToOpenConditionList(
 
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
-    await writeOpenCondition(ctx, condition, undefined, itemRegistry);
+    await writeOpenCondition(ctx, condition, undefined, resolveItem);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
     await clickGoBack(ctx);
@@ -69,10 +69,10 @@ export async function addConditionToOpenConditionList(
 export async function appendConditionsToOpenConditionList(
     ctx: TaskContext,
     desired: Condition[],
-    itemRegistry: ItemRegistry
+    resolveItem: ResolveItemField
 ): Promise<void> {
     for (let i = 0; i < desired.length; i++) {
-        await addConditionToOpenConditionList(ctx, desired[i], itemRegistry);
+        await addConditionToOpenConditionList(ctx, desired[i], resolveItem);
     }
 }
 
@@ -81,7 +81,12 @@ export async function deleteObservedCondition(
     index: number,
     listLength: number
 ): Promise<void> {
-    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
+    const slot = await getPaginatedListSlotAtIndex(
+        ctx,
+        index,
+        listLength,
+        CONDITION_LIST_CONFIG
+    );
     slot.click(MouseButton.RIGHT);
     await timedWaitForMenu(ctx, "menuClickWait");
 }

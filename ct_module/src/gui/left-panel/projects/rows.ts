@@ -54,7 +54,7 @@ import {
 } from "../../parsing/parses";
 import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
 import { readImportableCache } from "../../../importCache/cache";
-import { functionIconCompareKey } from "../../../importCache/hash";
+import { functionIconCompareKey } from "../../../importables/functions/iconComparison";
 import {
     addToQueue,
     isInQueue,
@@ -105,13 +105,13 @@ import { openMoveDestinationPicker } from "./moveDestinationPicker";
 import { acceptHouseLockMenuAction } from "./acceptHouseLock";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Importable, MenuSlot } from "htsw/types";
-import { tagChild } from "../../../housingSync/fields/itemTagCanonical";
+import { tagChild } from "../../../housingSync/items/itemTag";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
 import { exportBatch, exportExisting } from "../../../importables/exportBatch";
 import { type HouseExportTypeName } from "../../../importables/houseExportTypes";
 import { readExportProjectContext } from "../../../importables/exportContext";
-import { itemChanges } from "../../../importables/itemChanges";
+import { itemChanges } from "../../../importables/items/changes";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
@@ -1373,78 +1373,75 @@ export function resultRow(
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
     const aggregateIndicators =
         isImport && !expanded ? collapsedSubtreeAggregates(r, includeTreeOf(r)) : [];
-    const fileExtras: MenuAction[] =
-        isImport
-            ? [
-                  {
-                      label: "Queue all for import",
-                      icon: Icons.listPlus,
-                      onClick: () => {
-                          queueImportJsonSubtree(r, includeTreeOf(r));
-                      },
+    const fileExtras: MenuAction[] = isImport
+        ? [
+              {
+                  label: "Queue all for import",
+                  icon: Icons.listPlus,
+                  onClick: () => {
+                      queueImportJsonSubtree(r, includeTreeOf(r));
                   },
-                  ...queueModifiedAction(subtreeImportables(includeTreeOf(r)), () =>
-                      queueModifiedFromPath(r.fullPath)
-                  ),
-                  {
-                      label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
-                      icon: Icons.refreshCw,
-                      disabled: () => getHousingUuid() === null,
-                      onClick: () =>
-                          confirmProjectReExport(
-                              r,
-                              r.fullPath,
-                              subtreeHouseExportCount(includeTreeOf(r))
-                          ),
+              },
+              ...queueModifiedAction(subtreeImportables(includeTreeOf(r)), () =>
+                  queueModifiedFromPath(r.fullPath)
+              ),
+              {
+                  label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
+                  icon: Icons.refreshCw,
+                  disabled: () => getHousingUuid() === null,
+                  onClick: () =>
+                      confirmProjectReExport(
+                          r,
+                          r.fullPath,
+                          subtreeHouseExportCount(includeTreeOf(r))
+                      ),
+              },
+              {
+                  label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
+                  icon: Icons.scanEye,
+                  disabled: () => getHousingUuid() === null,
+                  onClick: () =>
+                      runProjectDeepRead(
+                          r,
+                          r.fullPath,
+                          subtreeImportables(includeTreeOf(r))
+                      ),
+              },
+              { kind: "separator" },
+              openInViewAction(r.fullPath, importJsonPath),
+              { kind: "separator" },
+              {
+                  label: isAutoTrackSource(r.fullPath)
+                      ? "Auto-Track: ON"
+                      : "Auto-Track: OFF",
+                  icon: Icons.radar,
+                  onClick: () => {
+                      const nowOn = toggleAutoTrackSource(r.fullPath);
+                      if (nowOn === null) {
+                          ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
+                          return;
+                      }
+                      if (nowOn) autoTrackRefresh();
                   },
-                  {
-                      label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
-                      icon: Icons.scanEye,
-                      disabled: () => getHousingUuid() === null,
-                      onClick: () =>
-                          runProjectDeepRead(
-                              r,
-                              r.fullPath,
-                              subtreeImportables(includeTreeOf(r))
-                          ),
+              },
+              acceptHouseLockMenuAction(r.fullPath),
+              {
+                  label: "Open project in VSCode",
+                  icon: Icons.folderCode,
+                  onClick: () => {
+                      openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
-                  { kind: "separator" },
-                  openInViewAction(r.fullPath, importJsonPath),
-                  { kind: "separator" },
-                  {
-                      label: isAutoTrackSource(r.fullPath)
-                          ? "Auto-Track: ON"
-                          : "Auto-Track: OFF",
-                      icon: Icons.radar,
-                      onClick: () => {
-                          const nowOn = toggleAutoTrackSource(r.fullPath);
-                          if (nowOn === null) {
-                              ChatLib.chat(
-                                  "&c[htsw] Couldn't save the Auto-Track setting."
-                              );
-                              return;
-                          }
-                          if (nowOn) autoTrackRefresh();
-                      },
-                  },
-                  acceptHouseLockMenuAction(r.fullPath),
-                  {
-                      label: "Open project in VSCode",
-                      icon: Icons.folderCode,
-                      onClick: () => {
-                          openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
-                      },
-                  },
-                  ...fsActions(r.fullPath),
-                  ...extraActions,
-                  { kind: "separator" },
-                  {
-                      label: "Delete project folder…",
-                      icon: Icons.trash2,
-                      onClick: () => confirmDeleteProject(r.fullPath),
-                  },
-              ]
-            : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
+              },
+              ...fsActions(r.fullPath),
+              ...extraActions,
+              { kind: "separator" },
+              {
+                  label: "Delete project folder…",
+                  icon: Icons.trash2,
+                  onClick: () => confirmDeleteProject(r.fullPath),
+              },
+          ]
+        : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
     const actions = isImport
         ? fileExtras
         : composeFileMenu(fileExtras, r.fullPath, importJsonPath);

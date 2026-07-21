@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { ProjectFs } from "htsw-editor-common/project";
 import { nodeProjectFs } from "./nodeProjectFs";
+import { absolutePathKey } from "./pathIdentity";
 
 type PendingFile = {
     path: string;
@@ -45,13 +46,13 @@ class ProjectMutation {
     };
 
     private exists(filePath: string): boolean {
-        const key = pathKey(filePath);
+        const key = absolutePathKey(filePath);
         if (this.deletions.has(key)) return false;
         return this.writes.has(key) || this.directories.has(key) || this.base.exists(filePath);
     }
 
     private readFile(filePath: string): string {
-        const key = pathKey(filePath);
+        const key = absolutePathKey(filePath);
         if (this.deletions.has(key)) {
             throw vscode.FileSystemError.FileNotFound(vscode.Uri.file(filePath));
         }
@@ -59,17 +60,17 @@ class ProjectMutation {
     }
 
     private writeFile(filePath: string, text: string): void {
-        const key = pathKey(filePath);
+        const key = absolutePathKey(filePath);
         this.deletions.delete(key);
         this.writes.set(key, { path: filePath, text });
     }
 
     private ensureDir(dirPath: string): void {
-        this.directories.set(pathKey(dirPath), dirPath);
+        this.directories.set(absolutePathKey(dirPath), dirPath);
     }
 
     private deleteFile(filePath: string): void {
-        const key = pathKey(filePath);
+        const key = absolutePathKey(filePath);
         if (!this.exists(filePath)) {
             throw vscode.FileSystemError.FileNotFound(vscode.Uri.file(filePath));
         }
@@ -129,7 +130,7 @@ class ProjectMutation {
         for (const requested of this.directories.values()) {
             let current = requested;
             while (!this.base.exists(current)) {
-                missing.set(pathKey(current), current);
+                missing.set(absolutePathKey(current), current);
                 const parent = path.dirname(current);
                 if (parent === current) break;
                 current = parent;
@@ -167,12 +168,8 @@ async function removeEmptyDirectories(directories: readonly string[]): Promise<v
 }
 
 function openTextDocumentForPath(filePath: string): vscode.TextDocument | undefined {
-    const key = pathKey(filePath);
+    const key = absolutePathKey(filePath);
     return vscode.workspace.textDocuments.find(
-        (document) => document.uri.scheme === "file" && pathKey(document.uri.fsPath) === key,
+        (document) => document.uri.scheme === "file" && absolutePathKey(document.uri.fsPath) === key,
     );
-}
-
-function pathKey(filePath: string): string {
-    return path.resolve(filePath).split("\\").join("/").toLowerCase();
 }

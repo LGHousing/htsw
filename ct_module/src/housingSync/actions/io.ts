@@ -1,7 +1,7 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import type { ResolveItemField } from "../items/itemReferences";
 import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import type { ChildListsToRead, Observed } from "../observedActions";
 import type { ActionApplyContext } from "../context/actionApplyContext";
@@ -60,8 +60,8 @@ import {
 
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
-    itemRegistry: ItemRegistry;
-    apply?: ActionApplyContext;
+    resolveItem: ResolveItemField;
+    apply: ActionApplyContext;
 };
 
 export type ActionReadArgs<T extends Action> = {

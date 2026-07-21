@@ -2,7 +2,7 @@ import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../../importables/imports";
-import type { ItemRegistry } from "../../importables/itemRegistry";
+import type { CanonicalizeItemName, ResolveItemField } from "../items/itemReferences";
 import type { ChildListDiff } from "../actions/diff/types";
 import type { Observed, ObservedActionSlot } from "../observedActions";
 import type { SyncEventHandler, ProgressScope } from "../syncEvents";
@@ -63,11 +63,12 @@ type ApplyConditionList = (
     ctx: TaskContext,
     desired: Condition[],
     options: {
-        itemRegistry: ItemRegistry;
+        canonicalizeItemName: CanonicalizeItemName;
+        resolveItem: ResolveItemField;
         baselineCurrent?: ReadonlyArray<Condition | null>;
         progress?: ProgressHandler;
         itemDiff?: import("../actions/diff/itemDiffContext").ItemDiffContext;
-        itemFieldObservations?: import("../itemFieldObservations").ItemFieldObservationRecorder;
+        itemFieldObservations?: import("../items/fieldObservations").ItemFieldObservationRecorder;
     }
 ) => Promise<unknown>;
 
@@ -143,9 +144,7 @@ export function createActionApplyContext({
         },
 
         shouldApplyList(prop) {
-            return (
-                listsToApply === null || listsToApply.has(prop)
-            );
+            return listsToApply === null || listsToApply.has(prop);
         },
 
         async applyChildActions(prop, args) {
@@ -169,7 +168,8 @@ export function createActionApplyContext({
             const path = ConditionListPath.of(actionPath, prop);
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.desired, {
-                itemRegistry: session.items,
+                canonicalizeItemName: session.canonicalizeItemName,
+                resolveItem: session.resolveItem,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
                 itemDiff: session.itemDiff,

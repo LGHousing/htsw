@@ -23,6 +23,7 @@ import {
 } from "../waiters";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";
+import { regionBoundsEqual } from "./bounds";
 
 export type RegionImportPlan = {
     kind: "REGION";
@@ -56,38 +57,6 @@ function requireRegionBounds(importable: ImportableRegion): { from: Pos; to: Pos
         );
     }
     return importable.bounds as { from: Pos; to: Pos };
-}
-
-function normalizeBounds(bounds: { from: Pos; to: Pos }): { from: Pos; to: Pos } {
-    return {
-        from: {
-            x: Math.min(bounds.from.x, bounds.to.x),
-            y: Math.min(bounds.from.y, bounds.to.y),
-            z: Math.min(bounds.from.z, bounds.to.z),
-        },
-        to: {
-            x: Math.max(bounds.from.x, bounds.to.x),
-            y: Math.max(bounds.from.y, bounds.to.y),
-            z: Math.max(bounds.from.z, bounds.to.z),
-        },
-    };
-}
-
-function regionBoundsMatch(
-    liveBounds: { from: Pos; to: Pos } | null,
-    desiredBounds: { from: Pos; to: Pos }
-): boolean {
-    if (liveBounds === null) return false;
-    const live = normalizeBounds(liveBounds);
-    const desired = normalizeBounds(desiredBounds);
-    return (
-        live.from.x === desired.from.x &&
-        live.from.y === desired.from.y &&
-        live.from.z === desired.from.z &&
-        live.to.x === desired.to.x &&
-        live.to.y === desired.to.y &&
-        live.to.z === desired.to.z
-    );
 }
 
 async function findLiveRegion(
@@ -320,7 +289,7 @@ export async function prereadImportableRegion(
             importable,
             trustPlan,
             liveRegion,
-            boundsMatch: regionBoundsMatch(cachedRegion.bounds ?? null, desiredBounds),
+            boundsMatch: regionBoundsEqual(cachedRegion.bounds ?? null, desiredBounds),
             enterPlan: actionPlans.enterPlan,
             exitPlan: actionPlans.exitPlan,
         };
@@ -329,7 +298,7 @@ export async function prereadImportableRegion(
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
     const boundsMatch =
-        liveRegion !== null && regionBoundsMatch(liveRegion.bounds, desiredBounds);
+        liveRegion !== null && regionBoundsEqual(liveRegion.bounds, desiredBounds);
 
     if (!enterEligible && !exitEligible) {
         return {

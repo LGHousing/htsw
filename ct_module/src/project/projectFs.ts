@@ -15,6 +15,12 @@ function normalizePath(path: string): string {
     return String(rootPath().resolve(p).normalize().toString());
 }
 
+const CASE_INSENSITIVE_PATHS = String(
+    javaType("java.lang.System").getProperty("os.name")
+)
+    .toLowerCase()
+    .indexOf("win") >= 0;
+
 export const ctProjectFs: ProjectFs = {
     exists(path: string): boolean {
         const Files = javaType("java.nio.file.Files");
@@ -58,6 +64,11 @@ export const ctProjectFs: ProjectFs = {
         const other = Paths.get(runtimeString(ref));
         if (other.isAbsolute()) return String(other.normalize().toString());
         return String(base.resolve(other).normalize().toAbsolutePath().toString());
+    },
+
+    pathKey(path: string): string {
+        const normalized = normalizePath(path).split("\\").join("/");
+        return CASE_INSENSITIVE_PATHS ? normalized.toLowerCase() : normalized;
     },
 
     deleteFile(path: string): void {

@@ -9,10 +9,7 @@ import {
     type ActionListPrereadOptions,
 } from "../plan";
 import { appendActionsToOpenActionList } from "./actionOps";
-import {
-    ActionListApplyRun,
-    actionListApplyResultFromError,
-} from "./run";
+import { ActionListApplyRun, actionListApplyResultFromError } from "./run";
 
 export {
     actionListApplyResultFromError,
