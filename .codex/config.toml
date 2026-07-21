@@ -1,3 +1,0 @@
-[mcp_servers.htsw-bridge]
-command = "node"
-args = ["mcp/server.js"]
