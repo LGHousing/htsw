@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WEB_ROOT="/var/www/htsw"
+SURFACES=(ct vscode cli)
+
+receipt() {
+  local output="installed"
+  local surface version
+  for surface in "${SURFACES[@]}"; do
+    version="$(jq -r '.version // "none"' "$WEB_ROOT/$surface/latest.json" 2>/dev/null || echo none)"
+    output+=" $surface=$version"
+  done
+  echo "$output"
+}
+
+requested="${1:-${SSH_ORIGINAL_COMMAND:-deploy}}"
+if [[ "$requested" == "verify" ]]; then
+  receipt
+  exit 0
+fi
+if [[ "$requested" != "deploy" && "$requested" != "$HOME/bin/htsw-deploy" ]]; then
+  echo "htsw-deploy: unsupported command" >&2
+  exit 1
+fi
+
+staging="$(mktemp -d "$HOME/htsw-deploy.XXXXXX")"
+trap 'rm -rf "$staging"' EXIT
+cat > "$staging/payload.tar"
+
+if tar -tf "$staging/payload.tar" | grep -Ev '^(ct|vscode|cli)(/[A-Za-z0-9._+-]+)*/?$' | grep -q .; then
+  echo "htsw-deploy: rejected tar with unexpected paths" >&2
+  exit 1
+fi
+if tar -tvf "$staging/payload.tar" | awk '$1 !~ /^[-d]/ { bad=1 } END { exit bad ? 0 : 1 }'; then
+  echo "htsw-deploy: rejected non-file archive entry" >&2
+  exit 1
+fi
+
+mkdir -p "$staging/files"
+tar --no-same-owner --no-same-permissions -xf "$staging/payload.tar" -C "$staging/files"
+
+payload_surfaces=()
+for surface in "${SURFACES[@]}"; do
+  incoming="$staging/files/$surface"
+  [[ -d "$incoming" ]] || continue
+  payload_surfaces+=("$surface")
+
+  manifest="$incoming/latest.json"
+  [[ -f "$manifest" ]] || { echo "htsw-deploy: missing $surface/latest.json" >&2; exit 1; }
+  case "$surface" in
+    ct) artifact_field="zip" ;;
+    vscode) artifact_field="vsix" ;;
+    cli) artifact_field="cli" ;;
+  esac
+  version="$(jq -er '.version | select(type == "string" and length > 0)' "$manifest")"
+  artifact="$(jq -er --arg field "$artifact_field" '.[$field] | select(type == "string" and test("^[A-Za-z0-9._+-]+$"))' "$manifest")"
+  expected_sha="$(jq -er '.sha256 | select(type == "string" and test("^[a-fA-F0-9]{64}$"))' "$manifest")"
+  [[ -f "$incoming/$artifact" ]] || { echo "htsw-deploy: missing $surface/$artifact" >&2; exit 1; }
+  actual_sha="$(sha256sum "$incoming/$artifact" | awk '{print $1}')"
+  [[ "${actual_sha,,}" == "${expected_sha,,}" ]] || {
+    echo "htsw-deploy: checksum mismatch for $surface/$artifact" >&2
+    exit 1
+  }
+
+  live_manifest="$WEB_ROOT/$surface/latest.json"
+  if [[ -f "$live_manifest" ]]; then
+    live_version="$(jq -r '.version // ""' "$live_manifest")"
+    live_sha="$(jq -r '.sha256 // ""' "$live_manifest")"
+    if [[ "$version" == "$live_version" && "${expected_sha,,}" != "${live_sha,,}" ]]; then
+      echo "htsw-deploy: refusing to replace $surface $version with different bytes" >&2
+      exit 1
+    fi
+    if [[ "$version" != "$live_version" && "$(printf '%s\n%s\n' "$version" "$live_version" | sort -V | head -1)" != "$live_version" ]]; then
+      echo "htsw-deploy: refusing $surface downgrade from $live_version to $version" >&2
+      exit 1
+    fi
+  fi
+done
+
+[[ ${#payload_surfaces[@]} -gt 0 ]] || { echo "htsw-deploy: empty payload" >&2; exit 1; }
+
+for surface in "${payload_surfaces[@]}"; do
+  incoming="$staging/files/$surface"
+  destination="$WEB_ROOT/$surface"
+  sudo mkdir -p "$destination"
+  while IFS= read -r -d '' entry; do
+    sudo cp -rf -- "$entry" "$destination/"
+  done < <(find "$incoming" -mindepth 1 -maxdepth 1 ! -name latest.json -print0)
+  sudo cp -f -- "$incoming/latest.json" "$destination/latest.json"
+done
+
+sudo chown -R nginx:nginx "$WEB_ROOT"
+sudo chcon -R -t httpd_sys_content_t "$WEB_ROOT" 2>/dev/null || true
+receipt
