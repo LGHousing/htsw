@@ -4,10 +4,14 @@ HTSW comes with an official CLI for checking and running HTSW imports.
 
 ## Installation
 
-Currently, you must install the HTSW CLI by cloning the HTSW repository,
- building the CLI, and running `npm link`.
+Install Node.js 20 or newer, then run:
 
-This may be streamlined later.
+```sh
+curl -fsSL https://legendarygames.dev/htsw/cli/install.sh | sh
+```
+
+The installer places `htsw` in `~/.local/bin` by default. Set `HTSW_BIN_DIR`
+to choose another directory. Update it later with `htsw upgrade`.
 
 ## Commands
 
@@ -26,3 +30,8 @@ The output of the
  action is redirected to the standard output.
 
 > Note that repeating functions are ignored in `htsw run`.
+
+### `htsw upgrade`
+
+Downloads the latest CLI build, verifies its checksum, and replaces the
+installed command.

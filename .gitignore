@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-publish/
+ct_module/generated/
 .vscode
 .idea
 coverage/

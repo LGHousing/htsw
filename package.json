@@ -9,8 +9,17 @@
         "editors/code",
         "editors/monaco"
     ],
+    "engines": {
+        "node": ">=22.12.0"
+    },
     "scripts": {
-        "knip": "knip"
+        "build": "npm run build --workspace language && npm run build --workspace ct_module && npm run build --workspace cli && npm run build --workspace editors/code",
+        "test": "npm test --workspace language && npm test --workspace ct_module",
+        "knip": "knip",
+        "deploy:ct": "python ct_module/install.py",
+        "deploy:ct:no-build": "python ct_module/install.py --no-build",
+        "package:vscode": "npm run package --workspace editors/code",
+        "release:stage": "python publish.py stage"
     },
     "devDependencies": {
         "esbuild": "^0.28.1",

@@ -1,34 +1,14 @@
-"""Build and publish HTSW autoupdate artifacts to legendarygames.dev.
+"""Build, deploy, verify, and release HTSW artifacts.
 
-Produces, under dist-publish/:
-  ct/htsw-ct-<version>.zip      flat CT module payload for the autoupdater feed
-  ct/HTSW.zip                   same payload nested under HTSW/ for manual install
-  ct/latest.json                {version, zip, sha256, notes?}
-  vscode/htsw-plus-plus-<v>.vsix
-  vscode/latest.json            {version, vsix, sha256, notes?}
-  cli/htsw-cli-<version>.js     bundled CLI (check / run / upgrade)
-  cli/install.sh                curl|sh installer
-  cli/latest.json               {version, cli, sha256, notes?}
+Commands:
+  python publish.py stage
+  python publish.py deploy
+  python publish.py verify
+  python publish.py release --tag v0.9.9 --notes-file release-notes.txt
 
-Each surface also gets a stable "-latest" copy (htsw-ct-latest.zip,
-htsw-plus-plus-latest.vsix, htsw-cli-latest.js) for durable download links.
-
-Then uploads them to the nginx-served root on the box (via the `lg-website`
-SSH alias), staging through the opc home dir because /var/www/htsw is owned by
-nginx and needs sudo to write. nginx serves /var/www/htsw at
-https://legendarygames.dev/htsw/ via the `location ^~ /htsw/` block in
-/etc/nginx/conf.d/legendarygames.dev.conf.
-
-Usage:
-  python publish.py                 # build ct + vscode + cli, then upload
-  python publish.py --no-build      # reuse existing builds
-  python publish.py --no-upload     # build + stage locally only
-  python publish.py --ct-only
-  python publish.py --vscode-only
-  python publish.py --cli-only
-
-Set HTSW_RELEASE_NOTES, or HTSW_RELEASE_TAG when `gh` is authenticated, to
-include GitHub release notes in latest.json.
+The deploy command sends dist-publish/{ct,vscode,cli} to the checked-in
+ops/htsw-deploy server command. Release performs a clean-tree preflight,
+stages every surface, deploys it, and creates or updates the GitHub release.
 """
 
 from __future__ import annotations
@@ -37,11 +17,20 @@ import argparse
 import hashlib
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
+import time
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
+from typing import Sequence
+
 
 HERE = Path(__file__).resolve().parent
 CT_DIR = HERE / "ct_module"
@@ -49,82 +38,147 @@ VSCODE_DIR = HERE / "editors" / "code"
 CLI_DIR = HERE / "cli"
 OUT_DIR = HERE / "dist-publish"
 
-SSH_HOST = "lg-website"
-REMOTE_STAGING = "~/htsw-publish-staging"
-REMOTE_WEB_ROOT = "/var/www/htsw"
-NGINX_USER = "nginx"
-
-IS_WINDOWS = sys.platform == "win32"
+SURFACES = ("ct", "vscode", "cli")
+ARTIFACT_FIELDS = {"ct": "zip", "vscode": "vsix", "cli": "cli"}
+PUBLIC_BASE_URL = "https://legendarygames.dev/htsw"
 
 
-def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
-    print(f"[publish] $ {' '.join(cmd)}  (in {cwd})")
-    status = subprocess.run(cmd, cwd=cwd, shell=IS_WINDOWS, env=env).returncode
-    if status != 0:
-        raise RuntimeError(f"Command failed ({status}): {' '.join(cmd)}")
+def executable(name: str) -> str:
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise RuntimeError(f"Required command is not on PATH: {name}")
+    return resolved
+
+
+def display_command(cmd: Sequence[str]) -> str:
+    if sys.platform == "win32":
+        return subprocess.list2cmdline(list(cmd))
+    return shlex.join(cmd)
+
+
+def run(
+    cmd: Sequence[str],
+    cwd: Path = HERE,
+    *,
+    capture_output: bool = False,
+    stdin: object | None = None,
+) -> subprocess.CompletedProcess[str]:
+    resolved = [executable(cmd[0]), *cmd[1:]]
+    print(f"[publish] $ {display_command(cmd)}  (in {cwd})")
+    result = subprocess.run(
+        resolved,
+        cwd=cwd,
+        stdin=stdin,
+        capture_output=capture_output,
+        text=stdin is None,
+    )
+    if result.returncode != 0:
+        if capture_output:
+            if result.stdout:
+                stdout = (
+                    result.stdout.decode(errors="replace")
+                    if isinstance(result.stdout, bytes)
+                    else result.stdout
+                )
+                print(stdout, end="")
+            if result.stderr:
+                stderr = (
+                    result.stderr.decode(errors="replace")
+                    if isinstance(result.stderr, bytes)
+                    else result.stderr
+                )
+                print(stderr, end="", file=sys.stderr)
+        raise RuntimeError(f"Command failed ({result.returncode}): {display_command(cmd)}")
+    return result
 
 
 def sha256_of(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 16), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1 << 16), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def read_version(json_path: Path) -> str:
-    return json.loads(json_path.read_text(encoding="utf-8"))["version"]
+def read_json(path: Path) -> dict[str, object]:
+    parsed = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"Expected a JSON object in {path}")
+    return parsed
 
 
-def read_release_notes(surface: str | None = None) -> str | None:
-    # Per-surface notes win (the CT feed and the VS Code feed reach different
-    # audiences), then the shared notes, then the GitHub release body.
-    if surface is not None:
-        surfaced = os.getenv(f"HTSW_RELEASE_NOTES_{surface.upper()}", "").strip()
-        if surfaced:
-            return surfaced
-    notes = os.getenv("HTSW_RELEASE_NOTES", "").strip()
-    if notes:
-        return notes
+def read_version(path: Path) -> str:
+    version = read_json(path).get("version")
+    if not isinstance(version, str) or not version:
+        raise RuntimeError(f"Missing version in {path}")
+    return version
 
-    release_tag = os.getenv("HTSW_RELEASE_TAG", "").strip()
-    if not release_tag:
+
+def selected_surfaces(args: argparse.Namespace) -> list[str]:
+    return list(dict.fromkeys(getattr(args, "surface", None) or SURFACES))
+
+
+def read_notes_file(path: str | None) -> str | None:
+    if path is None:
         return None
+    notes = Path(path).read_text(encoding="utf-8").strip()
+    return notes or None
 
+
+def github_release_notes(tag: str | None) -> str | None:
+    if not tag or shutil.which("gh") is None:
+        return None
     result = subprocess.run(
-        ["gh", "release", "view", release_tag, "--json", "body", "--jq", ".body"],
+        [executable("gh"), "release", "view", tag, "--json", "body", "--jq", ".body"],
         cwd=HERE,
         capture_output=True,
         text=True,
-        shell=IS_WINDOWS,
     )
-    if result.returncode == 0:
-        notes = result.stdout.strip()
-        if notes:
-            return notes
-    return None
+    if result.returncode != 0:
+        return None
+    notes = result.stdout.strip()
+    return notes or None
 
 
-def manifest_json(payload: dict[str, str], surface: str | None = None) -> str:
-    notes = read_release_notes(surface)
-    if notes is not None:
+def release_notes(args: argparse.Namespace) -> tuple[str | None, dict[str, str]]:
+    shared = (
+        read_notes_file(getattr(args, "notes_file", None))
+        or getattr(args, "notes", None)
+        or os.getenv("HTSW_RELEASE_NOTES", "").strip()
+        or github_release_notes(getattr(args, "tag", None))
+    )
+    per_surface: dict[str, str] = {}
+    for surface in SURFACES:
+        value = os.getenv(f"HTSW_RELEASE_NOTES_{surface.upper()}", "").strip()
+        if value:
+            per_surface[surface] = value
+    return shared or None, per_surface
+
+
+def manifest_json(payload: dict[str, str], notes: str | None) -> str:
+    if notes:
         payload["notes"] = notes
     return json.dumps(payload, indent=2) + "\n"
 
 
+def reset_surface_output(surface: str) -> Path:
+    output = OUT_DIR / surface
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    return output
+
+
 def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> None:
-    # Mirror what install.py deploys: everything under dist/ at the archive
-    # root, plus metadata.json. No .env. When `root` is set, nest every entry
-    # under that folder.
     prefix = f"{root}/" if root else ""
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(dist.rglob("*")):
             if file.is_file():
-                zf.write(file, prefix + file.relative_to(dist).as_posix())
-        zf.write(metadata, prefix + "metadata.json")
+                archive.write(file, prefix + file.relative_to(dist).as_posix())
+        archive.write(metadata, prefix + "metadata.json")
 
 
-def build_ct(do_build: bool) -> tuple[Path, str]:
+def stage_ct(do_build: bool, notes: str | None) -> None:
     if do_build:
         run(["npm", "run", "build"], CT_DIR)
 
@@ -134,59 +188,56 @@ def build_ct(do_build: bool) -> tuple[Path, str]:
         raise RuntimeError(f"Missing CT build output: {dist}")
 
     version = read_version(metadata)
-    out = OUT_DIR / "ct"
-    out.mkdir(parents=True, exist_ok=True)
+    package_version = read_version(CT_DIR / "package.json")
+    if version != package_version:
+        raise RuntimeError(
+            f"CT version mismatch: metadata.json is {version}, package.json is {package_version}"
+        )
+
+    output = reset_surface_output("ct")
     zip_name = f"htsw-ct-{version}.zip"
-    zip_path = out / zip_name
-
-    # The feed zip stays flat: already-installed autoupdaters extract it and
-    # move its children straight into modules/HTSW.
+    zip_path = output / zip_name
     write_ct_zip(zip_path, dist, metadata)
-    shutil.copy2(zip_path, out / "htsw-ct-latest.zip")
-
-    # The human download nests everything under HTSW/, so extracting it by any
-    # method yields a folder named HTSW — the name ChatTriggers and the
-    # autoupdater both require. Kept separate from the feed zip because the
-    # deployed updaters can't handle the nested layout yet.
-    write_ct_zip(out / "HTSW.zip", dist, metadata, root="HTSW")
+    shutil.copy2(zip_path, output / "htsw-ct-latest.zip")
+    write_ct_zip(output / "HTSW.zip", dist, metadata, root="HTSW")
 
     digest = sha256_of(zip_path)
-    (out / "latest.json").write_text(
-        manifest_json({"version": version, "zip": zip_name, "sha256": digest}, surface="ct"),
+    (output / "latest.json").write_text(
+        manifest_json({"version": version, "zip": zip_name, "sha256": digest}, notes),
         encoding="utf-8",
     )
-    print(f"[publish] CT {version}: {zip_name} ({zip_path.stat().st_size} bytes, sha256 {digest[:12]}…)")
-    return out, version
+    print(f"[publish] Staged CT {version} ({digest[:12]}…)")
 
 
-def build_vscode(do_build: bool) -> tuple[Path, str]:
+def stage_vscode(do_build: bool, notes: str | None) -> None:
     if do_build:
         run(["npm", "run", "build"], VSCODE_DIR)
-    # Always (re)package so the vsix matches the current build + version.
-    run(["npm", "run", "package"], VSCODE_DIR)
 
     version = read_version(VSCODE_DIR / "package.json")
-    produced = sorted(VSCODE_DIR.glob("*.vsix"), key=lambda p: p.stat().st_mtime)
-    if not produced:
-        raise RuntimeError("vsce produced no .vsix")
-    vsix = produced[-1]
+    expected_name = f"htsw-plus-plus-{version}.vsix"
+    expected_path = VSCODE_DIR / expected_name
+    if expected_path.exists():
+        expected_path.unlink()
+    run(["npm", "run", "package:built"], VSCODE_DIR)
+    if not expected_path.is_file():
+        raise RuntimeError(f"VS Code packaging did not produce {expected_path}")
 
-    out = OUT_DIR / "vscode"
-    out.mkdir(parents=True, exist_ok=True)
-    dest = out / vsix.name
-    shutil.copy2(vsix, dest)
-    shutil.copy2(dest, out / "htsw-plus-plus-latest.vsix")
+    output = reset_surface_output("vscode")
+    destination = output / expected_name
+    shutil.copy2(expected_path, destination)
+    shutil.copy2(destination, output / "htsw-plus-plus-latest.vsix")
 
-    digest = sha256_of(dest)
-    (out / "latest.json").write_text(
-        manifest_json(surface="vscode", payload={"version": version, "vsix": vsix.name, "sha256": digest}),
+    digest = sha256_of(destination)
+    (output / "latest.json").write_text(
+        manifest_json(
+            {"version": version, "vsix": expected_name, "sha256": digest}, notes
+        ),
         encoding="utf-8",
     )
-    print(f"[publish] VSCode {version}: {vsix.name} ({dest.stat().st_size} bytes, sha256 {digest[:12]}…)")
-    return out, version
+    print(f"[publish] Staged VS Code {version} ({digest[:12]}…)")
 
 
-def build_cli(do_build: bool) -> tuple[Path, str]:
+def stage_cli(do_build: bool, notes: str | None) -> None:
     if do_build:
         run(["npm", "run", "build"], CLI_DIR)
 
@@ -195,84 +246,340 @@ def build_cli(do_build: bool) -> tuple[Path, str]:
         raise RuntimeError(f"Missing CLI build output: {bundle}")
 
     version = read_version(CLI_DIR / "package.json")
-    out = OUT_DIR / "cli"
-    out.mkdir(parents=True, exist_ok=True)
+    output = reset_surface_output("cli")
     js_name = f"htsw-cli-{version}.js"
-    dest = out / js_name
-    shutil.copy2(bundle, dest)
-    shutil.copy2(dest, out / "htsw-cli-latest.js")
-    shutil.copy2(CLI_DIR / "install.sh", out / "install.sh")
+    destination = output / js_name
+    shutil.copy2(bundle, destination)
+    shutil.copy2(destination, output / "htsw-cli-latest.js")
+    shutil.copy2(CLI_DIR / "install.sh", output / "install.sh")
 
-    digest = sha256_of(dest)
-    (out / "latest.json").write_text(
-        manifest_json({"version": version, "cli": js_name, "sha256": digest}, surface="cli"),
+    digest = sha256_of(destination)
+    (output / "latest.json").write_text(
+        manifest_json({"version": version, "cli": js_name, "sha256": digest}, notes),
         encoding="utf-8",
     )
-    print(f"[publish] CLI {version}: {js_name} ({dest.stat().st_size} bytes, sha256 {digest[:12]}…)")
-    return out, version
+    print(f"[publish] Staged CLI {version} ({digest[:12]}…)")
 
 
-def upload(targets: list[str]) -> None:
-    # targets is a subset of {"ct", "vscode", "cli"}.
-    mk = " ".join(f"{REMOTE_STAGING}/{t}" for t in targets)
-    run(["ssh", SSH_HOST, f"mkdir -p {mk}"], HERE)
+def stage(
+    surfaces: Sequence[str],
+    *,
+    do_build: bool,
+    shared_notes: str | None,
+    per_surface_notes: dict[str, str],
+) -> None:
+    if do_build:
+        run(["npm", "run", "build", "--workspace", "language"])
 
-    for t in targets:
-        local = OUT_DIR / t
-        # scp each file in the category to its staging subdir.
-        files = [str(p) for p in local.iterdir() if p.is_file()]
-        run(["scp", *files, f"{SSH_HOST}:{REMOTE_STAGING}/{t}/"], HERE)
+    builders = {"ct": stage_ct, "vscode": stage_vscode, "cli": stage_cli}
+    for surface in surfaces:
+        builders[surface](do_build, per_surface_notes.get(surface, shared_notes))
 
-    copies = " && ".join(
-        f"sudo mkdir -p {REMOTE_WEB_ROOT}/{t} && sudo cp -f {REMOTE_STAGING}/{t}/* {REMOTE_WEB_ROOT}/{t}/"
-        for t in targets
+
+def staged_manifest(surface: str) -> dict[str, object]:
+    manifest_path = OUT_DIR / surface / "latest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"{surface} has not been staged: missing {manifest_path}")
+    manifest = read_json(manifest_path)
+    artifact_field = ARTIFACT_FIELDS[surface]
+    artifact_name = manifest.get(artifact_field)
+    expected_sha = manifest.get("sha256")
+    version = manifest.get("version")
+    if not all(isinstance(value, str) and value for value in (artifact_name, expected_sha, version)):
+        raise RuntimeError(f"Malformed staged manifest: {manifest_path}")
+    artifact = OUT_DIR / surface / str(artifact_name)
+    if not artifact.is_file():
+        raise RuntimeError(f"Missing staged artifact: {artifact}")
+    actual_sha = sha256_of(artifact)
+    if actual_sha != expected_sha:
+        raise RuntimeError(f"Staged checksum mismatch for {artifact}")
+    return manifest
+
+
+def ssh_options(temp_dir: Path) -> tuple[list[str], str]:
+    host = os.getenv("HTSW_DEPLOY_HOST", "").strip() or "lg-website"
+    user = os.getenv("HTSW_DEPLOY_USER", "").strip()
+    target = f"{user}@{host}" if user else host
+    options = ["-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes"]
+
+    key = os.getenv("HTSW_DEPLOY_KEY", "")
+    known_hosts = os.getenv("HTSW_DEPLOY_KNOWN_HOSTS", "")
+    if key:
+        if not known_hosts:
+            raise RuntimeError("HTSW_DEPLOY_KNOWN_HOSTS is required with HTSW_DEPLOY_KEY")
+        key_path = temp_dir / "deploy-key"
+        hosts_path = temp_dir / "known-hosts"
+        key_path.write_text(key.rstrip() + "\n", encoding="utf-8")
+        hosts_path.write_text(known_hosts.rstrip() + "\n", encoding="utf-8")
+        key_path.chmod(0o600)
+        options.extend(
+            [
+                "-i",
+                str(key_path),
+                "-o",
+                f"UserKnownHostsFile={hosts_path}",
+                "-o",
+                "StrictHostKeyChecking=yes",
+            ]
+        )
+    return options, target
+
+
+def remote_command(kind: str) -> str:
+    configured = os.getenv("HTSW_DEPLOY_COMMAND", "").strip()
+    if configured:
+        return configured if kind == "deploy" else f"{configured} verify"
+    if os.getenv("HTSW_DEPLOY_KEY"):
+        return kind
+    return "~/bin/htsw-deploy" if kind == "deploy" else "~/bin/htsw-deploy verify"
+
+
+def run_remote(kind: str, *, stdin_path: Path | None = None) -> str:
+    with tempfile.TemporaryDirectory(prefix="htsw-ssh-") as raw_temp:
+        temp_dir = Path(raw_temp)
+        options, target = ssh_options(temp_dir)
+        command = ["ssh", *options, target, remote_command(kind)]
+        if stdin_path is None:
+            result = run(command, capture_output=True)
+        else:
+            with stdin_path.open("rb") as payload:
+                result = run(command, capture_output=True, stdin=payload)
+        stdout = result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout
+        stderr = result.stderr.decode() if isinstance(result.stderr, bytes) else result.stderr
+        if stdout:
+            print(stdout, end="")
+        if stderr:
+            print(stderr, end="", file=sys.stderr)
+        return stdout
+
+
+def parse_receipt(output: str) -> dict[str, str]:
+    lines = [line for line in output.splitlines() if line.startswith("installed ")]
+    if not lines:
+        raise RuntimeError("Deploy server did not return an installed-version receipt")
+    return dict(re.findall(r"(ct|vscode|cli)=([^\s]+)", lines[-1]))
+
+
+def assert_receipt(receipt: dict[str, str], surfaces: Sequence[str]) -> None:
+    for surface in surfaces:
+        expected = staged_manifest(surface)["version"]
+        actual = receipt.get(surface)
+        if actual != expected:
+            raise RuntimeError(
+                f"Deploy receipt mismatch for {surface}: staged {expected}, installed {actual or 'unknown'}"
+            )
+
+
+def deploy(surfaces: Sequence[str]) -> None:
+    for surface in surfaces:
+        staged_manifest(surface)
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="htsw-deploy-") as raw_temp:
+        tar_path = Path(raw_temp) / "payload.tar"
+        with tarfile.open(tar_path, "w") as archive:
+            for surface in surfaces:
+                archive.add(OUT_DIR / surface, arcname=surface)
+        receipt = parse_receipt(run_remote("deploy", stdin_path=tar_path))
+    assert_receipt(receipt, surfaces)
+    print(f"[publish] Deployed and verified: {', '.join(surfaces)}")
+
+
+def fetch_manifest(surface: str) -> dict[str, object]:
+    url = f"{PUBLIC_BASE_URL}/{surface}/latest.json"
+    request = urllib.request.Request(url, headers={"User-Agent": "HTSW-Publisher"})
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                parsed = json.loads(response.read().decode("utf-8"))
+            if not isinstance(parsed, dict):
+                raise RuntimeError(f"Expected an object from {url}")
+            return parsed
+        except (OSError, ValueError, urllib.error.URLError) as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(1)
+    raise RuntimeError(f"Could not fetch {url}: {last_error}")
+
+
+def verify(surfaces: Sequence[str]) -> None:
+    for surface in surfaces:
+        expected = staged_manifest(surface)
+        live = fetch_manifest(surface)
+        for field in ("version", "sha256", ARTIFACT_FIELDS[surface]):
+            if live.get(field) != expected.get(field):
+                raise RuntimeError(
+                    f"Live {surface} feed mismatch for {field}: "
+                    f"expected {expected.get(field)!r}, got {live.get(field)!r}"
+                )
+        print(f"[publish] Verified public {surface} feed at {expected['version']}")
+
+
+def assert_clean_worktree() -> None:
+    result = run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        capture_output=True,
     )
-    remote = (
-        f"{copies} && "
-        f"sudo chown -R {NGINX_USER}:{NGINX_USER} {REMOTE_WEB_ROOT} && "
-        f"(sudo chcon -R -t httpd_sys_content_t {REMOTE_WEB_ROOT} 2>/dev/null || true) && "
-        f"rm -rf {REMOTE_STAGING}"
+    if result.stdout.strip():
+        raise RuntimeError("Publishing requires a clean worktree; commit or stash changes first")
+
+
+def validate_release_tag(tag: str) -> None:
+    expected = f"v{read_version(CT_DIR / 'package.json')}"
+    if tag != expected:
+        raise RuntimeError(f"Release tag must match the CT version: expected {expected}, got {tag}")
+
+
+def ensure_tag(tag: str) -> None:
+    head = run(["git", "rev-parse", "HEAD"], capture_output=True).stdout.strip()
+    existing = subprocess.run(
+        [executable("git"), "rev-list", "-n", "1", tag],
+        cwd=HERE,
+        capture_output=True,
+        text=True,
     )
-    run(["ssh", SSH_HOST, remote], HERE)
-    print(f"[publish] Uploaded {', '.join(targets)} to {SSH_HOST}:{REMOTE_WEB_ROOT}")
+    if existing.returncode == 0:
+        if existing.stdout.strip() != head:
+            raise RuntimeError(f"Tag {tag} does not point at HEAD")
+        return
+    run(["git", "tag", tag])
+    run(["git", "push", "origin", f"refs/tags/{tag}"])
+
+
+def prepare_github_assets(surfaces: Sequence[str]) -> list[Path]:
+    assets: list[Path] = []
+    for surface in surfaces:
+        manifest = staged_manifest(surface)
+        manifest_copy = OUT_DIR / f"htsw-{surface}-latest.json"
+        shutil.copy2(OUT_DIR / surface / "latest.json", manifest_copy)
+        assets.append(manifest_copy)
+        assets.append(OUT_DIR / surface / str(manifest[ARTIFACT_FIELDS[surface]]))
+    if "ct" in surfaces:
+        assets.append(OUT_DIR / "ct" / "HTSW.zip")
+    if "cli" in surfaces:
+        assets.append(OUT_DIR / "cli" / "install.sh")
+    return assets
+
+
+def publish_github_release(tag: str, notes: str, surfaces: Sequence[str]) -> None:
+    ct_version = read_version(CT_DIR / "package.json")
+    vscode_version = read_version(VSCODE_DIR / "package.json")
+    title = f"HTSW v{ct_version} (VS Code v{vscode_version})"
+    existing = subprocess.run(
+        [executable("gh"), "release", "view", tag],
+        cwd=HERE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if existing.returncode == 0:
+        run(["gh", "release", "edit", tag, "--title", title, "--notes", notes])
+    else:
+        run(["gh", "release", "create", tag, "--title", title, "--notes", notes])
+    assets = prepare_github_assets(surfaces)
+    run(["gh", "release", "upload", tag, *map(str, assets), "--clobber"])
+
+
+def add_surface_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--surface",
+        action="append",
+        choices=SURFACES,
+        help="limit the command to a surface; repeat to select more than one",
+    )
+
+
+def add_notes_arguments(parser: argparse.ArgumentParser) -> None:
+    notes = parser.add_mutually_exclusive_group()
+    notes.add_argument("--notes", help="shared release notes")
+    notes.add_argument("--notes-file", help="read shared release notes from a UTF-8 file")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    stage_parser = commands.add_parser("stage", help="build and stage local artifacts")
+    add_surface_argument(stage_parser)
+    add_notes_arguments(stage_parser)
+    stage_parser.add_argument("--no-build", action="store_true", help="reuse existing builds")
+    stage_parser.add_argument("--tag", help="GitHub tag used as a release-notes fallback")
+
+    deploy_parser = commands.add_parser("deploy", help="deploy staged artifacts")
+    add_surface_argument(deploy_parser)
+    deploy_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="deploy despite tracked or untracked worktree changes",
+    )
+
+    verify_parser = commands.add_parser("verify", help="compare public feeds with staged artifacts")
+    add_surface_argument(verify_parser)
+
+    release_parser = commands.add_parser(
+        "release", help="stage, deploy, and publish a GitHub release"
+    )
+    release_parser.add_argument("--tag", required=True)
+    add_notes_arguments(release_parser)
+    release_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="release despite tracked or untracked worktree changes",
+    )
+    return parser.parse_args()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--no-build", action="store_true", help="reuse existing builds")
-    parser.add_argument("--no-upload", action="store_true", help="stage locally, do not upload")
-    parser.add_argument("--ct-only", action="store_true")
-    parser.add_argument("--vscode-only", action="store_true")
-    parser.add_argument("--cli-only", action="store_true")
-    args = parser.parse_args()
+    args = parse_args()
+    surfaces = selected_surfaces(args)
 
-    # Any "--*-only" flag narrows to that surface; the default run builds all
-    # three. The CLI bundles the language at build time, so skipping it lets
-    # `htsw check` silently drift from the extension's diagnostics.
-    any_only = args.ct_only or args.vscode_only or args.cli_only
-    do_ct = args.ct_only or not any_only
-    do_vscode = args.vscode_only or not any_only
-    do_cli = args.cli_only or not any_only
-    do_build = not args.no_build
-
-    targets: list[str] = []
-    if do_ct:
-        build_ct(do_build)
-        targets.append("ct")
-    if do_vscode:
-        build_vscode(do_build)
-        targets.append("vscode")
-    if do_cli:
-        build_cli(do_build)
-        targets.append("cli")
-
-    if args.no_upload:
-        print(f"[publish] Skipped upload. Artifacts staged in {OUT_DIR}")
+    if args.command == "stage":
+        shared_notes, per_surface_notes = release_notes(args)
+        stage(
+            surfaces,
+            do_build=not args.no_build,
+            shared_notes=shared_notes,
+            per_surface_notes=per_surface_notes,
+        )
+        print(f"[publish] Artifacts staged in {OUT_DIR}")
         return
 
-    upload(targets)
-    print("[publish] Done.")
+    if args.command == "deploy":
+        if not args.allow_dirty:
+            assert_clean_worktree()
+        deploy(surfaces)
+        return
+
+    if args.command == "verify":
+        verify(surfaces)
+        return
+
+    if not args.allow_dirty:
+        assert_clean_worktree()
+    validate_release_tag(args.tag)
+    shared_notes, per_surface_notes = release_notes(args)
+    if not shared_notes:
+        raise RuntimeError(
+            "Release notes are required; use --notes, --notes-file, HTSW_RELEASE_NOTES, "
+            "or create the GitHub release first"
+        )
+    stage(
+        SURFACES,
+        do_build=True,
+        shared_notes=shared_notes,
+        per_surface_notes=per_surface_notes,
+    )
+    if not args.allow_dirty:
+        assert_clean_worktree()
+    ensure_tag(args.tag)
+    deploy(SURFACES)
+    publish_github_release(args.tag, shared_notes, SURFACES)
+    print(f"[publish] Released {args.tag}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(f"[publish] error: {error}", file=sys.stderr)
+        raise SystemExit(1) from None

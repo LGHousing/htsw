@@ -22,9 +22,9 @@ This guide says **what each part is for and the rules it must keep**. Do not cop
 | `language/`     | `npm run build` | `npm test` | `lib: es2022`                                                 |
 | `cli/`          | `npm run build` | —          |                                                               |
 | `editors/code/` | `npm run build` | —          |                                                               |
-| `ct_module/`    | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `python install.py` |
+| `ct_module/`    | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `npm run deploy:ct` |
 
-**After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `python install.py` from `ct_module/`** so `/ct reload` picks it up. It runs the full build (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. `.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
+**After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `npm run deploy:ct` from the repo root** so `/ct reload` picks it up. It runs the full build (typecheck + lint + Vite + Java) and atomically replaces the deployed module. `ct_module/.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
 **After changing code, assets, metadata, or build setup that ships in `editors/code/`, run `npm run package` from `editors/code/` and install the generated `.vsix` with `code --install-extension <file>.vsix --force`** so the local VS Code installation uses the change.
 
@@ -60,7 +60,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
 - Release notes are user-facing update text. Write the important changes in plain language, avoid internal jargon, and do not publish changelog-only Markdown into the CT updater feed.
-- A release is not done until the autoupdater feed is published. After the version-bump commit and GitHub release, run `python publish.py` from the repo root (builds and uploads to legendarygames.dev; set `HTSW_RELEASE_TAG=<tag>` first so the feed carries the release notes). Skip the upload only when explicitly asked.
+- A release is not done until the autoupdater feeds are published. After the version-bump commit, run `python publish.py release --tag <tag> --notes-file <path>` from the repo root. It builds CT, VS Code, and CLI artifacts, deploys all three feeds, and creates or updates the GitHub release. Use `stage`, `deploy`, and `verify` only when performing part of that workflow intentionally.
 - If you are not fully sure how Hypixel Housing behaves, ask Callan before implementing, documenting, or relying on that behavior.
 - When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
 - When auditing code, look for two paths doing the same job, abstractions that don't earn their place, and names that hide who owns what. If two mechanisms feed the same caller, first look for one shared path. Keep them separate when they do different jobs, run at different times, or need different state — and make that difference clear in the design.

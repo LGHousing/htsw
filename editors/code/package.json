@@ -16,7 +16,8 @@
         "generate:grammar": "node --experimental-strip-types scripts/generateHtslGrammar.mjs",
         "build": "npm run generate:grammar && tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
         "check:schema": "node -e \"JSON.parse(require('fs').readFileSync('./schemas/import.schema.json', 'utf8'))\"",
-        "package": "npm run build && npx @vscode/vsce package --no-dependencies"
+        "package:built": "vsce package --no-dependencies",
+        "package": "npm run build && npm run package:built"
     },
     "dependencies": {
         "htsw": "file:../../language",

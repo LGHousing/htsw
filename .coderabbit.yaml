@@ -28,7 +28,7 @@ reviews:
       instructions: |
         Review for Rhino/ES5 runtime compatibility. Flag use of modern prototype methods like String.padStart, String.replaceAll, String.matchAll, Array.flat, Array.flatMap, Object.entries, Object.values, Object.fromEntries, Array.prototype.at, and String.prototype.at unless an appropriate polyfill is imported before first use.
         Prefer TaskContext, waitForMenu, ItemSlot, and existing importer helpers over direct ChatTriggers globals or hardcoded sleeps.
-        After changes under ct_module/, expect python install.py from ct_module/ before handing work back.
+        After changes under ct_module/, expect npm run deploy:ct from the repo root before handing work back.
     - path: "language/**"
       instructions: |
         Treat this package as the syntax, type-system, diagnostics, import.json loader, NBT, and runtime source of truth. Be strict about parser and checker regressions, and expect focused test coverage for behavioral changes.
