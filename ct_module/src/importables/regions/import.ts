@@ -150,10 +150,19 @@ async function createRegionWithBounds(
 
 async function ensureRegionEditorForApply(
     ctx: TaskContext,
-    plan: RegionImportPlan
+    plan: RegionImportPlan,
+    session: ImportContext
 ): Promise<void> {
     if (plan.liveRegion === null) {
-        await createRegionWithBounds(ctx, plan.importable);
+        if (
+            session.ensuredReferencedShells.regions.has(
+                plan.importable.name.toLowerCase()
+            )
+        ) {
+            await moveExistingRegionToBounds(ctx, plan.importable);
+        } else {
+            await createRegionWithBounds(ctx, plan.importable);
+        }
         return;
     }
     if (!plan.boundsMatch) {
@@ -257,11 +266,11 @@ export async function applyImportableRegionPlan(
         // Region created/moved to bounds; nothing to edit. No clickGoBack — the
         // /region edit editor is a parent-less "Close" menu, and the next
         // importable opens its own menu by command anyway.
-        await ensureRegionEditorForApply(ctx, plan);
+        await ensureRegionEditorForApply(ctx, plan, session);
         return;
     }
 
-    await ensureRegionEditorForApply(ctx, plan);
+    await ensureRegionEditorForApply(ctx, plan, session);
     await applyRegionActionPlans(ctx, plan, session);
 }
 

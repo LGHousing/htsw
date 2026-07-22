@@ -126,7 +126,12 @@ export async function applyImportableFunctionPlan(
     plan: FunctionImportPlan,
     session: ImportContext
 ): Promise<void> {
-    if (!plan.exists) {
+    if (
+        !plan.exists &&
+        !session.ensuredReferencedShells.functions.has(
+            plan.importable.name.toLowerCase()
+        )
+    ) {
         await ensureFunctionExists(ctx, plan.importable.name);
         await clickGoBack(ctx);
     }

@@ -12,4 +12,9 @@ export type ImportContext = {
     itemDependencies: ItemDependencyIndex;
     npcLookup: NpcLookupCache;
     actions: ActionSyncContext;
+    ensuredReferencedShells: {
+        functions: Set<string>;
+        menus: Set<string>;
+        regions: Set<string>;
+    };
 };

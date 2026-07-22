@@ -6,7 +6,7 @@ import {
     IMPORT_JSON_SCHEMA,
     IMPORT_JSON_SCHEMA_DEFINITIONS,
     type SchemaSpec,
-} from "../../../language/dist/importjson/schemaSpec.js";
+} from "../../../language/src/importjson/schemaSpec.ts";
 
 type JsonSchema = Record<string, unknown>;
 

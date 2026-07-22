@@ -50,7 +50,8 @@ function leftClickRedirectTrusted(
     plan: ImportableTrustPlan | undefined
 ): boolean {
     if (importable.leftClickRedirect === undefined) return true;
-    if (plan?.entry?.importable.type !== "NPC") return false;
+    if (plan?.trustMode !== true || plan.entry?.importable.type !== "NPC")
+        return false;
     return plan.entry.importable.leftClickRedirect === importable.leftClickRedirect;
 }
 

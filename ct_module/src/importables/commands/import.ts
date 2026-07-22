@@ -163,7 +163,7 @@ function commandSettingsTrusted(
     importable: ImportableCommand,
     plan: ImportableTrustPlan | undefined
 ): boolean {
-    if (plan?.entry?.importable.type !== "COMMAND") {
+    if (plan?.trustMode !== true || plan.entry?.importable.type !== "COMMAND") {
         return false;
     }
     const cached = plan.entry.importable;

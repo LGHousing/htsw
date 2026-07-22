@@ -404,7 +404,10 @@ export async function applyImportableMenuPlan(
     };
 
     emitMenuTotal();
-    if (!plan.exists) {
+    const exists =
+        plan.exists ||
+        session.ensuredReferencedShells.menus.has(importable.name.toLowerCase());
+    if (!exists) {
         await ctx.expectAfter(
             () => ctx.runCommand(`/menu create ${importable.name}`),
             menuCreated(importable.name)

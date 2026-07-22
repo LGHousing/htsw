@@ -6,41 +6,125 @@ import type {
     Event,
     Permission,
 } from "../types/types.js";
+import type { NpcSkin } from "../types/importables.js";
 
-const EVENTS = [
-    "Player Join", "Player Quit", "Player Death", "Player Kill", "Player Respawn",
-    "Group Change", "PvP State Change", "Fish Caught", "Player Enter Portal",
-    "Player Damage", "Player Block Break", "Start Parkour", "Complete Parkour",
-    "Player Drop Item", "Player Pick Up Item", "Player Change Held Item",
-    "Player Toggle Sneak", "Player Toggle Flight",
-] as const satisfies readonly Event[];
-const COLORS = [
-    "Dark Blue", "Dark Green", "Dark Aqua", "Dark Red", "Dark Purple",
-    "Gold", "Gray", "Dark Gray", "Blue", "Green", "Aqua", "Red",
-    "Light Purple", "Yellow",
-] as const satisfies readonly Color[];
-const CHAT_SPEEDS = [
-    "Off", "On", "Slow 1s", "Slow 2s", "Slow 3s", "Slow 5s", "Slow 10s",
-    "Slow 15s", "Slow 30s", "Slow 45s", "Slow 60s",
-] as const satisfies readonly ChatSpeed[];
-const DEFAULT_GAME_MODES = [
-    "ADVENTURE", "SURVIVAL", "CREATIVE",
-] as const satisfies readonly DefaultGameMode[];
-const COMMAND_MODES = ["Self", "Targeted"] as const satisfies readonly CommandMode[];
-const PERMISSIONS = [
-    "Fly", "Wood Door", "Iron Door", "Wood Trap Door", "Iron Trap Door",
-    "Fence Gate", "Button", "Lever", "Use Launch Pads", "/tp",
-    "/tp Other Players", "Jukebox", "Kick", "Ban", "Mute", "Pet Spawning",
-    "Build", "Offline Build", "Fluid", "Pro Tools", "Use Chests",
-    "Use Ender Chests", "Item Editor", "Switch Game Mode", "Edit Variables",
-    "Change Player Group", "Change Gamerules", "Housing Menu", "Team Chat Spy",
-    "Edit Actions", "Edit Regions", "Edit Scoreboard", "Edit Event Actions",
-    "Edit Commands", "Edit Functions", "Edit Inventory Layouts", "Edit Teams",
-    "Edit Custom Menus", "View Analytics", "View Logger", "Item: Mailbox",
-    "Item: Egg Hunt", "Item: Teleport Pad", "Item: Launch Pad", "Item: Action Pad",
-    "Item: Hologram", "Item: NPCs", "Item: Action Button", "Item: Leaderboard",
-    "Item: Trash Can", "Item: Biome Stick",
-] as const satisfies readonly Permission[];
+function completeValues<T>() {
+    return <const Values extends readonly T[]>(
+        values: Values &
+            (Exclude<T, Values[number]> extends never
+                ? unknown
+                : { missing: Exclude<T, Values[number]> })
+    ): Values => values;
+}
+
+const EVENTS = completeValues<Event>()([
+    "Player Join",
+    "Player Quit",
+    "Player Death",
+    "Player Kill",
+    "Player Respawn",
+    "Group Change",
+    "PvP State Change",
+    "Fish Caught",
+    "Player Enter Portal",
+    "Player Damage",
+    "Player Block Break",
+    "Start Parkour",
+    "Complete Parkour",
+    "Player Drop Item",
+    "Player Pick Up Item",
+    "Player Change Held Item",
+    "Player Toggle Sneak",
+    "Player Toggle Flight",
+]);
+const COLORS = completeValues<Color>()([
+    "Dark Blue",
+    "Dark Green",
+    "Dark Aqua",
+    "Dark Red",
+    "Dark Purple",
+    "Gold",
+    "Gray",
+    "Dark Gray",
+    "Blue",
+    "Green",
+    "Aqua",
+    "Red",
+    "Light Purple",
+    "Yellow",
+]);
+const CHAT_SPEEDS = completeValues<ChatSpeed>()([
+    "Off",
+    "On",
+    "Slow 1s",
+    "Slow 2s",
+    "Slow 3s",
+    "Slow 5s",
+    "Slow 10s",
+    "Slow 15s",
+    "Slow 30s",
+    "Slow 45s",
+    "Slow 60s",
+]);
+const DEFAULT_GAME_MODES = completeValues<DefaultGameMode>()([
+    "ADVENTURE",
+    "SURVIVAL",
+    "CREATIVE",
+]);
+const COMMAND_MODES = completeValues<CommandMode>()(["Self", "Targeted"]);
+const PERMISSIONS = completeValues<Permission>()([
+    "Fly",
+    "Wood Door",
+    "Iron Door",
+    "Wood Trap Door",
+    "Iron Trap Door",
+    "Fence Gate",
+    "Button",
+    "Lever",
+    "Use Launch Pads",
+    "/tp",
+    "/tp Other Players",
+    "Jukebox",
+    "Kick",
+    "Ban",
+    "Mute",
+    "Pet Spawning",
+    "Build",
+    "Offline Build",
+    "Fluid",
+    "Pro Tools",
+    "Use Chests",
+    "Use Ender Chests",
+    "Item Editor",
+    "Switch Game Mode",
+    "Edit Variables",
+    "Change Player Group",
+    "Change Gamerules",
+    "Housing Menu",
+    "Team Chat Spy",
+    "Edit Actions",
+    "Edit Regions",
+    "Edit Scoreboard",
+    "Edit Event Actions",
+    "Edit Commands",
+    "Edit Functions",
+    "Edit Inventory Layouts",
+    "Edit Teams",
+    "Edit Custom Menus",
+    "View Analytics",
+    "View Logger",
+    "Item: Mailbox",
+    "Item: Egg Hunt",
+    "Item: Teleport Pad",
+    "Item: Launch Pad",
+    "Item: Action Pad",
+    "Item: Hologram",
+    "Item: NPCs",
+    "Item: Action Button",
+    "Item: Leaderboard",
+    "Item: Trash Can",
+    "Item: Biome Stick",
+]);
 
 export type RawFunctionIcon = {
     item: string;
@@ -76,7 +160,12 @@ export type RawMenuImportable = {
     size?: number;
     slots: RawMenuSlot[];
 };
-export type RawNpcSkin = "Steve" | "Alex" | "Players Skin";
+type RawNpcSkin = NpcSkin;
+const NPC_SKINS = completeValues<RawNpcSkin>()([
+    "Steve",
+    "Alex",
+    "Players Skin",
+]);
 export type RawNpcEquipment = {
     helmet?: string;
     chestplate?: string;
@@ -101,7 +190,7 @@ export type RawTeamImportable = {
     color?: Color;
     friendlyFire?: boolean;
 };
-export type RawPermissions = Partial<Record<Permission, boolean>>;
+type RawPermissions = Partial<Record<Permission, boolean>>;
 export type RawGroupImportable = {
     name: string;
     tag?: string;
@@ -148,14 +237,14 @@ export type StringSchemaSpec = {
     description?: string;
     enum?: readonly string[];
 };
-export type NumberSchemaSpec = {
+type NumberSchemaSpec = {
     kind: "number";
     integer?: boolean;
     minimum?: number;
     maximum?: number;
     description?: string;
 };
-export type BooleanSchemaSpec = { kind: "boolean"; description?: string };
+type BooleanSchemaSpec = { kind: "boolean"; description?: string };
 export type ArraySchemaSpec = {
     kind: "array";
     items: SchemaSpec;
@@ -199,7 +288,7 @@ export type RefSchemaSpec = {
     ref: ImportJsonSchemaDefinitionName;
     description?: string;
 };
-export type SchemaPropertySpec = SchemaSpec & { required: boolean };
+type SchemaPropertySpec = SchemaSpec & { required: boolean };
 
 type SchemaProperties<T extends object> = {
     [K in keyof T]-?: SchemaPropertySpec & {
@@ -284,7 +373,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
         nbt: required(ref("snbtPath")),
         actions: optional(ref("htslPath")),
     }),
-    npcSkin: string({ enum: ["Steve", "Alex", "Players Skin"] }),
+    npcSkin: string({ enum: NPC_SKINS }),
     npcEquipment: object<RawNpcEquipment>({
         helmet: optional(ref("snbtPath")),
         chestplate: optional(ref("snbtPath")),
@@ -336,16 +425,23 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
 function string(options: Omit<StringSchemaSpec, "kind"> = {}): StringSchemaSpec {
     return { kind: "string", ...options };
 }
-function number(options: Omit<NumberSchemaSpec, "kind" | "integer"> = {}): NumberSchemaSpec {
+function number(
+    options: Omit<NumberSchemaSpec, "kind" | "integer"> = {}
+): NumberSchemaSpec {
     return { kind: "number", ...options };
 }
-function integer(options: Omit<NumberSchemaSpec, "kind" | "integer"> = {}): NumberSchemaSpec {
+function integer(
+    options: Omit<NumberSchemaSpec, "kind" | "integer"> = {}
+): NumberSchemaSpec {
     return { kind: "number", integer: true, ...options };
 }
 function boolean(options: Omit<BooleanSchemaSpec, "kind"> = {}): BooleanSchemaSpec {
     return { kind: "boolean", ...options };
 }
-function array(items: SchemaSpec, options: Omit<ArraySchemaSpec, "kind" | "items"> = {}): ArraySchemaSpec {
+function array(
+    items: SchemaSpec,
+    options: Omit<ArraySchemaSpec, "kind" | "items"> = {}
+): ArraySchemaSpec {
     return { kind: "array", items, ...options };
 }
 function object<T extends object>(

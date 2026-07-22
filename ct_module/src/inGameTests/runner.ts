@@ -392,6 +392,11 @@ function fixtureImportContext(
         parsed: fixture.parsed,
         housingUuid,
         npcLookup: createNpcLookupCache(),
+        ensuredReferencedShells: {
+            functions: new Set(),
+            menus: new Set(),
+            regions: new Set(),
+        },
         actions: {
             canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
             resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),

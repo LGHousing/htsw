@@ -14,7 +14,10 @@ import { buildTrustPlan, tryWriteImportableCache } from "../../importCache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { importableIdentity, importableKey } from "../identity";
 import { createProjectItemIndex } from "../items/projectItems";
-import { createItemDependencyIndex } from "../items/dependencyIndex";
+import {
+    createItemDependencyIndex,
+    type ItemDependencySnapshot,
+} from "../items/dependencyIndex";
 import { createItemDiffContext } from "../items/diff";
 import { createItemFieldResolver } from "../items/resolveItem";
 import { createItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
@@ -67,6 +70,11 @@ export type ImportSessionRequest = {
      * back so the visible queue can stay in sync with the actual work set.
      */
     onImportableAutoAdded?: (importable: Importable) => void;
+};
+
+type PendingHouseLockEntry = {
+    importable: Importable;
+    itemDependencies?: ItemDependencySnapshot;
 };
 
 function toImportDiagnostic(
@@ -225,6 +233,11 @@ export async function runImportSession(
             itemDiff,
             itemFieldObservations,
         },
+        ensuredReferencedShells: {
+            functions: new Set(),
+            menus: new Set(),
+            regions: new Set(),
+        },
     };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
@@ -262,6 +275,7 @@ export async function runImportSession(
     const noOpRows: (typeof rowsMeta)[number][] = [];
     const trustedRows: (typeof rowsMeta)[number][] = [];
     const reads: Array<{ row: (typeof rowsMeta)[number]; read: ImportableRead }> = [];
+    const pendingHouseLockEntries: PendingHouseLockEntry[] = [];
 
     // ── Pass 1: scan every non-trusted importable. ─────────────────────
     for (let i = 0; i < rowsMeta.length; i++) {
@@ -291,15 +305,7 @@ export async function runImportSession(
                 read: await scanImportable(ctx, row.importable, session),
             });
         } catch (error) {
-            await writeObservedPlanCaches(
-                ctx,
-                plans,
-                selection.sourcePath,
-                selection.housingUuid
-            );
-            if (isTaskCancelled(error)) {
-                throw error;
-            }
+            if (isTaskCancelled(error)) throw error;
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({
                 kind: "importableFinished",
@@ -344,16 +350,21 @@ export async function runImportSession(
             await entry.read.hydrate(ctx);
             hydrated.push(entry);
         } catch (error) {
+            if (isTaskCancelled(error)) throw error;
             const observedPlans = hydrated.map(({ read }) => ({
                 plan: read.plan(session),
             }));
             await writeObservedPlanCaches(
                 ctx,
                 observedPlans,
-                selection.sourcePath,
-                selection.housingUuid
+                selection.housingUuid,
+                pendingHouseLockEntries
             );
-            if (isTaskCancelled(error)) throw error;
+            flushHouseLockEntries(
+                selection.sourcePath,
+                selection.housingUuid,
+                pendingHouseLockEntries
+            );
             const row = entry.row;
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({
@@ -419,6 +430,15 @@ export async function runImportSession(
     await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
         ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
     });
+    for (const name of referencedShellPlan.functions) {
+        session.ensuredReferencedShells.functions.add(name.toLowerCase());
+    }
+    for (const name of referencedShellPlan.menus) {
+        session.ensuredReferencedShells.menus.add(name.toLowerCase());
+    }
+    for (const name of referencedShellPlan.regions) {
+        session.ensuredReferencedShells.regions.add(name.toLowerCase());
+    }
 
     for (const row of trustedRows) {
         events?.emit({
@@ -432,7 +452,8 @@ export async function runImportSession(
             "skipped",
             selection,
             itemDependencies,
-            events
+            events,
+            pendingHouseLockEntries
         );
     }
 
@@ -448,7 +469,8 @@ export async function runImportSession(
             "imported",
             selection,
             itemDependencies,
-            events
+            events,
+            pendingHouseLockEntries
         );
     }
 
@@ -472,34 +494,30 @@ export async function runImportSession(
                     { itemDependencies: itemDependencies.snapshotOf(row.importable) }
                 );
             }
-            upsertHouseLockImportable(
-                selection.sourcePath,
-                selection.housingUuid,
-                row.importable,
-                itemDependencies.snapshotOf(row.importable)
-            );
+            pendingHouseLockEntries.push({
+                importable: row.importable,
+                itemDependencies: itemDependencies.snapshotOf(row.importable),
+            });
             events?.emit({
                 kind: "importableFinished",
                 key: row.key,
                 status: "imported",
             });
         } catch (error) {
+            if (isTaskCancelled(error)) throw error;
             await maybeWritePartialImportCache(
                 ctx,
                 plan,
-                selection.sourcePath,
                 selection.housingUuid,
-                actionListApplyResultFromError(error)
+                actionListApplyResultFromError(error),
+                pendingHouseLockEntries
             );
             await writeObservedPlanCaches(
                 ctx,
                 plans.slice(planIndex + 1),
-                selection.sourcePath,
-                selection.housingUuid
+                selection.housingUuid,
+                pendingHouseLockEntries
             );
-            if (isTaskCancelled(error)) {
-                throw error;
-            }
             const diag = toImportDiagnostic(error, "import", row.importable.type);
             events?.emit({
                 kind: "importableFinished",
@@ -526,6 +544,11 @@ export async function runImportSession(
         }
     }
 
+    flushHouseLockEntries(
+        selection.sourcePath,
+        selection.housingUuid,
+        pendingHouseLockEntries
+    );
     events?.emit({ kind: "sessionFinished" });
 }
 
@@ -538,7 +561,8 @@ async function finishWithoutApply(
     status: "imported" | "skipped",
     selection: ImportSessionRequest,
     itemDependencies: ReturnType<typeof createItemDependencyIndex>,
-    events: SyncEventHandler | undefined
+    events: SyncEventHandler | undefined,
+    pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
     const dependencies = itemDependencies.snapshotOf(row.importable);
     await tryWriteImportableCache(
@@ -548,27 +572,25 @@ async function finishWithoutApply(
         selection.housingUuid,
         { itemDependencies: dependencies }
     );
-    upsertHouseLockImportable(
-        selection.sourcePath,
-        selection.housingUuid,
-        row.importable,
-        dependencies
-    );
+    pendingHouseLockEntries.push({
+        importable: row.importable,
+        itemDependencies: dependencies,
+    });
     events?.emit({ kind: "importableFinished", key: row.key, status });
 }
 
-/** Cache the partially-applied state after a failed or cancelled apply. */
+/** Cache the partially-applied state after a failed apply. */
 async function maybeWritePartialImportCache(
     ctx: TaskContext,
     plan: ImportablePlan,
-    sourcePath: string,
     housingUuid: string,
-    result: ActionListApplyResult | null
+    result: ActionListApplyResult | null,
+    pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
     const partial = plan.reconstructPartial(result);
     if (partial === null) return;
     await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
-    upsertHouseLockImportable(sourcePath, housingUuid, partial);
+    pendingHouseLockEntries.push({ importable: partial });
 }
 
 /**
@@ -581,13 +603,28 @@ async function maybeWritePartialImportCache(
 async function writeObservedPlanCaches(
     ctx: TaskContext,
     plans: ReadonlyArray<{ plan: ImportablePlan }>,
-    sourcePath: string,
-    housingUuid: string
+    housingUuid: string,
+    pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
         await tryWriteImportableCache(ctx, observed, "importer", housingUuid);
-        upsertHouseLockImportable(sourcePath, housingUuid, observed);
+        pendingHouseLockEntries.push({ importable: observed });
+    }
+}
+
+function flushHouseLockEntries(
+    sourcePath: string,
+    housingUuid: string,
+    entries: readonly PendingHouseLockEntry[]
+): void {
+    for (const entry of entries) {
+        upsertHouseLockImportable(
+            sourcePath,
+            housingUuid,
+            entry.importable,
+            entry.itemDependencies
+        );
     }
 }
