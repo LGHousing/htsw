@@ -28,7 +28,7 @@ import {
     removeFromQueueKey,
     type ImportQueueItem,
 } from "./queue";
-import { parseImportJsonBlocking } from "../../parsing/parses";
+import { markParseStale, parseImportJsonBlocking } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     orderImportablesForSession,
@@ -462,15 +462,16 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
     };
     const groups = new Map<string, Group>();
     for (const item of queue) {
-        const cached = parseImportJsonBlocking(item.sourcePath);
-        if (cached.parsed === null) {
-            ChatLib.chat(
-                `&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`
-            );
-            continue;
-        }
         let group = groups.get(item.sourcePath);
         if (group === undefined) {
+            markParseStale(item.sourcePath);
+            const cached = parseImportJsonBlocking(item.sourcePath);
+            if (cached.parsed === null) {
+                ChatLib.chat(
+                    `&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`
+                );
+                continue;
+            }
             group = {
                 parsed: cached.parsed,
                 orderedIds: [],
