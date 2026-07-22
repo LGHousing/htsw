@@ -41,7 +41,7 @@ function stripTooltipDebugSuffix(name: string): string {
     return name.replace(/\s*\(#[0-9a-fA-F]+\)\s*$/, "").trim();
 }
 
-function parsePaginatedTitlePage(
+export function parsePaginatedTitlePage(
     title: string,
     config: PaginatedListConfig
 ): { currentPage: number; totalPages: number } | null {
@@ -62,7 +62,7 @@ function parsePaginatedTitlePage(
         return { currentPage, totalPages };
     }
 
-    if (/\([^)]*\)\s*$/.test(trimmedTitle) || /^\([^)]*\)\s+/.test(trimmedTitle)) {
+    if (/^\([^)]*\)\s+/.test(trimmedTitle)) {
         throw new Error(`Malformed paginated ${config.label} title: "${title}"`);
     }
 
