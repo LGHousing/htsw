@@ -201,7 +201,7 @@ function parkActiveIfNeeded(
 }
 
 /**
- * An importable is parked once its pass-1 pre-read (read + hydrate) is done,
+ * An importable is parked once its scan and hydration are done,
  * so its completed units now reflect the *actual* read/hydrate work. The
  * read/hydrate phase estimate, though, is often far larger than that — with
  * selective hydration a list's estimated child-list-read cost can be ~5× what's
@@ -295,7 +295,7 @@ function applyProgress(
             : Math.max(state.active.currentTotalUnits, eventTotalUnits);
     // Read/hydrate-phase progress payloads emit phaseUnits.applying = 0
     // because the diff isn't yet known. Preserve the prior (initial or
-    // pre-read-seeded) apply estimate so the bar's apply sub-segment
+    // Reader-seeded) apply estimate so the bar's apply sub-segment
     // doesn't collapse to zero width during the read/hydrate pass.
     const prevApplying = state.active.currentPhaseUnits.applying;
     const incomingApplying = payload.phaseUnits.applying;

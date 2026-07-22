@@ -3,11 +3,10 @@ import * as htsw from "htsw";
 
 import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import { ItemCaptureRegistry } from "../items/captureRegistry";
-import type { PlayerInventorySnapshot } from "../../housingSync/items/playerInventory";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
-import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
@@ -16,26 +15,9 @@ import {
     type HtslExportTarget,
 } from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import { makeReadHouse } from "../readHouse";
+import { defineHouseExporter } from "../export/exporter";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
-import { openRegionEditor } from "./shared";
-
-type ExportRegionWithSharedStateOptions = {
-    entry: RegionListEntry;
-    importJsonPath: string;
-    declaringJsonPath: string;
-    onEnterTarget: HtslExportTarget;
-    onExitTarget: HtslExportTarget;
-    rootDir: string;
-    onReadProgress?: ProgressHandler;
-    // Read-only (deep read): cache the region, write no files.
-    readOnly?: { housingUuid: string };
-};
-
-type SharedRegionExportState = {
-    itemCaptures: ItemCaptureRegistry;
-    inventorySnapshot: PlayerInventorySnapshot;
-};
+import { openRegionEditor } from "./housing";
 
 function requireRegionBounds(entry: RegionListEntry): ImportableRegion["bounds"] {
     if (entry.bounds === null) {
@@ -87,72 +69,74 @@ function writeActionFile(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
-async function exportRegionWithSharedState(
+async function readRegion(
     ctx: TaskContext,
-    options: ExportRegionWithSharedStateOptions,
-    shared: SharedRegionExportState
-): Promise<void> {
-    const bounds = requireRegionBounds(options.entry);
+    entry: RegionListEntry,
+    itemCaptures: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
+): Promise<ImportableRegion> {
+    const bounds = requireRegionBounds(entry);
     const enterActions = await readRegionActionList(
         ctx,
-        options.entry.name,
+        entry.name,
         "Entry Actions",
-        shared.itemCaptures,
-        options.onReadProgress
+        itemCaptures,
+        onReadProgress
     );
     ctx.checkCancelled();
     const exitActions = await readRegionActionList(
         ctx,
-        options.entry.name,
+        entry.name,
         "Exit Actions",
-        shared.itemCaptures,
-        options.onReadProgress
+        itemCaptures,
+        onReadProgress
     );
 
     const importable: ImportableRegion = {
         type: "REGION",
-        name: options.entry.name,
+        name: entry.name,
         bounds,
         ...(enterActions !== undefined ? { onEnterActions: enterActions } : {}),
         ...(exitActions !== undefined ? { onExitActions: exitActions } : {}),
     };
 
-    if (options.readOnly !== undefined) {
-        writeImportableCache(
-            ctx,
-            options.readOnly.housingUuid,
-            importable,
-            "reader",
-            true
-        );
-        return;
+    return importable;
+}
+
+async function writeRegionResult(
+    ctx: TaskContext,
+    importable: ImportableRegion,
+    declaringJsonPath: string,
+    onEnterTarget: HtslExportTarget,
+    onExitTarget: HtslExportTarget
+): Promise<void> {
+    if (importable.onEnterActions !== undefined) {
+        ctx.checkCancelled();
+        writeActionFile(ctx, onEnterTarget, importable.onEnterActions);
+    }
+    if (importable.onExitActions !== undefined) {
+        ctx.checkCancelled();
+        writeActionFile(ctx, onExitTarget, importable.onExitActions);
     }
 
-    if (enterActions !== undefined) {
-        ctx.checkCancelled();
-        writeActionFile(ctx, options.onEnterTarget, enterActions);
-    }
-    if (exitActions !== undefined) {
-        ctx.checkCancelled();
-        writeActionFile(ctx, options.onExitTarget, exitActions);
-    }
-
-    upsertImportableEntry(options.declaringJsonPath, "regions", {
-        name: options.entry.name,
-        bounds,
-        ...(enterActions !== undefined
-            ? { onEnterActions: options.onEnterTarget.htslReference }
+    upsertImportableEntry(declaringJsonPath, "regions", {
+        name: importable.name,
+        bounds: importable.bounds,
+        ...(importable.onEnterActions !== undefined
+            ? { onEnterActions: onEnterTarget.htslReference }
             : {}),
-        ...(exitActions !== undefined
-            ? { onExitActions: options.onExitTarget.htslReference }
+        ...(importable.onExitActions !== undefined
+            ? { onExitActions: onExitTarget.htslReference }
             : {}),
     });
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    const actionCount = (enterActions?.length ?? 0) + (exitActions?.length ?? 0);
+    const actionCount =
+        (importable.onEnterActions?.length ?? 0) +
+        (importable.onExitActions?.length ?? 0);
     ctx.displayMessage(
-        `&aExported region '${options.entry.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
+        `&aExported region '${importable.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
     );
 }
 
@@ -160,7 +144,7 @@ async function exportRegionWithSharedState(
 // so this reads through the region editor and captures items via the inventory.
 // Entry-based: the bounds come from the /regions listing, so the batch always
 // lists even for a selection.
-export const readRegions = makeReadHouse<RegionListEntry>({
+export const readRegions = defineHouseExporter({
     type: "REGION",
     noun: "region",
     list: listAllRegions,
@@ -172,32 +156,24 @@ export const readRegions = makeReadHouse<RegionListEntry>({
         const counts = state.itemCaptures.counts();
         return ` (items: ${counts.matched} matched, ${counts.fresh} new)`;
     },
-    readOne: async (ctx, entry, options, state, onReadProgress) => {
+    reader: {
+        kind: "direct",
+        read: (ctx, entry, _options, state, onReadProgress) =>
+            readRegion(ctx, entry, state.itemCaptures, onReadProgress),
+    },
+    importableOf: (importable) => importable,
+    export: async (ctx, entry, importable, options) => {
         const target = htslTargetsForRegionExport(
             options.importJsonPath,
             entry.name,
             options.newExportTargetImportJson
         );
-        const inventorySnapshot = state.inventorySnapshot;
-        if (inventorySnapshot === null) {
-            throw new Error("Region export requires an inventory snapshot");
-        }
-        await exportRegionWithSharedState(
+        await writeRegionResult(
             ctx,
-            {
-                entry,
-                importJsonPath: options.importJsonPath,
-                declaringJsonPath: target.importJsonPath,
-                onEnterTarget: target.onEnter,
-                onExitTarget: target.onExit,
-                rootDir: options.rootDir,
-                readOnly: options.readOnly,
-                onReadProgress,
-            },
-            {
-                itemCaptures: state.itemCaptures,
-                inventorySnapshot,
-            }
+            importable,
+            target.importJsonPath,
+            target.onEnter,
+            target.onExit
         );
     },
 });

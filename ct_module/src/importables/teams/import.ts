@@ -2,7 +2,7 @@ import type { ImportableTeam } from "htsw/types";
 
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import { listAllTeamNames, openManageTeam } from "./listTeams";
 import {
     createTeam,
@@ -10,7 +10,7 @@ import {
     setTeamColor,
     setTeamFriendlyFire,
     setTeamTag,
-} from "./shared";
+} from "./housing";
 
 export type TeamImportPlan = {
     kind: "TEAM";
@@ -22,44 +22,51 @@ export type TeamImportPlan = {
     friendlyFireHandled: boolean;
 };
 
-export async function prereadImportableTeam(
+export type TeamRead = {
+    kind: "TEAM";
+    importable: ImportableTeam;
+    trustPlan?: ImportableTrustPlan;
+    settings: ReturnType<typeof readTeamSettings> | null;
+};
+
+export async function readImportableTeam(
     ctx: TaskContext,
     importable: ImportableTeam,
-    session: ImportSession,
     trustPlan?: ImportableTrustPlan
-): Promise<TeamImportPlan> {
+): Promise<TeamRead> {
     const exists = (await listAllTeamNames(ctx)).indexOf(importable.name) >= 0;
     if (!exists) {
-        return {
-            kind: "TEAM",
-            importable,
-            trustPlan,
-            exists: false,
-            tagHandled: false,
-            colorHandled: false,
-            friendlyFireHandled: false,
-        };
+        return { kind: "TEAM", importable, trustPlan, settings: null };
     }
 
     await openManageTeam(ctx, importable.name);
-    const fields = readTeamSettings(ctx);
+    return { kind: "TEAM", importable, trustPlan, settings: readTeamSettings(ctx) };
+}
+
+export function planImportableTeam(read: TeamRead): TeamImportPlan {
+    const { importable, settings } = read;
     return {
         kind: "TEAM",
         importable,
-        trustPlan,
-        exists: true,
-        tagHandled: importable.tag === undefined || fields.tag === importable.tag,
-        colorHandled: importable.color === undefined || fields.color === importable.color,
+        trustPlan: read.trustPlan,
+        exists: settings !== null,
+        tagHandled:
+            settings !== null &&
+            (importable.tag === undefined || settings.tag === importable.tag),
+        colorHandled:
+            settings !== null &&
+            (importable.color === undefined || settings.color === importable.color),
         friendlyFireHandled:
-            importable.friendlyFire === undefined ||
-            fields.friendlyFire === importable.friendlyFire,
+            settings !== null &&
+            (importable.friendlyFire === undefined ||
+                settings.friendlyFire === importable.friendlyFire),
     };
 }
 
 export async function applyImportableTeamPlan(
     ctx: TaskContext,
     plan: TeamImportPlan,
-    _session: ImportSession
+    _session: ImportContext
 ): Promise<void> {
     const { importable } = plan;
     if (!plan.exists) {

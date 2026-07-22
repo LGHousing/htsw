@@ -3,7 +3,7 @@ import type { Action } from "htsw/types";
 import TaskContext from "../../../tasks/context";
 import type { ActionListApplyResult } from "./types";
 import {
-    prereadActionList,
+    createKnownActionListPlan,
     type ActionListApplyOptions,
     type ActionListPlan,
     type ActionListPrereadOptions,
@@ -32,6 +32,10 @@ async function applyChildActionList(
     desired: Action[],
     options: ActionListPrereadOptions
 ): Promise<void> {
-    const plan = await prereadActionList(ctx, desired, options);
+    const plan = createKnownActionListPlan(
+        desired,
+        options.baselineCurrent ?? [],
+        options
+    );
     await applyActionListPlan(ctx, plan, options);
 }

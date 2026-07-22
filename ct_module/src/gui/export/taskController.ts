@@ -4,8 +4,8 @@ import type { Importable } from "htsw/types";
 
 import { getNewExportTarget } from "../state";
 import { getParseAt, markParseStale } from "../parsing/parses";
-import type { ReadFn } from "../../importables/read";
-import { exportProjectContextFromParsedImportJson } from "../../importables/exportContext";
+import type { ReadFn } from "../../importables/export/reader";
+import { projectExportDestinationFromParsedImportJson } from "../../importables/export/projectDestination";
 import { TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
@@ -60,12 +60,13 @@ export function startExport(
     const count = names === undefined ? null : names.length;
     const newExportTarget = getNewExportTarget();
     runHousingSyncTask("export", (ctx) => {
-        const exportContext = exportProjectContextFromParsedImportJson(
+        const exportContext = projectExportDestinationFromParsedImportJson(
             { rootDir: dir, importJsonPath },
             getParseAt(importJsonPath)?.parsed
         );
         return spec.read(ctx, {
             ...exportContext,
+            output: { kind: "project" },
             ...(newExportTarget !== null
                 ? { newExportTargetImportJson: newExportTarget }
                 : {}),

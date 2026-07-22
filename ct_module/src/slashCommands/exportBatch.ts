@@ -1,5 +1,5 @@
 import type TaskContext from "../tasks/context";
-import { exportExisting as exportExistingShared } from "../importables/exportBatch";
+import { exportExisting as exportExistingShared } from "../importables/export/session";
 import type { ExportDestination } from "./exportDestination";
 
 export {
@@ -7,7 +7,7 @@ export {
     notYetExportedFunctionNames,
     type ExportBatchType,
     type NamedExportType,
-} from "../importables/exportBatch";
+} from "../importables/export/session";
 
 export async function exportExisting(
     ctx: TaskContext,

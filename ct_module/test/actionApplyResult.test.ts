@@ -7,8 +7,7 @@ import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { ImportSession } from "../src/importables/imports";
-import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
+import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import { message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -61,16 +60,12 @@ vi.mock("../src/housingSync/actions/io", () => ({
 const oldAction = message("old");
 const newAction = message("new");
 
-function session(): ImportSession {
+function syncContext(): ActionSyncContext {
     const items = createProjectItemIndex([]);
     const itemDependencies = createItemDependencyIndex([], items);
     return {
-        parsed: { value: [] } as never,
-        items,
-        itemDependencies,
         canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
         resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
-        housingUuid: "test-house",
         trust: {
             housingUuid: "test-house",
             trustMode: false,
@@ -78,8 +73,7 @@ function session(): ImportSession {
         },
         conflicts: [],
         events: undefined,
-        actionItemRead: { mode: "sync" },
-        npcLookup: createNpcLookupCache(),
+        itemRead: { mode: "sync" },
     };
 }
 
@@ -134,7 +128,7 @@ describe("ActionListApplyResult", () => {
             await applyActionListPlan(
                 null as never,
                 editPlan([observedSlot(0, oldAction)], [newAction]),
-                { session: session() }
+                { sync: syncContext() }
             );
         } catch (error) {
             thrown = error;
@@ -154,7 +148,7 @@ describe("ActionListApplyResult", () => {
             await applyActionListPlan(
                 null as never,
                 editPlan([observedSlot(0, oldAction)], [newAction]),
-                { session: session() }
+                { sync: syncContext() }
             );
         } catch (error) {
             thrown = error;

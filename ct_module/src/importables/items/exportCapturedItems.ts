@@ -18,7 +18,7 @@ import { ensureParentDirs } from "../../utils/filesystem";
 import { getItemFromSnbt } from "../../utils/nbt";
 import { createItemDependencyIndex } from "./dependencyIndex";
 import { createProjectItemIndex } from "./projectItems";
-import { readParsedImportablesForExport } from "../exportContext";
+import { readParsedImportablesForExport } from "../export/projectDestination";
 import { itemEditorOpened } from "../waiters";
 import { type CapturedItem, type ItemCaptureRegistry } from "./captureRegistry";
 import { writeInteractDataCache } from "./interactDataCache";

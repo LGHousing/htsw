@@ -3,17 +3,14 @@ import type { ImportableFunction } from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
     applyImportablePlan: vi.fn(async () => undefined),
-    prereadImportable: vi.fn(),
+    scanImportable: vi.fn(),
+    hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
     upsertHouseLockImportable: vi.fn(),
 }));
 
-vi.mock("../src/importables/imports", () => ({
-    applyImportablePlan: mocks.applyImportablePlan,
-    planIsNoOp: () => false,
-    prereadImportable: mocks.prereadImportable,
-    reconstructObservedImportable: () => null,
-    reconstructPartialImportable: () => null,
+vi.mock("../src/importables/import/importers", () => ({
+    scanImportable: mocks.scanImportable,
 }));
 
 vi.mock("../src/importCache", async (importOriginal) => ({
@@ -52,7 +49,7 @@ vi.mock("../src/importCache/houseLock", () => ({
     upsertHouseLockImportable: mocks.upsertHouseLockImportable,
 }));
 
-import { importSelectedImportables } from "../src/importables/importSession";
+import { runImportSession } from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
@@ -68,18 +65,30 @@ describe("import conflict gate", () => {
             name: "Debug",
             actions: [message("desired")],
         };
-        mocks.prereadImportable.mockImplementation(
+        mocks.scanImportable.mockImplementation(
             async (
                 _ctx: unknown,
                 _importable: unknown,
-                session: { conflicts: unknown[] }
+                session: { actions: { conflicts: unknown[] } }
             ) => {
-                session.conflicts.push({
+                session.actions.conflicts.push({
                     type: "FUNCTION",
                     identity: "Debug",
                     basePath: "actions",
                 });
-                return { kind: "FUNCTION", importable };
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => null,
+                        reconstructPartial: () => null,
+                    }),
+                };
             }
         );
         const events: SyncEvent[] = [];
@@ -89,7 +98,7 @@ describe("import conflict gate", () => {
             displayMessage: (text: string) => messages.push(text),
         } as unknown as TaskContext;
 
-        await importSelectedImportables(ctx, {
+        await runImportSession(ctx, {
             importables: [importable],
             trustMode: true,
             housingUuid: "test-house",

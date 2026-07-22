@@ -1,15 +1,15 @@
 import type { ImportableItem } from "htsw/types";
 
-import type TaskContext from "../tasks/context";
-import { isTaskCancelled } from "../tasks/manager";
-import type { ExportProgressSink, ProgressHandler } from "../housingSync/progress/types";
+import type TaskContext from "../../tasks/context";
+import { isTaskCancelled } from "../../tasks/manager";
+import type { ExportProgressSink, ProgressHandler } from "../../housingSync/progress/types";
 
 export type ReadResult = { total: number; succeeded: number; failed: number };
 
 /**
  * Options for a per-type house batch read (`readFunctions`, `readCommands`, ...). Every batch walks the house's editors and reads
  * full content; the options decide where the result goes — project files
- * (export) or, with `readOnly`, only the house knowledge cache (deep read).
+ * (export) or only the house knowledge cache (deep read).
  */
 export type ReadOptions = {
     importJsonPath: string;
@@ -22,8 +22,7 @@ export type ReadOptions = {
     // Limit the batch to these names; omitted = list and process the whole house.
     names?: readonly string[];
     progress?: ExportProgressSink;
-    // Read-only (deep read): cache what the house contains, write no files.
-    readOnly?: { housingUuid: string };
+    output: { kind: "project" } | { kind: "cache"; housingUuid: string };
     // Items the destination project already declares; seeds the capture
     // registry so identical captures reuse project names instead of minting
     // duplicates. Callers with a warm parse should always pass this.
@@ -36,7 +35,7 @@ export type ReadOptions = {
 
 export type ReadFn = (ctx: TaskContext, options: ReadOptions) => Promise<ReadResult>;
 
-export type ReadLoopParams = {
+type ReadLoopBase<Result> = {
     // Names to process — already listed and skip-filtered by the caller. Drives
     // the progress rows and the per-item order.
     names: readonly string[];
@@ -45,36 +44,71 @@ export type ReadLoopParams = {
     // How a name reads in log lines; commands render as "/name". Identity default.
     displayName?: (name: string) => string;
     progress?: ExportProgressSink;
-    // The per-item work: read the item and write its files (or cache it, in
-    // read-only mode). Throwing marks the item failed; throwing a cancellation
-    // aborts the whole batch.
-    processOne: (
+    accept: (
         ctx: TaskContext,
         name: string,
-        onReadProgress: ProgressHandler | undefined
-    ) => Promise<void>;
-    scanOne?: (
-        ctx: TaskContext,
-        name: string,
-        onReadProgress: ProgressHandler | undefined
-    ) => Promise<unknown>;
-    hydrateOne?: (
-        ctx: TaskContext,
-        name: string,
-        pending: unknown,
-        onReadProgress: ProgressHandler | undefined
+        result: Result
     ) => Promise<void>;
 };
 
-// The shared batch loop: owns the progress-sink lifecycle, cancellation, and
-// success/failure counting for every importable type. Per-type differences
-// (listing, skip rules, item capture, file layout, read-only caching) live in
-// the caller and its `processOne` closure.
-export async function runReadLoop(
+type DirectReadLoopParams<Result> = ReadLoopBase<Result> & {
+    reader: {
+        kind: "direct";
+        read: (
+            ctx: TaskContext,
+            name: string,
+            onReadProgress: ProgressHandler | undefined
+        ) => Promise<Result>;
+    };
+};
+
+type StagedReadLoopParams<Pending, Result> = ReadLoopBase<Result> & {
+    reader: {
+        kind: "staged";
+        scan: (
+            ctx: TaskContext,
+            name: string,
+            onReadProgress: ProgressHandler | undefined
+        ) => Promise<Pending>;
+        hydrate: (
+            ctx: TaskContext,
+            name: string,
+            pending: Pending,
+            onReadProgress: ProgressHandler | undefined
+        ) => Promise<Result>;
+    };
+};
+
+export type ReadLoopParams<Pending, Result> =
+    | DirectReadLoopParams<Result>
+    | StagedReadLoopParams<Pending, Result>;
+
+type PendingRead<Pending> =
+    | { kind: "ready"; value: Pending }
+    | { kind: "failed" };
+
+async function readAndAccept<Result>(
     ctx: TaskContext,
-    params: ReadLoopParams
+    name: string,
+    read: (
+        ctx: TaskContext,
+        name: string,
+        onReadProgress: ProgressHandler | undefined
+    ) => Promise<Result>,
+    accept: (ctx: TaskContext, name: string, result: Result) => Promise<void>,
+    onReadProgress: ProgressHandler | undefined
+): Promise<void> {
+    const result = await read(ctx, name, onReadProgress);
+    await accept(ctx, name, result);
+}
+
+// The shared batch loop owns the progress lifecycle, cancellation, and result
+// counting. Per-type listing, capture, and output behavior lives in the exporter recipe.
+export async function runReadLoop<Pending, Result>(
+    ctx: TaskContext,
+    params: ReadLoopParams<Pending, Result>
 ): Promise<{ succeeded: number; failed: number }> {
-    const { names, verb, progress, processOne, scanOne, hydrateOne } = params;
+    const { names, verb, progress, reader, accept } = params;
     const shown = (name: string): string =>
         params.displayName !== undefined ? params.displayName(name) : name;
 
@@ -83,8 +117,10 @@ export async function runReadLoop(
     let succeeded = 0;
     let failed = 0;
     try {
-        if (scanOne !== undefined && hydrateOne !== undefined) {
-            const pending: unknown[] = names.map(() => null);
+        if (reader.kind === "staged") {
+            const pending: PendingRead<Pending>[] = names.map(() => ({
+                kind: "failed",
+            }));
             progress?.scanStarted?.();
             for (let i = 0; i < names.length; i++) {
                 ctx.checkCancelled();
@@ -96,16 +132,19 @@ export async function runReadLoop(
                 const sink = progress;
                 const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
-                    pending[i] = await scanOne(
-                        ctx,
-                        name,
-                        itemProgress === undefined
-                            ? undefined
-                            : (payload) => itemProgress(i, payload)
-                    );
+                    pending[i] = {
+                        kind: "ready",
+                        value: await reader.scan(
+                            ctx,
+                            name,
+                            itemProgress === undefined
+                                ? undefined
+                                : (payload) => itemProgress(i, payload)
+                        ),
+                    };
                 } catch (error) {
                     if (isTaskCancelled(error)) throw error;
-                    pending[i] = null;
+                    pending[i] = { kind: "failed" };
                     failed++;
                     sink?.itemFailed?.(i, String(error));
                     ctx.displayMessage(
@@ -114,7 +153,8 @@ export async function runReadLoop(
                 }
             }
             for (let i = 0; i < names.length; i++) {
-                if (pending[i] === null) continue;
+                const pendingRead = pending[i];
+                if (pendingRead.kind === "failed") continue;
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.itemReactivated?.(i);
@@ -124,10 +164,12 @@ export async function runReadLoop(
                 const sink = progress;
                 const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
-                    await hydrateOne(
+                    await readAndAccept(
                         ctx,
                         name,
-                        pending[i],
+                        (ctx, name, onProgress) =>
+                            reader.hydrate(ctx, name, pendingRead.value, onProgress),
+                        accept,
                         itemProgress === undefined
                             ? undefined
                             : (payload) => itemProgress(i, payload)
@@ -155,9 +197,11 @@ export async function runReadLoop(
             const sink = progress;
             const itemProgress = sink?.itemProgress?.bind(sink);
             try {
-                await processOne(
+                await readAndAccept(
                     ctx,
                     name,
+                    reader.read,
+                    accept,
                     itemProgress === undefined
                         ? undefined
                         : (payload) => itemProgress(i, payload)

@@ -54,7 +54,10 @@ import {
 } from "../../parsing/parses";
 import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
 import { readImportableCache } from "../../../importCache/cache";
-import { functionIconCompareKey } from "../../../importables/functions/iconComparison";
+import {
+    importableMetadataComparisonValue,
+    importableMetadataEntries,
+} from "htsw-editor-common/project";
 import {
     addToQueue,
     isInQueue,
@@ -108,14 +111,14 @@ import type { Importable, MenuSlot } from "htsw/types";
 import { tagChild } from "../../../housingSync/items/itemTag";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
-import { exportBatch, exportExisting } from "../../../importables/exportBatch";
-import { type HouseExportTypeName } from "../../../importables/houseExportTypes";
-import { readExportProjectContext } from "../../../importables/exportContext";
+import { exportBatch, exportExisting } from "../../../importables/export/session";
+import { type HouseExportTypeName } from "../../../importables/export/exportTypes";
+import { readProjectExportDestination } from "../../../importables/export/projectDestination";
 import { itemChanges } from "../../../importables/items/changes";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
-import { HOUSE_READERS } from "../../../importables/houseReaders";
+import { HOUSE_READERS } from "../../../importables/export/readers";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 
 export let searchQuery = "";
@@ -228,10 +231,6 @@ export type MetadataField = {
     diffTooltip?: string;
 };
 
-function formatPos(p: { x: number; y: number; z: number }): string {
-    return p.x + ", " + p.y + ", " + p.z;
-}
-
 function getCachedImportable(imp: Importable): Importable | null {
     const uuid = getHousingUuid();
     if (uuid === null) return null;
@@ -270,140 +269,10 @@ function valDiff(
 
 export function metadataFieldsOf(imp: Importable): MetadataField[] {
     const cached = getCachedImportable(imp);
-    if (imp.type === "FUNCTION") {
-        const cf = cached !== null && cached.type === "FUNCTION" ? cached : null;
-        const fields: MetadataField[] = [
-            {
-                key: "repeatTicks",
-                label: "Repeat",
-                value: imp.repeatTicks !== undefined ? imp.repeatTicks + "t" : "off",
-                ...(cf !== null ? valDiff(imp.repeatTicks, cf.repeatTicks) : undefined),
-            },
-            {
-                key: "icon",
-                label: "Icon",
-                value: imp.icon !== undefined ? imp.icon.item : "default",
-                ...(cf !== null
-                    ? valDiff(
-                          functionIconCompareKey(imp.icon),
-                          functionIconCompareKey(cf.icon)
-                      )
-                    : undefined),
-            },
-        ];
-        if (imp.icon !== undefined) {
-            fields.push({
-                key: "iconCount",
-                label: "Count",
-                value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
-                // count 1 and absent count are the same icon.
-                ...(cf !== null
-                    ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1)
-                    : undefined),
-            });
-        }
-        return fields;
-    }
-    if (imp.type === "COMMAND") {
-        const cc = cached !== null && cached.type === "COMMAND" ? cached : null;
-        return [
-            {
-                key: "mode",
-                label: "Mode",
-                value: imp.mode ?? "Self",
-                ...(cc !== null
-                    ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self")
-                    : undefined),
-            },
-            {
-                key: "requiredPriority",
-                label: "Priority",
-                value: String(imp.requiredPriority ?? 0),
-                ...(cc !== null
-                    ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0)
-                    : undefined),
-            },
-            {
-                key: "listed",
-                label: "Listed",
-                value: (imp.listed ?? true) ? "true" : "false",
-                ...(cc !== null
-                    ? valDiff(imp.listed ?? true, cc.listed ?? true)
-                    : undefined),
-            },
-        ];
-    }
-    if (imp.type === "REGION") {
-        const cr = cached !== null && cached.type === "REGION" ? cached : null;
-        const bounds = imp.bounds;
-        const cachedBounds = cr?.bounds;
-        if (bounds === undefined) {
-            return [
-                {
-                    key: "bounds",
-                    label: "Bounds",
-                    value: "(not set)",
-                    ...(cr !== null ? valDiff(undefined, cachedBounds) : undefined),
-                },
-            ];
-        }
-        return [
-            {
-                key: "boundsFrom",
-                label: "From",
-                value: formatPos(bounds.from),
-                ...(cachedBounds !== undefined
-                    ? valDiff(bounds.from, cachedBounds.from)
-                    : undefined),
-            },
-            {
-                key: "boundsTo",
-                label: "To",
-                value: formatPos(bounds.to),
-                ...(cachedBounds !== undefined
-                    ? valDiff(bounds.to, cachedBounds.to)
-                    : undefined),
-            },
-        ];
-    }
-    if (imp.type === "MENU") {
-        const cm = cached !== null && cached.type === "MENU" ? cached : null;
-        return [
-            {
-                key: "size",
-                label: "Size",
-                value: imp.size !== undefined ? imp.size + " lines" : "default",
-                ...(cm !== null ? valDiff(imp.size, cm.size) : undefined),
-            },
-        ];
-    }
-    if (imp.type === "NPC") {
-        const cn = cached !== null && cached.type === "NPC" ? cached : null;
-        return [
-            {
-                key: "pos",
-                label: "Pos",
-                value: formatPos(imp.pos),
-                ...(cn !== null ? valDiff(imp.pos, cn.pos) : undefined),
-            },
-            {
-                key: "leftClickRedirect",
-                label: "Redirect",
-                value:
-                    imp.leftClickRedirect === undefined
-                        ? "default"
-                        : imp.leftClickRedirect
-                          ? "true"
-                          : "false",
-                ...(cn !== null
-                    ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect)
-                    : undefined),
-            },
-        ];
-    }
     if (imp.type === "ITEM") {
-        const ci = cached !== null && cached.type === "ITEM" ? cached : null;
-        if (ci === null) {
+        const cachedItem =
+            cached !== null && cached.type === "ITEM" ? cached : null;
+        if (cachedItem === null) {
             const fields: MetadataField[] = [
                 { key: "nbt", label: "NBT", value: "Item data" },
             ];
@@ -419,7 +288,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
             }
             return fields;
         }
-        const changes = itemChanges(imp, ci);
+        const changes = itemChanges(imp, cachedItem);
         return [
             {
                 key: "nbt",
@@ -434,9 +303,19 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
             },
         ];
     }
-    return [];
-}
 
+    return importableMetadataEntries(imp).map((entry) => ({
+        key: entry.key,
+        label: entry.label,
+        value: entry.value,
+        ...(cached === null
+            ? undefined
+            : valDiff(
+                  importableMetadataComparisonValue(imp, entry.key),
+                  importableMetadataComparisonValue(cached, entry.key)
+              )),
+    }));
+}
 function isImportableExpandable(imp: Importable): boolean {
     return childListsOf(imp).length > 0 || metadataFieldsOf(imp).length > 0;
 }
@@ -720,7 +599,7 @@ function runProjectReExport(
     runHousingSyncTask("export", (ctx) =>
         exportExisting(
             ctx,
-            readExportProjectContext({
+            readProjectExportDestination({
                 rootDir: projectDirOf(importJsonPath),
                 importJsonPath,
             })
@@ -874,7 +753,7 @@ function runSingleImportableReExport(parent: ResultImport, imp: Importable): voi
         showToast("A task is already running — wait for it to finish", ACCENT_WARN);
         return;
     }
-    const destination = readExportProjectContext({
+    const destination = readProjectExportDestination({
         rootDir: projectDirOf(parent.fullPath),
         importJsonPath: parent.fullPath,
     });

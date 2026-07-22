@@ -5,10 +5,10 @@ import {
 } from "../../housingSync/items/playerInventory";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
-import type { ReadFn } from "../read";
+import type { ReadFn } from "../export/reader";
 import { removedFormatting } from "../../utils/helpers";
 import { exportCapturedItems } from "./exportCapturedItems";
-import { createExportItemCaptureRegistry } from "../exportContext";
+import { createExportItemCaptureRegistry } from "../export/projectDestination";
 
 export const exportHeldItem: ReadFn = async (ctx, options) => {
     const slotId = selectedHotbarSlot();

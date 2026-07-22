@@ -34,10 +34,10 @@ function testFixtureRootPath(): string {
     const repoPath = readModuleEnvValue("HTSW_REPOSITORY_PATH");
     if (repoPath === null || repoPath.trim() === "") {
         throw new Error(
-            "HTSW_REPOSITORY_PATH is not set in the deployed module .env, so /htsw test cannot locate ct_module/testFixtures"
+            "HTSW_REPOSITORY_PATH is not set in the deployed module .env, so /htsw test cannot locate ct_module/inGameTestFixtures"
         );
     }
-    return joinPath(repoPath.trim(), "ct_module/testFixtures");
+    return joinPath(repoPath.trim(), "ct_module/inGameTestFixtures");
 }
 
 function parseFixture(importJsonPath: string): ParsedTestFixture {

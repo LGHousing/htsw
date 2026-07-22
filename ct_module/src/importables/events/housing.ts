@@ -1,5 +1,5 @@
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import { eventActionsOpened } from "../waiters";
 
 export async function openEventEditor(

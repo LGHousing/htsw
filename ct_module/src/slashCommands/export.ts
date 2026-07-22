@@ -46,6 +46,7 @@ export function commandExport(args: string[]): void {
                 rootDir: destination.rootDir,
                 projectItems: destination.projectItems,
                 progress: createExportProgressSink("ITEM", destination.importJsonPath),
+                output: { kind: "project" },
             });
         });
         return;

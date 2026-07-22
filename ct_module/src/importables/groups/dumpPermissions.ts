@@ -10,7 +10,7 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { listAllGroupNames, openEditGroup } from "./listGroups";
-import { openGroupPermissions } from "./shared";
+import { openGroupPermissions } from "./housing";
 
 const REPORT_PATH = "./htsw/group-permissions.json";
 

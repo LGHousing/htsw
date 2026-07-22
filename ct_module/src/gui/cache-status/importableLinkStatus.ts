@@ -1,6 +1,9 @@
 import type { Importable, ImportableItem } from "htsw/types";
 
-import { ALL_IMPORTABLE_TYPES, HOUSE_READERS } from "../../importables/houseReaders";
+import {
+    ALL_IMPORTABLE_TYPES,
+    HOUSE_READERS,
+} from "../../importables/export/readers";
 import {
     getImportCacheWriteRevision,
     houseTypeScanned,

@@ -4,7 +4,7 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
-import { prereadActionList, type ActionListPlan } from "../../housingSync/actions/plan";
+import type { ActionListPlan } from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
@@ -13,21 +13,26 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import {
-    getActionListTrust,
-    getBaselineActionList,
+    actionListPlanFromRead,
+    hydrateActionListSync,
+    scanActionListSync,
+    type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
-import { createMissingReferencedShells } from "../references";
-import { countReferencedShells } from "../referenceScanner";
 import {
     applyCommandSettings,
     ensureCommandExists,
-    openCommandActionsEditor,
+    openExistingCommandActionsEditor,
     openCommandSettings,
     readOpenCommandSettings,
-} from "./shared";
-import { commandSettingsMatch, desiredCommandSettings } from "./settings";
+} from "./housing";
+import {
+    commandSettingsMatch,
+    desiredCommandSettings,
+    type CommandSettings,
+} from "./settings";
+import { getSessionCommandNamesLower } from "./listCommands";
 
 export type CommandImportPlan = {
     kind: "COMMAND";
@@ -35,84 +40,91 @@ export type CommandImportPlan = {
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
     settingsHandled: boolean;
+    exists: boolean;
 };
 
-export async function prereadImportableCommand(
+export type CommandRead = {
+    kind: "COMMAND";
+    importable: ImportableCommand;
+    trustPlan?: ImportableTrustPlan;
+    exists: boolean;
+    actions: ActionListSyncScanResult;
+    settings: CommandSettings | null;
+};
+
+export async function scanImportableCommand(
     ctx: TaskContext,
     importable: ImportableCommand,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan?: ImportableTrustPlan
-): Promise<CommandImportPlan> {
-    const setup = createSetupStepEmitter(
-        session.events,
-        countReferencedShells(importable) + 1
+): Promise<CommandRead> {
+    const setup = createSetupStepEmitter(session.actions.events, 1);
+    const exists = (await getSessionCommandNamesLower(ctx)).has(
+        importable.name.toLowerCase()
     );
-
-    await createMissingReferencedShells(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
+    const actions = await scanActionListSync(ctx, {
+        desired: importable.actions,
+        sync: session.actions,
+        trustPlan: exists ? trustPlan : undefined,
+        basePath: "actions",
+        current: exists ? undefined : { kind: "known-empty" },
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath: "actions",
+        },
+        open: async () => {
+            await openExistingCommandActionsEditor(ctx, importable.name);
+        },
     });
 
-    const actionsTrusted = trustPlan?.trustedChildListPaths.has("actions") ?? false;
-    const settingsTrusted = commandSettingsTrusted(importable, trustPlan);
-
-    if (actionsTrusted && settingsTrusted) {
-        setup(`skipped /${importable.name}`);
-        return {
-            kind: "COMMAND",
-            importable,
-            trustPlan,
-            actionsPlan: null,
-            settingsHandled: true,
-        };
+    const settingsTrusted = exists && commandSettingsTrusted(importable, trustPlan);
+    let settings: CommandSettings | null = null;
+    if (!settingsTrusted) {
+        if (exists) await openCommandSettings(ctx, importable.name);
+        settings = exists
+            ? readOpenCommandSettings(ctx)
+            : { mode: "Self", requiredPriority: 0, listed: true };
     }
+    setup(exists ? `scanned /${importable.name}` : `/${importable.name} is missing`);
+    return { kind: "COMMAND", importable, trustPlan, exists, actions, settings };
+}
 
-    let created = false;
-    let actionsPlan: ActionListPlan | null = null;
-    if (importable.actions !== undefined && !actionsTrusted) {
-        created = (await openCommandActionsEditor(ctx, importable.name)) === "created";
-        setup(created ? `created /${importable.name}` : `opened /${importable.name}`);
-        actionsPlan = await prereadActionList(ctx, importable.actions, {
-            session,
-            baselineCurrent: getBaselineActionList(trustPlan, "actions"),
-            trust: getActionListTrust(trustPlan, "actions"),
-            conflictTarget: {
-                type: importable.type,
-                identity: importableIdentity(importable),
-                basePath: "actions",
-            },
-        });
-    } else {
-        created = (await ensureCommandExists(ctx, importable.name)) === "created";
-        setup(created ? `created /${importable.name}` : `checked /${importable.name}`);
-    }
+export async function hydrateImportableCommand(
+    ctx: TaskContext,
+    read: CommandRead
+): Promise<void> {
+    if (read.actions.kind !== "hydrate") return;
+    read.actions = await hydrateActionListSync(ctx, read.actions);
+}
 
-    let settingsHandled = settingsTrusted;
-    if (!settingsHandled) {
-        if (created) {
-            settingsHandled = commandSettingsMatch(
-                { mode: "Self", requiredPriority: 0, listed: true },
-                desiredCommandSettings(importable)
-            );
-        } else {
-            await openCommandSettings(ctx, importable.name);
-            settingsHandled = commandSettingsMatch(
-                readOpenCommandSettings(ctx),
-                desiredCommandSettings(importable)
-            );
-        }
-    }
-
-    return { kind: "COMMAND", importable, trustPlan, actionsPlan, settingsHandled };
+export function planImportableCommand(read: CommandRead): CommandImportPlan {
+    return {
+        kind: "COMMAND",
+        importable: read.importable,
+        trustPlan: read.trustPlan,
+        actionsPlan: actionListPlanFromRead(read.actions),
+        settingsHandled:
+            read.settings === null ||
+            commandSettingsMatch(
+                read.settings,
+                desiredCommandSettings(read.importable)
+            ),
+        exists: read.exists,
+    };
 }
 
 export async function applyImportableCommandPlan(
     ctx: TaskContext,
     plan: CommandImportPlan,
-    session: ImportSession
+    session: ImportContext
 ): Promise<void> {
+    if (!plan.exists) {
+        await ensureCommandExists(ctx, plan.importable.name);
+    }
     if (plan.actionsPlan !== null) {
-        await openCommandActionsEditor(ctx, plan.importable.name);
-        await applyActionListPlan(ctx, plan.actionsPlan, { session });
+        await openExistingCommandActionsEditor(ctx, plan.importable.name);
+        await applyActionListPlan(ctx, plan.actionsPlan, { sync: session.actions });
     }
 
     if (!plan.settingsHandled) {
@@ -124,7 +136,7 @@ export async function applyImportableCommandPlan(
 export function commandPlanIsNoOp(plan: CommandImportPlan): boolean {
     const actionsNoOp =
         plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
-    return actionsNoOp && plan.settingsHandled;
+    return plan.exists && actionsNoOp && plan.settingsHandled;
 }
 
 export function reconstructObservedCommand(plan: CommandImportPlan): Importable | null {

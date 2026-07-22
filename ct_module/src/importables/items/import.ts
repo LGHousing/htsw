@@ -1,9 +1,12 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
+import type { ActionListPlan } from "../../housingSync/actions/plan";
 import {
-    prepareActionListSync,
-    shouldSyncActionList,
+    actionListPlanFromRead,
+    hydrateActionListSync,
+    scanActionListSync,
+    type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
@@ -20,11 +23,11 @@ import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import {
     placeImportedItem,
     restoreImportedItemPlacement,
+    restoreTemporarilyHeldItem,
+    temporarilyHoldItem,
 } from "../../housingSync/items/heldItem";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
-import { createMissingReferencedShells } from "../references";
-import { countReferencedShells } from "../referenceScanner";
 import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
@@ -62,56 +65,147 @@ export type ItemImportPlan = {
     kind: "ITEM";
     importable: ImportableItem;
     trustPlan?: ImportableTrustPlan;
-    housingUuid?: string;
+    housingUuid: string;
+    item: Item;
+    leftPlan: ActionListPlan | null;
+    rightPlan: ActionListPlan | null;
+    usesCachedInteractData: boolean;
 };
 
-export async function prereadImportableItem(
-    _ctx: TaskContext,
+export type ItemRead = {
+    kind: "ITEM";
+    importable: ImportableItem;
+    trustPlan?: ImportableTrustPlan;
+    housingUuid: string;
+    item: Item;
+    left: ActionListSyncScanResult | null;
+    right: ActionListSyncScanResult | null;
+    usesCachedInteractData: boolean;
+};
+
+export async function scanImportableItem(
+    ctx: TaskContext,
     importable: ImportableItem,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan?: ImportableTrustPlan
-): Promise<ItemImportPlan> {
-    return { kind: "ITEM", importable, trustPlan, housingUuid: session.housingUuid };
+): Promise<ItemRead> {
+    const dependencyIndex = session.itemDependencies;
+    const cachedInteractData = readInteractDataCache(
+        importable,
+        dependencyIndex,
+        session.housingUuid
+    );
+    if (!hasItemClickActions(importable) || cachedInteractData !== undefined) {
+        return {
+            kind: "ITEM",
+            importable,
+            trustPlan,
+            housingUuid: session.housingUuid,
+            item:
+                cachedInteractData === undefined
+                    ? getItemFromNbt(importable.nbt)
+                    : itemWithInteractData(importable.nbt, cachedInteractData),
+            left: null,
+            right: null,
+            usesCachedInteractData: cachedInteractData !== undefined,
+        };
+    }
+
+    const start = chooseItemStart(
+        session.housingUuid,
+        importable,
+        trustPlan,
+        dependencyIndex
+    );
+    const held = await temporarilyHoldItem(ctx, start.item);
+    try {
+        await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
+        ctx.getItemSlot("Edit Actions").click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+        const actions = await scanItemActionLists(
+            ctx,
+            importable,
+            session,
+            trustPlan,
+            start
+        );
+        return {
+            kind: "ITEM",
+            importable,
+            trustPlan,
+            housingUuid: session.housingUuid,
+            item: start.item,
+            ...actions,
+            usesCachedInteractData: false,
+        };
+    } finally {
+        await restoreTemporarilyHeldItem(ctx, held);
+    }
+}
+
+export async function hydrateImportableItem(
+    ctx: TaskContext,
+    read: ItemRead
+): Promise<void> {
+    if (read.left?.kind !== "hydrate" && read.right?.kind !== "hydrate") return;
+    const held = await temporarilyHoldItem(ctx, read.item);
+    try {
+        if (read.left?.kind === "hydrate") {
+            await openItemActionsRoot(ctx);
+            read.left = await hydrateActionListSync(ctx, read.left, false);
+        }
+        if (read.right?.kind === "hydrate") {
+            await openItemActionsRoot(ctx);
+            read.right = await hydrateActionListSync(ctx, read.right, false);
+        }
+    } finally {
+        await restoreTemporarilyHeldItem(ctx, held);
+    }
+}
+
+async function openItemActionsRoot(ctx: TaskContext): Promise<void> {
+    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
+    ctx.getItemSlot("Edit Actions").click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+}
+
+export function planImportableItem(read: ItemRead): ItemImportPlan {
+    return {
+        kind: "ITEM",
+        importable: read.importable,
+        trustPlan: read.trustPlan,
+        housingUuid: read.housingUuid,
+        item: read.item,
+        leftPlan: read.left === null ? null : actionListPlanFromRead(read.left),
+        rightPlan: read.right === null ? null : actionListPlanFromRead(read.right),
+        usesCachedInteractData: read.usesCachedInteractData,
+    };
 }
 
 export async function applyImportableItemPlan(
     ctx: TaskContext,
     plan: ItemImportPlan,
-    session: ImportSession
+    session: ImportContext
 ): Promise<void> {
-    await importImportableItem(
-        ctx,
-        plan.importable,
-        session,
-        plan.trustPlan,
-        plan.housingUuid
-    );
-}
-
-async function importImportableItem(
-    ctx: TaskContext,
-    importable: ImportableItem,
-    session: ImportSession,
-    trustPlan?: ImportableTrustPlan,
-    cachedUuid?: string
-): Promise<void> {
-    const events = session.events;
+    const { importable } = plan;
+    const events = session.actions.events;
     const ownSteps = hasItemClickActions(importable) ? 3 : 1;
     const setup = createSetupStepEmitter(
         events,
-        countReferencedShells(importable) + ownSteps
+        ownSteps
     );
 
-    await createMissingReferencedShells(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
-    });
-
-    const uuid = cachedUuid ?? session.housingUuid;
+    const uuid = plan.housingUuid;
     const dependencyIndex = session.itemDependencies;
-    if (!hasItemClickActions(importable)) {
-        const placement = await placeImportedItem(ctx, getItemFromNbt(importable.nbt));
+    const needsActionApply = plan.leftPlan !== null || plan.rightPlan !== null;
+    if (!needsActionApply) {
+        const placement = await placeImportedItem(ctx, plan.item);
         try {
-            setup(`gave ${importable.name}`);
+            setup(
+                plan.usesCachedInteractData
+                    ? `gave cached ${importable.name}`
+                    : `gave ${importable.name}`
+            );
             await tryWriteImportableCache(ctx, importable, "importer", uuid, {
                 itemDependencies: dependencyIndex.snapshotOf(importable),
             });
@@ -121,25 +215,7 @@ async function importImportableItem(
         return;
     }
 
-    const cachedInteractData = readInteractDataCache(importable, dependencyIndex, uuid);
-    if (cachedInteractData !== undefined) {
-        const placement = await placeImportedItem(
-            ctx,
-            itemWithInteractData(importable.nbt, cachedInteractData)
-        );
-        try {
-            setup(`gave cached ${importable.name}`);
-            await tryWriteImportableCache(ctx, importable, "importer", uuid, {
-                itemDependencies: dependencyIndex.snapshotOf(importable),
-            });
-        } finally {
-            await restoreImportedItemPlacement(ctx, placement);
-        }
-        return;
-    }
-
-    const start = chooseItemStart(uuid, importable, trustPlan, dependencyIndex);
-    const placement = await placeImportedItem(ctx, start.item);
+    const placement = await placeImportedItem(ctx, plan.item);
     try {
         setup(`injected item ${importable.name}`);
 
@@ -150,7 +226,7 @@ async function importImportableItem(
         await timedWaitForMenu(ctx, "menuClickWait");
         setup(`opened Edit Actions for ${importable.name}`);
 
-        await syncItemActionLists(ctx, importable, session, trustPlan, start);
+        await applyItemActionPlans(ctx, plan, session);
 
         await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
@@ -210,13 +286,13 @@ function chooseItemStart(
     };
 }
 
-async function syncItemActionLists(
+async function scanItemActionLists(
     ctx: TaskContext,
     importable: ImportableItem,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart
-): Promise<void> {
+): Promise<Pick<ItemRead, "left" | "right">> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
         start.cachedImportable?.leftClickActions,
@@ -228,59 +304,52 @@ async function syncItemActionLists(
         start.mode
     );
 
-    const leftNeedsSync = shouldSyncActionList(
-        leftDesired,
+    const leftEditor = { opened: false };
+    const left = await scanActionListSync(ctx, {
+        desired: leftDesired,
+        sync: session.actions,
         trustPlan,
-        "leftClickActions"
-    );
-    const rightNeedsSync = shouldSyncActionList(
-        rightDesired,
-        trustPlan,
-        "rightClickActions"
-    );
-
-    if (leftNeedsSync) {
-        const editor = { opened: false };
-        const openActionsEditor = async (): Promise<void> => {
+        basePath: "leftClickActions",
+        open: async () => {
             ctx.getItemSlot("Left Click Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
-            editor.opened = true;
-        };
-        const leftSync = await prepareActionListSync(ctx, {
-            desired: leftDesired,
-            session,
-            trustPlan,
-            basePath: "leftClickActions",
-            open: openActionsEditor,
-        });
-        if (leftSync.kind === "planned") {
-            if (!editor.opened) await openActionsEditor();
-            await applyActionListPlan(ctx, leftSync.plan, { session });
-        }
-
-        if (rightNeedsSync) {
-            await clickGoBack(ctx);
-        }
+            leftEditor.opened = true;
+        },
+    });
+    if (leftEditor.opened) {
+        await clickGoBack(ctx);
     }
 
-    if (rightNeedsSync) {
-        const editor = { opened: false };
-        const openActionsEditor = async (): Promise<void> => {
+    const right = await scanActionListSync(ctx, {
+        desired: rightDesired,
+        sync: session.actions,
+        trustPlan,
+        basePath: "rightClickActions",
+        open: async () => {
             ctx.getItemSlot("Right Click Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
-            editor.opened = true;
-        };
-        const rightSync = await prepareActionListSync(ctx, {
-            desired: rightDesired,
-            session,
-            trustPlan,
-            basePath: "rightClickActions",
-            open: openActionsEditor,
-        });
-        if (rightSync.kind === "planned") {
-            if (!editor.opened) await openActionsEditor();
-            await applyActionListPlan(ctx, rightSync.plan, { session });
-        }
+        },
+    });
+
+    return { left, right };
+}
+
+async function applyItemActionPlans(
+    ctx: TaskContext,
+    plan: ItemImportPlan,
+    session: ImportContext
+): Promise<void> {
+    if (plan.leftPlan !== null) {
+        ctx.getItemSlot("Left Click Actions").click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+        await applyActionListPlan(ctx, plan.leftPlan, { sync: session.actions });
+        if (plan.rightPlan !== null) await clickGoBack(ctx);
+    }
+
+    if (plan.rightPlan !== null) {
+        ctx.getItemSlot("Right Click Actions").click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+        await applyActionListPlan(ctx, plan.rightPlan, { sync: session.actions });
     }
 }
 

@@ -1,12 +1,16 @@
 import type { ChatSpeed, Color, DefaultGameMode, ImportableGroup } from "htsw/types";
 
-import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { importJsonTargetForSectionEntry } from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import { makeReadHouse } from "../readHouse";
+import { defineHouseExporter } from "../export/exporter";
 import { listAllGroupNames, openEditGroup } from "./listGroups";
-import { readGroupPermissionMenu, readGroupSettings, type GroupSettings } from "./shared";
+import {
+    readGroupPermissionMenu,
+    readGroupSettings,
+    type GroupSettings,
+} from "./housing";
 
 type GroupRead = {
     settings: GroupSettings;
@@ -48,23 +52,10 @@ function buildGroupImportable(name: string, read: GroupRead): ImportableGroup {
     };
 }
 
-function buildGroupJsonEntry(name: string, read: GroupRead): Record<string, unknown> {
-    const { settings } = read;
+function buildGroupJsonEntry(importable: ImportableGroup): Record<string, unknown> {
+    const { type: _type, sourcePath: _sourcePath, ...entry } = importable;
     return {
-        name,
-        ...(settings.tag !== null ? { tag: settings.tag } : {}),
-        ...(settings.tagShownInChat !== null
-            ? { tagShownInChat: settings.tagShownInChat }
-            : {}),
-        ...(settings.color !== null ? { color: settings.color } : {}),
-        ...(settings.priority !== null ? { priority: settings.priority } : {}),
-        ...(Object.keys(read.permissions).length > 0
-            ? { permissions: read.permissions }
-            : {}),
-        ...(read.chatSpeed !== null ? { chatSpeed: read.chatSpeed } : {}),
-        ...(read.defaultGameMode !== null
-            ? { defaultGameMode: read.defaultGameMode }
-            : {}),
+        ...entry,
     };
 }
 
@@ -72,34 +63,27 @@ function buildGroupJsonEntry(name: string, read: GroupRead): Record<string, unkn
 // menu, read its fields and full permission menu, and write the result — to the
 // cache in read-only (deep-read) mode, or to import.json plus the cache on a
 // real export.
-export const readGroups = makeReadHouse<string>({
+export const readGroups = defineHouseExporter({
     type: "GROUP",
     noun: "group",
     list: listAllGroupNames,
-    readOne: async (ctx, name, options) => {
-        const read = await readGroup(ctx, name);
-        const importable = buildGroupImportable(name, read);
-        if (options.readOnly !== undefined) {
-            writeImportableCache(
-                ctx,
-                options.readOnly.housingUuid,
-                importable,
-                "reader",
-                true
-            );
-        } else {
-            const targetImportJson = importJsonTargetForSectionEntry(
-                options.importJsonPath,
-                "groups",
-                name,
-                options.newExportTargetImportJson
-            );
-            upsertImportableEntry(
-                targetImportJson,
-                "groups",
-                buildGroupJsonEntry(name, read)
-            );
-            await tryWriteImportableCache(ctx, importable, "exporter");
-        }
+    reader: {
+        kind: "direct",
+        read: async (ctx, name) => buildGroupImportable(name, await readGroup(ctx, name)),
+    },
+    importableOf: (importable) => importable,
+    export: async (ctx, name, importable, options) => {
+        const targetImportJson = importJsonTargetForSectionEntry(
+            options.importJsonPath,
+            "groups",
+            name,
+            options.newExportTargetImportJson
+        );
+        upsertImportableEntry(
+            targetImportJson,
+            "groups",
+            buildGroupJsonEntry(importable)
+        );
+        await tryWriteImportableCache(ctx, importable, "exporter");
     },
 });

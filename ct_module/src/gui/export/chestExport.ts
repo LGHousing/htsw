@@ -1,4 +1,4 @@
-import { exportProjectContextFromParsedImportJson } from "../../importables/exportContext";
+import { projectExportDestinationFromParsedImportJson } from "../../importables/export/projectDestination";
 import {
     captureOpenChest,
     exportCapturedChest,
@@ -34,7 +34,7 @@ function runChestExport(
     const newExportTargetImportJson = getNewExportTarget() ?? undefined;
     runHousingSyncTask("export", (ctx) =>
         exportCapturedChest(ctx, captured, {
-            ...exportProjectContextFromParsedImportJson(
+            ...projectExportDestinationFromParsedImportJson(
                 { rootDir, importJsonPath },
                 getParseAt(importJsonPath)?.parsed
             ),

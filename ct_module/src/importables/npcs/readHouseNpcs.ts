@@ -3,7 +3,7 @@ import type { Pos } from "htsw/types";
 import { getCurrentHousingUuid } from "../../importCache";
 import { listCachedImportables } from "../../importCache/cache";
 import type { NpcExportEntry } from "../../project/paths";
-import type { ReadFn } from "../read";
+import type { ReadFn } from "../export/reader";
 import { exportAllNpcs } from "./exportAll";
 
 function parseNpcPos(identity: string): Pos {
@@ -15,12 +15,14 @@ function parseNpcPos(identity: string): Pos {
 // can't drive them directly. This adapter turns the selected rows' position
 // identities (`x,y,z`) back into export entries — resolving each row's display
 // name from the scan cache — and runs the position-keyed batch (`exportAllNpcs`
-// matches by position and re-reads the live name anyway). `readOnly` flows
-// straight through, so deep read (cache only) works the same as export.
+// matches by position and re-reads the live name anyway).
 export const readNpcs: ReadFn = async (ctx, options) => {
     let entries: NpcExportEntry[] | undefined;
     if (options.names !== undefined) {
-        const uuid = await getCurrentHousingUuid(ctx);
+        const uuid =
+            options.output.kind === "cache"
+                ? options.output.housingUuid
+                : await getCurrentHousingUuid(ctx);
         const labelByIdentity = new Map<string, string>();
         const known = listCachedImportables(uuid, "NPC");
         for (let i = 0; i < known.length; i++) {
@@ -39,6 +41,6 @@ export const readNpcs: ReadFn = async (ctx, options) => {
         entries,
         skipExisting: options.skipExisting,
         progress: options.progress,
-        readOnly: options.readOnly,
+        output: options.output,
     });
 };

@@ -64,10 +64,6 @@ export function createIconItem(icon: FunctionIcon): Item {
     return new Item(createIconStack(icon));
 }
 
-export function desiredIconSnapshot(icon: FunctionIcon): FunctionIconSnapshot | null {
-    return snapshotIconStack(createIconStack(icon));
-}
-
 /**
  * The import.json `FunctionIcon` form of a live icon snapshot: drops a redundant
  * count of 1 and a false glint so the written entry stays minimal.
@@ -82,7 +78,7 @@ export function functionIconFromSnapshot(
     return icon;
 }
 
-export function iconSnapshotsEqual(
+function iconSnapshotsEqual(
     a: FunctionIconSnapshot | null,
     b: FunctionIconSnapshot | null
 ): boolean {

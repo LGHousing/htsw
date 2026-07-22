@@ -1,17 +1,17 @@
 import type TaskContext from "../tasks/context";
 import {
-    readExportProjectContext,
-    type ExportProjectContext,
-    type ExportProjectTarget,
-} from "../importables/exportContext";
+    readProjectExportDestination,
+    type ProjectExportDestination,
+    type ProjectExportTarget,
+} from "../importables/export/projectDestination";
 import { getCurrentHousingUuid } from "../importCache";
 import {
     defaultExportRoot,
     resolveModuleRelativePath,
 } from "../project/paths";
 
-export type ExportDestination = ExportProjectContext;
-type ExportDestinationPath = ExportProjectTarget;
+export type ExportDestination = ProjectExportDestination;
+type ExportDestinationPath = ProjectExportTarget;
 
 function trimTrailingSlashes(path: string): string {
     let end = path.length;
@@ -54,8 +54,12 @@ export async function resolveExportDestination(
     explicitPath: string | undefined
 ): Promise<ExportDestination> {
     const explicitDestination = exportDestination(explicitPath);
-    if (explicitDestination !== null) return readExportProjectContext(explicitDestination);
+    if (explicitDestination !== null)
+        return readProjectExportDestination(explicitDestination);
     const uuid = await getCurrentHousingUuid(ctx);
     const rootDir = defaultExportRoot(uuid);
-    return readExportProjectContext({ rootDir, importJsonPath: `${rootDir}/import.json` });
+    return readProjectExportDestination({
+        rootDir,
+        importJsonPath: `${rootDir}/import.json`,
+    });
 }

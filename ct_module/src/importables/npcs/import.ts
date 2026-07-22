@@ -1,19 +1,18 @@
 import type { ImportableNpc } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
-import { prereadActionList, type ActionListPlan } from "../../housingSync/actions/plan";
-import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
+import type { ActionListPlan } from "../../housingSync/actions/plan";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import {
-    getActionListTrust,
-    getBaselineActionList,
+    actionListPlanFromRead,
+    hydrateActionListSync,
+    scanActionListSync,
+    type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
-import { createMissingReferencedShells } from "../references";
-import { countReferencedShells } from "../referenceScanner";
 import {
     npcNamesMatch,
     openNpcLeftClickActions,
@@ -22,7 +21,7 @@ import {
     renameNpcIfNeeded,
     setLeftClickRedirect,
     validateSupportedNpcFields,
-} from "./shared";
+} from "./housing";
 import { openNpcEditorForPos, type NpcListEntry } from "./listNpcs";
 
 export type NpcImportPlan = {
@@ -36,6 +35,16 @@ export type NpcImportPlan = {
     rightPlan: ActionListPlan | null;
 };
 
+export type NpcRead = {
+    kind: "NPC";
+    importable: ImportableNpc;
+    trustPlan?: ImportableTrustPlan;
+    liveNpc: NpcListEntry;
+    leftClickRedirect: boolean | null;
+    left: ActionListSyncScanResult;
+    right: ActionListSyncScanResult;
+};
+
 function leftClickRedirectTrusted(
     importable: ImportableNpc,
     plan: ImportableTrustPlan | undefined
@@ -45,102 +54,102 @@ function leftClickRedirectTrusted(
     return plan.entry.importable.leftClickRedirect === importable.leftClickRedirect;
 }
 
-export async function prereadImportableNpc(
+export async function scanImportableNpc(
     ctx: TaskContext,
     importable: ImportableNpc,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan?: ImportableTrustPlan
-): Promise<NpcImportPlan> {
+): Promise<NpcRead> {
     validateSupportedNpcFields(importable);
-
-    const leftEligible =
-        importable.leftClickActions !== undefined &&
-        !trustPlan?.trustedChildListPaths.has("leftClickActions");
-    const rightEligible =
-        importable.rightClickActions !== undefined &&
-        !trustPlan?.trustedChildListPaths.has("rightClickActions");
     const redirectEligible =
         importable.leftClickRedirect !== undefined &&
         !leftClickRedirectTrusted(importable, trustPlan);
 
-    const setup = createSetupStepEmitter(
-        session.events,
-        countReferencedShells(importable) + 1
-    );
-
-    await createMissingReferencedShells(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
-    });
+    const setup = createSetupStepEmitter(session.actions.events, 1);
 
     const liveNpc = await openNpcEditorForPos(ctx, importable.pos, session.npcLookup);
     setup(`opened NPC ${liveNpc.name}`);
 
-    const nameHandled = npcNamesMatch(liveNpc.name, importable.name);
-    let leftClickRedirectHandled = !redirectEligible;
-    let leftPlan: ActionListPlan | null = null;
-    let rightPlan: ActionListPlan | null = null;
-
-    if (leftEligible || redirectEligible) {
-        ctx.getMenuItemSlot("Left Click Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-
-        if (redirectEligible) {
-            leftClickRedirectHandled =
-                readLeftClickRedirect(ctx) === importable.leftClickRedirect;
-        }
-
-        if (leftEligible) {
-            const leftActions = importable.leftClickActions;
-            if (leftActions === undefined) {
-                throw new Error("NPC left-click actions became unavailable during pre-read");
-            }
-            leftPlan = await prereadActionList(ctx, leftActions, {
-                session,
-                baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
-                trust: getActionListTrust(trustPlan, "leftClickActions"),
-                conflictTarget: {
-                    type: importable.type,
-                    identity: importableIdentity(importable),
-                    basePath: "leftClickActions",
-                },
-            });
-        }
+    const leftEditor = { opened: false };
+    const left = await scanActionListSync(ctx, {
+        desired: importable.leftClickActions,
+        sync: session.actions,
+        trustPlan,
+        basePath: "leftClickActions",
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath: "leftClickActions",
+        },
+        open: async () => {
+            await openNpcLeftClickActions(ctx, importable, session.npcLookup);
+            leftEditor.opened = true;
+        },
+    });
+    if (redirectEligible && !leftEditor.opened) {
+        await openNpcLeftClickActions(ctx, importable, session.npcLookup);
+        leftEditor.opened = true;
     }
+    const leftClickRedirect = redirectEligible ? readLeftClickRedirect(ctx) : null;
 
-    if (rightEligible) {
-        await openNpcRightClickActions(ctx, importable, session.npcLookup);
-        const rightActions = importable.rightClickActions;
-        if (rightActions === undefined) {
-            throw new Error("NPC right-click actions became unavailable during pre-read");
-        }
-        rightPlan = await prereadActionList(ctx, rightActions, {
-            session,
-            baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
-            trust: getActionListTrust(trustPlan, "rightClickActions"),
-            conflictTarget: {
-                type: importable.type,
-                identity: importableIdentity(importable),
-                basePath: "rightClickActions",
-            },
-        });
-    }
+    const right = await scanActionListSync(ctx, {
+        desired: importable.rightClickActions,
+        sync: session.actions,
+        trustPlan,
+        basePath: "rightClickActions",
+        conflictTarget: {
+            type: importable.type,
+            identity: importableIdentity(importable),
+            basePath: "rightClickActions",
+        },
+        open: async () => {
+            await openNpcRightClickActions(ctx, importable, session.npcLookup);
+        },
+    });
 
     return {
         kind: "NPC",
         importable,
         trustPlan,
         liveNpc,
-        nameHandled,
-        leftClickRedirectHandled,
-        leftPlan,
-        rightPlan,
+        leftClickRedirect,
+        left,
+        right,
+    };
+}
+
+export async function hydrateImportableNpc(
+    ctx: TaskContext,
+    read: NpcRead
+): Promise<void> {
+    if (read.left.kind === "hydrate") {
+        read.left = await hydrateActionListSync(ctx, read.left);
+    }
+    if (read.right.kind === "hydrate") {
+        read.right = await hydrateActionListSync(ctx, read.right);
+    }
+}
+
+export function planImportableNpc(read: NpcRead): NpcImportPlan {
+    const { importable } = read;
+    return {
+        kind: "NPC",
+        importable,
+        trustPlan: read.trustPlan,
+        liveNpc: read.liveNpc,
+        nameHandled: npcNamesMatch(read.liveNpc.name, importable.name),
+        leftClickRedirectHandled:
+            read.leftClickRedirect === null ||
+            read.leftClickRedirect === importable.leftClickRedirect,
+        leftPlan: actionListPlanFromRead(read.left),
+        rightPlan: actionListPlanFromRead(read.right),
     };
 }
 
 export async function applyImportableNpcPlan(
     ctx: TaskContext,
     plan: NpcImportPlan,
-    session: ImportSession
+    session: ImportContext
 ): Promise<void> {
     if (!plan.nameHandled) {
         await renameNpcIfNeeded(ctx, plan.liveNpc, plan.importable, session.npcLookup);
@@ -156,13 +165,13 @@ export async function applyImportableNpcPlan(
             await setLeftClickRedirect(ctx, redirect);
         }
         if (plan.leftPlan !== null) {
-            await applyActionListPlan(ctx, plan.leftPlan, { session });
+            await applyActionListPlan(ctx, plan.leftPlan, { sync: session.actions });
         }
     }
 
     if (plan.rightPlan !== null) {
         await openNpcRightClickActions(ctx, plan.importable, session.npcLookup);
-        await applyActionListPlan(ctx, plan.rightPlan, { session });
+        await applyActionListPlan(ctx, plan.rightPlan, { sync: session.actions });
     }
 }
 

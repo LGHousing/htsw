@@ -6,7 +6,7 @@ import {
     setStringValue,
 } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes } from "../../utils/helpers";
 import { openNpcEditorForPos, type NpcListEntry, type NpcLookupCache } from "./listNpcs";

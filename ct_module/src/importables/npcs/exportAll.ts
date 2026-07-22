@@ -14,13 +14,13 @@ import {
     npcExportReferencesExist,
     type NpcExportEntry,
 } from "../../project/paths";
-import type { ReadResult } from "../read";
+import type { ReadResult } from "../export/reader";
 import { exportNpcWithSharedState } from "./export";
 import { readImportableCache } from "../../importCache/cache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { npcPosIdentity } from "../identity";
-import { createExportItemCaptureRegistry } from "../exportContext";
+import { createExportItemCaptureRegistry } from "../export/projectDestination";
 import {
     createNpcLookupCache,
     findNpcByPos,
@@ -37,8 +37,7 @@ export type ExportAllNpcsOptions = {
     progress?: ExportProgressSink;
     projectItems?: readonly ImportableItem[];
     skipExisting?: boolean;
-    // Read-only (deep read): cache each NPC, write no files.
-    readOnly?: { housingUuid: string };
+    output: { kind: "project" } | { kind: "cache"; housingUuid: string };
 };
 
 export async function exportAllNpcs(
@@ -85,10 +84,12 @@ async function exportAllNpcsInner(
     options: ExportAllNpcsOptions
 ): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
-    const readOnly = options.readOnly !== undefined;
-    const verb = readOnly ? "Reading" : "Exporting";
+    const cacheOnly = options.output.kind === "cache";
+    const verb = cacheOnly ? "Reading" : "Exporting";
     const lockHousingUuid =
-        options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
+        options.output.kind === "cache"
+            ? options.output.housingUuid
+            : await getCurrentHousingUuid(ctx);
 
     const inventorySnapshot: PlayerInventorySnapshot = snapshotPlayerInventory();
     const itemCaptures = createExportItemCaptureRegistry(
@@ -107,10 +108,10 @@ async function exportAllNpcsInner(
         ctx,
         importJsonPath,
         requested,
-        readOnly ? false : options.skipExisting
+        cacheOnly ? false : options.skipExisting
     );
     if (exportEntries.length === 0) {
-        ctx.displayMessage(`&7No NPCs to ${readOnly ? "read" : "export"}.`);
+        ctx.displayMessage(`&7No NPCs to ${cacheOnly ? "read" : "export"}.`);
         try {
             await restorePlayerInventory(ctx, inventorySnapshot);
         } catch (error) {
@@ -163,7 +164,7 @@ async function exportAllNpcsInner(
                         leftClickTarget: target.leftClick,
                         rightClickTarget: target.rightClick,
                         rootDir,
-                        readOnly: options.readOnly,
+                        output: options.output,
                         onReadProgress:
                             itemProgress === undefined
                                 ? undefined
@@ -171,7 +172,7 @@ async function exportAllNpcsInner(
                     },
                     { itemCaptures, inventorySnapshot, npcLookup }
                 );
-                if (!readOnly) {
+                if (!cacheOnly) {
                     const identity = npcPosIdentity(liveEntry.pos);
                     const cached = readImportableCache(lockHousingUuid, "NPC", identity);
                     if (cached !== null) {
@@ -198,7 +199,7 @@ async function exportAllNpcsInner(
     } finally {
         options.progress?.done();
         try {
-            if (!readOnly) {
+            if (!cacheOnly) {
                 await exportCapturedItems(
                     ctx,
                     itemCaptures,
@@ -221,7 +222,7 @@ async function exportAllNpcsInner(
 
     const plural = exportEntries.length === 1 ? "" : "s";
     const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
-    if (readOnly) {
+    if (cacheOnly) {
         ctx.displayMessage(
             `&aRead ${succeeded} of ${exportEntries.length} NPC${plural}${failedNote}`
         );

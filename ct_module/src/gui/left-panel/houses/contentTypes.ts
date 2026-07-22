@@ -33,7 +33,7 @@ import {
     isCommandScanInFlight,
     scanHouseCommands,
 } from "./sources/commandsSource";
-import { houseExportTypeOf } from "../../../importables/houseExportTypes";
+import { houseExportTypeOf } from "../../../importables/export/exportTypes";
 import {
     getHouseTeams,
     houseTeamsScanned,
@@ -53,14 +53,14 @@ import {
     scanHouseNpcs,
 } from "./sources/npcsSource";
 import { readNpcs } from "../../../importables/npcs/readHouseNpcs";
-import { type HouseReadableType } from "../../../importables/houseReaders";
+import { type HouseReadableType } from "../../../importables/export/readers";
 import { startExport, type ExportSpec } from "../../export/taskController";
 import { makeDeepRead } from "./sources/deepRead";
 import type TaskContext from "../../../tasks/context";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
 import { parseNpcPosIdentity } from "../../../importables/identity";
-import { openEventEditor } from "../../../importables/events/shared";
+import { openEventEditor } from "../../../importables/events/housing";
 import { openManageTeam } from "../../../importables/teams/listTeams";
 import { openEditGroup } from "../../../importables/groups/listGroups";
 import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";

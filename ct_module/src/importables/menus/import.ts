@@ -6,8 +6,15 @@ import {
 } from "../../housingSync/actions/diff";
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
 import { applyActionListPlan } from "../../housingSync/actions/apply";
+import type { ActionListPlan } from "../../housingSync/actions/plan";
+import { fullyHydratedActionsFromSlots } from "../../housingSync/actions/hydration/plan";
 import { emitApplyProgress } from "../../housingSync/actions/apply/progress";
-import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
+import {
+    actionListPlanFromRead,
+    hydrateActionListSync,
+    scanActionListSync,
+    type ActionListSyncScanResult,
+} from "../../housingSync/actions/prepareSync";
 import {
     COST,
     estimateActionListPhaseUnits,
@@ -24,21 +31,17 @@ import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import type { ProjectItemIndex } from "../items/projectItems";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
 import { importableIdentity } from "../identity";
-import { createMissingReferencedShells } from "../references";
-import { countReferencedShells } from "../referenceScanner";
 import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
 import { planMenuChanges, type MenuSlotSnapshot } from "./menuChanges";
 import {
-    readLiveMenu,
     snapshotLiveMenuGrid,
-    type LiveMenu,
     type LiveMenuGrid,
 } from "./read";
-import { openMenuEditor, openMenuElements, setMenuSize } from "./shared";
+import { openMenuEditor, openMenuElements, setMenuSize } from "./housing";
 
 /**
  * One grid slot's work. A slot needs at most one op, which may both set the
@@ -60,6 +63,7 @@ type MenuSlotOp = {
     /** Estimated units for this slot's action-list sync — its child-list budget
      * against the menu-wide apply total. */
     actionUnits?: number;
+    actionsPlan?: ActionListPlan;
 };
 
 // Writing one slot's item: RIGHT-click opens the picker, then one pick.
@@ -121,187 +125,143 @@ export type MenuImportPlan = {
     kind: "MENU";
     importable: ImportableMenu;
     trustPlan?: ImportableTrustPlan;
+    exists: boolean;
     diff: MenuDiff;
 };
 
-export async function prereadImportableMenu(
+type MenuSlotRead = {
+    desiredIndex: number;
+    slot: number;
+    actions: ActionListSyncScanResult;
+};
+
+export type MenuRead = {
+    kind: "MENU";
+    importable: ImportableMenu;
+    trustPlan?: ImportableTrustPlan;
+    grid: LiveMenuGrid | null;
+    slots: MenuSlotRead[];
+};
+
+export async function scanImportableMenu(
     ctx: TaskContext,
     importable: ImportableMenu,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan?: ImportableTrustPlan
-): Promise<MenuImportPlan> {
-    const setup = createSetupStepEmitter(
-        session.events,
-        countReferencedShells(importable) + 1
-    );
-
-    await createMissingReferencedShells(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
-    });
-
+): Promise<MenuRead> {
+    const setup = createSetupStepEmitter(session.actions.events, 1);
     const status = await openMenuEditor(ctx, importable.name);
-
-    if (status === "missing") {
-        await ctx.expectAfter(
-            () => ctx.runCommand(`/menu create ${importable.name}`),
-            menuCreated(importable.name)
-        );
-        noteMenuCreated(importable.name);
-        setup(`created menu ${importable.name}`);
-        // Fresh menu: every desired slot is a pure ADD, size always set.
-        const ops: MenuSlotOp[] = importable.slots.map((slot, i) => {
-            const item = getItemFromNbt(slot.nbt);
-            const hasActions = slot.actions !== undefined && slot.actions.length > 0;
-            return {
-                slot: slot.slot,
-                setItem: item,
-                itemLabel: menuItemLabel(item),
-                ...(hasActions
-                    ? {
-                          syncActions: slot.actions,
-                          actionsPath: `slots[${i}].actions`,
-                          actionUnits: phaseUnitsTotal(
-                              estimateActionListPhaseUnits(slot.actions ?? [])
-                          ),
-                      }
-                    : {}),
-            };
-        });
-        await prereadMenuConflictLists(
-            ctx,
-            importable,
-            session,
-            trustPlan,
-            ops,
-            new Set<number>()
-        );
-        return {
-            kind: "MENU",
-            importable,
-            trustPlan,
-            diff: { setSize: importable.size ?? null, ops },
-        };
-    }
-    setup(`opened menu ${importable.name}`);
-
-    // Trust mode reads the live grid — slot items, presence, and size, one cheap
-    // container read — so those self-heal against the house, then reuses each
-    // slot's cached action list rather than opening that slot's editor (the
-    // expensive per-slot read). This mirrors the function trust path: observe
-    // the live top level, trust the unchanged nested lists from cache. Any
-    // slot whose actions actually changed still diffs non-empty and gets its
-    // editor opened during apply.
-    const cachedMenu =
-        trustPlan?.trustMode === true && trustPlan.entry?.importable.type === "MENU"
-            ? trustPlan.entry.importable
-            : null;
-    if (cachedMenu !== null) {
-        const grid = await snapshotLiveMenuGrid(ctx);
-        const diff = buildMenuDiff(
-            importable,
-            baselineSlotsFromGrid(grid, cachedMenu),
-            grid.size,
-            session.items,
-            session.itemDiff
-        );
-        await prereadMenuConflictLists(
-            ctx,
-            importable,
-            session,
-            trustPlan,
-            diff.ops,
-            new Set(grid.slots.map((slot) => slot.slot))
-        );
-        return { kind: "MENU", importable, trustPlan, diff };
-    }
-
-    const live = await readLiveMenu(ctx, {
-        itemReadMode: "sync",
-        canonicalizeItemName: session.canonicalizeItemName,
-        itemFieldObservations: session.itemFieldObservations,
-    });
-    const diff = buildMenuDiff(
-        importable,
-        baselineSlotsFromLive(live),
-        live.size,
-        session.items,
-        session.itemDiff
-    );
-    return { kind: "MENU", importable, trustPlan, diff };
-}
-
-async function prereadMenuConflictLists(
-    ctx: TaskContext,
-    importable: ImportableMenu,
-    session: ImportSession,
-    trustPlan: ImportableTrustPlan | undefined,
-    ops: readonly MenuSlotOp[],
-    populatedSlots: ReadonlySet<number>
-): Promise<void> {
-    if (!session.trust.trustMode || trustPlan?.lockListScanHashes === null) return;
-
-    for (const op of ops) {
-        const desired = op.syncActions;
-        const basePath = op.actionsPath;
-        if (
-            desired === undefined ||
-            basePath === undefined ||
-            trustPlan?.lockListScanHashes?.[basePath] === undefined
-        ) {
-            continue;
-        }
-
-        const editor = { opened: false };
-        await prepareActionListSync(ctx, {
-            desired,
-            session,
-            trustPlan,
+    const grid = status === "missing" ? null : await snapshotLiveMenuGrid(ctx);
+    const populated = new Set(grid?.slots.map((slot) => slot.slot) ?? []);
+    const slots: MenuSlotRead[] = [];
+    for (let i = 0; i < importable.slots.length; i++) {
+        const desired = importable.slots[i];
+        const basePath = `slots[${i}].actions`;
+        const actions = await scanActionListSync(ctx, {
+            desired: desired.actions ?? [],
+            sync: session.actions,
+            trustPlan: grid === null ? undefined : trustPlan,
             basePath,
-            current: populatedSlots.has(op.slot) ? undefined : { kind: "known-empty" },
+            current: populated.has(desired.slot)
+                ? undefined
+                : { kind: "known-empty" },
             conflictTarget: {
                 type: importable.type,
                 identity: importableIdentity(importable),
                 basePath,
             },
-            open: async () => {
-                menuGridClick(op.slot, "LEFT");
-                await timedWaitForMenu(ctx, "menuClickWait");
-                editor.opened = true;
-            },
+            open: () => openMenuSlotActions(ctx, importable.name, desired.slot),
         });
-        if (editor.opened) await clickGoBack(ctx);
+        slots.push({ desiredIndex: i, slot: desired.slot, actions });
+    }
+    setup(grid === null ? `menu ${importable.name} is missing` : `scanned menu ${importable.name}`);
+    return { kind: "MENU", importable, trustPlan, grid, slots };
+}
+
+async function openMenuSlotActions(
+    ctx: TaskContext,
+    name: string,
+    slot: number
+): Promise<void> {
+    if ((await openMenuEditor(ctx, name)) === "missing") {
+        throw new Error(`Menu ${name} disappeared during read.`);
+    }
+    await openMenuElements(ctx);
+    menuGridClick(slot, "LEFT");
+    await timedWaitForMenu(ctx, "menuClickWait");
+}
+
+export async function hydrateImportableMenu(
+    ctx: TaskContext,
+    read: MenuRead
+): Promise<void> {
+    for (const slot of read.slots) {
+        if (slot.actions.kind === "hydrate") {
+            slot.actions = await hydrateActionListSync(ctx, slot.actions);
+        }
     }
 }
 
 /** The live-grid slot data `buildMenuDiff` compares the desired menu against. */
 type BaselineMenuSlot = { slot: number; item: Item; actions: Action[] };
 
-function baselineSlotsFromLive(live: LiveMenu): BaselineMenuSlot[] {
-    return live.slots.map((s) => ({
-        slot: s.slot,
-        item: getItemFromSnbt(s.snbt),
-        actions: s.actions,
-    }));
-}
-
-// Trusted-import baseline: slot items and presence come from the live grid
-// snapshot, so they diff against the house, while each slot's actions come from
-// the cached menu — the per-slot action editor is never opened here. A slot
-// whose actions genuinely changed still diffs against the (stale) cached list
-// and produces an op, which opens that one slot's editor during apply.
-function baselineSlotsFromGrid(
-    grid: LiveMenuGrid,
-    cachedMenu: ImportableMenu
-): BaselineMenuSlot[] {
-    const cachedActionsBySlot = new Map<number, Action[]>();
-    for (const slot of cachedMenu.slots) {
-        cachedActionsBySlot.set(slot.slot, slot.actions ?? []);
+export function planImportableMenu(
+    read: MenuRead,
+    session: ImportContext
+): MenuImportPlan {
+    const cachedMenu =
+        read.trustPlan?.entry?.importable.type === "MENU"
+            ? read.trustPlan.entry.importable
+            : null;
+    const cachedBySlot = new Map<number, Action[]>();
+    for (const slot of cachedMenu?.slots ?? []) {
+        cachedBySlot.set(slot.slot, slot.actions ?? []);
     }
-    return grid.slots.map((s) => ({
-        slot: s.slot,
-        item: getItemFromSnbt(s.snbt),
-        actions: cachedActionsBySlot.get(s.slot) ?? [],
-    }));
+    const actionReadBySlot = new Map(read.slots.map((slot) => [slot.slot, slot]));
+    const baseline: BaselineMenuSlot[] = (read.grid?.slots ?? []).map((slot) => {
+        const actionRead = actionReadBySlot.get(slot.slot)?.actions;
+        const actionPlan =
+            actionRead === undefined ? null : actionListPlanFromRead(actionRead);
+        const observed =
+            actionPlan === null
+                ? null
+                : fullyHydratedActionsFromSlots(actionPlan.observed);
+        if (actionPlan !== null && observed === null) {
+            throw new Error(
+                `Menu slot ${slot.slot} was planned before its actions were fully read.`
+            );
+        }
+        const actions = observed ?? cachedBySlot.get(slot.slot) ?? [];
+        return { slot: slot.slot, item: getItemFromSnbt(slot.snbt), actions };
+    });
+    const diff = buildMenuDiff(
+        read.importable,
+        baseline,
+        read.grid?.size,
+        session.items,
+        session.actions.itemDiff
+    );
+    const readsByPath = new Map(
+        read.slots.map((slot) => [`slots[${slot.desiredIndex}].actions`, slot])
+    );
+    for (const op of diff.ops) {
+        const actionRead =
+            op.actionsPath === undefined ? undefined : readsByPath.get(op.actionsPath);
+        if (actionRead !== undefined) {
+            const actionPlan = actionListPlanFromRead(actionRead.actions);
+            if (actionPlan !== null) {
+                op.actionsPlan = actionPlan;
+                op.actionUnits = actionPlan.phaseUnits.applying;
+            }
+        }
+    }
+    return {
+        kind: "MENU",
+        importable: read.importable,
+        trustPlan: read.trustPlan,
+        exists: read.grid !== null,
+        diff,
+    };
 }
 
 function buildMenuDiff(
@@ -402,17 +362,17 @@ function actionsDiffer(
 export async function applyImportableMenuPlan(
     ctx: TaskContext,
     plan: MenuImportPlan,
-    session: ImportSession
+    session: ImportContext
 ): Promise<void> {
-    const { importable, trustPlan, diff } = plan;
-    if (diff.setSize === null && diff.ops.length === 0) return;
+    const { importable, diff } = plan;
+    if (plan.exists && diff.setSize === null && diff.ops.length === 0) return;
 
     // A menu applies slot by slot, but the per-slot action-list sync reuses the
     // single-list apply machinery, which reports only that one slot's total. Own
     // the menu-wide total here and run each slot's sync as a child of it, so the
     // ETA/bar reflect every slot (a bare per-slot total collapses the menu total
     // to one slot's size after the first, pinning the bar near 100%).
-    const events = session.events;
+    const events = session.actions.events;
     const totals = menuApplyTotals(diff.ops);
     const applyingUnits = Math.max(1, totals.units);
     let completedUnits = 0;
@@ -444,7 +404,15 @@ export async function applyImportableMenuPlan(
     };
 
     emitMenuTotal();
-    await openMenuEditor(ctx, importable.name);
+    if (!plan.exists) {
+        await ctx.expectAfter(
+            () => ctx.runCommand(`/menu create ${importable.name}`),
+            menuCreated(importable.name)
+        );
+        noteMenuCreated(importable.name);
+    } else {
+        await openMenuEditor(ctx, importable.name);
+    }
 
     let remainingOps = diff.ops;
     const clearOps = diff.ops.filter((op) => op.clear === true);
@@ -488,27 +456,24 @@ export async function applyImportableMenuPlan(
             baselineApplyUnits: completedUnits,
             parentSync: { completedUnits: workDone, totalUnits: totals.count },
         };
-        const editor = { opened: false };
         const openActionsEditor = async (): Promise<void> => {
             menuGridClick(op.slot, "LEFT");
             await timedWaitForMenu(ctx, "menuClickWait");
-            editor.opened = true;
         };
-        const actionsSync = await prepareActionListSync(ctx, {
-            desired: op.syncActions,
-            session,
-            trustPlan,
-            basePath: op.actionsPath ?? "",
-            progressScope,
-            open: openActionsEditor,
-        });
-        if (actionsSync.kind === "planned") {
-            if (!editor.opened) await openActionsEditor();
-            await applyActionListPlan(ctx, actionsSync.plan, { session, progressScope });
+        if (op.actionsPlan !== undefined) {
+            await openActionsEditor();
+            await applyActionListPlan(ctx, op.actionsPlan, {
+                sync: session.actions,
+                progressScope,
+            });
             await clickGoBack(ctx);
         }
         finishWork(op.actionUnits ?? 0);
     }
+}
+
+export function menuPlanIsNoOp(plan: MenuImportPlan): boolean {
+    return plan.exists && plan.diff.setSize === null && plan.diff.ops.length === 0;
 }
 
 function menuGridClick(slot: number, button: "LEFT" | "RIGHT"): void {

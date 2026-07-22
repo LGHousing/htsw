@@ -5,7 +5,7 @@ vi.mock("../src/tasks/manager", () => ({
         error instanceof Error && error.message === "CANCELLED",
 }));
 
-import { runReadLoop } from "../src/importables/read";
+import { runReadLoop } from "../src/importables/export/reader";
 import type TaskContext from "../src/tasks/context";
 import type { ExportProgressSink } from "../src/housingSync/progress/types";
 
@@ -52,9 +52,12 @@ describe("runReadLoop", () => {
             names: ["a", "b"],
             verb: "Exporting",
             progress: sink,
-            processOne: async () => {},
-            scanOne: async (_ctx, name) => name,
-            hydrateOne: async () => {},
+            accept: async () => {},
+            reader: {
+                kind: "staged",
+                scan: async (_ctx, name) => name,
+                hydrate: async () => undefined,
+            },
         });
         expect(calls).toEqual([
             "start:a,b",
@@ -75,7 +78,8 @@ describe("runReadLoop", () => {
             names: ["a", "b"],
             verb: "Exporting",
             progress: sink,
-            processOne: async () => {},
+            accept: async () => {},
+            reader: { kind: "direct", read: async () => undefined },
         });
         expect(calls).toEqual([
             "start:a,b",
@@ -93,8 +97,12 @@ describe("runReadLoop", () => {
             names: ["a", "b"],
             verb: "Exporting",
             progress: sink,
-            processOne: async (_ctx, name) => {
-                if (name === "a") throw new Error("boom");
+            accept: async () => {},
+            reader: {
+                kind: "direct",
+                read: async (_ctx, name) => {
+                    if (name === "a") throw new Error("boom");
+                },
             },
         });
         expect(calls).toContain("failed:0:Error: boom");
@@ -108,10 +116,13 @@ describe("runReadLoop", () => {
             names: ["a", "b"],
             verb: "Exporting",
             progress: sink,
-            processOne: async () => {},
-            scanOne: async (_ctx, name) => name,
-            hydrateOne: async (_ctx, name) => {
-                if (name === "a") throw new Error("boom");
+            accept: async () => {},
+            reader: {
+                kind: "staged",
+                scan: async (_ctx, name) => name,
+                hydrate: async (_ctx, name) => {
+                    if (name === "a") throw new Error("boom");
+                },
             },
         });
         expect(calls).toContain("failed:0:Error: boom");
@@ -125,8 +136,12 @@ describe("runReadLoop", () => {
             names: ["a", "b", "c"],
             verb: "Exporting",
             progress: sink,
-            processOne: async (_ctx, name) => {
-                if (name === "b") throw new Error("boom");
+            accept: async () => {},
+            reader: {
+                kind: "direct",
+                read: async (_ctx, name) => {
+                    if (name === "b") throw new Error("boom");
+                },
             },
         });
         expect(result).toEqual({ succeeded: 2, failed: 1 });
@@ -142,9 +157,13 @@ describe("runReadLoop", () => {
                 names: ["a", "b", "c"],
                 verb: "Reading",
                 progress: sink,
-                processOne: async (_ctx, name) => {
-                    processed.push(name);
-                    if (name === "b") throw new Error("CANCELLED");
+                accept: async () => {},
+                reader: {
+                    kind: "direct",
+                    read: async (_ctx, name) => {
+                        processed.push(name);
+                        if (name === "b") throw new Error("CANCELLED");
+                    },
                 },
             })
         ).rejects.toThrow("CANCELLED");
@@ -166,14 +185,18 @@ describe("runReadLoop", () => {
             names: ["a", "b"],
             verb: "Reading",
             progress: sink,
-            processOne: async (_ctx, _name, onReadProgress) => {
-                onReadProgress?.({
-                    phase: "reading",
-                    completedUnits: 1,
-                    totalUnits: 2,
-                    phaseUnits: { setup: 0, reading: 2, hydrating: 0, applying: 0 },
-                    sync: { completedUnits: 1, totalUnits: 2, parent: null },
-                });
+            accept: async () => {},
+            reader: {
+                kind: "direct",
+                read: async (_ctx, _name, onReadProgress) => {
+                    onReadProgress?.({
+                        phase: "reading",
+                        completedUnits: 1,
+                        totalUnits: 2,
+                        phaseUnits: { setup: 0, reading: 2, hydrating: 0, applying: 0 },
+                        sync: { completedUnits: 1, totalUnits: 2, parent: null },
+                    });
+                },
             },
         });
         expect(progressIndexes).toEqual([0, 1]);
@@ -185,7 +208,8 @@ describe("runReadLoop", () => {
             names: ["spawn"],
             verb: "Exporting",
             displayName: (name) => `/${name}`,
-            processOne: async () => {},
+            accept: async () => {},
+            reader: { kind: "direct", read: async () => undefined },
         });
         expect(displayMessage).toHaveBeenCalledWith(
             "&7[1/1] &fExporting '/spawn'"

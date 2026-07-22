@@ -1,5 +1,6 @@
 export * from "./fs";
 export * from "./exportTargets";
+export * from "./importableMetadata";
 export * from "./filenames";
 export * from "./importJsonMutations";
 export * from "./includedImportJson";

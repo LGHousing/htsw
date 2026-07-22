@@ -1,11 +1,15 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ImportSession } from "../../importables/imports";
+import type {
+    ActionSyncConflict,
+    ActionSyncContext,
+} from "./syncContext";
 import type { ActionListTrust } from "./applyTrust";
 import type { ActionListDiff } from "./diff/types";
 import type { ObservedActionSlot } from "../observedActions";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
+import type { ListReadOptions } from "../context/actionReadContext";
 import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { hydrateActionListScan } from "./hydration/run";
 import {
@@ -21,13 +25,12 @@ import {
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
-import type { ImportConflict } from "../../importables/importConflicts";
-import { scanConflictVerdict } from "../../importables/importConflicts";
+import { scanConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { actionListScanHashFromActions, actionListScanHashFromSlots } from "./scanHash";
 
 export type ActionListApplyOptions = {
-    session: ImportSession;
+    sync: ActionSyncContext;
     listPath?: ActionListPath;
     progressScope?: ProgressScope;
 };
@@ -36,7 +39,7 @@ export type ActionListPrereadOptions = ActionListApplyOptions & {
     trust?: ActionListTrust;
     baselineCurrent?: readonly Action[];
     trustedBaselineAfterUnchangedScan?: readonly Action[];
-    conflictTarget?: ImportConflict;
+    conflictTarget?: ActionSyncConflict;
 };
 
 export type ActionListPlan = {
@@ -46,40 +49,63 @@ export type ActionListPlan = {
     readonly phaseUnits: Readonly<PhaseUnits>;
 };
 
-export async function prereadActionList(
+export type ActionListPlanScan =
+    | { kind: "planned"; plan: ActionListPlan }
+    | {
+          kind: "hydrate";
+          desired: Action[];
+          scan: Awaited<ReturnType<typeof scanActionList>>;
+          options: ActionListPrereadOptions;
+          readOptions: ListReadOptions;
+          phaseUnits: PhaseUnits;
+          progress: ProgressHandler | undefined;
+      };
+
+export async function readActionListPlan(
     ctx: TaskContext,
     desired: Action[],
     options: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
+    const scan = await scanActionListForPlan(ctx, desired, options);
+    return scan.kind === "planned"
+        ? scan.plan
+        : hydrateActionListForPlan(ctx, scan);
+}
+
+export async function scanActionListForPlan(
+    ctx: TaskContext,
+    desired: Action[],
+    options: ActionListPrereadOptions
+): Promise<ActionListPlanScan> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
-        options.session.events === undefined
+        options.sync.events === undefined
             ? undefined
             : (event) =>
-                  options.session.events?.emit({
+                  options.sync.events?.emit({
                       kind: "progress",
                       scope: progressScope,
                       progress: event,
                   });
     const itemRead =
-        options.session.actionItemRead.mode === "sync"
+        options.sync.itemRead.mode === "sync"
             ? {
                   itemReadMode: "sync" as const,
-                  canonicalizeItemName: options.session.canonicalizeItemName,
-                  itemFieldObservations: options.session.itemFieldObservations,
+                  canonicalizeItemName: options.sync.canonicalizeItemName,
+                  itemFieldObservations: options.sync.itemFieldObservations,
               }
             : {
                   itemReadMode: "verify" as const,
-                  canonicalizeItemName: options.session.canonicalizeItemName,
-                  itemCaptures: options.session.actionItemRead.captures,
+                  canonicalizeItemName: options.sync.canonicalizeItemName,
+                  itemCaptures: options.sync.itemRead.captures,
               };
     const readOptions = {
         ...itemRead,
         progress,
         phaseUnits,
         listPath: options.listPath,
-        events: options.session.events,
+        events: options.sync.events,
     };
     const scan = await scanActionList(
         ctx,
@@ -107,28 +133,44 @@ export async function prereadActionList(
             phaseUnits
         );
         if (options.listPath === undefined) {
-            emitObservedSnapshot(plan.observed, options.session.events);
+            emitObservedSnapshot(plan.observed, options.sync.events);
         }
         emitPrereadCompleted(progress, plan.phaseUnits);
-        return plan;
+        return { kind: "planned", plan };
     }
+    return {
+        kind: "hydrate",
+        desired,
+        scan,
+        options,
+        readOptions,
+        phaseUnits,
+        progress,
+    };
+}
+
+export async function hydrateActionListForPlan(
+    ctx: TaskContext,
+    pending: Extract<ActionListPlanScan, { kind: "hydrate" }>
+): Promise<ActionListPlan> {
+    const { desired, scan, options, readOptions, phaseUnits, progress } = pending;
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
         if (entry.action !== null) {
             canonicalizeActionItemName(
                 entry.action,
-                options.session.canonicalizeItemName
+                options.sync.canonicalizeItemName
             );
         }
     }
     for (const action of desired) {
-        canonicalizeActionItemName(action, options.session.canonicalizeItemName);
+        canonicalizeActionItemName(action, options.sync.canonicalizeItemName);
     }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
         desired,
-        options.session.itemDiff
+        options.sync.itemDiff
     );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     emitPrereadCompleted(progress, phaseUnits);
@@ -168,15 +210,15 @@ function knownActionListPlan(
         truncatedFields: [],
     }));
     for (const entry of observed) {
-        canonicalizeActionItemName(entry.action, options.session.canonicalizeItemName);
+        canonicalizeActionItemName(entry.action, options.sync.canonicalizeItemName);
     }
     for (const action of desired) {
-        canonicalizeActionItemName(action, options.session.canonicalizeItemName);
+        canonicalizeActionItemName(action, options.sync.canonicalizeItemName);
     }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
         desired,
-        options.session.itemDiff
+        options.sync.itemDiff
     );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     return { desired, observed, diff, phaseUnits };
@@ -208,8 +250,8 @@ function recordActionListConflict(
     options: ActionListPrereadOptions
 ): ReturnType<typeof scanConflictVerdict> | null {
     const target = options.conflictTarget;
-    if (target === undefined || !options.session.trust.trustMode) return null;
-    const trustPlan = options.session.trust.importables.get(
+    if (target === undefined || !options.sync.trust.trustMode) return null;
+    const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
     const lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
@@ -219,7 +261,7 @@ function recordActionListConflict(
         actionListScanHashFromActions(desired)
     );
     if (verdict === "conflict") {
-        options.session.conflicts.push(target);
+        options.sync.conflicts.push(target);
     }
     return verdict;
 }

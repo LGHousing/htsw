@@ -27,7 +27,7 @@ import {
     isLagProbeEnabled,
     setLagProbeEnabled,
 } from "../perf/lagProbe";
-import { commandTest } from "../testSuite/command";
+import { commandTest } from "../inGameTests/command";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
 import { createProjectItemIndex } from "../importables/items/projectItems";
 import { createItemFieldResolver } from "../importables/items/resolveItem";

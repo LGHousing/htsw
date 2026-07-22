@@ -1,6 +1,6 @@
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
 import { oneOf } from "../../tasks/waiters";

@@ -8,10 +8,9 @@ import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { ImportSession } from "../src/importables/imports";
-import { orderImportablesForImportSession } from "../src/importables/importSession";
+import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import { orderImportablesForSession } from "../src/importables/import/session";
 import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/items/dependencies";
-import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type {
     ImportableFunction,
     ImportableGroup,
@@ -45,16 +44,12 @@ function emptyPlan(): ActionListPlan {
     };
 }
 
-function sessionWith(handler: SyncEventHandler): ImportSession {
+function syncContextWith(handler: SyncEventHandler): ActionSyncContext {
     const items = createProjectItemIndex([]);
     const itemDependencies = createItemDependencyIndex([], items);
     return {
-        parsed: { value: [] } as never,
-        items,
-        itemDependencies,
         canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
         resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
-        housingUuid: "test-house",
         trust: {
             housingUuid: "test-house",
             trustMode: false,
@@ -62,8 +57,7 @@ function sessionWith(handler: SyncEventHandler): ImportSession {
         },
         conflicts: [],
         events: handler,
-        actionItemRead: { mode: "sync" },
-        npcLookup: createNpcLookupCache(),
+        itemRead: { mode: "sync" },
     };
 }
 
@@ -71,7 +65,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
     test("top-level empty-diff apply emits listSyncCompleted", async () => {
         const handler = recordingHandler();
         await applyActionListPlan(null as never, emptyPlan(), {
-            session: sessionWith(handler),
+            sync: syncContextWith(handler),
         });
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).toContain("listSyncCompleted");
@@ -80,7 +74,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
     test("child-list empty-diff apply does NOT emit listSyncCompleted", async () => {
         const handler = recordingHandler();
         await applyActionListPlan(null as never, emptyPlan(), {
-            session: sessionWith(handler),
+            sync: syncContextWith(handler),
             listPath: ActionListPath.childOf(ActionPath.at(undefined, 5), "ifActions"),
         });
         const kinds = handler.events.map((e) => e.kind);
@@ -89,7 +83,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
     });
 });
 
-describe("orderImportablesForImportSession", () => {
+describe("orderImportablesForSession", () => {
     test("adds declared teams and groups referenced by selected action trees", () => {
         const team: ImportableTeam = {
             type: "TEAM",
@@ -158,7 +152,7 @@ describe("orderImportablesForImportSession", () => {
             ],
         };
 
-        expect(orderImportablesForImportSession([], [func, team, group])).toEqual([
+        expect(orderImportablesForSession([], [func, team, group])).toEqual([
             team,
             group,
             func,
@@ -186,7 +180,7 @@ describe("orderImportablesForImportSession", () => {
             ],
         };
 
-        expect(orderImportablesForImportSession([], [dependent, dependency])).toEqual([
+        expect(orderImportablesForSession([], [dependent, dependency])).toEqual([
             dependency,
             dependent,
         ]);

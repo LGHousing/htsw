@@ -1,4 +1,4 @@
-import TaskContext from "../tasks/context";
+import TaskContext from "../../tasks/context";
 
 export function filterAlreadyExported(
     ctx: TaskContext,

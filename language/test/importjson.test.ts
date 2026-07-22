@@ -347,8 +347,19 @@ describe("import.json basic passing behavior", () => {
         expect(fn.icon).toEqual({
             item: "minecraft:map",
             count: 3,
+            enchanted: true,
         });
         expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("reports unknown function icon keys", () => {
+        const result = parseImportables(caseFilePath("function_icon_unknown_key"));
+
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Unknown key: `glowing`")
+            )
+        ).toBe(true);
     });
 
     it("canonicalizes bare function icon item ids", () => {

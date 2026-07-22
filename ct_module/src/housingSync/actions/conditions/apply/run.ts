@@ -4,7 +4,6 @@ import { timedWaitForMenu } from "../../../menus/menuWait";
 import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
 import type { ConditionListDiff, ConditionListOperation } from "../../diff/types";
-import type { ObservedConditionSlot } from "../../../observedActions";
 import {
     conditionListDiffApplyUnits,
     conditionOperationUnits,
@@ -42,12 +41,12 @@ export class ConditionListApplyRun {
 
     constructor(
         private readonly ctx: TaskContext,
-        observed: ObservedConditionSlot[],
+        observedCount: number,
         private readonly diff: ConditionListDiff,
         private readonly options: ApplyConditionListOptions,
         private readonly phaseUnits: PhaseUnits
     ) {
-        for (let i = 0; i < observed.length; i++) {
+        for (let i = 0; i < observedCount; i++) {
             this.current.push({
                 entryId: i,
             });
@@ -57,7 +56,7 @@ export class ConditionListApplyRun {
         this.phaseUnits.applying = this.plannedApplyUnits;
         this.baselineUnits = this.phaseUnits.reading + this.phaseUnits.hydrating;
         this.totalOps = diff.operations.length;
-        this.nextEntryId = observed.length;
+        this.nextEntryId = observedCount;
     }
 
     async apply(): Promise<void> {

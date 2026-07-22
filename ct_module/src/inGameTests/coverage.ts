@@ -2,7 +2,7 @@ import type { Action, Condition, Importable } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
-import { ALL_IMPORTABLE_TYPES } from "../importables/houseReaders";
+import { ALL_IMPORTABLE_TYPES } from "../importables/export/readers";
 
 export type SuiteCoverage = {
     importableTypes: Set<string>;

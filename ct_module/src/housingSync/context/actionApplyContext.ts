@@ -1,8 +1,8 @@
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ImportSession } from "../../importables/imports";
-import type { CanonicalizeItemName, ResolveItemField } from "../items/itemReferences";
+import type { ActionSyncContext } from "../actions/syncContext";
+import type { ResolveItemField } from "../items/itemReferences";
 import type { ChildListDiff } from "../actions/diff/types";
 import type { Observed, ObservedActionSlot } from "../observedActions";
 import type { SyncEventHandler, ProgressScope } from "../syncEvents";
@@ -19,7 +19,6 @@ import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
     estimateConditionListPhaseUnits,
-    phaseUnitsTotal,
 } from "../progress/costs";
 
 type ChildActionApplyArgs = {
@@ -52,7 +51,7 @@ type ApplyChildActionList = (
     desired: Action[],
     options: {
         observed?: ObservedActionSlot[];
-        session: ImportSession;
+        sync: ActionSyncContext;
         listPath?: ActionListPath;
         baselineCurrent?: readonly Action[];
         progressScope?: ProgressScope;
@@ -63,19 +62,17 @@ type ApplyConditionList = (
     ctx: TaskContext,
     desired: Condition[],
     options: {
-        canonicalizeItemName: CanonicalizeItemName;
         resolveItem: ResolveItemField;
         baselineCurrent?: ReadonlyArray<Condition | null>;
         progress?: ProgressHandler;
         itemDiff?: import("../actions/diff/itemDiffContext").ItemDiffContext;
-        itemFieldObservations?: import("../items/fieldObservations").ItemFieldObservationRecorder;
     }
 ) => Promise<unknown>;
 
 export type CreateActionApplyContextArgs = {
     ctx: TaskContext;
     actionPath: ActionPath;
-    session: ImportSession;
+    sync: ActionSyncContext;
     appliedUnits: number;
     completedOps: number;
     totalOps: number;
@@ -122,7 +119,7 @@ function progressFromScope(
 export function createActionApplyContext({
     ctx,
     actionPath,
-    session,
+    sync,
     appliedUnits,
     completedOps,
     totalOps,
@@ -130,7 +127,7 @@ export function createActionApplyContext({
     applyChildActions,
     applyConditions: applyConditionList,
 }: CreateActionApplyContextArgs): ActionApplyContext {
-    const events = session.events;
+    const events = sync.events;
     const scopeAt = childListScope(appliedUnits, completedOps, totalOps);
     const listsToApply =
         childListDiffs === undefined
@@ -152,34 +149,28 @@ export function createActionApplyContext({
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
             const offset = args.offset ?? nextOffset;
             await applyChildActions(ctx, args.desired, {
-                session,
+                sync,
                 listPath: path,
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
             });
             nextOffset =
                 offset +
-                phaseUnitsTotal(
-                    estimateActionListPhaseUnits(args.desired, baselineCurrent)
-                );
+                estimateActionListPhaseUnits(args.desired, baselineCurrent).applying;
         },
 
         async applyConditions(prop, args) {
             const path = ConditionListPath.of(actionPath, prop);
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.desired, {
-                canonicalizeItemName: session.canonicalizeItemName,
-                resolveItem: session.resolveItem,
+                resolveItem: sync.resolveItem,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
-                itemDiff: session.itemDiff,
-                itemFieldObservations: session.itemFieldObservations,
+                itemDiff: sync.itemDiff,
             });
             nextOffset =
                 offset +
-                phaseUnitsTotal(
-                    estimateConditionListPhaseUnits(args.desired, args.observed)
-                );
+                estimateConditionListPhaseUnits(args.desired, args.observed).applying;
         },
     };
 }
