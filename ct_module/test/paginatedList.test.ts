@@ -8,13 +8,13 @@ const config = {
 
 describe("parsePaginatedTitlePage", () => {
     test("parses Housing's leading page marker", () => {
-        expect(parsePaginatedTitlePage("(2/3) Actions: Loop", config)).toEqual({
+        expect(parsePaginatedTitlePage("(2/3) Actions: Loop (wind_burst)", config)).toEqual({
             currentPage: 2,
             totalPages: 3,
         });
     });
 
-    test("does not mistake parenthesized content names for pagination", () => {
+    test("accepts one-page action titles ending in parentheses", () => {
         expect(parsePaginatedTitlePage("Actions: Fish (Tier 1)", config)).toBeNull();
         expect(parsePaginatedTitlePage("Actions: Loop (1/2 Second)", config)).toBeNull();
         expect(parsePaginatedTitlePage("Actions: Extra Misc. (1)", config)).toBeNull();
