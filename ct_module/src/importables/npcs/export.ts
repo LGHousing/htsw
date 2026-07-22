@@ -16,7 +16,7 @@ import {
     openNpcLeftClickActions,
     openNpcRightClickActions,
     readLeftClickRedirect,
-} from "./shared";
+} from "./housing";
 import {
     npcLabel,
     openNpcEditorForPos,
@@ -32,8 +32,7 @@ export type ExportNpcWithSharedStateOptions = {
     rightClickTarget: HtslExportTarget;
     rootDir: string;
     onReadProgress?: ProgressHandler;
-    // Read-only (deep read): cache the NPC, write no files.
-    readOnly?: { housingUuid: string };
+    output: { kind: "project" } | { kind: "cache"; housingUuid: string };
 };
 
 export type SharedNpcExportState = {
@@ -144,10 +143,10 @@ export async function exportNpcWithSharedState(
     };
     const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
 
-    if (options.readOnly !== undefined) {
+    if (options.output.kind === "cache") {
         writeImportableCache(
             ctx,
-            options.readOnly.housingUuid,
+            options.output.housingUuid,
             importable,
             "reader",
             true

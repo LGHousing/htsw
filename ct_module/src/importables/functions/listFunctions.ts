@@ -11,7 +11,7 @@ import {
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
-import { extractFunctionNameFromSlot } from "./shared";
+import { extractFunctionNameFromSlot } from "./housing";
 import { functionListOpened } from "../waiters";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {

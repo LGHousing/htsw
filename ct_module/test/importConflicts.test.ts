@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
-import { scanConflictVerdict } from "../src/importables/importConflicts";
+import { scanConflictVerdict } from "../src/housingSync/actions/conflicts";
 import { actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
-import type { ImportSession } from "../src/importables/imports";
+import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
 import { changeVar, message, observedSlot, playSound } from "./utils";
 
@@ -28,21 +27,17 @@ vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
     hydrateActionListScan: mocks.hydrateActionListScan,
 }));
 
-import { prereadActionList } from "../src/housingSync/actions/plan";
+import { readActionListPlan } from "../src/housingSync/actions/plan";
 
 function sessionWithLock(
     importable: ImportableFunction,
     lockedActions: ImportableFunction["actions"]
-): ImportSession {
+): ActionSyncContext {
     const items = createProjectItemIndex([]);
     const itemDependencies = createItemDependencyIndex([], items);
     return {
-        parsed: { value: [] } as never,
-        items,
-        itemDependencies,
         canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
         resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
-        housingUuid: "test-house",
         trust: {
             housingUuid: "test-house",
             trustMode: true,
@@ -70,8 +65,7 @@ function sessionWithLock(
         },
         conflicts: [],
         events: undefined,
-        actionItemRead: { mode: "sync" },
-        npcLookup: createNpcLookupCache(),
+        itemRead: { mode: "sync" },
     };
 }
 
@@ -86,7 +80,7 @@ describe("scanConflictVerdict", () => {
     });
 });
 
-describe("prereadActionList conflict detection", () => {
+describe("readActionListPlan conflict detection", () => {
     beforeEach(() => {
         mocks.scanActionList.mockReset();
         mocks.hydrateActionListScan.mockClear();
@@ -103,8 +97,8 @@ describe("prereadActionList conflict detection", () => {
         });
         const session = sessionWithLock(importable, [message("baseline")]);
 
-        await prereadActionList(null as unknown as TaskContext, importable.actions!, {
-            session,
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
             conflictTarget: {
                 type: importable.type,
                 identity: importable.name,
@@ -130,11 +124,11 @@ describe("prereadActionList conflict detection", () => {
         });
         const session = sessionWithLock(importable, baseline);
 
-        const plan = await prereadActionList(
+        const plan = await readActionListPlan(
             null as unknown as TaskContext,
             importable.actions!,
             {
-                session,
+                sync: session,
                 baselineCurrent: baseline,
                 trustedBaselineAfterUnchangedScan: baseline,
                 conflictTarget: {

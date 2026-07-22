@@ -9,15 +9,18 @@ import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
 } from "../../housingSync/actions/hydration/plan";
-import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
+import {
+    actionListPlanFromRead,
+    hydrateActionListSync,
+    scanActionListSync,
+    type ActionListSyncScanResult,
+} from "../../housingSync/actions/prepareSync";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
-import { createMissingReferencedShells } from "../references";
-import { countReferencedShells } from "../referenceScanner";
-import { openEventEditor } from "./shared";
+import { openEventEditor } from "./housing";
 
 export type EventImportPlan = {
     kind: "EVENT";
@@ -26,24 +29,23 @@ export type EventImportPlan = {
     actionsPlan: ActionListPlan | null;
 };
 
-export async function prereadImportableEvent(
+export type EventRead = {
+    kind: "EVENT";
+    importable: ImportableEvent;
+    trustPlan?: ImportableTrustPlan;
+    actions: ActionListSyncScanResult;
+};
+
+export async function scanImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent,
-    session: ImportSession,
+    session: ImportContext,
     trustPlan?: ImportableTrustPlan
-): Promise<EventImportPlan> {
-    const setup = createSetupStepEmitter(
-        session.events,
-        countReferencedShells(importable) + 2
-    );
-
-    await createMissingReferencedShells(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
-    });
-
-    const actionsSync = await prepareActionListSync(ctx, {
+): Promise<EventRead> {
+    const setup = createSetupStepEmitter(session.actions.events, 2);
+    const actions = await scanActionListSync(ctx, {
         desired: importable.actions,
-        session,
+        sync: session.actions,
         trustPlan,
         basePath: "actions",
         conflictTarget: {
@@ -57,22 +59,35 @@ export async function prereadImportableEvent(
             setup(`selected ${importable.event}`);
         },
     });
-    if (actionsSync.kind === "skipped") {
-        return { kind: "EVENT", importable, trustPlan, actionsPlan: null };
-    }
+    return { kind: "EVENT", importable, trustPlan, actions };
+}
 
-    return { kind: "EVENT", importable, trustPlan, actionsPlan: actionsSync.plan };
+export async function hydrateImportableEvent(
+    ctx: TaskContext,
+    read: EventRead
+): Promise<void> {
+    if (read.actions.kind !== "hydrate") return;
+    read.actions = await hydrateActionListSync(ctx, read.actions);
+}
+
+export function planImportableEvent(read: EventRead): EventImportPlan {
+    return {
+        kind: "EVENT",
+        importable: read.importable,
+        trustPlan: read.trustPlan,
+        actionsPlan: actionListPlanFromRead(read.actions),
+    };
 }
 
 export async function applyImportableEventPlan(
     ctx: TaskContext,
     plan: EventImportPlan,
-    session: ImportSession
+    session: ImportContext
 ): Promise<void> {
     if (plan.actionsPlan === null) return;
     await openEventEditor(ctx, plan.importable.event);
     await applyActionListPlan(ctx, plan.actionsPlan, {
-        session,
+        sync: session.actions,
     });
 }
 

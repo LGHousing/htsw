@@ -1,27 +1,27 @@
 import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 import type { ImportableItem } from "htsw/types";
 
-import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { ItemCaptureRegistry } from "./items/captureRegistry";
-import { createProjectItemIndex } from "./items/projectItems";
-import { createItemDependencyIndex } from "./items/dependencyIndex";
-import { expectedInteractData } from "./items/interactDataCache";
+import { FileSystemFileLoader } from "../../utils/fileLoaders";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
+import { createProjectItemIndex } from "../items/projectItems";
+import { createItemDependencyIndex } from "../items/dependencyIndex";
+import { expectedInteractData } from "../items/interactDataCache";
 
-export type ExportProjectContext = {
+export type ProjectExportDestination = {
     rootDir: string;
     importJsonPath: string;
     projectItems: readonly ImportableItem[];
 };
 
-export type ExportProjectTarget = Pick<
-    ExportProjectContext,
+export type ProjectExportTarget = Pick<
+    ProjectExportDestination,
     "rootDir" | "importJsonPath"
 >;
 
-export function exportProjectContextFromParsedImportJson(
-    target: ExportProjectTarget,
+export function projectExportDestinationFromParsedImportJson(
+    target: ProjectExportTarget,
     parsed: ImportablesParseResult | null | undefined
-): ExportProjectContext {
+): ProjectExportDestination {
     return {
         rootDir: target.rootDir,
         importJsonPath: target.importJsonPath,
@@ -29,9 +29,9 @@ export function exportProjectContextFromParsedImportJson(
     };
 }
 
-export function readExportProjectContext(
-    target: ExportProjectTarget
-): ExportProjectContext {
+export function readProjectExportDestination(
+    target: ProjectExportTarget
+): ProjectExportDestination {
     return {
         rootDir: target.rootDir,
         importJsonPath: target.importJsonPath,

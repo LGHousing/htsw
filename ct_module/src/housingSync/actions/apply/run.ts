@@ -128,7 +128,7 @@ export class ActionListApplyRun {
                 1
             ),
         };
-        this.events = options.session.events;
+        this.events = options.sync.events;
         this.isTopLevel = options.listPath === undefined;
         this.baselineUnits = this.phaseUnits.reading + this.phaseUnits.hydrating;
         this.totalOps = plan.diff.operations.length;
@@ -275,7 +275,7 @@ export class ActionListApplyRun {
                 this.markSnapshotUnsafe();
                 await writeOpenAction(this.ctx, op.desired, {
                     current: op.baselineAction,
-                    resolveItem: this.options.session.resolveItem,
+                    resolveItem: this.options.sync.resolveItem,
                     apply,
                 });
                 updateEditSnapshot(actionWithCurrentNote(), false);
@@ -336,7 +336,7 @@ export class ActionListApplyRun {
             await addAction(
                 this.ctx,
                 actionToImport,
-                this.options.session.resolveItem,
+                this.options.sync.resolveItem,
                 apply,
                 {
                     onActionAdded: () => {
@@ -412,7 +412,7 @@ export class ActionListApplyRun {
         return createActionApplyContext({
             ctx: this.ctx,
             actionPath: path,
-            session: this.options.session,
+            sync: this.options.sync,
             appliedUnits: this.appliedUnits,
             completedOps: this.completedOps,
             totalOps: this.totalOps,

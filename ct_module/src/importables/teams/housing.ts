@@ -6,7 +6,7 @@ import {
     openSubmenu,
 } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait";
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import { ItemSlot, menuStateDescription } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { openTeamsList } from "./listTeams";

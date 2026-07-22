@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Action, Importable } from "htsw/types";
-import {
-    collectReferencedImportables,
-    countReferencedShells,
-} from "../src/importables/referenceScanner";
+import { collectReferencedImportables } from "../src/importables/import/referenceScanner";
 
 function fn(actions: Action[]): Importable {
     return { type: "FUNCTION", name: "f", actions } as unknown as Importable;
@@ -29,7 +26,6 @@ describe("collectReferencedImportables", () => {
         expect(refs.functions).toEqual(["onEnter"]);
         expect(refs.menus).toEqual(["shop"]);
         expect(refs.regions).toEqual(["arena"]);
-        expect(countReferencedShells(fn(actions))).toBe(3);
     });
 
     it("dedupes repeated references", () => {

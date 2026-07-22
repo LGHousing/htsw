@@ -13,8 +13,7 @@ import { chatMessage } from "../../housingSync/menus/menuWaiters";
 import { functionActionEditorOpened } from "../waiters";
 import {
     createIconItem,
-    desiredIconSnapshot,
-    iconSnapshotsEqual,
+    functionIconFromSnapshot,
     iconStacksEqual,
 } from "./icon";
 import {
@@ -23,6 +22,10 @@ import {
     getSessionFunctionNamesLower,
     noteFunctionCreated,
 } from "./listFunctions";
+import type {
+    FunctionSettingChange,
+    ObservedFunctionSettings,
+} from "./settings";
 
 export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
@@ -113,7 +116,7 @@ export async function openFunctionSettings(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
+function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
     const autoExecSlot = ctx.tryGetItemSlot("Automatic Execution");
     if (autoExecSlot === null) {
         return undefined;
@@ -155,9 +158,8 @@ async function setFunctionIconIfNeeded(
         );
         return;
     }
-    // An icon is only ever {item, count}; match the picker selection on those,
-    // not the exact-NBT compare used for GIVE_ITEM (which would never match a
-    // freshly creative-spawned stack and falsely report "never appeared").
+    // Match the picker selection by function-icon fields, not the exact NBT
+    // comparison used for GIVE_ITEM.
     await setItemValue(ctx, "Edit Icon", createIconItem(icon), iconStacksEqual);
 }
 
@@ -179,30 +181,50 @@ async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Pr
  */
 export async function applyFunctionSettings(
     ctx: TaskContext,
-    importable: ImportableFunction
+    importable: ImportableFunction,
+    changes: readonly FunctionSettingChange[]
 ): Promise<void> {
-    const icon = importable.icon;
-    if (icon !== undefined && !(await functionIconMatches(ctx, importable))) {
-        await functionSettingsStep(`setting icon for function ${importable.name}`, () =>
-            setFunctionIconIfNeeded(ctx, icon)
-        );
+    for (const change of changes) {
+        switch (change.key) {
+            case "icon": {
+                const icon = change.desired;
+                if (icon === undefined) break;
+                await functionSettingsStep(
+                    `setting icon for function ${importable.name}`,
+                    () => setFunctionIconIfNeeded(ctx, icon)
+                );
+                break;
+            }
+            case "repeatTicks":
+                await functionSettingsStep(
+                    `setting automatic execution for function ${importable.name}`,
+                    () =>
+                        setAutomaticExecutionTicksIfNeeded(
+                            ctx,
+                            change.desired ?? 0
+                        )
+                );
+                break;
+            default: {
+                const _exhaustiveCheck: never = change;
+                return _exhaustiveCheck;
+            }
+        }
     }
-    await functionSettingsStep(
-        `setting automatic execution for function ${importable.name}`,
-        () => setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0)
-    );
 }
 
-/**
- * Whether the function's icon already matches the desired one, read straight
- * from the cached /functions list (no settings menu open). True when there's no
- * desired icon — nothing to apply.
- */
-export async function functionIconMatches(
+export async function readFunctionSettings(
     ctx: TaskContext,
-    importable: ImportableFunction
-): Promise<boolean> {
-    if (importable.icon === undefined) return true;
-    const current = await getSessionFunctionIcon(ctx, importable.name);
-    return iconSnapshotsEqual(current, desiredIconSnapshot(importable.icon));
+    name: string
+): Promise<ObservedFunctionSettings> {
+    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
+    await openFunctionSettings(ctx, name);
+    try {
+        return {
+            icon,
+            repeatTicks: readAutomaticExecutionTicks(ctx) ?? 0,
+        };
+    } finally {
+        await clickGoBack(ctx);
+    }
 }

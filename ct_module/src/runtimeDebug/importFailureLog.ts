@@ -11,7 +11,7 @@ import {
 } from "../tasks/specifics/waitFor";
 import { uploadImportFailureLog } from "./importFailureUpload";
 
-export type ImportFailureContext = {
+export type ImportFailureDetails = {
     phase: string;
     sourcePath: string;
     housingUuid: string;
@@ -55,7 +55,7 @@ function timestampForPath(): string {
 }
 
 export function writeImportFailureLog(
-    context: ImportFailureContext,
+    context: ImportFailureDetails,
     error: unknown
 ): string {
     const path = `./htsw/import-errors/import-error-${timestampForPath()}.json`;

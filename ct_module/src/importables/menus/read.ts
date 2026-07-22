@@ -11,7 +11,7 @@ import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { snbtFromItem } from "../../housingSync/items/itemNbt";
-import { openMenuElements } from "./shared";
+import { openMenuElements } from "./housing";
 
 const PLAYER_INVENTORY_SLOTS = 36;
 
@@ -188,7 +188,7 @@ export async function snapshotLiveMenuGrid(ctx: TaskContext): Promise<LiveMenuGr
 /**
  * Read the full live state of an already-open menu: size, grid size, and every
  * populated slot's item NBT + action list. The single live-menu read shared by
- * export and the non-trusted import preread. Caller must have the menu editor
+ * export and the non-trusted import Reader. Caller must have the menu editor
  * open.
  */
 export async function readLiveMenu(

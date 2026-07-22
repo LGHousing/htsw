@@ -61,10 +61,10 @@ export function parseOption<T extends string>(
     return value as T;
 }
 
-export function warnUnused(p: Parser, known: readonly string[]): void {
+export function warnUnused(p: Parser): void {
     for (const { key } of p.parseFields()) {
         const name = key.parseString();
-        if (known.includes(name)) continue;
+        if (p.recognizesField(name)) continue;
 
         p.gcx.addDiagnostic(
             Diagnostic.warning(`Unknown key: \`${name}\``)

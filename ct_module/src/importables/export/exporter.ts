@@ -2,24 +2,24 @@ import {
     restorePlayerInventory,
     snapshotPlayerInventory,
     type PlayerInventorySnapshot,
-} from "../housingSync/items/playerInventory";
-import type { ProgressHandler } from "../housingSync/progress/types";
-import TaskContext from "../tasks/context";
-import { ItemCaptureRegistry } from "./items/captureRegistry";
-import { exportCapturedItems } from "./items/exportCapturedItems";
-import { filterAlreadyExported } from "./exportSkip";
-import { runReadLoop, type ReadFn, type ReadOptions } from "./read";
-import { readImportableCache, writeImportableCache } from "../importCache/cache";
-import { getCurrentHousingUuid } from "../importCache/housingId";
-import { upsertHouseLockImportable } from "../importCache/houseLock";
+} from "../../housingSync/items/playerInventory";
+import type { ProgressHandler } from "../../housingSync/progress/types";
+import TaskContext from "../../tasks/context";
+import { ItemCaptureRegistry } from "../items/captureRegistry";
+import { exportCapturedItems } from "../items/exportCapturedItems";
+import { filterAlreadyExported } from "./skip";
+import { runReadLoop, type ReadFn, type ReadOptions } from "./reader";
+import { readImportableCache, writeImportableCache } from "../../importCache/cache";
+import { getCurrentHousingUuid } from "../../importCache/housingId";
+import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import type { Importable } from "htsw/types";
 import {
     createExportItemCaptureRegistry,
     readParsedImportablesForExport,
-} from "./exportContext";
-import { createProjectItemIndex } from "./items/projectItems";
-import { createItemDependencyIndex } from "./items/dependencyIndex";
-import { importableIdentity } from "./identity";
+} from "./projectDestination";
+import { createProjectItemIndex } from "../items/projectItems";
+import { createItemDependencyIndex } from "../items/dependencyIndex";
+import { importableIdentity } from "../identity";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -27,7 +27,7 @@ import { importableIdentity } from "./identity";
 // pre-run inventory to restore afterward. `inventorySnapshot` is non-null
 // exactly when the spec sets `capturesActionItems` — the driver only disturbs
 // the inventory for types whose items are pulled through it.
-export type BatchState = {
+export type ExportReadState = {
     itemCaptures: ItemCaptureRegistry;
     menuSlotItemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
@@ -38,10 +38,46 @@ export type BatchState = {
 // identical across types (list, resume-skip, announce, per-item progress and
 // counting, the item-capture/inventory lifecycle, the final report); a spec
 // supplies only what genuinely differs. Export (write files) and deep read
-// (cache only) are the same walk — `options.readOnly` picks the sink inside
-// `readOne`.
-export type ReadHouseSpec<Entry> = {
-    type: Importable["type"];
+// (cache only) are the same walk with different explicit output destinations.
+type ImportableOfType<K extends Importable["type"]> = Extract<Importable, { type: K }>;
+
+type HouseReader<Entry, Pending, Result> =
+    | {
+          kind: "direct";
+          read: (
+              ctx: TaskContext,
+              entry: Entry,
+              options: ReadOptions,
+              state: ExportReadState,
+              onReadProgress: ProgressHandler | undefined
+          ) => Promise<Result>;
+      }
+    | {
+          kind: "staged";
+          scan: (
+              ctx: TaskContext,
+              entry: Entry,
+              options: ReadOptions,
+              state: ExportReadState,
+              onReadProgress: ProgressHandler | undefined
+          ) => Promise<Pending>;
+          hydrate: (
+              ctx: TaskContext,
+              entry: Entry,
+              pending: Pending,
+              options: ReadOptions,
+              state: ExportReadState,
+              onReadProgress: ProgressHandler | undefined
+          ) => Promise<Result>;
+      };
+
+export type HouseExporterRecipe<
+    Entry,
+    K extends Importable["type"],
+    Pending = never,
+    Result = ImportableOfType<K>,
+> = {
+    type: K;
     // Singular, lowercase; pluralized with a trailing "s" in messages.
     noun: string;
     // Enumerate the house's entries of this type. Called to derive names when
@@ -64,36 +100,21 @@ export type ReadHouseSpec<Entry> = {
     // Runs once before the batch, even when `names` was supplied — resets a
     // list-session cache so per-item reads reflect the live house.
     prelude?: (ctx: TaskContext) => void;
-    // Read one entry from the house and land it: import.json + files on export,
-    // cache only when `options.readOnly` is set.
-    readOne: (
+    reader: HouseReader<Entry, Pending, Result>;
+    importableOf: (result: Result) => ImportableOfType<K>;
+    export: (
         ctx: TaskContext,
         entry: Entry,
+        result: Result,
         options: ReadOptions,
-        state: BatchState,
-        onReadProgress: ProgressHandler | undefined
-    ) => Promise<void>;
-    scanOne?: (
-        ctx: TaskContext,
-        entry: Entry,
-        options: ReadOptions,
-        state: BatchState,
-        onReadProgress: ProgressHandler | undefined
-    ) => Promise<unknown>;
-    hydrateOne?: (
-        ctx: TaskContext,
-        entry: Entry,
-        pending: unknown,
-        options: ReadOptions,
-        state: BatchState,
-        onReadProgress: ProgressHandler | undefined
+        state: ExportReadState
     ) => Promise<void>;
     // Diagnostic messages emitted after the loop in both export and read modes,
     // before the summary line (e.g. item-capture hints).
-    afterLoop?: (ctx: TaskContext, state: BatchState) => void;
+    afterLoop?: (ctx: TaskContext, state: ExportReadState) => void;
     // Trailing "(...)" note on the export summary line, e.g. item counts. Include
     // the leading space.
-    exportSummary?: (state: BatchState) => string;
+    exportSummary?: (state: ExportReadState) => string;
 };
 
 const plural = (n: number): string => (n === 1 ? "" : "s");
@@ -134,19 +155,26 @@ function refreshExportedItemDependencies(
 
 // Turn a per-type recipe into the `ReadFn` every caller (export batch, deep
 // read, the test runner) already speaks.
-export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
+export function defineHouseExporter<
+    Entry,
+    K extends Importable["type"],
+    Pending = never,
+    Result = ImportableOfType<K>,
+>(spec: HouseExporterRecipe<Entry, K, Pending, Result>): ReadFn {
     const nameOf = spec.nameOf ?? ((entry: Entry) => entry as unknown as string);
 
     return async (ctx, options) => {
         const { importJsonPath } = options;
-        const readOnly = options.readOnly !== undefined;
-        const verb = readOnly ? "Reading" : "Exporting";
+        const cacheOnly = options.output.kind === "cache";
+        const verb = cacheOnly ? "Reading" : "Exporting";
         const lockHousingUuid =
-            options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
+            options.output.kind === "cache"
+                ? options.output.housingUuid
+                : await getCurrentHousingUuid(ctx);
 
         spec.prelude?.(ctx);
 
-        const state: BatchState = {
+        const state: ExportReadState = {
             itemCaptures: createExportItemCaptureRegistry(
                 importJsonPath,
                 lockHousingUuid,
@@ -204,12 +232,12 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                       ctx,
                       spec.noun,
                       names,
-                      readOnly ? false : options.skipExisting,
+                      cacheOnly ? false : options.skipExisting,
                       (name) => referencesExist(importJsonPath, name)
                   );
 
         if (exportNames.length === 0) {
-            ctx.displayMessage(`&7No ${spec.noun}s to ${readOnly ? "read" : "export"}.`);
+            ctx.displayMessage(`&7No ${spec.noun}s to ${cacheOnly ? "read" : "export"}.`);
             await restoreInventory();
             return { total: 0, succeeded: 0, failed: 0 };
         }
@@ -221,101 +249,108 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         let succeeded = 0;
         let failed = 0;
         const completedNames = new Set<string>();
-        const scanOne = spec.scanOne;
-        const hydrateOne = spec.hydrateOne;
         try {
-            const result = await runReadLoop(ctx, {
+            const entryForName = (name: string): Entry => {
+                const entry =
+                    byName !== null ? byName.get(name) : (name as unknown as Entry);
+                if (entry === undefined) {
+                    throw new Error(
+                        `No ${spec.noun} named "${name}" exists in this housing.`
+                    );
+                }
+                return entry;
+            };
+            const accept = async (
+                acceptCtx: TaskContext,
+                name: string,
+                result: Result
+            ): Promise<void> => {
+                const entry = entryForName(name);
+                const importable = spec.importableOf(result);
+                if (options.output.kind === "cache") {
+                    writeImportableCache(
+                        acceptCtx,
+                        options.output.housingUuid,
+                        importable,
+                        "reader",
+                        true
+                    );
+                } else {
+                    await spec.export(acceptCtx, entry, result, options, state);
+                }
+                completedNames.add(name);
+                if (!cacheOnly) {
+                    const cached = readImportableCache(
+                        lockHousingUuid,
+                        spec.type,
+                        name
+                    );
+                    if (cached !== null) {
+                        upsertHouseLockImportable(
+                            options.importJsonPath,
+                            lockHousingUuid,
+                            cached.importable
+                        );
+                    }
+                }
+            };
+            const common = {
                 names: exportNames,
                 verb,
                 displayName: spec.displayName,
                 progress: options.progress,
-                processOne: async (ctx, name, onReadProgress) => {
-                    const entry =
-                        byName !== null ? byName.get(name) : (name as unknown as Entry);
-                    if (entry === undefined) {
-                        throw new Error(
-                            `No ${spec.noun} named "${name}" exists in this housing.`
-                        );
-                    }
-                    await spec.readOne(ctx, entry, options, state, onReadProgress);
-                    completedNames.add(name);
-                    if (!readOnly) {
-                        const cached = readImportableCache(
-                            lockHousingUuid,
-                            spec.type,
-                            name
-                        );
-                        if (cached !== null) {
-                            upsertHouseLockImportable(
-                                options.importJsonPath,
-                                lockHousingUuid,
-                                cached.importable
-                            );
-                        }
-                    }
-                },
-                ...(scanOne === undefined || hydrateOne === undefined
-                    ? {}
-                    : {
-                          scanOne: async (
-                              ctx: TaskContext,
-                              name: string,
-                              onReadProgress: ProgressHandler | undefined
-                          ) => {
-                              const entry =
-                                  byName !== null
-                                      ? byName.get(name)
-                                      : (name as unknown as Entry);
-                              if (entry === undefined)
-                                  throw new Error(
-                                      `No ${spec.noun} named "${name}" exists in this housing.`
-                                  );
-                              return scanOne(ctx, entry, options, state, onReadProgress);
+                accept,
+            };
+            const reader = spec.reader;
+            const result =
+                reader.kind === "direct"
+                    ? await runReadLoop(ctx, {
+                          ...common,
+                          reader: {
+                              kind: "direct",
+                              read: (readCtx, name, onReadProgress) =>
+                                  reader.read(
+                                      readCtx,
+                                      entryForName(name),
+                                      options,
+                                      state,
+                                      onReadProgress
+                                  ),
                           },
-                          hydrateOne: async (
-                              ctx: TaskContext,
-                              name: string,
-                              pending: unknown,
-                              onReadProgress: ProgressHandler | undefined
-                          ) => {
-                              const entry =
-                                  byName !== null
-                                      ? byName.get(name)
-                                      : (name as unknown as Entry);
-                              if (entry === undefined)
-                                  throw new Error(
-                                      `No ${spec.noun} named "${name}" exists in this housing.`
-                                  );
-                              await hydrateOne(
-                                  ctx,
-                                  entry,
+                      })
+                    : await runReadLoop(ctx, {
+                          ...common,
+                          reader: {
+                              kind: "staged",
+                              scan: (scanCtx, name, onReadProgress) =>
+                                  reader.scan(
+                                      scanCtx,
+                                      entryForName(name),
+                                      options,
+                                      state,
+                                      onReadProgress
+                                  ),
+                              hydrate: (
+                                  hydrateCtx,
+                                  name,
                                   pending,
-                                  options,
-                                  state,
                                   onReadProgress
-                              );
-                              completedNames.add(name);
-                              if (!readOnly) {
-                                  const cached = readImportableCache(
-                                      lockHousingUuid,
-                                      spec.type,
-                                      name
-                                  );
-                                  if (cached !== null)
-                                      upsertHouseLockImportable(
-                                          options.importJsonPath,
-                                          lockHousingUuid,
-                                          cached.importable
-                                      );
-                              }
+                              ) =>
+                                  reader.hydrate(
+                                      hydrateCtx,
+                                      entryForName(name),
+                                      pending,
+                                      options,
+                                      state,
+                                      onReadProgress
+                                  ),
                           },
-                      }),
-            });
+                      });
             succeeded = result.succeeded;
             failed = result.failed;
         } finally {
             try {
-                if (!readOnly && spec.capturesActionItems === true) {
+                if (!cacheOnly && spec.capturesActionItems === true) {
                     await exportCapturedItems(
                         ctx,
                         state.itemCaptures,
@@ -347,7 +382,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
 
         const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
         spec.afterLoop?.(ctx, state);
-        if (readOnly) {
+        if (cacheOnly) {
             ctx.displayMessage(
                 `&aRead ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${failedNote}`
             );

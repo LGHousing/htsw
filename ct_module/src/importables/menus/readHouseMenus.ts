@@ -1,7 +1,7 @@
 import type { ImportableMenu, MenuSlot } from "htsw/types";
 import * as htsw from "htsw";
 
-import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { prettySnbt } from "../../housingSync/items/itemNbt";
 import { ItemCaptureRegistry } from "../items/captureRegistry";
@@ -15,75 +15,33 @@ import {
     sectionFolderImportJson,
 } from "../../project/paths";
 import { menuExportReferencesExist } from "../../project/paths";
-import { makeReadHouse } from "../readHouse";
+import { defineHouseExporter } from "../export/exporter";
 import { listAllMenuNames } from "./listMenus";
-import { readLiveMenu } from "./read";
-import { openMenuEditor } from "./shared";
+import { readLiveMenu, type LiveMenu } from "./read";
+import { openMenuEditor } from "./housing";
 
-type ExportMenuOptions = {
-    /** The menu name as known to Hypixel Housing. */
-    name: string;
-    /** Path to the `import.json` to upsert into (will be created if absent). */
-    importJsonPath: string;
-    /**
-     * Root directory the export is being written under. Per-slot `.htsl` files
-     * go to `<rootDir>/menus/<slug>/slot-<N>.htsl` (just `<rootDir>/<slug>/`
-     * when the destination is the menus section folder itself); deduped slot
-     * items go to `<rootDir>/items/<name>.snbt`.
-     */
-    rootDir: string;
-    newExportTargetImportJson?: string;
-    onReadProgress?: ProgressHandler;
-    // Read-only (deep read): cache the menu, write no files.
-    readOnly?: { housingUuid: string };
-};
-
-/**
- * When exporting many menus, the caller shares one registry (so identical items
- * across menus collapse to one file) and one `writtenItems` set (so each shared
- * item file is written exactly once across the whole batch).
- */
 type ExportMenuSharedState = {
-    actionItemCaptures: ItemCaptureRegistry;
     slotItemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
 };
 
 type ImportJsonMenuSlot = { slot: number; nbt: string; actions?: string };
 
+type MenuReadResult = {
+    importable: ImportableMenu;
+    live: LiveMenu;
+};
+
 function pathKeyOf(path: string): string {
     return path.split("\\").join("/").toLowerCase();
 }
 
-/**
- * Export one menu: each slot's item is deduped into a shared `items/<name>.snbt`
- * and its click-actions written to a `.htsl`, both referenced by path in the
- * `import.json` (the language requires string paths, like functions/events).
- */
-async function exportMenu(
+async function readMenu(
     ctx: TaskContext,
-    options: ExportMenuOptions,
-    shared: ExportMenuSharedState
-): Promise<void> {
-    const { name } = options;
-    const { actionItemCaptures, slotItemCaptures, writtenItems } = shared;
-
-    const sectionJson = sectionFolderImportJson(options.importJsonPath, "menus");
-    const importJsonPath = importJsonTargetForSectionEntry(
-        options.importJsonPath,
-        "menus",
-        name,
-        options.newExportTargetImportJson
-    );
-    const rootDir =
-        importJsonPath === options.importJsonPath
-            ? options.rootDir
-            : parentDirOf(importJsonPath);
-    // Inside the menus section folder the per-menu folder sits directly
-    // beside its import.json — a "menus/" prefix there would nest menus/menus/.
-    const inSectionFolder =
-        sectionJson !== null && pathKeyOf(importJsonPath) === pathKeyOf(sectionJson);
-
+    name: string,
+    actionItemCaptures: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
+): Promise<MenuReadResult> {
     if ((await openMenuEditor(ctx, name)) === "missing") {
         throw new Error(`No menu named "${name}" exists in this housing.`);
     }
@@ -94,35 +52,50 @@ async function exportMenu(
             itemReadMode: "export",
             itemCaptures: actionItemCaptures,
         },
-        options.onReadProgress
+        onReadProgress
     );
-
-    const slug = canonicalSlug(name);
-    const menuRel = inSectionFolder ? slug : `menus/${slug}`;
-    const menuAbs = `${rootDir}/${menuRel}`;
-
-    const jsonSlots: ImportJsonMenuSlot[] = [];
     const cacheSlots: MenuSlot[] = [];
-
     for (const liveSlot of live.slots) {
-        // Cache slots in the same parsed-Tag form the import.json loader
-        // produces, so the drift hash compares like with like.
         cacheSlots.push({
             slot: liveSlot.slot,
             nbt: htsw.nbt.parseSnbtText(liveSlot.snbt),
             ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
         });
-        const itemName = slotItemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
-        // Read-only (deep read) records the live menu in the cache but writes no
-        // item/.htsl/import.json files.
-        if (options.readOnly !== undefined) continue;
+    }
 
-        // Item: deduped by content into a shared items/<name>.snbt, written
-        // before the json references it so the reference is never dangling.
+    return {
+        importable: {
+            type: "MENU",
+            name,
+            ...(live.size !== undefined ? { size: live.size } : {}),
+            slots: cacheSlots,
+        },
+        live,
+    };
+}
+
+async function writeMenuResult(
+    ctx: TaskContext,
+    result: MenuReadResult,
+    baseImportJsonPath: string,
+    importJsonPath: string,
+    rootDir: string,
+    shared: ExportMenuSharedState
+): Promise<void> {
+    const { importable, live } = result;
+    const { slotItemCaptures, writtenItems } = shared;
+    const sectionJson = sectionFolderImportJson(baseImportJsonPath, "menus");
+    const inSectionFolder =
+        sectionJson !== null && pathKeyOf(importJsonPath) === pathKeyOf(sectionJson);
+    const slug = canonicalSlug(importable.name);
+    const menuRel = inSectionFolder ? slug : `menus/${slug}`;
+    const menuAbs = `${rootDir}/${menuRel}`;
+    const jsonSlots: ImportJsonMenuSlot[] = [];
+
+    for (const liveSlot of live.slots) {
+        const itemName = slotItemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
+
         const nbtRel = `items/${itemName}.snbt`;
-        // Keyed by absolute path, not item name: menus in one batch can be
-        // declared in different files, and each base dir needs its own copy
-        // for the relative ref to resolve.
         const itemAbs = `${rootDir}/${nbtRel}`;
         if (!writtenItems.has(itemAbs)) {
             ensureParentDirs(itemAbs);
@@ -130,7 +103,6 @@ async function exportMenu(
             writtenItems.add(itemAbs);
         }
 
-        // Actions: per-slot .htsl under the menu folder.
         let actionsRel: string | undefined;
         if (liveSlot.actions.length > 0) {
             const htslRel = `${menuRel}/slot-${liveSlot.slot}.htsl`;
@@ -153,50 +125,22 @@ async function exportMenu(
         });
     }
 
-    const importable: ImportableMenu = {
-        type: "MENU",
-        name,
-        ...(live.size !== undefined ? { size: live.size } : {}),
-        slots: cacheSlots,
-    };
-
-    if (options.readOnly !== undefined) {
-        writeImportableCache(
-            ctx,
-            options.readOnly.housingUuid,
-            importable,
-            "reader",
-            true
-        );
-        ctx.displayMessage(
-            `&aRead menu '${name}' (${cacheSlots.length} slot${cacheSlots.length === 1 ? "" : "s"})`
-        );
-        return;
-    }
-
-    // All referenced item files are already on disk (written in the loop above),
-    // so upserting the menu entry now never produces a dangling reference.
     upsertImportableEntry(importJsonPath, "menus", {
-        name,
+        name: importable.name,
         ...(live.size !== undefined ? { size: live.size } : {}),
         slots: jsonSlots,
     });
 
-    try {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        writeImportableCache(ctx, housingUuid, importable, "exporter");
-    } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${String(error)}`);
-    }
+    await tryWriteImportableCache(ctx, importable, "exporter");
 
     const withActions = jsonSlots.filter((s) => s.actions !== undefined).length;
     ctx.displayMessage(
-        `&aExported menu '${name}' (${jsonSlots.length} slot${jsonSlots.length === 1 ? "" : "s"}, ${withActions} with actions)`
+        `&aExported menu '${importable.name}' (${jsonSlots.length} slot${jsonSlots.length === 1 ? "" : "s"}, ${withActions} with actions)`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 }
 
-export const readMenus = makeReadHouse<string>({
+export const readMenus = defineHouseExporter<string, "MENU", never, MenuReadResult>({
     type: "MENU",
     noun: "menu",
     list: listAllMenuNames,
@@ -206,21 +150,33 @@ export const readMenus = makeReadHouse<string>({
         const count = state.menuSlotItemCaptures.size();
         return ` (${count} unique slot item${count === 1 ? "" : "s"})`;
     },
-    readOne: (ctx, name, options, state, onReadProgress) =>
-        exportMenu(
+    reader: {
+        kind: "direct",
+        read: (ctx, name, _options, state, onReadProgress) =>
+            readMenu(ctx, name, state.itemCaptures, onReadProgress),
+    },
+    importableOf: (result) => result.importable,
+    export: async (ctx, name, result, options, state) => {
+        const importJsonPath = importJsonTargetForSectionEntry(
+            options.importJsonPath,
+            "menus",
+            name,
+            options.newExportTargetImportJson
+        );
+        const rootDir =
+            importJsonPath === options.importJsonPath
+                ? options.rootDir
+                : parentDirOf(importJsonPath);
+        await writeMenuResult(
             ctx,
+            result,
+            options.importJsonPath,
+            importJsonPath,
+            rootDir,
             {
-                name,
-                importJsonPath: options.importJsonPath,
-                rootDir: options.rootDir,
-                newExportTargetImportJson: options.newExportTargetImportJson,
-                readOnly: options.readOnly,
-                onReadProgress,
-            },
-            {
-                actionItemCaptures: state.itemCaptures,
                 slotItemCaptures: state.menuSlotItemCaptures,
                 writtenItems: state.writtenItems,
             }
-        ),
+        );
+    },
 });

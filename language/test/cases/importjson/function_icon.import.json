@@ -5,7 +5,8 @@
       "actions": "empty.htsl",
       "icon": {
         "item": "minecraft:map",
-        "count": 3
+        "count": 3,
+        "enchanted": true
       }
     }
   ]

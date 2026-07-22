@@ -6,7 +6,7 @@ import {
     setNumberValue,
 } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { getSessionCommandNamesLower, noteCommandCreated } from "./listCommands";
@@ -23,18 +23,6 @@ export async function ensureCommandExists(
     await timedWaitForMenu(ctx, "commandMenuWait");
     noteCommandCreated(name);
     return "created";
-}
-
-export async function openCommandActionsEditor(
-    ctx: TaskContext,
-    name: string
-): Promise<"opened" | "created"> {
-    const status = await ensureCommandExists(ctx, name);
-    if (status === "created") return "created";
-
-    await ctx.runCommand(`/command actions ${name}`);
-    await timedWaitForMenu(ctx, "commandMenuWait");
-    return "opened";
 }
 
 export async function openExistingCommandActionsEditor(

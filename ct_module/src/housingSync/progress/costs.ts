@@ -27,7 +27,6 @@ import {
     scalarFieldHasNonDefaultValue,
     notesEqual,
 } from "../actions/comparison";
-import { countReferencedShells } from "../../importables/referenceScanner";
 import { readCachedActionList } from "../../importCache/actionLists";
 import type { ImportableCacheEntry } from "../../importCache/cache";
 
@@ -135,7 +134,7 @@ function moveUnits(fromIndex: number, toIndex: number, listLength: number): numb
     return Math.min(leftDistance, rightDistance) * COST.reorderStep;
 }
 
-export function conditionListReadUnits(conditionCount: number): number {
+function conditionListReadUnits(conditionCount: number): number {
     return pageTurnUnitsForListItemCount(conditionCount);
 }
 
@@ -429,8 +428,7 @@ export function phaseUnitsTotal(p: PhaseUnits): number {
  * observed ms/unit.
  */
 export function setupUnitsForImportable(importable: Importable): number {
-    const refShellUnits = countReferencedShells(importable) * COST.commandMenuWait;
-    return refShellUnits + ownSetupUnits(importable);
+    return ownSetupUnits(importable);
 }
 
 function ownSetupUnits(importable: Importable): number {
@@ -604,42 +602,17 @@ export function editUnitsWithChildLists(
         if (childList.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
         if (childList.prop === "conditions") {
-            const baseline = childConditionBaseline(op.baselineAction);
-            const desired = childConditionDesired(op.desired);
-            total += phaseUnitsTotal(estimateConditionListPhaseUnits(desired, baseline));
+            total += conditionListDiffApplyUnits(childList.diff);
         } else {
-            const baseline = childActionBaseline(op.baselineAction, childList.prop);
             const desired = childActionDesired(op.desired, childList.prop);
-            total += phaseUnitsTotal(estimateActionListPhaseUnits(desired, baseline));
+            total += actionListDiffApplyUnits(
+                childList.diff,
+                editUnitsWithChildLists,
+                desired.length
+            );
         }
     }
     return total;
-}
-
-function childConditionBaseline(
-    action: ObservedActionSlot["action"] | Action
-): ReadonlyArray<Condition | null> | undefined {
-    if (action === null || action.type !== "CONDITIONAL") return undefined;
-    return action.conditions;
-}
-
-function childConditionDesired(action: Action): Condition[] {
-    return action.type === "CONDITIONAL" ? action.conditions : [];
-}
-
-function childActionBaseline(
-    action: ObservedActionSlot["action"] | Action,
-    prop: "ifActions" | "elseActions" | "actions"
-): readonly Action[] | undefined {
-    if (action === null) return undefined;
-    if (action.type === "CONDITIONAL") {
-        const value = prop === "ifActions" ? action.ifActions : action.elseActions;
-        return observedActionsAsBaseline(value);
-    }
-    if (action.type === "RANDOM" && prop === "actions") {
-        return observedActionsAsBaseline(action.actions);
-    }
-    return undefined;
 }
 
 function childActionDesired(
@@ -651,18 +624,6 @@ function childActionDesired(
     }
     if (action.type === "RANDOM" && prop === "actions") return action.actions;
     return [];
-}
-
-function observedActionsAsBaseline(
-    actions: ReadonlyArray<ObservedActionSlot["action"] | Action> | undefined
-): readonly Action[] | undefined {
-    if (actions === undefined) return undefined;
-    const out: Action[] = [];
-    for (let i = 0; i < actions.length; i++) {
-        const action = actions[i];
-        if (action !== null) out.push(action as Action);
-    }
-    return out;
 }
 
 /**
@@ -869,7 +830,7 @@ export function estimateImportableCost(
         );
     }
     if (importable.type === "MENU") {
-        // A menu is walked slot by slot: export and the import preread both
+        // A menu is walked slot by slot: export and the import Reader both
         // LEFT-click into every populated slot's action editor, deep-read its
         // list, and go back (see readLiveMenu). Price that walk per slot;
         // pricing only the click (as this branch once did) undercounts a

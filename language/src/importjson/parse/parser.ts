@@ -11,6 +11,7 @@ export class Parser {
     readonly importJson: ImportJsonParseMetadata;
     readonly startPos: number;
     readonly node: json.Node;
+    private readonly recognizedFields = new Set<string>();
     
     constructor(
         gcx: GlobalCtxt,
@@ -30,6 +31,8 @@ export class Parser {
                 .addPrimarySpan(this.span());
         }
 
+        this.recognizedFields.add(name);
+
         for (const prop of this.node.children ?? []) {
             const [key, value] = prop.children ?? [];
 
@@ -37,6 +40,10 @@ export class Parser {
                 return new Parser(this.gcx, this.startPos, value, this.importJson);
             }
         }
+    }
+
+    recognizesField(name: string): boolean {
+        return this.recognizedFields.has(name);
     }
     
     parseField(name: string): Parser {

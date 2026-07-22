@@ -31,11 +31,11 @@ import {
 import { parseImportJsonBlocking } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
-    importSelectedImportables,
-    orderImportablesForImportSession,
-} from "../../../importables/importSession";
+    orderImportablesForSession,
+    runImportSession,
+} from "../../../importables/import/session";
 import { importableIdentity } from "../../../importables/identity";
-import { HOUSE_READERS } from "../../../importables/houseReaders";
+import { HOUSE_READERS } from "../../../importables/export/readers";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
@@ -74,7 +74,7 @@ import {
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
 import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
-import type { ImportConflict } from "../../../importables/importConflicts";
+import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
@@ -270,7 +270,7 @@ function createSyncEventHandler(args: {
         },
         importableReactivated: (e) => {
             // Pass-2 (apply) re-activates an importable previously parked
-            // after pass-1 pre-read. Re-bind the preview to this row's
+            // after the Reader pass. Re-bind the preview to this row's
             // source file so the apply-phase diff overlay lands in the
             // right pane.
             const imp = importablesByKey.get(e.key) ?? null;
@@ -442,7 +442,7 @@ function startConflictReview(request: ConflictReviewRequest): void {
 
 /**
  * Group queued items by their declaring import.json so we can hand each
- * batch to a single `importSelectedImportables` call (which assumes one
+ * batch to a single `runImportSession` call (which assumes one
  * shared `sourcePath` across all importables it processes). `importJson`
  * items expand to every importable in their parse; `importable` items
  * resolve to the matching object inside the parse.
@@ -505,7 +505,7 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
             }
         }
         if (wanted.length === 0) continue;
-        const ordered = orderImportablesForImportSession(g.parsed.value, wanted);
+        const ordered = orderImportablesForSession(g.parsed.value, wanted);
         batches.push({ sourcePath, parsed: g.parsed, importables: ordered });
     }
     return batches.length === 0 ? null : batches;
@@ -630,7 +630,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     trustMode,
                     housingUuid,
                 });
-                await importSelectedImportables(ctx, {
+                await runImportSession(ctx, {
                     importables: batch.importables,
                     trustMode,
                     housingUuid,

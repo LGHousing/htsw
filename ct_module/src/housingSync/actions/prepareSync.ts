@@ -1,6 +1,6 @@
 import type { Action } from "htsw/types";
 
-import type { ImportSession } from "../../importables/imports";
+import type { ActionSyncConflict, ActionSyncContext } from "./syncContext";
 import type { ImportableTrustPlan } from "../../importCache";
 import { readCachedActionList } from "../../importCache/actionLists";
 import TaskContext from "../../tasks/context";
@@ -10,40 +10,51 @@ import type { ActionListPath } from "../actionPath";
 import {
     createKnownActionListPlan,
     createKnownEmptyActionListPlan,
-    prereadActionList,
+    hydrateActionListForPlan,
+    scanActionListForPlan,
+    type ActionListPlanScan,
     type ActionListPlan,
 } from "./plan";
 import { emitDiffPlanned } from "./apply/progress";
-import type { ImportConflict } from "../../importables/importConflicts";
 
 export type ActionListSyncResult =
     | { kind: "skipped"; reason: "undeclared" | "trusted" }
     | { kind: "planned"; plan: ActionListPlan };
 
+export type ActionListSyncScanResult =
+    | ActionListSyncResult
+    | {
+          kind: "hydrate";
+          pending: Extract<ActionListPlanScan, { kind: "hydrate" }>;
+          target: ActionListSyncTarget;
+      };
+
 export type ActionListSyncTarget = {
     desired: Action[] | undefined;
     basePath: string;
-    session: ImportSession;
+    sync: ActionSyncContext;
     trustPlan?: ImportableTrustPlan;
     open?: () => Promise<void>;
-    current?: { kind: "known-empty" };
+    current?: { kind: "known-empty" } | { kind: "known"; actions: readonly Action[] };
     listPath?: ActionListPath;
     progressScope?: ProgressScope;
-    conflictTarget?: ImportConflict;
+    conflictTarget?: ActionSyncConflict;
 };
 
-export function shouldSyncActionList(
-    desired: Action[] | undefined,
-    trustPlan: ImportableTrustPlan | undefined,
-    basePath: string
-): boolean {
-    return desired !== undefined && !isActionListTrusted(trustPlan, basePath);
-}
-
-export async function prepareActionListSync(
+export async function readActionListSync(
     ctx: TaskContext,
     target: ActionListSyncTarget
 ): Promise<ActionListSyncResult> {
+    const scan = await scanActionListSync(ctx, target);
+    return scan.kind === "hydrate"
+        ? hydrateActionListSync(ctx, scan, false)
+        : scan;
+}
+
+export async function scanActionListSync(
+    ctx: TaskContext,
+    target: ActionListSyncTarget
+): Promise<ActionListSyncScanResult> {
     if (target.desired === undefined) {
         return { kind: "skipped", reason: "undeclared" };
     }
@@ -52,6 +63,12 @@ export async function prepareActionListSync(
     }
     if (target.current?.kind === "known-empty") {
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
+    }
+    if (target.current?.kind === "known") {
+        return planned(
+            createKnownActionListPlan(target.desired, target.current.actions, target),
+            target
+        );
     }
     const trustedBaseline = getTrustedBaselineActionList(
         target.trustPlan,
@@ -67,9 +84,8 @@ export async function prepareActionListSync(
     if (target.open !== undefined) {
         await target.open();
     }
-    return planned(
-        await prereadActionList(ctx, target.desired, {
-            session: target.session,
+    const scan = await scanActionListForPlan(ctx, target.desired, {
+            sync: target.sync,
             listPath: target.listPath,
             progressScope: target.progressScope,
             baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
@@ -78,29 +94,50 @@ export async function prepareActionListSync(
                 : undefined,
             trust: getActionListTrust(target.trustPlan, target.basePath),
             conflictTarget: target.conflictTarget,
-        }),
-        target
-    );
+        });
+    return scan.kind === "planned"
+        ? planned(scan.plan, target)
+        : { kind: "hydrate", pending: scan, target };
+}
+
+export async function hydrateActionListSync(
+    ctx: TaskContext,
+    scan: Extract<ActionListSyncScanResult, { kind: "hydrate" }>,
+    reopen: boolean = true
+): Promise<ActionListSyncResult> {
+    if (reopen && scan.target.open !== undefined) {
+        await scan.target.open();
+    }
+    return planned(await hydrateActionListForPlan(ctx, scan.pending), scan.target);
+}
+
+export function actionListPlanFromRead(
+    read: ActionListSyncScanResult
+): ActionListPlan | null {
+    if (read.kind === "hydrate") {
+        throw new Error("Action-list read was planned before hydration completed.");
+    }
+    return read.kind === "planned" ? read.plan : null;
 }
 
 function conflictScanRequired(target: ActionListSyncTarget): boolean {
     return (
         target.conflictTarget !== undefined &&
-        target.session.trust.trustMode &&
+        target.sync.trust.trustMode &&
         target.trustPlan?.lockListScanHashes?.[target.basePath] !== undefined
     );
 }
 
 // The apply pass re-emits diffPlanned when it starts, but in a two-pass
-// session that can be minutes after this pre-read (every other importable's
-// pre-read runs in between). Emit as soon as the diff exists so the live
+// session that can be minutes after this Reader finishes (every other
+// importable is read in between). Emit as soon as the diff exists so the live
 // preview shows the planned operations immediately; the preview's mark
 // handlers tolerate the later re-emission.
 function planned(
     plan: ActionListPlan,
     target: ActionListSyncTarget
 ): ActionListSyncResult {
-    emitDiffPlanned(target.session.events, plan.diff, plan.desired, target.listPath);
+    emitDiffPlanned(target.sync.events, plan.diff, plan.desired, target.listPath);
     return { kind: "planned", plan };
 }
 
@@ -111,7 +148,7 @@ function isActionListTrusted(
     return plan?.trustedChildListPaths.has(basePath) ?? false;
 }
 
-export function getBaselineActionList(
+function getBaselineActionList(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): readonly Action[] | undefined {
@@ -131,7 +168,7 @@ function getTrustedBaselineActionList(
     return readCachedActionList(plan.entry.importable, basePath);
 }
 
-export function getActionListTrust(
+function getActionListTrust(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): ActionListTrust | undefined {

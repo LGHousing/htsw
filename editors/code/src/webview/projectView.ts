@@ -10,6 +10,7 @@ import {
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
+    importableMetadataEntries,
     importableEntryMatchesIdentity,
     moveImportableEntry,
     normalizeRelativeProjectPath,
@@ -38,7 +39,6 @@ import type {
     ItemEditorFromHostMessage,
     ItemPreviewData,
     ProjectFromHostMessage,
-    ProjectImportableMetadata,
     ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
@@ -1097,7 +1097,7 @@ function mapImportable(
     const sourcePath = externalImportableSourcePath(imp, declaringPath);
     const own = ownDiagnosticCounts(parse, imp);
     const subEntries = mapSubEntries(imp, declaringPath, parse);
-    const metadataEntries = metadataEntriesOf(imp);
+    const metadataEntries = importableMetadataEntries(imp);
 
     return {
         id: `${declaringPath}|${type}|${identity}`,
@@ -1115,68 +1115,6 @@ function mapImportable(
         subEntries: subEntries.length > 0 ? subEntries : undefined,
         metadataEntries: metadataEntries.length > 0 ? metadataEntries : undefined,
     };
-}
-
-function metadataEntriesOf(imp: htsw.types.Importable): ProjectImportableMetadata[] {
-    if (imp.type === "FUNCTION") {
-        const fields: ProjectImportableMetadata[] = [
-            {
-                label: "Repeat",
-                value: imp.repeatTicks !== undefined ? `${imp.repeatTicks}t` : "off",
-                jsonPath: ["repeatTicks"],
-            },
-            {
-                label: "Icon",
-                value: imp.icon !== undefined ? imp.icon.item : "default",
-                jsonPath: ["icon"],
-            },
-        ];
-        if (imp.icon !== undefined) {
-            fields.push({
-                label: "Count",
-                value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
-                jsonPath: ["icon", "count"],
-            });
-        }
-        return fields;
-    }
-    if (imp.type === "COMMAND") {
-        return [
-            { label: "Mode", value: imp.mode ?? "Self", jsonPath: ["mode"] },
-            { label: "Priority", value: String(imp.requiredPriority ?? 0), jsonPath: ["requiredPriority"] },
-            { label: "Listed", value: (imp.listed ?? true) ? "true" : "false", jsonPath: ["listed"] },
-        ];
-    }
-    if (imp.type === "REGION") {
-        if (imp.bounds === undefined) {
-            return [{ label: "Bounds", value: "(not set)", jsonPath: ["bounds"] }];
-        }
-        return [
-            { label: "From", value: formatPos(imp.bounds.from), jsonPath: ["bounds", "from"] },
-            { label: "To", value: formatPos(imp.bounds.to), jsonPath: ["bounds", "to"] },
-        ];
-    }
-    if (imp.type === "MENU") {
-        return [{ label: "Size", value: imp.size !== undefined ? `${imp.size} lines` : "default", jsonPath: ["size"] }];
-    }
-    if (imp.type === "NPC") {
-        return [
-            { label: "Pos", value: formatPos(imp.pos), jsonPath: ["pos"] },
-            {
-                label: "Redirect",
-                value: imp.leftClickRedirect === undefined ? "default" : imp.leftClickRedirect ? "true" : "false",
-                jsonPath: ["leftClickRedirect"],
-            },
-        ];
-    }
-    if (imp.type === "ITEM") {
-        return [{ label: "NBT", value: "Item data", jsonPath: ["nbt"] }];
-    }
-    return [];
-}
-
-function formatPos(pos: { x: number; y: number; z: number }): string {
-    return `${pos.x}, ${pos.y}, ${pos.z}`;
 }
 
 function externalImportableSourcePath(

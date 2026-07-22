@@ -1,0 +1,25 @@
+import type { Importable } from "htsw/types";
+
+import type { TrustPlan } from "../../importCache";
+import type { ItemDiffContext } from "./diff/itemDiffContext";
+import type { CanonicalizeItemName, ResolveItemField } from "../items/itemReferences";
+import type { ItemCaptureSink } from "../items/capture";
+import type { ItemFieldObservationRecorder } from "../items/fieldObservations";
+import type { SyncEventHandler } from "../syncEvents";
+
+export type ActionSyncConflict = {
+    type: Importable["type"];
+    identity: string;
+    basePath: string;
+};
+
+export type ActionSyncContext = {
+    canonicalizeItemName: CanonicalizeItemName;
+    resolveItem: ResolveItemField;
+    trust: TrustPlan;
+    conflicts: ActionSyncConflict[];
+    events?: SyncEventHandler;
+    itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
+    itemDiff?: ItemDiffContext;
+    itemFieldObservations?: ItemFieldObservationRecorder;
+};

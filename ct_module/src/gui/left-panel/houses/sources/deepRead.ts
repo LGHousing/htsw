@@ -5,7 +5,7 @@ import type { Importable } from "htsw/types";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { getParseAt } from "../../../parsing/parses";
-import type { ReadFn } from "../../../../importables/read";
+import type { ReadFn } from "../../../../importables/export/reader";
 import { startDeepRead } from "../../../knowledge/deepRead";
 
 // Builds a `deepRead(onlyNames?)` for one content type: the export driver in

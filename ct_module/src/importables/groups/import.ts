@@ -2,7 +2,7 @@ import type { ImportableGroup } from "htsw/types";
 
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import type { ImportSession } from "../imports";
+import type { ImportContext } from "../import/context";
 import { createGroup, listAllGroupNames, openEditGroup } from "./listGroups";
 import {
     applyGroupPermissionMenu,
@@ -12,7 +12,7 @@ import {
     setGroupPriority,
     setGroupTag,
     setGroupTagShownInChat,
-} from "./shared";
+} from "./housing";
 
 export type GroupImportPlan = {
     kind: "GROUP";
@@ -26,6 +26,14 @@ export type GroupImportPlan = {
     permissionsHandled: boolean;
     chatSpeedHandled: boolean;
     defaultGameModeHandled: boolean;
+};
+
+export type GroupRead = {
+    kind: "GROUP";
+    importable: ImportableGroup;
+    trustPlan?: ImportableTrustPlan;
+    settings: ReturnType<typeof readGroupSettings> | null;
+    permissions: Awaited<ReturnType<typeof readGroupPermissionMenu>> | null;
 };
 
 function permissionsMatch(
@@ -45,71 +53,74 @@ function permissionMenuHandled(plan: GroupImportPlan): boolean {
     return plan.permissionsHandled && plan.chatSpeedHandled && plan.defaultGameModeHandled;
 }
 
-export async function prereadImportableGroup(
+export async function readImportableGroup(
     ctx: TaskContext,
     importable: ImportableGroup,
-    session: ImportSession,
     trustPlan?: ImportableTrustPlan
-): Promise<GroupImportPlan> {
+): Promise<GroupRead> {
     const exists = (await listAllGroupNames(ctx)).indexOf(importable.name) >= 0;
     if (!exists) {
-        return {
-            kind: "GROUP",
-            importable,
-            trustPlan,
-            exists: false,
-            tagHandled: false,
-            tagShownInChatHandled: false,
-            colorHandled: false,
-            priorityHandled: false,
-            permissionsHandled: false,
-            chatSpeedHandled: false,
-            defaultGameModeHandled: false,
-        };
+        return { kind: "GROUP", importable, trustPlan, settings: null, permissions: null };
     }
 
     await openEditGroup(ctx, importable.name);
-    const fields = readGroupSettings(ctx);
-
-    let permissionsHandled = true;
-    let chatSpeedHandled = true;
-    let defaultGameModeHandled = true;
+    const settings = readGroupSettings(ctx);
     const needsPermissionMenu =
         importable.permissions !== undefined ||
         importable.chatSpeed !== undefined ||
         importable.defaultGameMode !== undefined;
-    if (needsPermissionMenu) {
-        const state = await readGroupPermissionMenu(ctx);
-        permissionsHandled = permissionsMatch(importable.permissions ?? {}, state.permissions);
-        chatSpeedHandled =
-            importable.chatSpeed === undefined || state.chatSpeed === importable.chatSpeed;
-        defaultGameModeHandled =
-            importable.defaultGameMode === undefined ||
-            state.defaultGameMode === importable.defaultGameMode;
-    }
+    const permissions = needsPermissionMenu
+        ? await readGroupPermissionMenu(ctx)
+        : null;
+    return { kind: "GROUP", importable, trustPlan, settings, permissions };
+}
+
+export function planImportableGroup(read: GroupRead): GroupImportPlan {
+    const { importable, settings, permissions } = read;
+    const exists = settings !== null;
 
     return {
         kind: "GROUP",
         importable,
-        trustPlan,
-        exists: true,
-        tagHandled: importable.tag === undefined || fields.tag === importable.tag,
+        trustPlan: read.trustPlan,
+        exists,
+        tagHandled:
+            exists &&
+            (importable.tag === undefined || settings.tag === importable.tag),
         tagShownInChatHandled:
-            importable.tagShownInChat === undefined ||
-            fields.tagShownInChat === importable.tagShownInChat,
-        colorHandled: importable.color === undefined || fields.color === importable.color,
+            exists &&
+            (importable.tagShownInChat === undefined ||
+                settings.tagShownInChat === importable.tagShownInChat),
+        colorHandled:
+            exists &&
+            (importable.color === undefined || settings.color === importable.color),
         priorityHandled:
-            importable.priority === undefined || fields.priority === importable.priority,
-        permissionsHandled,
-        chatSpeedHandled,
-        defaultGameModeHandled,
+            exists &&
+            (importable.priority === undefined ||
+                settings.priority === importable.priority),
+        permissionsHandled:
+            exists &&
+            (importable.permissions === undefined ||
+                (permissions !== null &&
+                    permissionsMatch(
+                        importable.permissions,
+                        permissions.permissions
+                    ))),
+        chatSpeedHandled:
+            exists &&
+            (importable.chatSpeed === undefined ||
+                permissions?.chatSpeed === importable.chatSpeed),
+        defaultGameModeHandled:
+            exists &&
+            (importable.defaultGameMode === undefined ||
+                permissions?.defaultGameMode === importable.defaultGameMode),
     };
 }
 
 export async function applyImportableGroupPlan(
     ctx: TaskContext,
     plan: GroupImportPlan,
-    _session: ImportSession
+    _session: ImportContext
 ): Promise<void> {
     const { importable } = plan;
     if (!plan.exists) {

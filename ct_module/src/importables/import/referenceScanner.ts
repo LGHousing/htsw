@@ -1,6 +1,6 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
-import { unique } from "../utils/helpers";
+import { unique } from "../../utils/helpers";
 
 export type ReferencedImportables = {
     functions: string[];
@@ -43,11 +43,6 @@ export function collectReferencedImportables(
         menus: unique(refs.menus),
         regions: unique(refs.regions),
     };
-}
-
-export function countReferencedShells(importable: Importable): number {
-    const refs = collectReferencedImportables(importable);
-    return refs.functions.length + refs.menus.length + refs.regions.length;
 }
 
 function collectActionReferences(

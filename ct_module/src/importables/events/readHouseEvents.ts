@@ -2,14 +2,11 @@ import type { Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
 import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
-import {
-    completeActionListScan,
-    readActionListFully,
-} from "../../housingSync/actions/hydration/run";
+import { completeActionListScan } from "../../housingSync/actions/hydration/run";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
-import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
@@ -17,8 +14,11 @@ import {
     eventExportReferencesExist,
     htslTargetForEventExport,
 } from "../../project/paths";
-import { makeReadHouse, type BatchState } from "../readHouse";
-import { openEventEditor } from "./shared";
+import {
+    defineHouseExporter,
+    type ExportReadState,
+} from "../export/exporter";
+import { openEventEditor } from "./housing";
 import { listAllEventNames } from "./listEvents";
 
 type PendingEventRead = {
@@ -28,7 +28,7 @@ type PendingEventRead = {
 async function scanEvent(
     ctx: TaskContext,
     name: string,
-    state: BatchState,
+    state: ExportReadState,
     onReadProgress: ProgressHandler | undefined,
     events: SyncEventHandler | undefined
 ): Promise<PendingEventRead> {
@@ -57,7 +57,7 @@ async function hydrateEvent(
     ctx: TaskContext,
     name: string,
     pending: PendingEventRead,
-    state: BatchState,
+    state: ExportReadState,
     onReadProgress: ProgressHandler | undefined,
     events: SyncEventHandler | undefined
 ): Promise<ImportableEvent> {
@@ -90,20 +90,8 @@ async function writeEventResult(
     options: {
         importJsonPath: string;
         newExportTargetImportJson?: string;
-        readOnly?: { housingUuid: string };
     }
 ): Promise<void> {
-    if (options.readOnly !== undefined) {
-        writeImportableCache(
-            ctx,
-            options.readOnly.housingUuid,
-            importable,
-            "reader",
-            true
-        );
-        return;
-    }
-
     const target = htslTargetForEventExport(
         options.importJsonPath,
         name,
@@ -131,39 +119,7 @@ async function writeEventResult(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
-async function exportEvent(
-    ctx: TaskContext,
-    name: string,
-    options: {
-        importJsonPath: string;
-        newExportTargetImportJson?: string;
-        readOnly?: { housingUuid: string };
-    },
-    state: BatchState,
-    onReadProgress: ProgressHandler | undefined
-): Promise<void> {
-    await openEventEditor(ctx, name);
-    const actions = await readActionListFully(ctx, {
-        itemReadMode: "export",
-        itemCaptures: state.itemCaptures,
-        ...(onReadProgress !== undefined
-            ? {
-                  progress: onReadProgress,
-                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
-              }
-            : {}),
-    });
-
-    const importable: ImportableEvent = {
-        type: "EVENT",
-        event: name as Event,
-        actions,
-    };
-
-    await writeEventResult(ctx, name, importable, options);
-}
-
-export const readEvents = makeReadHouse<string>({
+export const readEvents = defineHouseExporter({
     type: "EVENT",
     noun: "event",
     list: listAllEventNames,
@@ -173,19 +129,21 @@ export const readEvents = makeReadHouse<string>({
         const count = state.itemCaptures.size();
         return ` (${count} item${count === 1 ? "" : "s"} captured)`;
     },
-    readOne: (ctx, name, options, state, onReadProgress) =>
-        exportEvent(ctx, name, options, state, onReadProgress),
-    scanOne: (ctx, name, options, state, onReadProgress) =>
-        scanEvent(ctx, name, state, onReadProgress, options.progress?.events),
-    hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
-        const importable = await hydrateEvent(
-            ctx,
-            name,
-            pending as PendingEventRead,
-            state,
-            onReadProgress,
-            options.progress?.events
-        );
-        await writeEventResult(ctx, name, importable, options);
+    reader: {
+        kind: "staged",
+        scan: (ctx, name, options, state, onReadProgress) =>
+            scanEvent(ctx, name, state, onReadProgress, options.progress?.events),
+        hydrate: (ctx, name, pending, options, state, onReadProgress) =>
+            hydrateEvent(
+                ctx,
+                name,
+                pending,
+                state,
+                onReadProgress,
+                options.progress?.events
+            ),
     },
+    importableOf: (importable) => importable,
+    export: (ctx, name, importable, options) =>
+        writeEventResult(ctx, name, importable, options),
 });

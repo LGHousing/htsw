@@ -758,7 +758,7 @@ export function markPlannedEdit(
     const s = ensure(path);
     const startIdx = findActionStartIndex(s.lines, actionPath);
     if (startIdx < 0) return;
-    // diffPlanned arrives twice per list (at pre-read, again when the apply
+    // diffPlanned arrives twice per list (after reading, again when the apply
     // starts); a still-pending ghost means this edit is already marked.
     if (findIndexByPathVariant(s.lines, actionPath, "ghost") >= 0) return;
     s.lines[startIdx].diffState = "delete";

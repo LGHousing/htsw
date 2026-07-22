@@ -14,11 +14,10 @@ import {
     trustedChildListSnapshotsForImportable,
 } from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
-import { prepareActionListSync } from "../src/housingSync/actions/prepareSync";
+import { readActionListSync } from "../src/housingSync/actions/prepareSync";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
-import type { ImportSession } from "../src/importables/imports";
+import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
 import {
     createItemDependencyIndex,
@@ -345,13 +344,9 @@ describe("trusted action-list planning", () => {
         const open = vi.fn(async () => undefined);
         const items = createProjectItemIndex([]);
         const itemDependencies = createItemDependencyIndex([], items);
-        const session: ImportSession = {
-            parsed: { value: [] } as never,
-            items,
-            itemDependencies,
+        const session: ActionSyncContext = {
             canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
             resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
-            housingUuid: "test-house",
             trust: {
                 housingUuid: "test-house",
                 trustMode: true,
@@ -359,14 +354,13 @@ describe("trusted action-list planning", () => {
             },
             conflicts: [],
             events: undefined,
-            actionItemRead: { mode: "sync" },
-            npcLookup: createNpcLookupCache(),
+            itemRead: { mode: "sync" },
         };
 
-        const result = await prepareActionListSync(null as unknown as TaskContext, {
+        const result = await readActionListSync(null as unknown as TaskContext, {
             desired: desired.actions,
             basePath: "actions",
-            session,
+            sync: session,
             trustPlan: {
                 importable: desired,
                 identity: desired.name,

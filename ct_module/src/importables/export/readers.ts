@@ -1,14 +1,14 @@
 import type { Importable } from "htsw/types";
 
-import type { ReadFn } from "./read";
-import { readFunctions } from "./functions/readHouseFunctions";
-import { readEvents } from "./events/readHouseEvents";
-import { readCommands } from "./commands/readHouseCommands";
-import { readMenus } from "./menus/readHouseMenus";
-import { readRegions } from "./regions/readHouseRegions";
-import { readTeams } from "./teams/readHouseTeams";
-import { readGroups } from "./groups/readHouseGroups";
-import { readNpcs } from "./npcs/readHouseNpcs";
+import type { ReadFn } from "./reader";
+import { readFunctions } from "../functions/readHouseFunctions";
+import { readEvents } from "../events/readHouseEvents";
+import { readCommands } from "../commands/readHouseCommands";
+import { readMenus } from "../menus/readHouseMenus";
+import { readRegions } from "../regions/readHouseRegions";
+import { readTeams } from "../teams/readHouseTeams";
+import { readGroups } from "../groups/readHouseGroups";
+import { readNpcs } from "../npcs/readHouseNpcs";
 
 // Single source of truth for which importable types can be read back out of a
 // live house through the shared name-keyed reader path (export + deep-read).

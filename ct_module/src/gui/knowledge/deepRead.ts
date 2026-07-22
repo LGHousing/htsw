@@ -3,12 +3,12 @@
 import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { createExportProgressSink } from "../export/progressSink";
 import { showToast } from "../toast";
 import { runHousingSyncTask } from "../../housingSync/taskRunner";
 import { recordHouseScan } from "../../importCache/cache";
-import { exportProjectContextFromParsedImportJson } from "../../importables/exportContext";
-import type { ReadFn, ReadResult } from "../../importables/read";
+import { projectItemsFromParsedImportJson } from "../../importables/export/projectDestination";
+import type { ReadFn } from "../../importables/export/reader";
+import { runExportSession } from "../../importables/export/session";
 import { TaskManager } from "../../tasks/manager";
 
 let readInFlight = false;
@@ -37,30 +37,22 @@ export function startDeepRead(
     readInFlight = true;
     runHousingSyncTask("export", async (ctx) => {
         try {
-            const exportContext = exportProjectContextFromParsedImportJson(
-                { rootDir: "", importJsonPath: options.importJsonPath },
-                options.parsed
-            );
-            const total: ReadResult = { total: 0, succeeded: 0, failed: 0 };
-            for (let i = 0; i < specs.length; i++) {
-                const spec = specs[i];
-                const result = await spec.read(ctx, {
-                    ...exportContext,
+            return await runExportSession(
+                ctx,
+                {
+                    kind: "cache",
+                    housingUuid: options.housingUuid,
+                    importJsonPath: options.importJsonPath,
+                    projectItems: projectItemsFromParsedImportJson(options.parsed),
+                },
+                specs.map((spec) => ({
+                    type: spec.type,
+                    reader: spec.read,
                     names: spec.names,
-                    readOnly: { housingUuid: options.housingUuid },
-                    onNamesListed: (names) =>
+                    onNamesListed: (names: readonly string[]) =>
                         recordHouseScan(options.housingUuid, spec.type, names.slice()),
-                    progress: createExportProgressSink(
-                        spec.type,
-                        options.importJsonPath,
-                        "read"
-                    ),
-                });
-                total.total += result.total;
-                total.succeeded += result.succeeded;
-                total.failed += result.failed;
-            }
-            return total;
+                }))
+            );
         } finally {
             readInFlight = false;
         }

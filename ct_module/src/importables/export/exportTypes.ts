@@ -1,10 +1,10 @@
-import { readFunctions } from "./functions/readHouseFunctions";
-import { readEvents } from "./events/readHouseEvents";
-import { readMenus } from "./menus/readHouseMenus";
-import { readRegions } from "./regions/readHouseRegions";
-import { readCommands } from "./commands/readHouseCommands";
-import { readTeams } from "./teams/readHouseTeams";
-import { readGroups } from "./groups/readHouseGroups";
+import { readFunctions } from "../functions/readHouseFunctions";
+import { readEvents } from "../events/readHouseEvents";
+import { readMenus } from "../menus/readHouseMenus";
+import { readRegions } from "../regions/readHouseRegions";
+import { readCommands } from "../commands/readHouseCommands";
+import { readTeams } from "../teams/readHouseTeams";
+import { readGroups } from "../groups/readHouseGroups";
 import {
     readCommandNamesFromImportJson,
     readEventNamesFromImportJson,
@@ -13,8 +13,8 @@ import {
     readMenuNamesFromImportJson,
     readRegionNamesFromImportJson,
     readTeamNamesFromImportJson,
-} from "../project/paths";
-import type { ReadFn } from "./read";
+} from "../../project/paths";
+import type { ReadFn } from "./reader";
 
 export type HouseExportTypeName =
     | "FUNCTION"

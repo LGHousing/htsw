@@ -50,7 +50,7 @@ import {
     getParseCacheRevision,
     requestParse,
 } from "../../parsing/parses";
-import { orderImportablesForImportSession } from "../../../importables/importSession";
+import { orderImportablesForSession } from "../../../importables/import/session";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { taskPhaseSegments } from "./progressPanel";
 import { setActiveLeftTab } from "../../left-panel/tabs";
@@ -320,7 +320,7 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
     const index = queueSourceIndex(item.sourcePath);
     if (index === null) return [];
     if (index.importJsonChildren !== null) return index.importJsonChildren;
-    const ordered = orderImportablesForImportSession(
+    const ordered = orderImportablesForSession(
         index.parsedImportables,
         index.parsedImportables
     );

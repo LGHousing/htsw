@@ -3,17 +3,14 @@ import type { ImportableFunction } from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
     applyImportablePlan: vi.fn(async () => undefined),
-    prereadImportable: vi.fn(),
+    scanImportable: vi.fn(),
+    hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
     upsertHouseLockImportable: vi.fn(),
 }));
 
-vi.mock("../src/importables/imports", () => ({
-    applyImportablePlan: mocks.applyImportablePlan,
-    planIsNoOp: () => false,
-    prereadImportable: mocks.prereadImportable,
-    reconstructObservedImportable: () => null,
-    reconstructPartialImportable: () => null,
+vi.mock("../src/importables/import/importers", () => ({
+    scanImportable: mocks.scanImportable,
 }));
 
 vi.mock("../src/importCache", async (importOriginal) => ({
@@ -52,14 +49,18 @@ vi.mock("../src/importCache/houseLock", () => ({
     upsertHouseLockImportable: mocks.upsertHouseLockImportable,
 }));
 
-import { importSelectedImportables } from "../src/importables/importSession";
+import { runImportSession } from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
+import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
 
 describe("import conflict gate", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.applyImportablePlan.mockResolvedValue(undefined);
+        mocks.hydrateImportable.mockResolvedValue(undefined);
+        mocks.tryWriteImportableCache.mockResolvedValue(true);
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -68,18 +69,30 @@ describe("import conflict gate", () => {
             name: "Debug",
             actions: [message("desired")],
         };
-        mocks.prereadImportable.mockImplementation(
+        mocks.scanImportable.mockImplementation(
             async (
                 _ctx: unknown,
                 _importable: unknown,
-                session: { conflicts: unknown[] }
+                session: { actions: { conflicts: unknown[] } }
             ) => {
-                session.conflicts.push({
+                session.actions.conflicts.push({
                     type: "FUNCTION",
                     identity: "Debug",
                     basePath: "actions",
                 });
-                return { kind: "FUNCTION", importable };
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => null,
+                        reconstructPartial: () => null,
+                    }),
+                };
             }
         );
         const events: SyncEvent[] = [];
@@ -89,7 +102,7 @@ describe("import conflict gate", () => {
             displayMessage: (text: string) => messages.push(text),
         } as unknown as TaskContext;
 
-        await importSelectedImportables(ctx, {
+        await runImportSession(ctx, {
             importables: [importable],
             trustMode: true,
             housingUuid: "test-house",
@@ -111,5 +124,93 @@ describe("import conflict gate", () => {
         expect(messages).toContain(
             "&c[htsw] Import cancelled — Housing changed since the last import."
         );
+    });
+
+    it("leaves caches and the lock untouched when hydration is cancelled", async () => {
+        const importables: ImportableFunction[] = [
+            { type: "FUNCTION", name: "First", actions: [message("first")] },
+            { type: "FUNCTION", name: "Second", actions: [message("second")] },
+        ];
+        mocks.scanImportable.mockImplementation(
+            async (_ctx: unknown, importable: ImportableFunction) => ({
+                kind: "FUNCTION",
+                importable,
+                hydrate:
+                    importable.name === "Second"
+                        ? async () => {
+                              throw createTaskCancelledError();
+                          }
+                        : mocks.hydrateImportable,
+                plan: () => ({
+                    kind: "FUNCTION",
+                    importable,
+                    isNoOp: () => false,
+                    apply: mocks.applyImportablePlan,
+                    reconstructObserved: () => importable,
+                    reconstructPartial: () => null,
+                }),
+            })
+        );
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: () => undefined,
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables,
+                trustMode: false,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: importables } as never,
+            })
+        ).rejects.toMatchObject({ __taskCancelled: true });
+
+        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
+        expect(mocks.upsertHouseLockImportable).not.toHaveBeenCalled();
+    });
+
+    it("leaves the lock untouched when a later apply is cancelled", async () => {
+        const importables: ImportableFunction[] = [
+            { type: "FUNCTION", name: "First", actions: [message("first")] },
+            { type: "FUNCTION", name: "Second", actions: [message("second")] },
+        ];
+        mocks.scanImportable.mockImplementation(
+            async (_ctx: unknown, importable: ImportableFunction) => ({
+                kind: "FUNCTION",
+                importable,
+                hydrate: mocks.hydrateImportable,
+                plan: () => ({
+                    kind: "FUNCTION",
+                    importable,
+                    isNoOp: () => false,
+                    apply:
+                        importable.name === "Second"
+                            ? async () => {
+                                  throw createTaskCancelledError();
+                              }
+                            : mocks.applyImportablePlan,
+                    reconstructObserved: () => importable,
+                    reconstructPartial: () => importable,
+                }),
+            })
+        );
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: () => undefined,
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables,
+                trustMode: false,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: importables } as never,
+            })
+        ).rejects.toMatchObject({ __taskCancelled: true });
+
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(1);
+        expect(mocks.upsertHouseLockImportable).not.toHaveBeenCalled();
     });
 });

@@ -1,4 +1,4 @@
-import TaskContext from "../../tasks/context";
+import type TaskContext from "../../tasks/context";
 import { unique } from "../../utils/helpers";
 import { oneOf } from "../../tasks/waiters";
 import { chatMessage } from "../../housingSync/menus/menuWaiters";

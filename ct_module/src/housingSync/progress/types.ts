@@ -130,9 +130,8 @@ export type ExportProgressSink = {
     item(index: number, name: string): void;
     itemReactivated?(index: number): void;
     /**
-     * Called after item `index` completes successfully: after `processOne` on
-     * the single-pass path or `hydrateOne` on the two-pass path, never after
-     * `scanOne`.
+     * Called after item `index` completes successfully: after a direct read or
+     * staged hydration, never after only the scan.
      */
     itemFinished?(index: number): void;
     /**

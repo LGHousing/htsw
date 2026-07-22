@@ -2,11 +2,22 @@ import { Diagnostic } from "../../diagnostic";
 import type { Action, Bounds, ChatSpeed, Color, CommandMode, DefaultGameMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
 import { CHAT_SPEEDS, COLORS, COMMAND_MODES, DEFAULT_GAME_MODES, EVENTS, MINECRAFT_ITEMS, PERMISSIONS } from "../../types/constants";
 import type { Parser } from "./parser";
-import { contentFilePath, getFileName, parseOption } from "./helpers";
+import { contentFilePath, getFileName, parseOption, warnUnused } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
 import { parseSnbt as parseSnbtImpl } from "../../nbt/parse";
 import type { Tag } from "../../nbt/types";
 import { isUnspawnableItem } from "../../check/unspawnableItems";
+import type {
+    RawBounds,
+    RawFunctionIcon,
+    RawMenuSlot,
+    RawPos,
+} from "../schemaSpec";
+import {
+    optionalRawField,
+    parseRawFields,
+    requiredRawField,
+} from "./rawFields";
 
 export function parseHtsl(p: Parser): Action[] {
     const path = p.parseString();
@@ -53,9 +64,26 @@ export function parseSnbt(p: Parser): Tag {
 }
 
 export function parseFunctionIcon(p: Parser): FunctionIcon {
-    const item = parseMinecraftItemId(p.parseField("item"));
-    const count = p.parseFieldOrUndefined("count")?.parseBoundedNumber(1, 64) ?? 1;
-    return { item, count };
+    let item = "";
+    let count = 1;
+    let enchanted: boolean | undefined;
+    parseRawFields<RawFunctionIcon>(p, {
+        item: requiredRawField((field) => {
+            item = parseMinecraftItemId(field);
+        }),
+        count: optionalRawField((field) => {
+            count = field.parseBoundedNumber(1, 64);
+        }),
+        enchanted: optionalRawField((field) => {
+            enchanted = field.parseBoolean();
+        }),
+    });
+    warnUnused(p);
+    return {
+        item,
+        count,
+        ...(enchanted !== undefined ? { enchanted } : {}),
+    };
 }
 
 function parseMinecraftItemId(p: Parser): string {
@@ -101,31 +129,43 @@ export function parseTag(p: Parser): string {
 }
 
 export function parsePos(p: Parser): Pos {
-    return {
-        x: p.parseField("x").parseNumber(),
-        y: p.parseField("y").parseNumber(),
-        z: p.parseField("z").parseNumber(),
-    };
+    const pos = {} as Pos;
+    parseRawFields<RawPos>(p, {
+        x: requiredRawField((field) => field.setField(pos, "x", (p) => p.parseNumber())),
+        y: requiredRawField((field) => field.setField(pos, "y", (p) => p.parseNumber())),
+        z: requiredRawField((field) => field.setField(pos, "z", (p) => p.parseNumber())),
+    });
+    warnUnused(p);
+    return pos;
 }
 
 export function parseBounds(p: Parser): Bounds {
-    return {
-        from: p.parseField("from").setField({} as Bounds, "from", parsePos),
-        to: p.parseField("to").setField({} as Bounds, "to", parsePos),
-    } as Bounds;
+    const bounds = {} as Bounds;
+    parseRawFields<RawBounds>(p, {
+        from: requiredRawField((field) => field.setField(bounds, "from", parsePos)),
+        to: requiredRawField((field) => field.setField(bounds, "to", parsePos)),
+    });
+    warnUnused(p);
+    return bounds;
 }
 
 export function parseMenuSlots(p: Parser): MenuSlot[] {
     return p.parseArray().map(sp => {
-        const nbtField = sp.parseField("nbt");
-        const slot: MenuSlot = {
-            slot: sp.parseField("slot").parseNumber(),
-            nbt: nbtField.setField({} as MenuSlot, "nbt", parseSnbt),
-        };
-        slot.nbtPath = contentFilePath(nbtField);
-        const actionsField = sp.parseFieldOrUndefined("actions");
-        actionsField?.setField(slot, "actions", parseHtsl);
-        if (actionsField) slot.actionsPath = contentFilePath(actionsField);
+        const slot = {} as MenuSlot;
+        parseRawFields<RawMenuSlot>(sp, {
+            slot: requiredRawField((field) =>
+                field.setField(slot, "slot", (p) => p.parseNumber())
+            ),
+            nbt: requiredRawField((field) => {
+                field.setField(slot, "nbt", parseSnbt);
+                slot.nbtPath = contentFilePath(field);
+            }),
+            actions: optionalRawField((field) => {
+                field.setField(slot, "actions", parseHtsl);
+                slot.actionsPath = contentFilePath(field);
+            }),
+        });
+        warnUnused(sp);
         return slot;
     });
 }

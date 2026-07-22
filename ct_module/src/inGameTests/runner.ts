@@ -14,21 +14,25 @@ import { createProjectItemIndex } from "../importables/items/projectItems";
 import { createItemDependencyIndex } from "../importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../importables/items/resolveItem";
 import {
-    importSelectedImportables,
-    orderImportablesForImportSession,
-} from "../importables/importSession";
+    orderImportablesForSession,
+    runImportSession,
+} from "../importables/import/session";
 import {
-    prereadImportable,
+    readImportablePlan,
     type ImportablePlan,
-    type ImportSession,
-} from "../importables/imports";
+    type ImportablePlanDetails,
+} from "../importables/import/importers";
+import type { ImportContext } from "../importables/import/context";
 import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import { resetFunctionNameSession } from "../importables/functions/listFunctions";
 import {
     listAllCommandNames,
     resetCommandNameSession,
 } from "../importables/commands/listCommands";
-import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "../importables/houseReaders";
+import {
+    HOUSE_READERS,
+    HOUSE_READABLE_TYPES,
+} from "../importables/export/readers";
 import { deleteTeam } from "../importables/teams/listTeams";
 import { deleteGroup } from "../importables/groups/listGroups";
 import { createNpcLookupCache } from "../importables/npcs/listNpcs";
@@ -53,7 +57,7 @@ import {
 } from "../housingSync/items/playerInventory";
 import { gmcOnImportStart, waitForCreativeMode } from "../housingSync/sideEffects";
 import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
-import { projectItemsFromParsedImportJson } from "../importables/exportContext";
+import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 
@@ -122,7 +126,7 @@ async function runFixture(
 
     ctx.displayMessage(`&7[htsw test] running &f${fixture.id}`);
     try {
-        await importSelectedImportables(ctx, {
+        await runImportSession(ctx, {
             importables: fixture.parsed.value,
             trustMode: false,
             housingUuid,
@@ -185,28 +189,24 @@ async function verifyFixture(
     resetFunctionNameSession();
     resetCommandNameSession();
     resetMenuNameSession();
-    const ordered = orderImportablesForImportSession(
+    const ordered = orderImportablesForSession(
         fixture.parsed.value,
         fixture.parsed.value
     );
     const itemCaptures = createFixtureItemCaptures(fixture);
-    const session: ImportSession = {
-        parsed: fixture.parsed,
-        ...fixtureItemSessionFields(fixture, housingUuid),
+    const session = fixtureImportContext(
+        fixture,
         housingUuid,
-        trust: buildTrustPlan(housingUuid, ordered, false),
-        conflicts: [],
-        events: undefined,
-        actionItemRead: { mode: "verify", captures: itemCaptures },
-        npcLookup: createNpcLookupCache(),
-    };
+        buildTrustPlan(housingUuid, ordered, false),
+        itemCaptures
+    );
 
     const failures: string[] = [];
     const inventorySnapshot = snapshotPlayerInventory();
     try {
         for (let i = 0; i < ordered.length; i++) {
             const importable = ordered[i];
-            const plan = await prereadImportable(ctx, importable, session);
+            const plan = await readImportablePlan(ctx, importable, session);
             const residuals = residualPlanOperations(plan);
             for (let j = 0; j < residuals.length; j++) {
                 failures.push(
@@ -268,7 +268,7 @@ async function deepReadVerifyFixture(
             // read back from the house resolves to its project name instead of
             // minting a fresh one (which would fail the hash comparison).
             projectItems: projectItemsFromParsedImportJson(fixture.parsed),
-            readOnly: { housingUuid },
+            output: { kind: "cache", housingUuid },
         });
         if (result.failed > 0) {
             failures.push(
@@ -325,7 +325,7 @@ async function trustModeVerifyFixture(
         if (menu.type !== "MENU") continue;
 
         const session = trustModeSessionFor(housingUuid, fixture, [menu]);
-        const trust = session.trust.importables.get(
+        const trust = session.actions.trust.importables.get(
             importableKey("MENU", importableIdentity(menu))
         );
         if (trust === undefined || !trust.wholeImportableTrusted) {
@@ -333,7 +333,7 @@ async function trustModeVerifyFixture(
                 `menu ${menu.name}: re-importing the unchanged source is not whole-trusted`
             );
         }
-        const plan = await prereadImportable(ctx, menu, session);
+        const plan = await readImportablePlan(ctx, menu, session);
         const residuals = residualPlanOperations(plan);
         for (let j = 0; j < residuals.length; j++) {
             failures.push(
@@ -369,36 +369,42 @@ function trustModeSessionFor(
     housingUuid: string,
     fixture: ParsedTestFixture,
     importables: Importable[]
-): ImportSession {
-    return {
-        parsed: fixture.parsed,
-        ...fixtureItemSessionFields(fixture, housingUuid),
+): ImportContext {
+    return fixtureImportContext(
+        fixture,
         housingUuid,
-        trust: buildTrustPlan(housingUuid, importables, true),
-        conflicts: [],
-        events: undefined,
-        actionItemRead: {
-            mode: "verify",
-            captures: createFixtureItemCaptures(fixture),
-        },
-        npcLookup: createNpcLookupCache(),
-    };
+        buildTrustPlan(housingUuid, importables, true),
+        createFixtureItemCaptures(fixture)
+    );
 }
 
-function fixtureItemSessionFields(
+function fixtureImportContext(
     fixture: ParsedTestFixture,
-    housingUuid: string
-): Pick<
-    ImportSession,
-    "items" | "itemDependencies" | "canonicalizeItemName" | "resolveItem"
-> {
+    housingUuid: string,
+    trust: ReturnType<typeof buildTrustPlan>,
+    captures: ItemCaptureRegistry
+): ImportContext {
     const items = createProjectItemIndex(fixture.parsed.value, fixture.parsed.gcx);
     const itemDependencies = createItemDependencyIndex(fixture.parsed.value, items);
     return {
         items,
         itemDependencies,
-        canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
-        resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),
+        parsed: fixture.parsed,
+        housingUuid,
+        npcLookup: createNpcLookupCache(),
+        ensuredReferencedShells: {
+            functions: new Set(),
+            menus: new Set(),
+            regions: new Set(),
+        },
+        actions: {
+            canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
+            resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),
+            trust,
+            conflicts: [],
+            events: undefined,
+            itemRead: { mode: "verify", captures },
+        },
     };
 }
 
@@ -412,7 +418,7 @@ async function expectSingleMenuSlotOp(
 ): Promise<string[]> {
     const failures: string[] = [];
     const session = trustModeSessionFor(housingUuid, fixture, [mutated]);
-    const trust = session.trust.importables.get(
+    const trust = session.actions.trust.importables.get(
         importableKey("MENU", importableIdentity(mutated))
     );
     if (trust !== undefined && trust.wholeImportableTrusted) {
@@ -421,12 +427,12 @@ async function expectSingleMenuSlotOp(
         );
     }
 
-    const plan = await prereadImportable(ctx, mutated, session);
+    const plan = await readImportablePlan(ctx, mutated, session);
     if (plan.kind !== "MENU") {
         failures.push(`menu ${mutated.name}: expected a MENU plan`);
         return failures;
     }
-    const ops = plan.diff.ops;
+    const ops = plan.details.diff.ops;
     if (ops.length !== 1) {
         const touched = ops.map((op) => op.slot).join(", ");
         failures.push(
@@ -553,7 +559,8 @@ function createFixtureItemCaptures(fixture: ParsedTestFixture): ItemCaptureRegis
     return captures;
 }
 
-function residualPlanOperations(plan: ImportablePlan): string[] {
+function residualPlanOperations(wrapped: ImportablePlan): string[] {
+    const plan = wrapped.details;
     switch (plan.kind) {
         case "FUNCTION": {
             const failures = actionPlanFailures("actions", plan.actionsPlan);
@@ -664,18 +671,25 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
 }
 
 function functionSettingsPlanFailures(
-    plan: Extract<ImportablePlan, { kind: "FUNCTION" }>
+    plan: Extract<ImportablePlanDetails, { kind: "FUNCTION" }>
 ): string[] {
     if (plan.settingsPlan === null) return [];
     const failures: string[] = [];
-    if (plan.settingsPlan.iconNeedsApply) {
-        failures.push("settings icon differs");
-    }
-    const automaticExecution = plan.settingsPlan.automaticExecution;
-    if (automaticExecution.needsApply) {
-        failures.push(
-            `settings automatic execution read=${automaticExecution.current} want=${automaticExecution.desired}`
-        );
+    for (const change of plan.settingsPlan) {
+        switch (change.key) {
+            case "icon":
+                failures.push("settings icon differs");
+                break;
+            case "repeatTicks":
+                failures.push(
+                    `settings automatic execution read=${change.current ?? 0} want=${change.desired ?? 0}`
+                );
+                break;
+            default: {
+                const _exhaustive: never = change;
+                return _exhaustive;
+            }
+        }
     }
     return failures;
 }
@@ -783,7 +797,7 @@ async function cleanupFixture(
     }
 
     if (eventsToReset.length > 0) {
-        await importSelectedImportables(ctx, {
+        await runImportSession(ctx, {
             importables: eventsToReset,
             trustMode: false,
             housingUuid,

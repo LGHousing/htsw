@@ -7,6 +7,8 @@ import { Diagnostic } from "../../diagnostic";
 import { parseImportableCommand, parseImportableEvent, parseImportableFunction, parseImportableGroup, parseImportableItem, parseImportableMenu, parseImportableNpc, parseImportableRegion, parseImportableTeam } from "./importables";
 import { getFileName, warnUnused } from "./helpers";
 import type { ImportJsonFileNode, ImportJsonParseMetadata } from "../metadata";
+import type { RawImportJson } from "../schemaSpec";
+import { optionalRawField, parseRawFields } from "./rawFields";
 
 type IncludeOrigin = {
     includeParser: Parser;
@@ -54,29 +56,45 @@ export function parseImportJson(
 
 function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[] {
     const importables: Importable[] = [];
-
-    parseEntryList(p, "include", (sp) => {
-        parseInclude(sp, fileNode);
-        return undefined;
+    parseRawFields<RawImportJson>(p, {
+        houseUuid: optionalRawField((field) =>
+            parseHouseUuid(field, p.importJson.fileTree === fileNode)
+        ),
+        include: optionalRawField((field) =>
+            parseEntryList(field, (entry) => {
+                parseInclude(entry, fileNode);
+            })
+        ),
+        functions: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableFunction)
+        ),
+        events: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableEvent)
+        ),
+        regions: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableRegion)
+        ),
+        items: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableItem)
+        ),
+        menus: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableMenu)
+        ),
+        teams: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableTeam)
+        ),
+        groups: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableGroup)
+        ),
+        commands: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableCommand)
+        ),
+        npcs: optionalRawField((field) =>
+            pushParsedEntries(field, importables, parseImportableNpc)
+        ),
     });
 
-    parseHouseUuid(p, p.importJson.fileTree === fileNode);
-
-    pushParsedEntries(p, importables, "functions", parseImportableFunction);
-    pushParsedEntries(p, importables, "regions", parseImportableRegion);
-    pushParsedEntries(p, importables, "menus", parseImportableMenu);
-    pushParsedEntries(p, importables, "items", parseImportableItem);
-    pushParsedEntries(p, importables, "npcs", parseImportableNpc);
-    pushParsedEntries(p, importables, "events", parseImportableEvent);
-    pushParsedEntries(p, importables, "groups", parseImportableGroup);
-    pushParsedEntries(p, importables, "teams", parseImportableTeam);
-    pushParsedEntries(p, importables, "commands", parseImportableCommand);
-
-    warnUnused(p, [
-        "include", "houseUuid", "functions",
-        "regions", "menus", "items", "npcs", "events", "groups",
-        "teams", "commands"
-    ]);
+    warnUnused(p);
     for (const importable of importables) {
         if (importable.sourcePath === undefined) importable.sourcePath = fileNode.path;
     }
@@ -85,30 +103,24 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
 }
 
 function pushParsedEntries<T extends Importable>(
-    p: Parser,
+    field: Parser,
     out: Importable[],
-    fieldName: string,
     parseEntry: (p: Parser) => T
 ): void {
-    parseEntryList(p, fieldName, (sp) => {
+    parseEntryList(field, (sp) => {
         out.push(parseEntry(sp));
-        return undefined;
     });
 }
 
 function parseEntryList(
-    p: Parser,
-    fieldName: string,
+    field: Parser,
     parseEntry: (p: Parser) => void | undefined
 ): void {
-    const field = p.parseFieldOrUndefined(fieldName);
-    if (field === undefined) return;
-
     let entries: Parser[];
     try {
         entries = field.parseArray();
     } catch (e) {
-        addParseFailureDiagnostic(p, e);
+        addParseFailureDiagnostic(field, e);
         return;
     }
 
@@ -116,7 +128,7 @@ function parseEntryList(
         try {
             parseEntry(sp);
         } catch (e) {
-            addParseFailureDiagnostic(p, e);
+            addParseFailureDiagnostic(field, e);
         }
     }
 }
@@ -132,15 +144,13 @@ function addParseFailureDiagnostic(p: Parser, e: unknown): void {
 }
 
 function parseHouseUuid(p: Parser, isEntryFile: boolean): void {
-    const field = p.parseFieldOrUndefined("houseUuid");
-    if (field === undefined) return;
     if (!isEntryFile) {
         return;
     }
-    const uuid = field.parseString();
+    const uuid = p.parseString();
     if (!HOUSE_UUID_RE.test(uuid)) {
         p.gcx.addDiagnostic(
-            Diagnostic.error("Expected UUID").addPrimarySpan(field.span())
+            Diagnostic.error("Expected UUID").addPrimarySpan(p.span())
         );
         return;
     }
