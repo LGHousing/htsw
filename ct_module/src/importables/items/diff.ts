@@ -1,8 +1,6 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
-import { itemInteractDataMatches } from "./interactDataCache";
-import { canonicalItemShellTagKey } from "../../housingSync/items/itemNbt";
 import type { ItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
 import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
 import type {
@@ -12,7 +10,8 @@ import type {
 } from "./dependencyIndex";
 import { visitItemReferences } from "./dependencies";
 import type { ProjectItemIndex, ProjectItem } from "./projectItems";
-import { expectedInteractData } from "./interactDataCache";
+import { itemFieldObservationMatches } from "./observationMatches";
+import type { ItemVerificationTracker } from "./verifiedDependencies";
 
 type DesiredItemFields = Map<string, ProjectItem>;
 
@@ -22,7 +21,8 @@ export function createItemDiffContext(
     projectItems: ProjectItemIndex,
     housingUuid: string | undefined,
     cachedSnapshotOf: (importable: Importable) => ItemDependencySnapshot | undefined,
-    observations?: ItemFieldObservationRecorder
+    observations?: ItemFieldObservationRecorder,
+    verification?: ItemVerificationTracker
 ): ItemDiffContext {
     const invalidations: ItemInvalidations[] = [];
     const desiredFields = new WeakMap<Action | Condition, DesiredItemFields>();
@@ -70,26 +70,21 @@ export function createItemDiffContext(
         observed: object,
         desired: Action | Condition
     ): boolean => {
+        verification?.recordPair(desired, observed as Action | Condition);
         if (observations === undefined) return false;
         const fields = desiredFields.get(desired);
         if (fields === undefined) return false;
         for (const [property, entry] of fields) {
-            const observation = observations.get(
-                observed as Action | Condition,
-                property
-            );
             if (
-                observation === undefined ||
-                observation.canonicalKey !== canonicalItemShellTagKey(entry.nbt)
+                !itemFieldObservationMatches(
+                    observations,
+                    observed as Action | Condition,
+                    property,
+                    entry,
+                    dependencies,
+                    housingUuid
+                )
             ) {
-                return true;
-            }
-            const item = entry.importable;
-            const expectation =
-                item === undefined
-                    ? { kind: "absent" as const }
-                    : expectedInteractData(item, dependencies, housingUuid);
-            if (!itemInteractDataMatches(observation.snbt, expectation)) {
                 return true;
             }
         }

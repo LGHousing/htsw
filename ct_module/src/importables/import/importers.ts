@@ -162,6 +162,7 @@ export type ImportablePlan = {
 export type ImportableRead = {
     readonly kind: Importable["type"];
     readonly importable: Importable;
+    readonly needsHydration: boolean;
     hydrate(ctx: TaskContext): Promise<void>;
     plan(context: ImportContext): ImportablePlan;
 };
@@ -198,6 +199,7 @@ function defineImporter<
             return {
                 kind: recipe.type,
                 importable: typedImportable,
+                needsHydration: reader.kind === "staged",
                 hydrate:
                     reader.kind === "direct"
                         ? async () => undefined

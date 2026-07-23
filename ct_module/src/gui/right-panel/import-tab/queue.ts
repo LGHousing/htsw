@@ -61,14 +61,21 @@ export type ExportQueueItem = {
 export type QueueItem = ImportQueueItem | ExportQueueItem;
 
 /** Stable identity string for a queue item. Used for set membership / removal. */
+const queueItemKeys = new WeakMap<QueueItem, string>();
+
 export function queueItemKey(item: QueueItem): string {
+    const cached = queueItemKeys.get(item);
+    if (cached !== undefined) return cached;
+    let key: string;
     if (item.operation === "import" && item.kind === "importable") {
-        return `imp:${item.sourcePath}|${item.type}:${item.identity}`;
+        key = `imp:${item.sourcePath}|${item.type}:${item.identity}`;
+    } else if (item.kind === "importJson") {
+        key = `json:${item.sourcePath}`;
+    } else {
+        key = `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;
     }
-    if (item.kind === "importJson") {
-        return `json:${item.sourcePath}`;
-    }
-    return `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;
+    queueItemKeys.set(item, key);
+    return key;
 }
 
 export function queueItemProgressPath(item: QueueItem): string | null {
@@ -81,6 +88,10 @@ export function isImportQueueItem(item: QueueItem): item is ImportQueueItem {
 }
 
 let items: QueueItem[] = [];
+let itemsRevision = 0;
+let lookupRevision = -1;
+const byKey = new Map<string, number>();
+const byImportWork = new Map<string, number>();
 
 /**
  * Keys of the queue items that belong to the currently-running import
@@ -120,6 +131,7 @@ export function endQueueSession(removeSessionItems: boolean): void {
     if (sessionKeys !== null && removeSessionItems) {
         const keys = sessionKeys;
         items = items.filter((i) => !keys.has(queueItemKey(i)));
+        itemsRevision++;
     }
     sessionKeys = null;
     if (hadSession || items.length !== beforeLen) queueChanged();
@@ -133,21 +145,32 @@ export function getQueueLength(): number {
     return items.length;
 }
 
-function sameImportWork(left: QueueItem, right: QueueItem): boolean {
-    return left.operation === "import"
-        && left.kind === "importable"
-        && right.operation === "import"
-        && right.kind === "importable"
-        && left.type === right.type
-        && left.identity === right.identity;
+function importWorkKey(item: QueueItem): string | null {
+    return item.operation === "import" && item.kind === "importable"
+        ? `${item.type}:${item.identity}`
+        : null;
+}
+
+function rebuildQueueLookups(): void {
+    byKey.clear();
+    byImportWork.clear();
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const key = queueItemKey(item);
+        if (!byKey.has(key)) byKey.set(key, i);
+        const workKey = importWorkKey(item);
+        if (workKey !== null && !byImportWork.has(workKey)) byImportWork.set(workKey, i);
+    }
+    lookupRevision = itemsRevision;
 }
 
 function queuedItemIndex(item: QueueItem): number {
-    const key = queueItemKey(item);
-    for (let i = 0; i < items.length; i++) {
-        if (queueItemKey(items[i]) === key || sameImportWork(items[i], item)) return i;
-    }
-    return -1;
+    if (lookupRevision !== itemsRevision) rebuildQueueLookups();
+    const keyIndex = byKey.get(queueItemKey(item));
+    const workKey = importWorkKey(item);
+    const workIndex = workKey === null ? undefined : byImportWork.get(workKey);
+    if (keyIndex === undefined) return workIndex === undefined ? -1 : workIndex;
+    return workIndex === undefined ? keyIndex : Math.min(keyIndex, workIndex);
 }
 
 export function getQueuedItemKey(item: QueueItem): string | null {
@@ -162,6 +185,7 @@ export function isQueueItemQueued(item: QueueItem): boolean {
 export function addToQueue(item: QueueItem): boolean {
     if (isQueueItemQueued(item)) return false;
     items = items.concat([item]);
+    itemsRevision++;
     queueChanged();
     return true;
 }
@@ -185,6 +209,7 @@ export function addSessionQueueItem(item: QueueItem): void {
 export function removeFromQueueKey(key: string): void {
     const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);
+    itemsRevision++;
     if (items.length !== beforeLen) queueChanged();
 }
 
@@ -192,6 +217,7 @@ export function removeFromQueue(item: QueueItem): void {
     const index = queuedItemIndex(item);
     if (index < 0) return;
     items = items.slice(0, index).concat(items.slice(index + 1));
+    itemsRevision++;
     queueChanged();
 }
 
@@ -207,6 +233,7 @@ export function toggleQueue(item: QueueItem): boolean {
 export function clearQueue(): void {
     if (items.length === 0 && sessionKeys === null) return;
     items = [];
+    itemsRevision++;
     sessionKeys = null;
     queueChanged();
 }

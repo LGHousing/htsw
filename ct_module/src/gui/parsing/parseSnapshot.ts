@@ -282,7 +282,8 @@ function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnosti
 export function saveSnapshot(
     importJsonPath: string,
     result: ImportablesParseResult,
-    watchedMtimes: { [path: string]: number }
+    watchedMtimes: { [path: string]: number },
+    precomputedHashes?: readonly string[]
 ): void {
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
@@ -291,7 +292,10 @@ export function saveSnapshot(
         importJsonPath,
         fingerprint,
         importables: result.value,
-        hashes: result.value.map(memoizedImportableHash),
+        hashes:
+            precomputedHashes === undefined
+                ? result.value.map(memoizedImportableHash)
+                : precomputedHashes.slice(),
         houseUuid: result.importJson.houseUuid,
         fileTree: serializeFileTree(result.importJson.fileTree, result.value),
         diagnostics: result.diagnostics.map((d) =>

@@ -343,11 +343,14 @@ export function expandClickActionItemDependencies(
     }
 
     const addedItems: ImportableItem[] = [];
+    const processedNames = new Set<string>();
     // Worklist: an added item's own click actions can reference further items.
     const queue: Importable[] = selected.slice();
     for (let i = 0; i < queue.length; i++) {
         const referenced = referencedItemNames(queue[i]);
         for (const name of referenced) {
+            if (processedNames.has(name)) continue;
+            processedNames.add(name);
             const item = projectItems.resolve(name)?.importable;
             if (item === undefined || presentNames.has(item.name)) continue;
             if (!hasItemClickActions(item)) continue;

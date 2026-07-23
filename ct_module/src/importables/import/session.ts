@@ -5,6 +5,7 @@ import {
     type ImportablesParseResult,
 } from "htsw";
 import type { Importable } from "htsw/types";
+import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
@@ -24,6 +25,13 @@ import {
     type ItemDependencySnapshot,
 } from "../items/dependencyIndex";
 import { createItemDiffContext } from "../items/diff";
+import {
+    createItemVerificationTracker,
+    verifiedItemDependencies,
+    type ItemVerificationTracker,
+} from "../items/verifiedDependencies";
+import type { ItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
+import type { ProjectItemIndex } from "../items/projectItems";
 import { createItemFieldResolver } from "../items/resolveItem";
 import { createItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
 import { resetFunctionNameSession } from "../functions/listFunctions";
@@ -68,6 +76,18 @@ export type ImportSessionRequest = {
 type PendingHouseLockEntry = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
+};
+
+const SCAN_HYDRATE_CHUNK_SIZE = 25;
+
+type VerifiedDependencyContext = {
+    dependencies: ItemDependencyIndex;
+    projectItems: ProjectItemIndex;
+    housingUuid: string;
+    tracker: ItemVerificationTracker;
+    observations: ItemFieldObservationRecorder | undefined;
+    trustPlan: ReturnType<typeof buildTrustPlan>;
+    trustedItemOwners: WeakSet<Action | Condition>;
 };
 
 function toImportDiagnostic(
@@ -176,6 +196,8 @@ async function runImportSessionInner(
     const itemFieldObservations = selection.trustMode
         ? undefined
         : createItemFieldObservationRecorder();
+    const itemVerification = createItemVerificationTracker();
+    const trustedItemOwners = new WeakSet<Action | Condition>();
     const itemDiff = createItemDiffContext(
         orderedImportables,
         itemDependencies,
@@ -188,7 +210,8 @@ async function runImportSessionInner(
             )?.entry;
             return entry?.itemDependencies;
         },
-        itemFieldObservations
+        itemFieldObservations,
+        itemVerification
     );
 
     const events = selection.events;
@@ -212,6 +235,7 @@ async function runImportSessionInner(
             itemRead: { mode: "sync" },
             itemDiff,
             itemFieldObservations,
+            trustedItemOwners,
         },
         ensuredReferencedShells: {
             functions: new Set(),
@@ -260,136 +284,168 @@ async function runImportSessionInner(
     const trustedRows: (typeof rowsMeta)[number][] = [];
     const reads: Array<{ row: (typeof rowsMeta)[number]; read: ImportableRead }> = [];
     const pendingHouseLockEntries: PendingHouseLockEntry[] = [];
+    const verifiedDependencyContext: VerifiedDependencyContext = {
+        dependencies: itemDependencies,
+        projectItems: items,
+        housingUuid: selection.housingUuid,
+        tracker: itemVerification,
+        observations: itemFieldObservations,
+        trustPlan,
+        trustedItemOwners,
+    };
 
-    // ── Pass 1: scan every non-trusted importable. ─────────────────────
-    for (let i = 0; i < rowsMeta.length; i++) {
-        const row = rowsMeta[i];
-        const cacheEntry = row.trustPlan?.entry ?? null;
-        events?.emit({
-            kind: "importableStarted",
-            key: row.key,
-            type: row.importable.type,
-            identity: row.identity,
-            setupUnits: setupUnitsForImportable(row.importable),
-            initialUnits: row.units,
-            rowIndex: row.rowIndex,
-            cached: cacheEntry === null ? null : cacheEntry.importable,
-        });
-
-        // A trusted ITEM still has work to do: the item itself must land in
-        // the player's inventory (its apply spawns from the SNBT cache).
-        if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
-            emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
-            trustedRows.push(row);
-            continue;
-        }
-
-        emitKnowledgeSource(events, "house", "shell-read", row.trustPlan);
-        try {
-            reads.push({
-                row,
-                read: await scanImportable(ctx, row.importable, session),
-            });
-        } catch (error) {
-            if (isTaskCancelled(error)) throw error;
-            const diag = toImportDiagnostic(error, "read", row.importable.type);
-            events?.emit({
-                kind: "importableFinished",
-                key: row.key,
-                status: "failed",
-                error: diag.message,
-            });
-            const logPath = writeImportFailureLog(
-                {
-                    phase: "scan",
-                    sourcePath: selection.sourcePath,
-                    housingUuid: selection.housingUuid,
-                    importableType: row.importable.type,
-                    identity: row.identity,
-                    rowIndex: row.rowIndex,
-                },
-                error
-            );
-            if (isTaskTraceEnabled()) {
-                const stack = error as {
-                    stack?: string;
-                    rhinoException?: { getScriptStackTrace?: () => string };
-                };
-                const trace =
-                    stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
-                if (trace)
-                    traceNote("read-stack", trace.split("\n").slice(0, 8).join(" | "));
-            }
-            ctx.displayMessage(
-                `&c[htsw] Import aborted while scanning ${row.importable.type} ${row.identity}; no changes applied.`
-            );
-            ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
-            events?.emit({ kind: "sessionFinished" });
-            return;
-        }
-    }
-
-    // ── Pass 2: hydrate every typed scan before planning any writes. ────
     const hydrated: typeof reads = [];
-    for (const entry of reads) {
-        events?.emit({
-            kind: "importableReactivated",
-            key: entry.row.key,
-            rowIndex: entry.row.rowIndex,
-            phase: "hydrating",
-        });
-        try {
-            await entry.read.hydrate(ctx);
-            hydrated.push(entry);
-        } catch (error) {
-            const observedPlans = hydrated.map(({ read }) => ({
-                plan: read.plan(session),
-            }));
-            const savedCount = await writeObservedPlanCaches(
-                ctx,
-                observedPlans,
-                selection.housingUuid,
-                pendingHouseLockEntries
-            );
-            const lockUpdated = flushHouseLockEntries(
-                selection.sourcePath,
-                selection.housingUuid,
-                pendingHouseLockEntries
-            );
-            if (isTaskCancelled(error)) {
-                reportCancellationCache(ctx, error, {
-                    savedCount,
-                    lockUpdated,
-                    invalidatedCurrent: false,
-                    invalidationFailed: false,
-                });
-                throw error;
-            }
-            const row = entry.row;
-            const diag = toImportDiagnostic(error, "read", row.importable.type);
+    for (
+        let chunkStart = 0;
+        chunkStart < rowsMeta.length;
+        chunkStart += SCAN_HYDRATE_CHUNK_SIZE
+    ) {
+        const chunkReads: typeof reads = [];
+        const chunkEnd = Math.min(
+            rowsMeta.length,
+            chunkStart + SCAN_HYDRATE_CHUNK_SIZE
+        );
+        for (let i = chunkStart; i < chunkEnd; i++) {
+            const row = rowsMeta[i];
+            const cacheEntry = row.trustPlan?.entry ?? null;
             events?.emit({
-                kind: "importableFinished",
+                kind: "importableStarted",
                 key: row.key,
-                status: "failed",
-                error: diag.message,
+                type: row.importable.type,
+                identity: row.identity,
+                setupUnits: setupUnitsForImportable(row.importable),
+                initialUnits: row.units,
+                rowIndex: row.rowIndex,
+                cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            const logPath = writeImportFailureLog(
-                {
-                    phase: "hydrate",
-                    sourcePath: selection.sourcePath,
-                    housingUuid: selection.housingUuid,
-                    importableType: row.importable.type,
-                    identity: row.identity,
-                    rowIndex: row.rowIndex,
-                },
-                error
-            );
-            ctx.displayMessage(
-                `&c[htsw] Import aborted while hydrating ${row.importable.type} ${row.identity}; no changes applied.`
-            );
-            ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
-            events?.emit({ kind: "sessionFinished" });
-            return;
+            if (
+                row.trustPlan?.wholeImportableTrusted &&
+                row.importable.type !== "ITEM"
+            ) {
+                emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
+                trustedRows.push(row);
+                continue;
+            }
+
+            if (row.importable.type !== "ITEM") {
+                emitKnowledgeSource(events, "house", "shell-read", row.trustPlan);
+            }
+            try {
+                const entry = {
+                    row,
+                    read: await scanImportable(ctx, row.importable, session),
+                };
+                reads.push(entry);
+                chunkReads.push(entry);
+            } catch (error) {
+                const outcome = await persistHydratedReads(
+                    ctx,
+                    hydrated,
+                    session,
+                    selection,
+                    pendingHouseLockEntries,
+                    verifiedDependencyContext
+                );
+                if (isTaskCancelled(error)) {
+                    reportCancellationCache(ctx, error, outcome);
+                    throw error;
+                }
+                const diag = toImportDiagnostic(error, "read", row.importable.type);
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "failed",
+                    error: diag.message,
+                });
+                const logPath = writeImportFailureLog(
+                    {
+                        phase: "scan",
+                        sourcePath: selection.sourcePath,
+                        housingUuid: selection.housingUuid,
+                        importableType: row.importable.type,
+                        identity: row.identity,
+                        rowIndex: row.rowIndex,
+                    },
+                    error
+                );
+                if (isTaskTraceEnabled()) {
+                    const stack = error as {
+                        stack?: string;
+                        rhinoException?: { getScriptStackTrace?: () => string };
+                    };
+                    const trace =
+                        stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
+                    if (trace) {
+                        traceNote(
+                            "read-stack",
+                            trace.split("\n").slice(0, 8).join(" | ")
+                        );
+                    }
+                }
+                ctx.displayMessage(
+                    `&c[htsw] Import aborted while scanning ${row.importable.type} ${row.identity}; no changes applied.`
+                );
+                reportSavedObservedState(ctx, outcome.savedCount, outcome.lockUpdated);
+                ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
+                events?.emit({ kind: "sessionFinished" });
+                return;
+            }
+        }
+
+        for (const entry of chunkReads) {
+            if (!entry.read.needsHydration) {
+                hydrated.push(entry);
+                continue;
+            }
+            events?.emit({
+                kind: "importableReactivated",
+                key: entry.row.key,
+                rowIndex: entry.row.rowIndex,
+                phase: "hydrating",
+            });
+            try {
+                await entry.read.hydrate(ctx);
+                hydrated.push(entry);
+            } catch (error) {
+                const outcome = await persistHydratedReads(
+                    ctx,
+                    hydrated,
+                    session,
+                    selection,
+                    pendingHouseLockEntries,
+                    verifiedDependencyContext
+                );
+                if (isTaskCancelled(error)) {
+                    reportCancellationCache(ctx, error, outcome);
+                    throw error;
+                }
+                const row = entry.row;
+                const diag = toImportDiagnostic(error, "read", row.importable.type);
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "failed",
+                    error: diag.message,
+                });
+                const logPath = writeImportFailureLog(
+                    {
+                        phase: "hydrate",
+                        sourcePath: selection.sourcePath,
+                        housingUuid: selection.housingUuid,
+                        importableType: row.importable.type,
+                        identity: row.identity,
+                        rowIndex: row.rowIndex,
+                    },
+                    error
+                );
+                ctx.displayMessage(
+                    `&c[htsw] Import aborted while hydrating ${row.importable.type} ${row.identity}; no changes applied.`
+                );
+                reportSavedObservedState(ctx, outcome.savedCount, outcome.lockUpdated);
+                ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
+                events?.emit({ kind: "sessionFinished" });
+                return;
+            }
         }
     }
 
@@ -430,6 +486,7 @@ async function runImportSessionInner(
 
     let activePlanIndex: number | null = null;
     try {
+        events?.emit({ kind: "applyPassStarted" });
         await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
             ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
         });
@@ -517,7 +574,8 @@ async function runImportSessionInner(
                     plan,
                     selection.housingUuid,
                     actionListApplyResultFromError(error),
-                    pendingHouseLockEntries
+                    pendingHouseLockEntries,
+                    verifiedDependencyContext
                 );
                 if (!partialSaved) {
                     deleteImportableCache(
@@ -530,7 +588,8 @@ async function runImportSessionInner(
                     ctx,
                     plans.slice(planIndex + 1),
                     selection.housingUuid,
-                    pendingHouseLockEntries
+                    pendingHouseLockEntries,
+                    verifiedDependencyContext
                 );
                 const diag = toImportDiagnostic(error, "import", row.importable.type);
                 events?.emit({
@@ -576,7 +635,8 @@ async function runImportSessionInner(
                 active.plan,
                 selection.housingUuid,
                 actionListApplyResultFromError(error),
-                pendingHouseLockEntries
+                pendingHouseLockEntries,
+                verifiedDependencyContext
             );
             if (!partialSaved) {
                 const invalidated = deleteImportableCache(
@@ -595,7 +655,8 @@ async function runImportSessionInner(
             ctx,
             remainingPlans,
             selection.housingUuid,
-            pendingHouseLockEntries
+            pendingHouseLockEntries,
+            verifiedDependencyContext
         );
         const savedCount = countPendingHouseLockEntries(pendingHouseLockEntries);
         const lockUpdated = flushHouseLockEntries(
@@ -649,20 +710,90 @@ async function finishWithoutApply(
     events?.emit({ kind: "importableFinished", key: row.key, status });
 }
 
+function verifiedSnapshotFor(
+    importable: Importable,
+    context: VerifiedDependencyContext
+): ItemDependencySnapshot {
+    const trust = context.trustPlan.importables.get(
+        importableKey(importable.type, importableIdentity(importable))
+    );
+    return verifiedItemDependencies(
+        importable,
+        context.dependencies,
+        context.projectItems,
+        context.housingUuid,
+        context.tracker,
+        context.observations,
+        context.trustedItemOwners,
+        trust?.entry?.itemDependencies
+    );
+}
+
+async function persistHydratedReads(
+    ctx: TaskContext,
+    hydrated: ReadonlyArray<{ read: ImportableRead }>,
+    session: ImportContext,
+    selection: ImportSessionRequest,
+    pendingHouseLockEntries: PendingHouseLockEntry[],
+    verifiedContext: VerifiedDependencyContext
+): Promise<CancellationCacheOutcome> {
+    const plans = hydrated.map(({ read }) => ({ plan: read.plan(session) }));
+    const savedCount = await writeObservedPlanCaches(
+        ctx,
+        plans,
+        selection.housingUuid,
+        pendingHouseLockEntries,
+        verifiedContext
+    );
+    const lockUpdated = flushHouseLockEntries(
+        selection.sourcePath,
+        selection.housingUuid,
+        pendingHouseLockEntries
+    );
+    return {
+        savedCount,
+        lockUpdated,
+        invalidatedCurrent: false,
+        invalidationFailed: false,
+    };
+}
+
+function reportSavedObservedState(
+    ctx: TaskContext,
+    savedCount: number,
+    lockUpdated: boolean
+): void {
+    if (savedCount === 0) return;
+    const noun = savedCount === 1 ? "importable" : "importables";
+    const retry = lockUpdated ? " Retry can reuse them." : "";
+    ctx.displayMessage(
+        `&7[htsw] Saved verified house state for ${savedCount} ${noun}.${retry}`
+    );
+}
+
 /** Cache the partially-applied state after a failed apply. */
 async function maybeWritePartialImportCache(
     ctx: TaskContext,
     plan: ImportablePlan,
     housingUuid: string,
     result: ActionListApplyResult | null,
-    pendingHouseLockEntries: PendingHouseLockEntry[]
+    pendingHouseLockEntries: PendingHouseLockEntry[],
+    verifiedContext: VerifiedDependencyContext
 ): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
     if (partial === null) return false;
-    if (!(await tryWriteImportableCache(ctx, partial, "importer", housingUuid))) {
+    const itemDependencies = verifiedSnapshotFor(
+        plan.importable,
+        verifiedContext
+    );
+    if (
+        !(await tryWriteImportableCache(ctx, partial, "importer", housingUuid, {
+            itemDependencies,
+        }))
+    ) {
         return false;
     }
-    pendingHouseLockEntries.push({ importable: partial });
+    pendingHouseLockEntries.push({ importable: partial, itemDependencies });
     return true;
 }
 
@@ -677,16 +808,25 @@ async function writeObservedPlanCaches(
     ctx: TaskContext,
     plans: ReadonlyArray<{ plan: ImportablePlan }>,
     housingUuid: string,
-    pendingHouseLockEntries: PendingHouseLockEntry[]
+    pendingHouseLockEntries: PendingHouseLockEntry[],
+    verifiedContext: VerifiedDependencyContext
 ): Promise<number> {
     let savedCount = 0;
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
-        if (!(await tryWriteImportableCache(ctx, observed, "importer", housingUuid))) {
+        const itemDependencies = verifiedSnapshotFor(
+            plan.importable,
+            verifiedContext
+        );
+        if (
+            !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
+                itemDependencies,
+            }))
+        ) {
             continue;
         }
-        pendingHouseLockEntries.push({ importable: observed });
+        pendingHouseLockEntries.push({ importable: observed, itemDependencies });
         savedCount++;
     }
     return savedCount;

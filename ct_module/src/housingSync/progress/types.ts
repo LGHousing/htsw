@@ -86,6 +86,7 @@ export type TaskProgressActive = {
 export type TaskProgress = {
     completedUnits: number;
     totalUnits: number;
+    totalsLocked: boolean;
     /**
      * Set when an importable failed (the run halts on first failure). Carries
      * the failed importable's key and the Diagnostic message, for the GUI
@@ -104,15 +105,16 @@ export type TaskProgress = {
 };
 
 /**
- * True when the running total is locked — no future event can widen it.
+ * True when the session has entered its apply pass, or when the active
+ * importable is already in a phase whose total cannot widen.
  *
  * Setup/reading/hydrating phases can still discover work (longer lists
  * than predicted, deeper child bodies, more pages), so the total may
- * grow mid-run. The applying phase runs against a computed diff with a
- * fixed op count: the total is known, and the bar/ETA can be displayed
- * as exact rather than approximate.
+ * grow mid-run. Staged imports lock the whole session after planning;
+ * other flows retain the active-phase behavior.
  */
 export function isTaskTotalLocked(progress: TaskProgress): boolean {
+    if (progress.totalsLocked) return true;
     if (progress.active === null) return true;
     return progress.active.phase === "applying" || progress.active.phase === "done";
 }

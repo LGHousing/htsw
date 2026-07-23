@@ -24,6 +24,7 @@ function progress(
     return {
         completedUnits,
         totalUnits: 120,
+        totalsLocked: false,
         active: {
             key: "FUNCTION:test",
             type: "FUNCTION",

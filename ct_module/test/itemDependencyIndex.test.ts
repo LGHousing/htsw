@@ -10,6 +10,10 @@ import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDiffContext } from "../src/importables/items/diff";
 import { createItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import {
+    createItemVerificationTracker,
+    verifiedItemDependencies,
+} from "../src/importables/items/verifiedDependencies";
 
 function item(name: string, marker: number, actions?: Action[]): ImportableItem {
     const nbt: Tag = {
@@ -183,5 +187,87 @@ describe("item dependency index", () => {
         );
 
         expect(context.actionsDiffer(observedAction, desiredAction)).toBe(true);
+    });
+
+    test("verified dependency snapshots include every fully observed target", () => {
+        const first = item("first", 1);
+        const second = item("second", 2);
+        const desiredActions = [give("first"), give("second")];
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "uses both",
+            actions: desiredActions,
+        };
+        const importables = [first, second, owner];
+        const registry = createProjectItemIndex(importables);
+        const index = createItemDependencyIndex(importables, registry);
+        const observations = createItemFieldObservationRecorder();
+        const tracker = createItemVerificationTracker();
+        const observedActions = [give("first"), give("second")];
+        for (let i = 0; i < desiredActions.length; i++) {
+            tracker.recordPair(desiredActions[i], observedActions[i]);
+            const dependency = i === 0 ? first : second;
+            observations.record(observedActions[i], "itemName", {
+                snbt: "{}",
+                canonicalKey: canonicalItemShellTagKey(dependency.nbt),
+            });
+        }
+
+        expect(
+            verifiedItemDependencies(
+                owner,
+                index,
+                registry,
+                "house",
+                tracker,
+                observations,
+                new WeakSet(),
+                undefined
+            )
+        ).toEqual(index.snapshotOf(owner));
+    });
+
+    test("verified dependency snapshots omit only an unverified target", () => {
+        const first = item("first", 1);
+        const second = item("second", 2);
+        const desiredActions = [give("first"), give("second")];
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "uses both",
+            actions: desiredActions,
+        };
+        const importables = [first, second, owner];
+        const registry = createProjectItemIndex(importables);
+        const index = createItemDependencyIndex(importables, registry);
+        const observations = createItemFieldObservationRecorder();
+        const tracker = createItemVerificationTracker();
+        const observedActions = [give("first"), give("second")];
+        for (let i = 0; i < desiredActions.length; i++) {
+            tracker.recordPair(desiredActions[i], observedActions[i]);
+        }
+        observations.record(observedActions[0], "itemName", {
+            snbt: "{}",
+            canonicalKey: canonicalItemShellTagKey(first.nbt),
+        });
+
+        const verified = verifiedItemDependencies(
+            owner,
+            index,
+            registry,
+            "house",
+            tracker,
+            observations,
+            new WeakSet(),
+            undefined
+        );
+
+        expect(verified.dependencies).toEqual([
+            index.snapshotOf(owner).dependencies.find(
+                (dependency) =>
+                    dependency.target.kind === "named" &&
+                    dependency.target.name === "first"
+            ),
+        ]);
+        expect(verified).not.toEqual(index.snapshotOf(owner));
     });
 });

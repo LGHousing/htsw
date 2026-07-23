@@ -1,4 +1,4 @@
-import type { Importable } from "htsw/types";
+import type { Action, Condition, Importable } from "htsw/types";
 
 import type { TrustPlan } from "../../importCache";
 import type { ItemDiffContext } from "./diff/itemDiffContext";
@@ -22,4 +22,5 @@ export type ActionSyncContext = {
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
     itemDiff?: ItemDiffContext;
     itemFieldObservations?: ItemFieldObservationRecorder;
+    trustedItemOwners?: WeakSet<Action | Condition>;
 };

@@ -28,6 +28,7 @@ import {
     npcLabel,
     type NpcListEntry,
 } from "./listNpcs";
+import { refreshExportedItemDependencies } from "../export/exporter";
 
 export type ExportAllNpcsOptions = {
     importJsonPath: string;
@@ -128,6 +129,7 @@ async function exportAllNpcsInner(
 
     let succeeded = 0;
     let failed = 0;
+    const completedNames = new Set<string>();
     try {
         for (let i = 0; i < exportEntries.length; i++) {
             ctx.checkCancelled();
@@ -183,6 +185,7 @@ async function exportAllNpcsInner(
                         );
                     }
                 }
+                completedNames.add(npcPosIdentity(liveEntry.pos));
                 succeeded++;
                 sink?.itemFinished?.(i);
             } catch (error) {
@@ -209,6 +212,19 @@ async function exportAllNpcsInner(
                     options.newExportTargetImportJson
                 );
             }
+            refreshExportedItemDependencies(
+                ctx,
+                importJsonPath,
+                lockHousingUuid,
+                "NPC",
+                completedNames,
+                new Set(
+                    cacheOnly
+                        ? itemCaptures.matchedItemNames()
+                        : itemCaptures.capturedItemNames()
+                ),
+                !cacheOnly
+            );
         } finally {
             try {
                 await restorePlayerInventory(ctx, inventorySnapshot);

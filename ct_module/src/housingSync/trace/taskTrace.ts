@@ -128,6 +128,7 @@ export function traceSyncEvent(event: SyncEvent): void {
             });
             return;
         case "sessionStarted":
+        case "applyPassStarted":
         case "sessionFinished":
         case "progress":
         case "knowledgeSourceUsed":

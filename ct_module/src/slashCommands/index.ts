@@ -41,6 +41,7 @@ import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
+import { commandCacheReport } from "./cacheReport";
 
 type HtswSubcommand = {
     name: string;
@@ -70,6 +71,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Export live Housing content",
         run: commandExport,
         usage: "export <type> [path]",
+    },
+    {
+        name: "cache",
+        summary: "Explain what the importer will trust from cache for a project",
+        run: commandCacheReport,
+        usage: "cache <import.json>",
     },
     {
         name: "giveitem",

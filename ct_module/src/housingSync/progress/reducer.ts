@@ -40,9 +40,8 @@ export type ProgressReducerState = {
     active: ActiveBookkeeping | null;
     /**
      * Per-importable bookkeeping preserved across active-key switches.
-     * Used by the two-pass importer: pass-1 reads/hydrates importable A,
-     * then moves on to B (saving A's bookkeeping here); pass-2 later
-     * re-activates A from this map without resetting its progress.
+     * Used when the importer switches rows between scan, hydration, planning,
+     * and apply without resetting earlier progress.
      */
     parkedRows: Partial<Record<string, ActiveBookkeeping>>;
     completedSessionUnits: number;
@@ -54,6 +53,7 @@ export function initialReducerState(): ProgressReducerState {
         progress: {
             completedUnits: 0,
             totalUnits: 1,
+            totalsLocked: false,
             active: null,
             parked: {},
             rows: [],
@@ -76,6 +76,11 @@ export function reduce(
             return startImportable(state, event);
         case "importableReactivated":
             return reactivateImportable(state, event.key, event.rowIndex, event.phase);
+        case "applyPassStarted":
+            return {
+                ...state,
+                progress: { ...state.progress, totalsLocked: true },
+            };
         case "setupStep":
             return applySetupStep(state, event.completed, event.total);
         case "progress":
@@ -117,6 +122,7 @@ function startSession(
         progress: {
             completedUnits: 0,
             totalUnits: total,
+            totalsLocked: false,
             active: null,
             parked: {},
             rows: rows.map((r) => ({ ...r })),
@@ -504,6 +510,7 @@ function rebuildSnapshot(
         progress: {
             completedUnits: sessionCompletedUnits,
             totalUnits: Math.max(1, sessionTotalUnits),
+            totalsLocked: state.progress.totalsLocked,
             active: activeSnapshot,
             parked: parked.snapshots,
             rows,

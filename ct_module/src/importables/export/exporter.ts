@@ -21,6 +21,7 @@ import { createProjectItemIndex } from "../items/projectItems";
 import { createItemDependencyIndex } from "../items/dependencyIndex";
 import { hasRequiredInteractDataCache } from "../items/interactDataCache";
 import { importableIdentity } from "../identity";
+import { exportedItemDependencies } from "../items/exportedDependencies";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -120,13 +121,14 @@ export type HouseExporterRecipe<
 
 const plural = (n: number): string => (n === 1 ? "" : "s");
 
-function refreshExportedItemDependencies(
+export function refreshExportedItemDependencies(
     ctx: TaskContext,
     importJsonPath: string,
     housingUuid: string,
     type: Importable["type"],
     names: ReadonlySet<string>,
-    capturedItemNames: ReadonlySet<string>
+    verifiedItemNames: ReadonlySet<string>,
+    updateHouseLock: boolean
 ): void {
     if (names.size === 0) return;
     const parsed = readParsedImportablesForExport(importJsonPath);
@@ -139,19 +141,37 @@ function refreshExportedItemDependencies(
         if (importable.type === type && names.has(identity)) {
             const cached = readImportableCache(housingUuid, type, identity);
             if (cached !== null) {
+                const itemDependencies = exportedItemDependencies(
+                    importable,
+                    dependencies,
+                    verifiedItemNames
+                );
                 writeImportableCache(ctx, housingUuid, cached.importable, cached.writer, {
                     quiet: true,
-                    itemDependencies: dependencies.snapshotOf(importable),
+                    itemDependencies,
                 });
+                if (updateHouseLock) {
+                    upsertHouseLockImportable(
+                        importJsonPath,
+                        housingUuid,
+                        cached.importable,
+                        itemDependencies
+                    );
+                }
             }
         }
-        if (importable.type === "ITEM" && capturedItemNames.has(identity)) {
+        if (importable.type === "ITEM" && verifiedItemNames.has(identity)) {
             if (!hasRequiredInteractDataCache(importable, dependencies, housingUuid)) {
                 continue;
             }
+            const itemDependencies = exportedItemDependencies(
+                importable,
+                dependencies,
+                verifiedItemNames
+            );
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
                 quiet: true,
-                itemDependencies: dependencies.snapshotOf(importable),
+                itemDependencies,
             });
         }
     }
@@ -365,10 +385,10 @@ export function defineHouseExporter<
                     );
                 }
                 if (spec.capturesActionItems === true) {
-                    const capturedItemNames = new Set(
-                        state.itemCaptures
-                            .capturedItemNames()
-                            .concat(state.menuSlotItemCaptures.capturedItemNames())
+                    const verifiedItemNames = new Set(
+                        cacheOnly
+                            ? state.itemCaptures.matchedItemNames()
+                            : state.itemCaptures.capturedItemNames()
                     );
                     refreshExportedItemDependencies(
                         ctx,
@@ -376,7 +396,8 @@ export function defineHouseExporter<
                         lockHousingUuid,
                         spec.type,
                         completedNames,
-                        capturedItemNames
+                        verifiedItemNames,
+                        !cacheOnly
                     );
                 }
             } finally {

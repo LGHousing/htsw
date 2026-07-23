@@ -213,6 +213,10 @@ export class ItemCaptureRegistry {
         return Object.keys(this.capturedNames);
     }
 
+    matchedItemNames(): string[] {
+        return Object.keys(this.matchedNames);
+    }
+
     capturedInteractData(name: string): string | null {
         const snbt = this.entriesByName[name]?.snbt;
         return snbt === undefined || snbt.length === 0

@@ -39,6 +39,11 @@ export type ImportableTrustPlan = {
     lockHash: string | null;
     lockListScanHashes: Record<string, string> | null;
     cacheMatchesLock: boolean;
+    breakdown: {
+        dependenciesMatch: boolean;
+        itemBlobAvailable: boolean;
+        cacheMatchesLock: boolean;
+    };
     trustMode: boolean;
     wholeImportableTrusted: boolean;
     trustedChildListPaths: Set<TrustedChildListPath>;
@@ -151,6 +156,11 @@ export function buildTrustPlan(
             lockHash: lockEntry?.hash ?? null,
             lockListScanHashes: lockEntry?.listScanHashes ?? null,
             cacheMatchesLock,
+            breakdown: {
+                dependenciesMatch,
+                itemBlobAvailable,
+                cacheMatchesLock,
+            },
             trustMode: trustAllowed,
             wholeImportableTrusted,
             trustedChildListPaths,

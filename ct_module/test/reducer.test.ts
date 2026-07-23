@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { initialReducerState, reduce } from "../src/housingSync/progress/reducer";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
+import { isTaskTotalLocked } from "../src/housingSync/progress/types";
 
 const baseRow = { totalUnits: 10 };
 
@@ -12,6 +13,117 @@ function emit(events: SyncEvent[]) {
 }
 
 describe("progress reducer", () => {
+    test("apply pass locks totals through reactivation, progress, and completion", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "a", status: "queued", ...baseRow },
+                    { key: "b", status: "queued", ...baseRow },
+                ],
+                initialTotalUnits: 20,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 2,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "importableStarted",
+                key: "b",
+                type: "FUNCTION",
+                identity: "b",
+                setupUnits: 2,
+                initialUnits: 10,
+                rowIndex: 1,
+                cached: null,
+            },
+            { kind: "applyPassStarted" },
+            {
+                kind: "importableReactivated",
+                key: "a",
+                rowIndex: 0,
+                phase: "hydrating",
+            },
+        ]);
+
+        expect(s.progress.totalsLocked).toBe(true);
+        expect(isTaskTotalLocked(s.progress)).toBe(true);
+
+        s = reduce(s, { kind: "setupStep", label: "setup", completed: 1, total: 1 });
+        expect(s.progress.active?.phase).toBe("setup");
+        expect(isTaskTotalLocked(s.progress)).toBe(true);
+
+        s = reduce(s, {
+            kind: "progress",
+            scope: { kind: "topLevel" },
+            progress: {
+                phase: "applying",
+                completedUnits: 8,
+                totalUnits: 8,
+                phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 8 },
+                sync: { completedUnits: 8, totalUnits: 8, parent: null },
+            },
+        });
+        s = reduce(s, { kind: "importableFinished", key: "a", status: "imported" });
+
+        expect(s.progress.totalsLocked).toBe(true);
+    });
+
+    test("total lock keeps active-phase behavior without an apply-pass event", () => {
+        const hydrating = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", ...baseRow }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "hydrating",
+                    completedUnits: 5,
+                    totalUnits: 10,
+                    phaseUnits: { setup: 0, reading: 5, hydrating: 5, applying: 0 },
+                    sync: { completedUnits: 5, totalUnits: 10, parent: null },
+                },
+            },
+        ]);
+
+        expect(hydrating.progress.totalsLocked).toBe(false);
+        expect(isTaskTotalLocked(hydrating.progress)).toBe(false);
+
+        const applying = reduce(hydrating, {
+            kind: "progress",
+            scope: { kind: "topLevel" },
+            progress: {
+                phase: "applying",
+                completedUnits: 5,
+                totalUnits: 10,
+                phaseUnits: { setup: 0, reading: 5, hydrating: 0, applying: 5 },
+                sync: { completedUnits: 0, totalUnits: 5, parent: null },
+            },
+        });
+
+        expect(applying.progress.totalsLocked).toBe(false);
+        expect(isTaskTotalLocked(applying.progress)).toBe(true);
+    });
+
     test("sessionStarted seeds rows + total", () => {
         const s = emit([
             {

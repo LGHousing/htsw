@@ -51,6 +51,10 @@ vi.mock("../src/importCache/houseLock", () => ({
     upsertHouseLockImportables: mocks.upsertHouseLockImportables,
 }));
 
+vi.mock("../src/runtimeDebug/importFailureLog", () => ({
+    writeImportFailureLog: () => "./failure.log",
+}));
+
 import { runImportSession } from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 import { createTaskCancelledError } from "../src/tasks/cancellation";
@@ -87,6 +91,7 @@ describe("import conflict gate", () => {
                 return {
                     kind: "FUNCTION",
                     importable,
+                    needsHydration: true,
                     hydrate: mocks.hydrateImportable,
                     plan: () => ({
                         kind: "FUNCTION",
@@ -139,6 +144,7 @@ describe("import conflict gate", () => {
             async (_ctx: unknown, importable: ImportableFunction) => ({
                 kind: "FUNCTION",
                 importable,
+                needsHydration: true,
                 hydrate:
                     importable.name === "Second"
                         ? async () => {
@@ -176,11 +182,69 @@ describe("import conflict gate", () => {
             ctx,
             importables[0],
             "importer",
-            "test-house"
+            "test-house",
+            { itemDependencies: { version: 1, dependencies: [] } }
         );
         expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
         expect(messages).toContain(
             "&a[htsw] Cancellation saved verified house state for &f1&a importable; retry can reuse the cache."
+        );
+    });
+
+    it("persists hydrated chunks when a later scan fails", async () => {
+        const importables: ImportableFunction[] = Array.from(
+            { length: 26 },
+            (_, index) => ({
+                type: "FUNCTION",
+                name: `Function ${index + 1}`,
+                actions: [message(`${index + 1}`)],
+            })
+        );
+        mocks.scanImportable.mockImplementation(
+            async (_ctx: unknown, importable: ImportableFunction) => {
+                if (importable.name === "Function 26") throw new Error("scan failed");
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    needsHydration: true,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => importable,
+                        reconstructPartial: () => null,
+                    }),
+                };
+            }
+        );
+        const messages: string[] = [];
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: (text: string) => messages.push(text),
+        } as unknown as TaskContext;
+
+        await runImportSession(ctx, {
+            importables,
+            trustMode: false,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: importables } as never,
+        });
+
+        expect(mocks.hydrateImportable).toHaveBeenCalledTimes(25);
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(25);
+        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledWith(
+            "./project/import.json",
+            "test-house",
+            expect.arrayContaining([
+                expect.objectContaining({ importable: importables[0] }),
+                expect.objectContaining({ importable: importables[24] }),
+            ])
+        );
+        expect(messages).toContain(
+            "&7[htsw] Saved verified house state for 25 importables. Retry can reuse them."
         );
     });
 
@@ -193,6 +257,7 @@ describe("import conflict gate", () => {
             async (_ctx: unknown, importable: ImportableFunction) => ({
                 kind: "FUNCTION",
                 importable,
+                needsHydration: true,
                 hydrate: mocks.hydrateImportable,
                 plan: () => ({
                     kind: "FUNCTION",
@@ -241,6 +306,7 @@ describe("import conflict gate", () => {
         mocks.scanImportable.mockResolvedValue({
             kind: "FUNCTION",
             importable,
+            needsHydration: true,
             hydrate: mocks.hydrateImportable,
             plan: () => ({
                 kind: "FUNCTION",

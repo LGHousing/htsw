@@ -133,6 +133,9 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     public readonly cycles: ItemDependencyCycle[] = [];
     private readonly cycleKeys = new Set<string>();
     private readonly fingerprints = new Map<ProjectItem, string>();
+    private readonly graphNodes = new Map<string, GraphNode>();
+    private readonly graphEntries = new Map<string, readonly ProjectItem[]>();
+    private readonly clickActionFingerprints = new WeakMap<ImportableItem, string>();
     private readonly snapshots = new WeakMap<object, ItemDependencySnapshot>();
 
     public constructor(
@@ -157,11 +160,13 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
                 target: resolved.target,
                 fingerprint: this.fingerprintOf(resolved.entry),
             };
-            byTarget.set(targetKey(dependency.target), dependency);
+            byTarget.set(itemDependencyTargetKey(dependency.target), dependency);
         });
         const dependencies = Array.from(byTarget.values());
         dependencies.sort((a, b) =>
-            targetKey(a.target).localeCompare(targetKey(b.target))
+            itemDependencyTargetKey(a.target).localeCompare(
+                itemDependencyTargetKey(b.target)
+            )
         );
         const snapshot: ItemDependencySnapshot = { version: 1, dependencies };
         this.snapshots.set(importable, snapshot);
@@ -177,7 +182,7 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
         if (cached?.version === 1) {
             for (const dependency of cached.dependencies) {
                 cachedFingerprints.set(
-                    targetKey(dependency.target),
+                    itemDependencyTargetKey(dependency.target),
                     dependency.fingerprint
                 );
             }
@@ -190,7 +195,10 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
                 return;
             }
             const current = this.fingerprintOf(resolved.entry);
-            if (cachedFingerprints.get(targetKey(resolved.target)) !== current) {
+            if (
+                cachedFingerprints.get(itemDependencyTargetKey(resolved.target)) !==
+                current
+            ) {
                 invalidations.add(use);
             }
         });
@@ -215,9 +223,11 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     }
 
     public clickActionsFingerprint(item: ImportableItem): string {
+        const cached = this.clickActionFingerprints.get(item);
+        if (cached !== undefined) return cached;
         const roots = this.resolvedUsesOf(item);
         const graph = this.graphFromEntries(roots.map((root) => root.entry));
-        return (
+        const fingerprint =
             "v2-" +
             hashHex(
                 stableStringify({
@@ -226,53 +236,69 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
                     rightClickActions: actionListCompareKey(item.rightClickActions ?? []),
                     dependencies: graph,
                 })
-            )
-        );
+            );
+        this.clickActionFingerprints.set(item, fingerprint);
+        return fingerprint;
     }
 
     private graphFromEntries(entries: readonly ProjectItem[]): GraphNode[] {
-        const nodes = new Map<string, GraphNode>();
+        const reachedKeys = new Set<string>();
         const activeKeys: string[] = [];
         const activeNames: string[] = [];
 
         const collect = (entry: ProjectItem): void => {
             const target = targetOfEntry(entry);
-            const key = targetKey(target);
+            const key = itemDependencyTargetKey(target);
             const activeIndex = activeKeys.indexOf(key);
             if (activeIndex >= 0) {
                 this.recordCycle(activeNames.slice(activeIndex).concat(entry.name));
                 return;
             }
-            if (nodes.has(key)) return;
+            if (reachedKeys.has(key)) return;
+            reachedKeys.add(key);
 
-            const importable = entry.importable;
-            const uses = importable === undefined ? [] : this.resolvedUsesOf(importable);
-            const references = uses.map((resolved) => resolved.target);
-            references.sort((a, b) => targetKey(a).localeCompare(targetKey(b)));
-            nodes.set(key, {
-                target,
-                nbt: canonicalItemShellTagKey(entry.nbt),
-                leftClickActions:
-                    importable === undefined
-                        ? undefined
-                        : actionListCompareKey(importable.leftClickActions ?? []),
-                rightClickActions:
-                    importable === undefined
-                        ? undefined
-                        : actionListCompareKey(importable.rightClickActions ?? []),
-                references,
-            });
+            let childEntries = this.graphEntries.get(key);
+            if (childEntries === undefined) {
+                const importable = entry.importable;
+                const uses =
+                    importable === undefined ? [] : this.resolvedUsesOf(importable);
+                const references = uses.map((resolved) => resolved.target);
+                references.sort((a, b) =>
+                    itemDependencyTargetKey(a).localeCompare(
+                        itemDependencyTargetKey(b)
+                    )
+                );
+                this.graphNodes.set(key, {
+                    target,
+                    nbt: canonicalItemShellTagKey(entry.nbt),
+                    leftClickActions:
+                        importable === undefined
+                            ? undefined
+                            : actionListCompareKey(importable.leftClickActions ?? []),
+                    rightClickActions:
+                        importable === undefined
+                            ? undefined
+                            : actionListCompareKey(importable.rightClickActions ?? []),
+                    references,
+                });
+                childEntries = uses.map((use) => use.entry);
+                this.graphEntries.set(key, childEntries);
+            }
 
             activeKeys.push(key);
             activeNames.push(entry.name);
-            for (const use of uses) collect(use.entry);
+            for (const childEntry of childEntries) collect(childEntry);
             activeKeys.pop();
             activeNames.pop();
         };
 
         for (const entry of entries) collect(entry);
-        const result = Array.from(nodes.values());
-        result.sort((a, b) => targetKey(a.target).localeCompare(targetKey(b.target)));
+        const result = Array.from(reachedKeys, (key) => this.graphNodes.get(key) as GraphNode);
+        result.sort((a, b) =>
+            itemDependencyTargetKey(a.target).localeCompare(
+                itemDependencyTargetKey(b.target)
+            )
+        );
         return result;
     }
 
@@ -321,7 +347,7 @@ function targetOfEntry(entry: ProjectItem): ItemDependencyTarget {
         : { kind: "snbtPath", path: entry.path as string };
 }
 
-function targetKey(target: ItemDependencyTarget): string {
+export function itemDependencyTargetKey(target: ItemDependencyTarget): string {
     return target.kind === "named"
         ? `named:${target.name}`
         : `snbtPath:${target.path}`;

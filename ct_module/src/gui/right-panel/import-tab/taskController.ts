@@ -276,6 +276,7 @@ function createSyncEventHandler(args: {
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
+        applyPassStarted: () => {},
         sessionFinished: () => {
             activeViewPath = null;
         },

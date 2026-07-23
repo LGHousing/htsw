@@ -104,7 +104,11 @@ export async function scanActionListSync(
         trustedBaselineAfterUnchangedScan: needsConflictScan
             ? trustedBaseline
             : undefined,
-        trust: getActionListTrust(target.trustPlan, target.basePath),
+        trust: getActionListTrust(
+            target.trustPlan,
+            target.basePath,
+            target.sync.trustedItemOwners
+        ),
         conflictTarget: target.conflictTarget,
     });
     if (needsConflictScan) {
@@ -190,7 +194,8 @@ function getTrustedBaselineActionList(
 
 function getActionListTrust(
     plan: ImportableTrustPlan | undefined,
-    basePath: string
+    basePath: string,
+    trustedItemOwners: ActionListTrust["trustedItemOwners"]
 ): ActionListTrust | undefined {
     if (
         plan === undefined ||
@@ -203,5 +208,6 @@ function getActionListTrust(
         basePath,
         trustedChildListPaths: plan.trustedChildListPaths,
         trustedChildLists: plan.trustedChildLists,
+        trustedItemOwners,
     };
 }

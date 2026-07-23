@@ -23,6 +23,7 @@ export type ActionListTrust = {
     basePath: string;
     trustedChildListPaths: ReadonlySet<TrustedChildListPath>;
     trustedChildLists: ReadonlyMap<TrustedChildListPath, TrustedChildListSnapshot>;
+    trustedItemOwners?: WeakSet<Action | Condition>;
 };
 
 /**
@@ -47,7 +48,7 @@ export function applyActionListTrust(
             if (snapshot === undefined) continue;
             if (!shallowChildListShapeMatches(observed, desired, prop)) continue;
 
-            applyTrustedSnapshot(observed, prop, snapshot);
+            applyTrustedSnapshot(observed, prop, snapshot, trust.trustedItemOwners);
             work.childListsToRead.delete(prop);
         }
 
@@ -61,16 +62,39 @@ export function applyActionListTrust(
 function applyTrustedSnapshot(
     observed: ObservedActionSlot,
     prop: ChildListName,
-    snapshot: TrustedChildListSnapshot
+    snapshot: TrustedChildListSnapshot,
+    trustedItemOwners: WeakSet<Action | Condition> | undefined
 ): void {
     if (observed.action === null) return;
     if (prop === "conditions") {
         if (snapshot.kind !== "conditions") return;
-        Object.assign(observed.action, { [prop]: cloneConditions(snapshot.conditions) });
+        const conditions = cloneConditions(snapshot.conditions);
+        markTrustedOwners(conditions, trustedItemOwners);
+        Object.assign(observed.action, { [prop]: conditions });
         return;
     }
     if (snapshot.kind !== "actions") return;
-    Object.assign(observed.action, { [prop]: cloneActions(snapshot.actions) });
+    const actions = cloneActions(snapshot.actions);
+    markTrustedOwners(actions, trustedItemOwners);
+    Object.assign(observed.action, { [prop]: actions });
+}
+
+function markTrustedOwners(
+    values: readonly (Action | Condition)[],
+    trustedItemOwners: WeakSet<Action | Condition> | undefined
+): void {
+    if (trustedItemOwners === undefined) return;
+    const visit = (value: unknown): void => {
+        if (value === null || typeof value !== "object") return;
+        if (Array.isArray(value)) {
+            for (const entry of value) visit(entry);
+            return;
+        }
+        trustedItemOwners.add(value as Action | Condition);
+        const record = value as Record<string, unknown>;
+        for (const key in record) visit(record[key]);
+    };
+    visit(values);
 }
 
 function cloneActions(actions: readonly Action[]): Action[] {

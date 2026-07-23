@@ -196,6 +196,7 @@ export function createTaskProgress(init: Partial<TaskProgress>): TaskProgress {
     return normalizeTaskProgress({
         completedUnits: init.completedUnits ?? 0,
         totalUnits: init.totalUnits ?? 1,
+        totalsLocked: init.totalsLocked ?? false,
         active: init.active ?? null,
         parked: init.parked ?? {},
         rows: init.rows ?? [],

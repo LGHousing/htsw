@@ -134,6 +134,7 @@ export type SyncEvent =
           rowIndex: number;
           phase?: ProgressPayload["phase"];
       }
+    | { kind: "applyPassStarted" }
     | { kind: "sessionFinished" }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | {

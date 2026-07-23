@@ -26,6 +26,7 @@ import {
     type ItemDependencySnapshot,
 } from "../src/importables/items/dependencyIndex";
 import { buildCacheStatusRow } from "../src/importCache/status";
+import { exportedItemDependencies } from "../src/importables/items/exportedDependencies";
 
 function chat(message: string): Action {
     return { type: "MESSAGE", message };
@@ -58,6 +59,88 @@ function cacheEntry(importable: ImportableFunction): ImportableCacheEntry {
 
 afterEach(() => {
     vi.unstubAllGlobals();
+});
+
+describe("exported item dependency trust", () => {
+    const referencedItem: ImportableItem = {
+        type: "ITEM",
+        name: "Key",
+        nbt: {
+            type: "compound",
+            value: {
+                id: { type: "string", value: "minecraft:tripwire_hook" },
+            },
+        },
+    };
+    const owner: ImportableFunction = {
+        type: "FUNCTION",
+        name: "Use Key",
+        actions: [{ type: "GIVE_ITEM", itemName: "Key" }],
+    };
+
+    it("whole-trusts an exporter cache entry when every referenced item was captured", () => {
+        const importables = [referencedItem, owner];
+        const items = createProjectItemIndex(importables);
+        const dependencies = createItemDependencyIndex(importables, items);
+        const itemDependencies = exportedItemDependencies(
+            owner,
+            dependencies,
+            new Set(["Key"])
+        );
+        const uuid = "export-captured-dependencies";
+        const entry = {
+            ...cacheEntry(owner),
+            writer: "exporter" as const,
+            itemDependencies,
+        };
+        const files: Partial<Record<string, string>> = {
+            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
+                JSON.stringify(entry),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        expect(itemDependencies).toEqual(dependencies.snapshotOf(owner));
+        expect(
+            buildTrustPlan(uuid, importables, true, undefined, dependencies)
+                .importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
+        ).toBe(true);
+    });
+
+    it("omits an uncaptured reference and does not whole-trust the cache entry", () => {
+        const importables = [referencedItem, owner];
+        const items = createProjectItemIndex(importables);
+        const dependencies = createItemDependencyIndex(importables, items);
+        const itemDependencies = exportedItemDependencies(
+            owner,
+            dependencies,
+            new Set()
+        );
+        const uuid = "export-uncaptured-dependencies";
+        const entry = {
+            ...cacheEntry(owner),
+            writer: "exporter" as const,
+            itemDependencies,
+        };
+        const files: Partial<Record<string, string>> = {
+            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
+                JSON.stringify(entry),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        expect(itemDependencies.dependencies).toEqual([]);
+        expect(
+            buildTrustPlan(uuid, importables, true, undefined, dependencies)
+                .importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
+        ).toBe(false);
+    });
 });
 
 describe("trustedChildListPathsForImportable", () => {
@@ -207,9 +290,10 @@ describe("buildTrustPlan house lock gating", () => {
         expect(trust?.entry?.importable).toEqual(item);
         expect(trust?.trustMode).toBe(false);
         expect(trust?.wholeImportableTrusted).toBe(false);
+        expect(trust?.breakdown.itemBlobAvailable).toBe(false);
     });
 
-    it("does not trust an old cache entry when the source has item dependencies", () => {
+    it("exposes a dependency mismatch when cached item metadata is missing", () => {
         const uuid = "dependency-cache-missing";
         const desired = fn([chat("same")]);
         const entry = cacheEntry(desired);
@@ -245,12 +329,13 @@ describe("buildTrustPlan house lock gating", () => {
 
         expect(row?.wholeImportableTrusted).toBe(false);
         expect(row?.trustedChildListPaths.size).toBe(0);
+        expect(row?.breakdown.dependenciesMatch).toBe(false);
         expect(buildCacheStatusRow(uuid, desired, itemDependencies).state).toBe(
             "modified"
         );
     });
 
-    it("keeps old dependency-less cache entries current", () => {
+    it("exposes matching dependencies for a matching snapshot", () => {
         const uuid = "dependency-cache-empty";
         const desired = fn([chat("same")]);
         const files: Partial<Record<string, string>> = {
@@ -270,9 +355,18 @@ describe("buildTrustPlan house lock gating", () => {
         expect(buildCacheStatusRow(uuid, desired, itemDependencies).state).toBe(
             "current"
         );
+        expect(
+            buildTrustPlan(
+                uuid,
+                [desired],
+                true,
+                undefined,
+                itemDependencies
+            ).importables.get("FUNCTION:Debug")?.breakdown.dependenciesMatch
+        ).toBe(true);
     });
 
-    it("disables trust for an importable when the local cache does not match the project lock", () => {
+    it("exposes a lock mismatch when cache and project lock differ", () => {
         const uuid = "lock-test-mismatch";
         const importJsonPath = "./projects/demo/import.json";
         const cached = fn([chat("cached")]);
@@ -307,6 +401,7 @@ describe("buildTrustPlan house lock gating", () => {
         expect(row?.trustMode).toBe(false);
         expect(row?.wholeImportableTrusted).toBe(false);
         expect(row?.cacheMatchesLock).toBe(false);
+        expect(row?.breakdown.cacheMatchesLock).toBe(false);
         expect(row?.lockListScanHashes).toBeNull();
     });
 
@@ -447,6 +542,11 @@ describe("trusted action-list planning", () => {
                 lockHash: importableHash(cached),
                 lockListScanHashes: null,
                 cacheMatchesLock: true,
+                breakdown: {
+                    dependenciesMatch: true,
+                    itemBlobAvailable: true,
+                    cacheMatchesLock: true,
+                },
                 trustMode: true,
                 wholeImportableTrusted: false,
                 trustedChildListPaths: new Set(),
@@ -476,6 +576,11 @@ describe("trusted action-list planning", () => {
                 lockHash: importableHash(cached),
                 lockListScanHashes: null,
                 cacheMatchesLock: true,
+                breakdown: {
+                    dependenciesMatch: true,
+                    itemBlobAvailable: true,
+                    cacheMatchesLock: true,
+                },
                 trustMode: true,
                 wholeImportableTrusted: false,
                 trustedChildListPaths: new Set(["actions"]),
