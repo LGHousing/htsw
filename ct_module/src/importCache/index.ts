@@ -12,7 +12,9 @@ export {
     tryWriteImportableCache,
     readImportableCache,
     deleteImportableCache,
+    loadImportableCachesOffThread,
 } from "./cache";
+export type { ImportableCacheLoadRequest } from "./cache";
 export { importableHash } from "./hash";
 
 export { getCurrentHousingUuid } from "./housingId";

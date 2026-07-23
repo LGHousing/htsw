@@ -18,6 +18,11 @@ const ALL_IMPORTABLE_TYPES: ImportableType[] = [
 ];
 const selectedTypes: Set<ImportableType> = new Set();
 const selectedStatuses: Set<LinkStatusKey> = new Set();
+let filterRevision = 0;
+
+export function getFilterRevision(): number {
+    return filterRevision;
+}
 
 export function isImportableTypeActive(t: ImportableType): boolean {
     return selectedTypes.size === 0 || selectedTypes.has(t);
@@ -35,16 +40,19 @@ export function resetFilters(): void {
     if (selectedTypes.size === 0 && selectedStatuses.size === 0) return;
     selectedTypes.clear();
     selectedStatuses.clear();
+    filterRevision++;
     bumpTreeRevision();
 }
 function toggleType(t: ImportableType): void {
     if (selectedTypes.has(t)) selectedTypes.delete(t);
     else selectedTypes.add(t);
+    filterRevision++;
     bumpTreeRevision();
 }
 function toggleStatus(key: LinkStatusKey): void {
     if (selectedStatuses.has(key)) selectedStatuses.delete(key);
     else selectedStatuses.add(key);
+    filterRevision++;
     bumpTreeRevision();
 }
 

@@ -11,7 +11,10 @@ import { peekImportableCache } from "../../importCache/cache";
 import { requestImportableCacheWarm } from "./cacheWarm";
 
 export { linkStatusIcon, type LinkStatusKey } from "./linkStatus";
-export { cachedImportableLinkStatus } from "./importableLinkStatus";
+export {
+    cachedImportableLinkStatus,
+    importableLinkStatusContextKey,
+} from "./importableLinkStatus";
 
 export const STATUS_COLOR: { [k in CacheState]: number } = {
     current: 0xff5cb85c | 0,   // green

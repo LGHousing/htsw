@@ -96,6 +96,10 @@ export function getQueue(): readonly QueueItem[] {
     return items;
 }
 
+function queueChanged(): void {
+    markGuiDirty();
+}
+
 export function beginQueueSession(): void {
     sessionKeys = new Set<string>();
     for (let i = 0; i < items.length; i++) {
@@ -118,7 +122,7 @@ export function endQueueSession(removeSessionItems: boolean): void {
         items = items.filter((i) => !keys.has(queueItemKey(i)));
     }
     sessionKeys = null;
-    if (hadSession || items.length !== beforeLen) markGuiDirty();
+    if (hadSession || items.length !== beforeLen) queueChanged();
 }
 
 export function isQueueSessionItem(key: string): boolean {
@@ -149,7 +153,7 @@ export function addToQueue(item: QueueItem): boolean {
         if (queueItemKey(items[i]) === key || sameImportWork(items[i], item)) return false;
     }
     items = items.concat([item]);
-    markGuiDirty();
+    queueChanged();
     return true;
 }
 
@@ -172,7 +176,7 @@ export function addSessionQueueItem(item: QueueItem): void {
 export function removeFromQueueKey(key: string): void {
     const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);
-    if (items.length !== beforeLen) markGuiDirty();
+    if (items.length !== beforeLen) queueChanged();
 }
 /** Toggle membership. Returns the *new* state (true = now in the queue). */
 export function toggleQueue(item: QueueItem): boolean {
@@ -188,7 +192,7 @@ export function clearQueue(): void {
     if (items.length === 0 && sessionKeys === null) return;
     items = [];
     sessionKeys = null;
-    markGuiDirty();
+    queueChanged();
 }
 
 /**

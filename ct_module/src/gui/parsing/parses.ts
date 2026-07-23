@@ -3,8 +3,14 @@
 import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { createProjectItemIndex } from "../../importables/items/projectItems";
-import { createItemDependencyIndex } from "../../importables/items/dependencyIndex";
+import {
+    createProjectItemIndex,
+    invalidateProjectItemIndex,
+} from "../../importables/items/projectItems";
+import {
+    createItemDependencyIndex,
+    invalidateItemDependencyIndex,
+} from "../../importables/items/dependencyIndex";
 import { recordHouseBinding } from "../../importCache/houseBindings";
 import { getMtimeMs, javaType } from "../lib/java";
 import { allReferencedPaths } from "./importablePaths";
@@ -249,18 +255,6 @@ function snapshotEntryIfFresh(
     );
 }
 
-function fingerprintMatchesDisk(
-    canon: string,
-    mtime: number,
-    fingerprint: { [path: string]: number }
-): boolean {
-    for (const path in fingerprint) {
-        const actual = path === canon ? mtime : getMtimeMs(path);
-        if (actual !== fingerprint[path]) return false;
-    }
-    return true;
-}
-
 function parseImportJsonFromDisk(
     canon: string,
     rawPath: string,
@@ -332,26 +326,41 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
 }
 
+function yieldFilesystemScan(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /**
- * Synchronously verify every dependency once. An unchanged warm parse stays
- * in memory; a changed dependency goes straight to a full disk parse.
+ * Verify every dependency without monopolizing the client thread. The first
+ * scan of a large project can hit cold filesystem metadata; later scans are
+ * usually served by the OS cache, but both follow the same time budget.
  */
-export function parseImportJsonCurrentBlocking(rawPath: string): CachedParse {
+export async function parseImportJsonCurrent(
+    rawPath: string
+): Promise<CachedParse> {
     const startedAt = Date.now();
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
     const existing = cache.get(canon);
-    if (
-        existing !== undefined &&
-        fingerprintMatchesDisk(canon, mtime, existing.fingerprint)
-    ) {
-        existing.mtime = mtime;
-        resetFreshness(existing.freshness);
-        recordParsePerf(canon, Date.now() - startedAt, "memory");
-        return existing;
-    }
     if (existing === undefined) return parseImportJsonBlocking(rawPath);
-    return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
+
+    const paths = Object.keys(existing.fingerprint);
+    let sliceStarted = Date.now();
+    for (let i = 0; i < paths.length; i++) {
+        const path = paths[i];
+        const actual = path === canon ? mtime : getMtimeMs(path);
+        if (actual !== existing.fingerprint[path]) {
+            return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
+        }
+        if (Date.now() - sliceStarted >= 4 && i + 1 < paths.length) {
+            await yieldFilesystemScan();
+            sliceStarted = Date.now();
+        }
+    }
+    existing.mtime = mtime;
+    resetFreshness(existing.freshness);
+    recordParsePerf(canon, Date.now() - startedAt, "memory");
+    return existing;
 }
 
 /** Look up a previously-parsed import.json by canonical path. */
@@ -455,6 +464,12 @@ function resaveSnapshot(entry: CachedParse): void {
     saveSnapshot(entry.canonicalPath, entry.parsed, entry.fingerprint);
 }
 
+function invalidateParseDerivedCaches(entry: CachedParse): void {
+    if (entry.parsed === null) return;
+    invalidateProjectItemIndex(entry.parsed.value);
+    invalidateItemDependencyIndex(entry.parsed.value);
+}
+
 /**
  * Mark the cache entry's mtime as the file's current mtime, without
  * re-parsing. Use after an in-place mutation of the cached parse that
@@ -466,8 +481,9 @@ export function touchParseCacheMtime(rawPath: string): void {
     const existing = cache.get(canon);
     if (existing === undefined) return;
     existing.mtime = getMtimeMs(canon);
-    existing.fingerprint = fingerprintOf(canon, existing.mtime, existing.parsed);
+    existing.fingerprint[canon] = existing.mtime;
     resetFreshness(existing.freshness);
+    invalidateParseDerivedCaches(existing);
     resaveSnapshot(existing);
     notifyParseCacheEntryChanged(existing);
 }

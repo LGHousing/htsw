@@ -10,8 +10,13 @@ import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
 import { isTaskTraceEnabled, traceNote } from "../../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { buildTrustPlan, tryWriteImportableCache } from "../../importCache";
-import { upsertHouseLockImportable } from "../../importCache/houseLock";
+import {
+    buildTrustPlan,
+    loadImportableCachesOffThread,
+    tryWriteImportableCache,
+    type ImportableCacheLoadRequest,
+} from "../../importCache";
+import { upsertHouseLockImportables } from "../../importCache/houseLock";
 import { importableIdentity, importableKey } from "../identity";
 import { createProjectItemIndex } from "../items/projectItems";
 import {
@@ -125,6 +130,23 @@ export function orderImportablesForSession(
     return prerequisites.concat(orderedItems, rest);
 }
 
+function warmImportableCaches(
+    housingUuid: string,
+    importables: readonly Importable[]
+): Promise<void> {
+    const requests: ImportableCacheLoadRequest[] = [];
+    for (const importable of importables) {
+        requests.push({
+            housingUuid,
+            type: importable.type,
+            identity: importableIdentity(importable),
+        });
+    }
+    return new Promise((resolve) => {
+        loadImportableCachesOffThread(requests, resolve);
+    });
+}
+
 export async function runImportSession(
     ctx: TaskContext,
     selection: ImportSessionRequest
@@ -182,6 +204,7 @@ export async function runImportSession(
         parsed.value,
         expansion.importables
     );
+    await warmImportableCaches(selection.housingUuid, orderedImportables);
     await ctx.sleep(1);
     // Building a trust plan hashes every importable and all of its actions,
     // which is slow. Pass only the ones we're importing this run, not the
@@ -619,12 +642,5 @@ function flushHouseLockEntries(
     housingUuid: string,
     entries: readonly PendingHouseLockEntry[]
 ): void {
-    for (const entry of entries) {
-        upsertHouseLockImportable(
-            sourcePath,
-            housingUuid,
-            entry.importable,
-            entry.itemDependencies
-        );
-    }
+    upsertHouseLockImportables(sourcePath, housingUuid, entries);
 }

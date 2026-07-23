@@ -4,14 +4,23 @@ HTSW comes with an official CLI for checking and running HTSW imports.
 
 ## Installation
 
-Install Node.js 20 or newer, then run:
+Install Node.js 20 or newer, then use the installer for your shell.
+
+### PowerShell
+
+```powershell
+irm https://legendarygames.dev/htsw/cli/install.ps1 | iex
+```
+
+### macOS, Linux, or Git Bash
 
 ```sh
 curl -fsSL https://legendarygames.dev/htsw/cli/install.sh | sh
 ```
 
-The installer places `htsw` in `~/.local/bin` by default. Set `HTSW_BIN_DIR`
-to choose another directory. Update it later with `htsw upgrade`.
+Both installers place `htsw` in `~/.local/bin` by default. Set
+`HTSW_BIN_DIR` to choose another directory. Update it later with
+`htsw upgrade`.
 
 ## Commands
 

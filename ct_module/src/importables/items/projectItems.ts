@@ -210,7 +210,19 @@ export function createProjectItemIndex(
     importables: readonly Importable[],
     gcx?: GlobalCtxt
 ): ProjectItemIndex {
-    return new DefaultProjectItemIndex(importables, gcx);
+    const cached = projectItemIndexByImportables.get(importables);
+    if (cached !== undefined) return cached;
+    const index = new DefaultProjectItemIndex(importables, gcx);
+    projectItemIndexByImportables.set(importables, index);
+    return index;
+}
+
+const projectItemIndexByImportables = new WeakMap<object, ProjectItemIndex>();
+
+export function invalidateProjectItemIndex(
+    importables: readonly Importable[]
+): void {
+    projectItemIndexByImportables.delete(importables);
 }
 
 function uniqueAliases(values: readonly string[]): string[] {

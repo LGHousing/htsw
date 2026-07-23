@@ -2,22 +2,64 @@ import type { Importable } from "htsw/types";
 
 import { HOUSE_READERS } from "../../importables/export/readers";
 import {
+    getImportCachePresenceRevision,
+    getImportCacheWriteRevision,
     peekHouseTypeScanned,
     peekImportableCache,
 } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
-import { buildCacheStatusRowFromEntry } from "../../importCache/status";
+import {
+    buildCacheStatusRowFromEntry,
+    getImportableHashRevision,
+} from "../../importCache/status";
 import type { LinkStatusKey } from "./linkStatus";
-import { requestImportableCacheWarm } from "./cacheWarm";
+import {
+    getImportableCacheWarmRevision,
+    requestImportableCacheWarm,
+} from "./cacheWarm";
+import { getItemDependencyIndexRevision } from "../../importables/items/dependencyIndex";
 
 type HousePresenceState = "unscanned" | "present" | "absent";
-
-export function cachedImportableLinkStatus(imp: Importable): {
+type ImportableLinkStatus = {
     key: LinkStatusKey;
     tooltip: string;
-} | null {
+};
+type CachedLinkStatus = {
+    context: string;
+    status: ImportableLinkStatus | null;
+};
+
+const statusByImportable = new WeakMap<object, CachedLinkStatus>();
+
+export function importableLinkStatusContextKey(): string {
+    const uuid = getHousingUuid();
+    return [
+        uuid ?? "",
+        uuid !== null && isHouseTrusted(uuid) ? "1" : "0",
+        String(getImportCacheWriteRevision()),
+        String(getImportCachePresenceRevision()),
+        String(getImportableCacheWarmRevision()),
+        String(getImportableHashRevision()),
+        String(getItemDependencyIndexRevision()),
+    ].join("|");
+}
+
+export function cachedImportableLinkStatus(
+    imp: Importable
+): ImportableLinkStatus | null {
+    const context = importableLinkStatusContextKey();
+    const previous = statusByImportable.get(imp);
+    if (previous !== undefined && previous.context === context) {
+        return previous.status;
+    }
+    const status = importableLinkStatus(imp);
+    statusByImportable.set(imp, { context, status });
+    return status;
+}
+
+function importableLinkStatus(imp: Importable): ImportableLinkStatus | null {
     const uuid = getHousingUuid();
     if (uuid === null) return { key: "unknown", tooltip: "No house detected" };
     const cached = peekImportableCache(uuid, imp.type, importableIdentity(imp));

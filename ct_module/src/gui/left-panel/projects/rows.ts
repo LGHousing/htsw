@@ -8,11 +8,8 @@ import { openRenameImportablePopover } from "./renameImportablePopover";
 import { openConfirmPopover } from "../../popovers/confirm";
 import {
     getHousingUuid,
-    importableSelectionKey,
     isAutoTrackSource,
-    isImportableChecked,
     toggleAutoTrackSource,
-    toggleImportableChecked,
 } from "../../state";
 import {
     ACCENT_DANGER,
@@ -923,14 +920,7 @@ function queueImportables(
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
         const item = makeImportableQueueItem(imp, parent.fullPath);
-        const added = addToQueue(item);
-        if (!added && !isInQueue(queueItemKey(item))) continue;
-        const key = importableSelectionKey(
-            parent.fullPath,
-            imp.type,
-            importableIdentity(imp)
-        );
-        if (!isImportableChecked(key)) toggleImportableChecked(key);
+        addToQueue(item);
     }
 }
 
@@ -1599,19 +1589,12 @@ function diagnosticBadge(counts: SeverityCounts): Element {
 function toggleImportableInQueue(
     parent: ResultImport,
     imp: Importable,
-    checkKey: string,
     checked: boolean
 ): void {
     if (checked && isTaskRunning()) return; // would remove — locked mid-run
-    const nowChecked = toggleImportableChecked(checkKey);
     const item = makeImportableQueueItem(imp, parent.fullPath);
-    if (nowChecked) {
-        if (!addToQueue(item) && !isInQueue(queueItemKey(item))) {
-            toggleImportableChecked(checkKey);
-        }
-    } else {
-        removeFromQueueKey(queueItemKey(item));
-    }
+    if (checked) removeFromQueueKey(queueItemKey(item));
+    else addToQueue(item);
 }
 
 export function importableRow(parent: ResultImport, imp: Importable): Element {
@@ -1619,12 +1602,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
-    const checkKey = importableSelectionKey(
-        parent.fullPath,
-        imp.type,
-        importableIdentity(imp)
-    );
-    const checked = isImportableChecked(checkKey);
+    const queueItem = makeImportableQueueItem(imp, parent.fullPath);
+    const checked = isInQueue(queueItemKey(queueItem));
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
     const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
     const contentIcon = ImportableIcon({
@@ -1654,7 +1633,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
         onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
         children: [
             queueCheckbox(checked, () =>
-                toggleImportableInQueue(parent, imp, checkKey, checked)
+                toggleImportableInQueue(parent, imp, checked)
             ),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
             rowSlot(INNER_GAP),

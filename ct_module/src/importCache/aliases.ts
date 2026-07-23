@@ -27,12 +27,7 @@ type AliasMap = Partial<Record<string, string>>;
 
 let cachedMap: AliasMap | null = null;
 let cachedAt = 0;
-let aliasRevision = 0;
 const CACHE_TTL_MS = 2000;
-
-export function getAliasRevision(): number {
-    return aliasRevision;
-}
 
 function rememberMap(map: AliasMap): AliasMap {
     cachedMap = map;
@@ -71,7 +66,6 @@ function readMapFromDisk(): AliasMap | null {
 function writeMap(map: AliasMap): boolean {
     if (!writeJsonSettingsFile(ALIAS_FILE_NAME, map, true)) return false;
     rememberMap(map);
-    aliasRevision++;
     return true;
 }
 

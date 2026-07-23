@@ -9,6 +9,5 @@ export * from "./paths";
 export * from "./newExportTarget";
 export * from "./housing";
 export * from "./trust";
-export * from "./selectionSet";
 export * from "./autoTrack";
 export * from "./flags";

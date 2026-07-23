@@ -385,25 +385,6 @@ export function setScrollTarget(id: string, target: number): void {
     s.target = clampOffset(s, target);
 }
 
-/**
- * True while any currently-rendering scroll's offset is still easing toward its
- * target. The overlay marks the GUI dirty each frame this returns true so the
- * retained layout keeps rebuilding — and the eased motion actually renders —
- * until it settles. Gated on a fresh `animAt` so a scroll left mid-ease in a
- * hidden tab (never re-laid-out, so never converging) doesn't pin it dirty.
- */
-export function anyScrollAnimating(): boolean {
-    const now = Date.now();
-    for (const id in scrollStates) {
-        const s = scrollStates[id];
-        if (s === undefined) continue;
-        if (now - s.animAt > 80) continue;
-        const d = s.target - s.offset;
-        if (d > 0.5 || d < -0.5) return true;
-    }
-    return false;
-}
-
 export function advanceScrollForPaint(id: string): number {
     const s = getScrollState(id);
     const viewportMain = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;

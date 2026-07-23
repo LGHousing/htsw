@@ -26,10 +26,7 @@ import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 
 import {
     getHousingUuid,
-    importableSelectionKey,
     isCurrentHouseTrusted,
-    isImportableChecked,
-    toggleImportableChecked,
 } from "../../state";
 import {
     getQueueItemRunState,
@@ -229,19 +226,6 @@ function willBeSkipped(
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();
-
-/**
- * Remove a queue item and, for a single importable, also clear its
- * Projects-tab checkbox so the two stay in sync (the Projects row's
- * checkbox both adds to the queue and marks itself checked, so removal
- * has to undo both). importJson bundles have no single checkbox.
- */
-function removeQueueItemAndUncheck(item: QueueItem): void {
-    removeFromQueueKey(queueItemKey(item));
-    if (item.operation !== "import" || item.kind !== "importable") return;
-    const checkKey = importableSelectionKey(item.sourcePath, item.type, item.identity);
-    if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
-}
 
 function queueRowMiniBar(state: QueueItemRunState): Element {
     if (state.kind === "queued") {
@@ -449,7 +433,7 @@ export function queueRow(item: QueueItem): Element {
                               },
                               onClick: (_rect, info) => {
                                   if (info.button !== 0) return;
-                                  removeQueueItemAndUncheck(item);
+                                  removeFromQueueKey(queueItemKey(item));
                               },
                               children: [Icon({ name: Icons.x })],
                           }),

@@ -2,7 +2,6 @@
 
 import {
     getHousingUuid,
-    clearImportableChecks,
     isCurrentHouseTrusted,
     isImportCompletionSoundEnabled,
     setHousingUuid,
@@ -28,7 +27,7 @@ import {
     removeFromQueueKey,
     type ImportQueueItem,
 } from "./queue";
-import { parseImportJsonCurrentBlocking } from "../../parsing/parses";
+import { parseImportJsonCurrent } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     orderImportablesForSession,
@@ -378,6 +377,24 @@ type ImportBatch = {
     importables: Importable[]; // ordered for the importer
 };
 
+const importablesByKeyByParse = new WeakMap<
+    ImportablesParseResult,
+    Map<string, Importable>
+>();
+
+function importablesByKey(
+    parsed: ImportablesParseResult
+): Map<string, Importable> {
+    const cached = importablesByKeyByParse.get(parsed);
+    if (cached !== undefined) return cached;
+    const byKey = new Map<string, Importable>();
+    for (const imp of parsed.value) {
+        byKey.set(`${imp.type}:${importableIdentity(imp)}`, imp);
+    }
+    importablesByKeyByParse.set(parsed, byKey);
+    return byKey;
+}
+
 type ConflictReviewRequest = {
     batch: ImportBatch;
     conflicts: readonly ImportConflict[];
@@ -385,10 +402,7 @@ type ConflictReviewRequest = {
 };
 
 function conflictedImportables(request: ConflictReviewRequest): Importable[] {
-    const byKey = new Map<string, Importable>();
-    for (const imp of request.batch.parsed.value) {
-        byKey.set(`${imp.type}:${importableIdentity(imp)}`, imp);
-    }
+    const byKey = importablesByKey(request.batch.parsed);
 
     const resolved: Importable[] = [];
     const seen = new Set<string>();
@@ -450,7 +464,9 @@ function startConflictReview(request: ConflictReviewRequest): void {
  * Returns null when nothing in the queue could be resolved — the caller
  * uses that to short-circuit with a friendly chat message.
  */
-function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | null {
+async function buildBatches(
+    explicit?: readonly ImportQueueItem[]
+): Promise<ImportBatch[] | null> {
     const queue = explicit ?? getQueue().filter(isImportQueueItem);
     if (queue.length === 0) return null;
     type Group = {
@@ -464,7 +480,7 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
     for (const item of queue) {
         let group = groups.get(item.sourcePath);
         if (group === undefined) {
-            const cached = parseImportJsonCurrentBlocking(item.sourcePath);
+            const cached = await parseImportJsonCurrent(item.sourcePath);
             if (cached.parsed === null) {
                 ChatLib.chat(
                     `&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`
@@ -491,10 +507,7 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
     }
     const batches: ImportBatch[] = [];
     for (const [sourcePath, g] of groups.entries()) {
-        const byKey = new Map<string, Importable>();
-        for (const imp of g.parsed.value) {
-            byKey.set(`${imp.type}:${importableIdentity(imp)}`, imp);
-        }
+        const byKey = importablesByKey(g.parsed);
         const wanted: Importable[] = [];
         if (g.addAll) {
             for (const imp of g.parsed.value) wanted.push(imp);
@@ -536,14 +549,44 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
     );
 }
 
+let importPreparationRunning = false;
+
 export function startImport(explicit?: readonly ImportQueueItem[]): void {
+    if (TaskManager.isBusy() || importPreparationRunning) {
+        ChatLib.chat(
+            "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
+        );
+        return;
+    }
+    importPreparationRunning = true;
+    showToast("Checking project files before import…", 0xff5c9ded, 5000);
+    void prepareAndStartImport(explicit).then(
+        () => {
+            importPreparationRunning = false;
+        },
+        (error: unknown) => {
+            importPreparationRunning = false;
+            ChatLib.chat(`&c[htsw] Couldn't prepare import: ${String(error)}`);
+        }
+    );
+}
+
+async function prepareAndStartImport(
+    explicit?: readonly ImportQueueItem[]
+): Promise<void> {
     if (TaskManager.isBusy()) {
         ChatLib.chat(
             "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
         );
         return;
     }
-    const batches = buildBatches(explicit);
+    const batches = await buildBatches(explicit);
+    if (TaskManager.isBusy()) {
+        ChatLib.chat(
+            "&c[htsw] Another task started while the project was being checked."
+        );
+        return;
+    }
     if (batches === null) {
         const msg =
             explicit !== undefined
@@ -734,7 +777,6 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 // strand the import session while it runs.
                 if (!isTaskRunning() || reviewRequest !== null) {
                     endQueueSession(false);
-                    if (removeSessionItems) clearImportableChecks();
                     if (removeSessionItems || cancelled) clearLastFinishedProgress();
                 }
             }, 1500);

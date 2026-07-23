@@ -9,7 +9,8 @@ set -eu
 
 BASE_URL="${HTSW_BASE_URL:-https://legendarygames.dev/htsw}/cli"
 BIN_DIR="${HTSW_BIN_DIR:-$HOME/.local/bin}"
-DEST="$BIN_DIR/htsw"
+BUNDLE="$BIN_DIR/htsw.mjs"
+LAUNCHER="$BIN_DIR/htsw"
 
 say() { printf '[htsw-install] %s\n' "$1"; }
 die() { printf '[htsw-install] error: %s\n' "$1" >&2; exit 1; }
@@ -33,8 +34,10 @@ FILE=$(json_val cli)
 SHA=$(json_val sha256)
 [ -n "$FILE" ] || die "manifest missing 'cli' filename"
 
-TMP=$(mktemp)
-trap 'rm -f "$TMP"' EXIT
+mkdir -p "$BIN_DIR"
+TMP="$BIN_DIR/.htsw-download-$$"
+LAUNCHER_TMP="$BIN_DIR/.htsw-launcher-$$"
+trap 'rm -f "$TMP" "$LAUNCHER_TMP"' EXIT
 say "Downloading htsw ${VERSION:-?}"
 fetch "$BASE_URL/$FILE" > "$TMP" || die "download failed"
 
@@ -45,11 +48,17 @@ if [ -n "$SHA" ]; then
     [ -z "$GOT" ] || [ "$GOT" = "$SHA" ] || die "sha256 mismatch (expected $SHA, got $GOT)"
 fi
 
-mkdir -p "$BIN_DIR"
-mv "$TMP" "$DEST"
-chmod +x "$DEST"
+cat > "$LAUNCHER_TMP" <<'EOF'
+#!/bin/sh
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+exec node "$SCRIPT_DIR/htsw.mjs" "$@"
+EOF
+
+chmod +x "$TMP" "$LAUNCHER_TMP"
+mv "$TMP" "$BUNDLE"
+mv "$LAUNCHER_TMP" "$LAUNCHER"
 trap - EXIT
-say "Installed htsw ${VERSION:-?} to $DEST"
+say "Installed htsw ${VERSION:-?} to $BIN_DIR"
 
 case ":$PATH:" in
     *":$BIN_DIR:"*) ;;

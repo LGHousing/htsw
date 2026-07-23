@@ -6,22 +6,16 @@ import {
     getAutoTrackSources,
     isAnyAutoTrackEnabled,
     getHousingUuid,
-    importableSelectionKey,
-    isImportableChecked,
-    toggleImportableChecked,
 } from "./state";
 import {
     canonicalPath,
     forEachCachedParse,
     parseImportJsonBlocking,
 } from "./parsing/parses";
-import { importableIdentity } from "../importables/identity";
 import { cachedStatusForImportable } from "./cache-status";
 import {
     addToQueue,
-    isInQueue,
     makeImportableQueueItem,
-    queueItemKey,
 } from "./right-panel/import-tab/queue";
 import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 
@@ -37,14 +31,7 @@ export function queueModifiedImportables(
     for (const imp of importables) {
         if (needsModifiedQueue(imp)) {
             const item = makeImportableQueueItem(imp, canonicalSourcePath);
-            const added = addToQueue(item);
-            if (!added && !isInQueue(queueItemKey(item))) continue;
-            const key = importableSelectionKey(
-                canonicalSourcePath,
-                imp.type,
-                importableIdentity(imp)
-            );
-            if (!isImportableChecked(key)) toggleImportableChecked(key);
+            addToQueue(item);
         }
     }
 }

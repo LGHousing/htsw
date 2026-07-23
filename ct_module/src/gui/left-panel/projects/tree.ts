@@ -1,7 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import {
-    anyScrollAnimating,
     Element,
     getScrollState,
     setScrollOffset,
@@ -21,6 +20,7 @@ import {
     isImportableStatusFilterActive,
     isImportableTypeActive,
     isFilterDefault,
+    getFilterRevision,
     isLinkStatusActive,
     resetFilters,
 } from "./filter";
@@ -69,17 +69,10 @@ import {
     standaloneCloseAction,
 } from "./rows";
 import type { Importable } from "htsw/types";
-import { cachedImportableLinkStatus } from "../../cache-status";
-import { getImportableCacheWarmRevision } from "../../cache-status/cacheWarm";
 import {
-    getImportCachePresenceRevision,
-    getImportCacheWriteRevision,
-} from "../../../importCache/cache";
-import { getHousingUuid } from "../../state/housing";
-import { isHouseTrusted } from "../../state/trust";
-import { getImportableSelectionRevision } from "../../state/selectionSet";
-import { getAutoTrackRevision } from "../../state/autoTrack";
-import { getAliasRevision } from "../../../importCache/aliases";
+    cachedImportableLinkStatus,
+    importableLinkStatusContextKey,
+} from "../../cache-status";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -258,9 +251,27 @@ function importableName(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
+type FilteredImportables = {
+    fingerprint: string;
+    importables: Importable[];
+};
+const filteredImportablesByList = new WeakMap<object, FilteredImportables>();
+
 function filterImportableList(r: ResultImport, list: Importable[]): Importable[] {
     const q = searchQuery.toLowerCase();
     const pathMatch = q.length === 0 || r.path.toLowerCase().indexOf(q) >= 0;
+    const fingerprint = [
+        String(getFilterRevision()),
+        q,
+        pathMatch ? "1" : "0",
+        isImportableStatusFilterActive()
+            ? importableLinkStatusContextKey()
+            : "",
+    ].join("|");
+    const cached = filteredImportablesByList.get(list);
+    if (cached !== undefined && cached.fingerprint === fingerprint) {
+        return cached.importables;
+    }
     const out: Importable[] = [];
     for (let j = 0; j < list.length; j++) {
         const imp = list[j];
@@ -277,6 +288,7 @@ function filterImportableList(r: ResultImport, list: Importable[]): Importable[]
         }
         out.push(imp);
     }
+    filteredImportablesByList.set(list, { fingerprint, importables: out });
     return out;
 }
 
@@ -583,67 +595,15 @@ function formatFullDir(fullPath: string): string {
 let cachedTreeRows: TreeRow[] | null = null;
 let cachedTreeRevision = -1;
 let cachedParseRevision = -1;
-let cachedVisualFingerprint = "";
-let cachedTreeAt = 0;
-let cachedTreeFingerprint = "";
+let cachedStatusFingerprint = "";
 let cachedRowStarts: number[] = [];
 let cachedRowEnds: number[] = [];
 let cachedTreeHeight = 0;
-const TREE_ROWS_TTL_MS = 1000;
 
-let parseIdCounter = 0;
-const parseIds = new WeakMap<object, number>();
-
-function parseIdOf(parse: object | null): number {
-    if (parse === null) return -1;
-    let id = parseIds.get(parse);
-    if (id === undefined) {
-        id = ++parseIdCounter;
-        parseIds.set(parse, id);
-    }
-    return id;
-}
-
-// Everything the descriptor build reads that is NOT guarded by
-// bumpTreeRevision(): the per-source enumeration and each result's parse
-// (identified by object identity — the parse cache replaces the object on
-// every reparse). Status-filter inputs join the fingerprint only while that
-// filter narrows.
-function treeInputsFingerprint(): string {
-    const sources = getSources();
-    let fp = "";
-    if (isImportableStatusFilterActive()) {
-        const uuid = getHousingUuid();
-        fp += `status:${uuid ?? ""}|${uuid !== null && isHouseTrusted(uuid) ? 1 : 0}|${getImportCacheWriteRevision()}|${getImportCachePresenceRevision()}|${getImportableCacheWarmRevision()};`;
-    }
-    for (let i = 0; i < sources.length; i++) {
-        const s = sources[i];
-        fp += `${s.kind}:${s.fullPath};`;
-        const results = enumerateForSource(s);
-        for (let j = 0; j < results.length; j++) {
-            const r = results[j];
-            fp += `${r.type}|${r.fullPath}`;
-            if (r.type === "import") {
-                fp += `|${r.parsePending ? 1 : 0}|${parseIdOf(r.parse)}|${r.parseError ?? ""}`;
-            }
-            fp += ";";
-        }
-    }
-    return fp;
-}
-
-function treeVisualFingerprint(): string {
-    const uuid = getHousingUuid();
-    return [
-        uuid ?? "",
-        uuid !== null && isHouseTrusted(uuid) ? "1" : "0",
-        String(getImportCacheWriteRevision()),
-        String(getImportCachePresenceRevision()),
-        String(getImportableCacheWarmRevision()),
-        String(getImportableSelectionRevision()),
-        String(getAutoTrackRevision()),
-        String(getAliasRevision()),
-    ].join("|");
+function treeStatusFingerprint(): string {
+    return isImportableStatusFilterActive()
+        ? importableLinkStatusContextKey()
+        : "";
 }
 
 let lastBuildMs = 0;
@@ -665,33 +625,21 @@ export function getTreePerfStats(): {
 }
 
 function treeRows(): TreeRow[] {
-    const now = Date.now();
     const parseRevision = getParseCacheRevision();
-    const visualFingerprint = treeVisualFingerprint();
+    const statusFingerprint = treeStatusFingerprint();
     if (
         cachedTreeRows !== null &&
         cachedTreeRevision === getTreeRevision() &&
         cachedParseRevision === parseRevision &&
-        cachedVisualFingerprint === visualFingerprint
+        cachedStatusFingerprint === statusFingerprint
     ) {
-        if (now - cachedTreeAt < TREE_ROWS_TTL_MS || anyScrollAnimating()) {
-            return cachedTreeRows;
-        }
-        const fp = treeInputsFingerprint();
-        if (fp === cachedTreeFingerprint) {
-            cachedTreeAt = now;
-            return cachedTreeRows;
-        }
-        cachedTreeFingerprint = fp;
-    } else {
-        cachedTreeFingerprint = treeInputsFingerprint();
+        return cachedTreeRows;
     }
     const buildStart = Date.now();
     cachedTreeRows = buildTreeRows();
     cachedTreeRevision = getTreeRevision();
     cachedParseRevision = getParseCacheRevision();
-    cachedVisualFingerprint = visualFingerprint;
-    cachedTreeAt = buildStart;
+    cachedStatusFingerprint = statusFingerprint;
     indexTreeRows(cachedTreeRows);
     lastBuildMs = Date.now() - buildStart;
     if (lastBuildMs > maxBuildMs) maxBuildMs = lastBuildMs;

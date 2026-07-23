@@ -247,15 +247,16 @@ def stage_cli(do_build: bool, notes: str | None) -> None:
 
     version = read_version(CLI_DIR / "package.json")
     output = reset_surface_output("cli")
-    js_name = f"htsw-cli-{version}.js"
-    destination = output / js_name
+    bundle_name = f"htsw-cli-{version}.mjs"
+    destination = output / bundle_name
     shutil.copy2(bundle, destination)
-    shutil.copy2(destination, output / "htsw-cli-latest.js")
+    shutil.copy2(destination, output / "htsw-cli-latest.mjs")
     shutil.copy2(CLI_DIR / "install.sh", output / "install.sh")
+    shutil.copy2(CLI_DIR / "install.ps1", output / "install.ps1")
 
     digest = sha256_of(destination)
     (output / "latest.json").write_text(
-        manifest_json({"version": version, "cli": js_name, "sha256": digest}, notes),
+        manifest_json({"version": version, "cli": bundle_name, "sha256": digest}, notes),
         encoding="utf-8",
     )
     print(f"[publish] Staged CLI {version} ({digest[:12]}…)")
@@ -459,6 +460,7 @@ def prepare_github_assets(surfaces: Sequence[str]) -> list[Path]:
         assets.append(OUT_DIR / "ct" / "HTSW.zip")
     if "cli" in surfaces:
         assets.append(OUT_DIR / "cli" / "install.sh")
+        assets.append(OUT_DIR / "cli" / "install.ps1")
     return assets
 
 

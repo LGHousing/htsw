@@ -203,27 +203,48 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     }
 }
 
+export type HouseLockImportableUpdate = {
+    importable: Importable;
+    itemDependencies?: ItemDependencySnapshot;
+};
+
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
     importable: Importable,
     itemDependencies?: ItemDependencySnapshot
 ): boolean {
+    return upsertHouseLockImportables(importJsonPath, housingUuid, [
+        { importable, itemDependencies },
+    ]);
+}
+
+export function upsertHouseLockImportables(
+    importJsonPath: string,
+    housingUuid: string,
+    updates: readonly HouseLockImportableUpdate[]
+): boolean {
+    if (updates.length === 0) return true;
     const path = houseLockPathForImportJson(importJsonPath);
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
-    const identity = importableIdentity(importable);
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
-    const listScanHashes: Record<string, string> = {};
-    for (const { basePath, actions } of actionListsOfImportable(importable)) {
-        listScanHashes[basePath] = actionListScanHashFromActions(actions);
+    for (const update of updates) {
+        const importable = update.importable;
+        const identity = importableIdentity(importable);
+        const listScanHashes: Record<string, string> = {};
+        for (const { basePath, actions } of actionListsOfImportable(importable)) {
+            listScanHashes[basePath] = actionListScanHashFromActions(actions);
+        }
+        lock.importables[importableKey(importable.type, identity)] = {
+            type: importable.type,
+            identity,
+            hash: importableHash(importable),
+            listScanHashes,
+            ...(update.itemDependencies !== undefined
+                ? { itemDependencies: update.itemDependencies }
+                : {}),
+        };
     }
-    lock.importables[importableKey(importable.type, identity)] = {
-        type: importable.type,
-        identity,
-        hash: importableHash(importable),
-        listScanHashes,
-        ...(itemDependencies !== undefined ? { itemDependencies } : {}),
-    };
     return writeHouseLock(path, lock);
 }

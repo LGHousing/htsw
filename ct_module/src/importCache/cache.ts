@@ -461,6 +461,18 @@ export function loadImportableCachesOffThread(
         return;
     }
     const startedAt = Date.now();
+    const plans = requests.map((request) => {
+        const path = cachePathForId(
+            request.housingUuid,
+            request.type,
+            request.identity
+        );
+        return {
+            path,
+            type: request.type,
+            memo: readCache.get(path),
+        };
+    });
     const Thread = javaType("java.lang.Thread");
     const Runnable = javaType("java.lang.Runnable");
     try {
@@ -468,28 +480,37 @@ export function loadImportableCachesOffThread(
             new Runnable({
                 run: function () {
                     const loaded: LoadedCacheFile[] = [];
-                    for (let i = 0; i < requests.length; i++) {
-                        const request = requests[i];
-                        const path = cachePathForId(
-                            request.housingUuid,
-                            request.type,
-                            request.identity
-                        );
-                        const mtime = getFileMtimeMs(path);
+                    for (let i = 0; i < plans.length; i++) {
+                        const plan = plans[i];
+                        const mtime = getFileMtimeMs(plan.path);
+                        if (
+                            plan.memo !== undefined &&
+                            plan.memo.mtime === mtime
+                        ) {
+                            loaded.push({
+                                path: plan.path,
+                                type: plan.type,
+                                entry: plan.memo.entry,
+                                entryHash: null,
+                                house: plan.memo.house,
+                                mtime,
+                            });
+                            continue;
+                        }
                         let raw: string | null;
                         try {
-                            raw = FileLib.read(path);
+                            raw = FileLib.read(plan.path);
                         } catch {
                             raw = null;
                         }
                         const entry = parseCacheEntry(raw);
                         loaded.push({
-                            path,
-                            type: request.type,
+                            path: plan.path,
+                            type: plan.type,
                             entry,
                             entryHash:
                                 entry === null ? null : importableHash(entry.importable),
-                            house: parseHouseRecord(raw, request.type),
+                            house: parseHouseRecord(raw, plan.type),
                             mtime,
                         });
                     }

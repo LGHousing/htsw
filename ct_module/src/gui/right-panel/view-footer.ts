@@ -12,7 +12,6 @@ import {
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../lib/theme";
-import { clearImportableChecks } from "../state";
 import {
     getActiveTaskLabel,
     getFinishedTaskFailure,
@@ -78,7 +77,6 @@ function queueSummary(): Element {
             },
             onClick: () => {
                 clearQueue();
-                clearImportableChecks();
             },
         })
     );
