@@ -601,9 +601,7 @@ let cachedRowEnds: number[] = [];
 let cachedTreeHeight = 0;
 
 function treeStatusFingerprint(): string {
-    return isImportableStatusFilterActive()
-        ? importableLinkStatusContextKey()
-        : "";
+    return importableLinkStatusContextKey();
 }
 
 let lastBuildMs = 0;
