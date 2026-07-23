@@ -505,6 +505,7 @@ async function runImportSessionInner(
                 kind: "importableReactivated",
                 key: row.key,
                 rowIndex: row.rowIndex,
+                phase: "applying",
             });
             await finishWithoutApply(
                 ctx,
@@ -522,6 +523,7 @@ async function runImportSessionInner(
                 kind: "importableReactivated",
                 key: row.key,
                 rowIndex: row.rowIndex,
+                phase: "applying",
             });
             await finishWithoutApply(
                 ctx,
@@ -542,6 +544,7 @@ async function runImportSessionInner(
                 kind: "importableReactivated",
                 key: row.key,
                 rowIndex: row.rowIndex,
+                phase: "applying",
             });
             try {
                 await plan.apply(ctx, session);
