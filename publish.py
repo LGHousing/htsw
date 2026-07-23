@@ -386,6 +386,24 @@ def deploy(surfaces: Sequence[str]) -> None:
     print(f"[publish] Deployed and verified: {', '.join(surfaces)}")
 
 
+def surfaces_needing_deploy(surfaces: Sequence[str]) -> list[str]:
+    # The deploy server refuses to replace a live version with different bytes,
+    # and rebuilds are not byte-reproducible, so an already-live version must be
+    # skipped rather than redeployed.
+    pending: list[str] = []
+    for surface in surfaces:
+        staged_version = staged_manifest(surface)["version"]
+        try:
+            live_version = fetch_manifest(surface).get("version")
+        except RuntimeError:
+            live_version = None
+        if live_version == staged_version:
+            print(f"[publish] {surface} {staged_version} is already live; skipping deploy")
+        else:
+            pending.append(surface)
+    return pending
+
+
 def fetch_manifest(surface: str) -> dict[str, object]:
     url = f"{PUBLIC_BASE_URL}/{surface}/latest.json"
     request = urllib.request.Request(url, headers={"User-Agent": "HTSW-Publisher"})
@@ -574,7 +592,9 @@ def main() -> None:
     if not args.allow_dirty:
         assert_clean_worktree()
     ensure_tag(args.tag)
-    deploy(SURFACES)
+    pending = surfaces_needing_deploy(SURFACES)
+    if pending:
+        deploy(pending)
     publish_github_release(args.tag, shared_notes, SURFACES)
     print(f"[publish] Released {args.tag}")
 
