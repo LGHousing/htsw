@@ -44,6 +44,7 @@ import { RootTree, getImportCachedBounds } from "./root";
 import {
     getContainerBounds,
     getFullscreenPanelRect,
+    invalidateContainerBoundsCache,
     getOpenContainerBottomExtension,
     getOpenContainerBounds,
 } from "./lib/bounds";
@@ -405,6 +406,7 @@ export function initHtswGui(): void {
     }).setCriteria("${*}");
 
     register("worldLoad", () => {
+        invalidateContainerBoundsCache();
         setHousingUuid(null);
         resetHousingPresence();
         lastUuidFetchAt = 0;
@@ -559,6 +561,7 @@ export function initHtswGui(): void {
     //   - the outgoing screen is either a real inventory or our existing
     //     placeholder (so closing chat / pause menu still works normally)
     register(ForgeGuiOpenEvent, (event: ForgeEvent & { gui: unknown }) => {
+        invalidateContainerBoundsCache();
         const incoming = event.gui;
         const current = getMinecraft().field_71462_r;
         if (!enabled) return;

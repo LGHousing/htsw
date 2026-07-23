@@ -21,7 +21,43 @@ import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { getIconImage, renderMcItem } from "./images";
-import { getMinecraft } from "./java";
+import { getMinecraft, javaType } from "./java";
+
+const Gui = javaType("net.minecraft.client.gui.Gui" as never) as unknown as {
+    func_73734_a(
+        left: number,
+        top: number,
+        right: number,
+        bottom: number,
+        color: number
+    ): void;
+};
+
+export function fillRect(
+    color: number,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+): void {
+    Gui.func_73734_a(
+        Math.round(x),
+        Math.round(y),
+        Math.round(x + w),
+        Math.round(y + h),
+        color
+    );
+}
+
+const scrollItemsMemo = new WeakMap<LaidOut[], LaidOut[]>();
+
+function scrollItemsOf(laid: LaidOut[]): LaidOut[] {
+    const cached = scrollItemsMemo.get(laid);
+    if (cached !== undefined) return cached;
+    const scrollItems = laid.filter((item) => item.element.kind === "scroll");
+    scrollItemsMemo.set(laid, scrollItems);
+    return scrollItems;
+}
 
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
@@ -186,8 +222,9 @@ export function drawLaid(
     }
 
     // Scrollbars render last (on top of clipped content) — overlay style.
-    for (let i = 0; i < laid.length; i++) {
-        const item = laid[i];
+    const scrollItems = scrollItemsOf(laid);
+    for (let i = 0; i < scrollItems.length; i++) {
+        const item = scrollItems[i];
         if (item.element.kind !== "scroll") continue;
         renderScrollbar(item.element.id, mouseX, mouseY);
     }
@@ -220,8 +257,8 @@ function drawTooltip(t: QueuedTooltip): void {
     }
     if (x + w > screenW - 2) x = screenW - 2 - w;
     if (x < 2) x = 2;
-    Renderer.drawRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
-    Renderer.drawRect(COLOR_PANEL, x, y, w, h);
+    fillRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
+    fillRect(COLOR_PANEL, x, y, w, h);
     getMinecraft().field_71466_p.func_175065_a(
         t.text,
         x + padX,
@@ -253,8 +290,9 @@ function getClickInterceptor(
     mx: number,
     my: number
 ): { x: number; y: number; w: number; h: number } | null {
-    for (let i = 0; i < laid.length; i++) {
-        const item = laid[i];
+    const scrollItems = scrollItemsOf(laid);
+    for (let i = 0; i < scrollItems.length; i++) {
+        const item = scrollItems[i];
         if (item.element.kind !== "scroll") continue;
         const thumb = scrollbarThumbRect(item.element.id);
         if (thumb !== null && pointInRect(thumb, mx, my)) return thumb;
@@ -299,40 +337,69 @@ function renderItem(
 ): void {
     const r = item.rect;
     const e = item.element;
-    const inClip = !item.clipRect || pointInRect(item.clipRect, mouseX, mouseY);
+    const clip = item.clipRect;
+    const inClip =
+        !clip ||
+        (mouseX >= clip.x &&
+            mouseX <= clip.x + clip.w &&
+            mouseY >= clip.y &&
+            mouseY <= clip.y + clip.h);
     const hovered =
-        interactive && inClip && !intercepted && pointInRect(r, mouseX, mouseY);
+        interactive &&
+        inClip &&
+        !intercepted &&
+        mouseX >= r.x &&
+        mouseX <= r.x + r.w &&
+        mouseY >= r.y &&
+        mouseY <= r.y + r.h;
 
     if (e.kind === "container") {
-        const disabled = e.disabled !== undefined && extract(e.disabled);
+        const disabled =
+            e.disabled !== undefined &&
+            (typeof e.disabled === "function" ? e.disabled() : e.disabled);
         const hoverBg =
             e.style.hoverBackground !== undefined
-                ? extract(e.style.hoverBackground)
+                ? typeof e.style.hoverBackground === "function"
+                    ? e.style.hoverBackground()
+                    : e.style.hoverBackground
                 : undefined;
         const baseBg =
-            e.style.background !== undefined ? extract(e.style.background) : undefined;
+            e.style.background !== undefined
+                ? typeof e.style.background === "function"
+                    ? e.style.background()
+                    : e.style.background
+                : undefined;
         const bg = hovered && !disabled && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
-        if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
+        if (bg !== undefined) fillRect(bg, r.x, r.y, r.w, r.h);
         if (e.onClick && !disabled) {
             const fa = clickFlashAlpha(r);
             if (fa > 0) {
                 const a = Math.round(fa * 255) & 0xff;
-                Renderer.drawRect(((a << 24) | 0xffffff) | 0, r.x, r.y, r.w, r.h);
+                fillRect(((a << 24) | 0xffffff) | 0, r.x, r.y, r.w, r.h);
             }
         }
         if (hovered && e.onHover) e.onHover(r, mouseX, mouseY);
         if (hovered && e.tooltip !== undefined) {
             queueTooltip(
-                extract(e.tooltip),
-                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                typeof e.tooltip === "function" ? e.tooltip() : e.tooltip,
+                e.tooltipColor !== undefined
+                    ? typeof e.tooltipColor === "function"
+                        ? e.tooltipColor()
+                        : e.tooltipColor
+                    : undefined,
                 r
             );
         }
     } else if (e.kind === "text") {
-        const raw = extract(e.text);
+        const raw = typeof e.text === "function" ? e.text() : e.text;
         const text = e.truncate ? truncateToWidth(raw, r.w) : raw;
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
-        const color = e.color !== undefined ? extract(e.color) : undefined;
+        const color =
+            e.color !== undefined
+                ? typeof e.color === "function"
+                    ? e.color()
+                    : e.color
+                : undefined;
         if (color !== undefined) {
             getMinecraft().field_71466_p.func_175065_a(
                 text,
@@ -342,18 +409,35 @@ function renderItem(
                 false
             );
         } else {
-            Renderer.drawString(text, r.x, ty);
+            if (text.indexOf("&") === -1) {
+                getMinecraft().field_71466_p.func_175065_a(
+                    text,
+                    r.x,
+                    ty,
+                    0xffffffff | 0,
+                    false
+                );
+            } else {
+                Renderer.drawString(text, r.x, ty);
+            }
         }
         if (e.underlineColor !== undefined) {
-            const underlineColor = extract(e.underlineColor);
+            const underlineColor =
+                typeof e.underlineColor === "function"
+                    ? e.underlineColor()
+                    : e.underlineColor;
             if (underlineColor !== undefined) {
-                Renderer.drawRect(underlineColor, r.x, ty + LINE_H - 1, r.w, 1);
+                fillRect(underlineColor, r.x, ty + LINE_H - 1, r.w, 1);
             }
         }
         if (hovered && e.tooltip !== undefined) {
             queueTooltip(
-                extract(e.tooltip),
-                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                typeof e.tooltip === "function" ? e.tooltip() : e.tooltip,
+                e.tooltipColor !== undefined
+                    ? typeof e.tooltipColor === "function"
+                        ? e.tooltipColor()
+                        : e.tooltipColor
+                    : undefined,
                 r
             );
         } else if (hovered && text !== raw) {
@@ -368,21 +452,32 @@ function renderItem(
         }
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);
-        const value = extract(e.value);
+        const value = typeof e.value === "function" ? e.value() : e.value;
         // Background + border drawn by us (GuiTextField's own background is disabled).
-        Renderer.drawRect(COLOR_INPUT_BG, r.x, r.y, r.w, r.h);
+        fillRect(COLOR_INPUT_BG, r.x, r.y, r.w, r.h);
         const borderCol = focused
             ? COLOR_INPUT_BORDER_FOCUS
             : hovered
               ? COLOR_INPUT_BORDER_HOVER
               : COLOR_INPUT_BORDER;
-        Renderer.drawRect(borderCol, r.x, r.y, r.w, 1);
-        Renderer.drawRect(borderCol, r.x, r.y + r.h - 1, r.w, 1);
-        Renderer.drawRect(borderCol, r.x, r.y, 1, r.h);
-        Renderer.drawRect(borderCol, r.x + r.w - 1, r.y, 1, r.h);
+        fillRect(borderCol, r.x, r.y, r.w, 1);
+        fillRect(borderCol, r.x, r.y + r.h - 1, r.w, 1);
+        fillRect(borderCol, r.x, r.y, 1, r.h);
+        fillRect(borderCol, r.x + r.w - 1, r.y, 1, r.h);
         if (value.length === 0 && e.placeholder && !focused) {
             const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
-            Renderer.drawStringWithShadow(`§r§8${e.placeholder}`, r.x + 4, ty);
+            const placeholder = `§r§8${e.placeholder}`;
+            if (e.placeholder.indexOf("&") === -1) {
+                getMinecraft().field_71466_p.func_175065_a(
+                    placeholder,
+                    r.x + 4,
+                    ty,
+                    0xffffffff | 0,
+                    true
+                );
+            } else {
+                Renderer.drawStringWithShadow(placeholder, r.x + 4, ty);
+            }
         } else {
             // Inset the field so cursor/text don't paint over our 1px border.
             const innerY = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
@@ -391,18 +486,31 @@ function renderItem(
         }
     } else if (e.kind === "scroll") {
         const bg =
-            e.style.background !== undefined ? extract(e.style.background) : undefined;
-        if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
+            e.style.background !== undefined
+                ? typeof e.style.background === "function"
+                    ? e.style.background()
+                    : e.style.background
+                : undefined;
+        if (bg !== undefined) fillRect(bg, r.x, r.y, r.w, r.h);
     } else if (e.kind === "image") {
         const bg =
-            e.style.background !== undefined ? extract(e.style.background) : undefined;
-        if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
-        const name = extract(e.name);
+            e.style.background !== undefined
+                ? typeof e.style.background === "function"
+                    ? e.style.background()
+                    : e.style.background
+                : undefined;
+        if (bg !== undefined) fillRect(bg, r.x, r.y, r.w, r.h);
+        const name = typeof e.name === "function" ? e.name() : e.name;
         const img = getIconImage(name);
         // The DOM lib's HTMLImageElement collides with CT's global `Image` class for `as Image`
         // typing — go through `unknown` so the cast lands on CT's runtime Image.
         if (img !== null) {
-            const tint = e.color !== undefined ? extract(e.color) : undefined;
+            const tint =
+                e.color !== undefined
+                    ? typeof e.color === "function"
+                        ? e.color()
+                        : e.color
+                    : undefined;
             if (tint !== undefined) {
                 const a = ((tint >>> 24) & 0xff) / 255;
                 const rr = ((tint >>> 16) & 0xff) / 255;
@@ -440,8 +548,12 @@ function renderItem(
         }
         if (hovered && e.tooltip !== undefined) {
             queueTooltip(
-                extract(e.tooltip),
-                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                typeof e.tooltip === "function" ? e.tooltip() : e.tooltip,
+                e.tooltipColor !== undefined
+                    ? typeof e.tooltipColor === "function"
+                        ? e.tooltipColor()
+                        : e.tooltipColor
+                    : undefined,
                 r
             );
         }
@@ -461,9 +573,9 @@ function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
     const thumb = scrollbarThumbRect(id);
     if (thumb === null) return;
     const v = getScrollState(id).viewportRect;
-    Renderer.drawRect(COLOR_SCROLLBAR_TRACK, thumb.x, v.y, SCROLLBAR_WIDTH, v.h);
+    fillRect(COLOR_SCROLLBAR_TRACK, thumb.x, v.y, SCROLLBAR_WIDTH, v.h);
     const hovered = pointInRect(thumb, mouseX, mouseY);
-    Renderer.drawRect(
+    fillRect(
         hovered ? COLOR_SCROLLBAR_THUMB_HOVER : COLOR_SCROLLBAR_THUMB,
         thumb.x,
         thumb.y,
@@ -487,7 +599,7 @@ function renderHorizontalScrollEdges(id: string): void {
 }
 
 function renderHorizontalScrollEdgeLine(x: number, v: Rect): void {
-    Renderer.drawRect(COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT, x, v.y, 1, v.h);
+    fillRect(COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT, x, v.y, 1, v.h);
 }
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
 // Also handles input focusing and scrollbar drag start. `button` is the LWJGL mouse button

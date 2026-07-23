@@ -31,6 +31,15 @@ type ContainerFields = {
 };
 
 let containerFields: ContainerFields | null = null;
+let cachedBounds: ContainerBounds | null = null;
+let cachedBoundsSuppressed = false;
+let cachedBoundsScreenW = -1;
+let cachedBoundsScreenH = -1;
+let cachedBoundsAt = 0;
+
+export function invalidateContainerBoundsCache(): void {
+    cachedBoundsAt = 0;
+}
 
 function resolveContainerFields(obj: HtswJavaObject): ContainerFields | null {
     if (containerFields !== null) return containerFields;
@@ -110,18 +119,33 @@ function readOpenContainerBounds(): ContainerBounds | null {
     const screenW = gui.field_146294_l;
     const screenH = gui.field_146295_m;
     if (typeof screenW !== "number" || typeof screenH !== "number") return null;
+    const now = Date.now();
+    if (
+        screenW === cachedBoundsScreenW &&
+        screenH === cachedBoundsScreenH &&
+        now - cachedBoundsAt < 100
+    ) {
+        return cachedBounds;
+    }
 
     const fields = resolveContainerFields(gui);
-    if (fields === null) return null;
-
-    const left = readIntField(gui, fields.left);
-    const top = readIntField(gui, fields.top);
-    const xSize = readIntField(gui, fields.xSize);
-    const ySize = readIntField(gui, fields.ySize);
-    if (left === null || top === null || xSize === null || ySize === null) {
-        return null;
+    if (fields === null) {
+        cachedBounds = null;
+    } else {
+        const left = readIntField(gui, fields.left);
+        const top = readIntField(gui, fields.top);
+        const xSize = readIntField(gui, fields.xSize);
+        const ySize = readIntField(gui, fields.ySize);
+        cachedBounds =
+            left === null || top === null || xSize === null || ySize === null
+                ? null
+                : { screenW, screenH, left, top, xSize, ySize };
     }
-    return { screenW, screenH, left, top, xSize, ySize };
+    cachedBoundsSuppressed = isSuppressedScreen(gui);
+    cachedBoundsScreenW = screenW;
+    cachedBoundsScreenH = screenH;
+    cachedBoundsAt = now;
+    return cachedBounds;
 }
 
 export function getOpenContainerBounds(): ContainerBounds | null {
@@ -130,8 +154,9 @@ export function getOpenContainerBounds(): ContainerBounds | null {
 
 export function getContainerBounds(): ContainerBounds | null {
     const gui = getMinecraft().field_71462_r;
-    if (gui === null || isSuppressedScreen(gui)) return null;
-    return readOpenContainerBounds();
+    if (gui === null) return null;
+    const bounds = readOpenContainerBounds();
+    return cachedBoundsSuppressed ? null : bounds;
 }
 
 export function getFullscreenPanelRect(b: ContainerBounds): Rect {

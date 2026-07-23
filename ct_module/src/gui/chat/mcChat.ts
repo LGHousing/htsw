@@ -36,6 +36,7 @@ let lineFieldFailed = false;
 let lastLen = -1;
 let lastNewest = "";
 let cacheLines: string[] = [];
+let lastProbeAt = 0;
 
 function sameLines(a: readonly string[], b: readonly string[]): boolean {
     if (a.length !== b.length) return false;
@@ -171,12 +172,15 @@ function readCtFallback(): string[] | null {
 
 /**
  * The most recent chat lines, OLDEST-FIRST (newest at the end), formatted with
- * `§` color codes intact. Safe to call every frame: a change probe (line count
- * + newest line's text) skips the full rebuild on unchanged frames, so a new
- * message shows within a frame instead of on a fixed interval. Returns the last
+ * `§` color codes intact. Safe to call every frame: a change probe runs at most
+ * every 100ms while a snapshot exists and skips the full rebuild when unchanged.
+ * Returns the last
  * good snapshot when every source is briefly unreachable.
  */
 export function refreshChatLines(): boolean {
+    const now = Date.now();
+    if (cacheLines.length > 0 && now - lastProbeAt < 100) return false;
+    lastProbeAt = now;
     const mc = mcChatList();
     if (mc === null) {
         const fb = readCtFallback();

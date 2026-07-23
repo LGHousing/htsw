@@ -82,9 +82,8 @@ declare const java: { io: { File: new (path: string) => unknown } };
 
 const iconCache: { [name: string]: unknown } = {};
 export function getIconImage(name: string): unknown {
-    if (Object.prototype.hasOwnProperty.call(iconCache, name)) {
-        return iconCache[name];
-    }
+    const cached = iconCache[name];
+    if (cached !== undefined) return cached;
     let img: unknown = null;
     try {
         const buffered = javax.imageio.ImageIO.read(

@@ -10,7 +10,7 @@ import {
     pointInRect,
 } from "./layout";
 import { Extractable, extract } from "./extractable";
-import { drawLaid, dispatchClick } from "./render";
+import { drawLaid, dispatchClick, fillRect } from "./render";
 import { getGuiRevision, markGuiDirty } from "./dirty";
 import { warmIconTextures } from "./images";
 import { debugLogError } from "./debugLog";
@@ -53,6 +53,7 @@ export class Panel {
     private builtBounds: Rect | null;
     private builtScrollOffsets: { [id: string]: number };
     private displayedScrollOffsets: { [id: string]: number };
+    private cachedScrollItems: LaidOut[];
 
     constructor(
         bounds: Extractable<Rect>,
@@ -71,11 +72,13 @@ export class Panel {
         this.builtBounds = null;
         this.builtScrollOffsets = {};
         this.displayedScrollOffsets = {};
+        this.cachedScrollItems = [];
     }
 
     public setRoot(root: Element): void {
         this.root = root;
         this.cachedLaid = null;
+        this.cachedScrollItems = [];
     }
 
     private needsRebuild(b: Rect): boolean {
@@ -90,10 +93,13 @@ export class Panel {
     private captureScrollOffsets(): void {
         this.builtScrollOffsets = {};
         this.displayedScrollOffsets = {};
+        this.cachedScrollItems = [];
         const laid = this.cachedLaid as LaidOut[];
         for (let i = 0; i < laid.length; i++) {
-            const element = laid[i].element;
+            const item = laid[i];
+            const element = item.element;
             if (element.kind !== "scroll") continue;
+            this.cachedScrollItems.push(item);
             const offset = getScrollState(element.id).offset;
             this.builtScrollOffsets[element.id] = offset;
             this.displayedScrollOffsets[element.id] = offset;
@@ -102,9 +108,9 @@ export class Panel {
 
     private advanceCachedScrolls(): boolean {
         const laid = this.cachedLaid as LaidOut[];
-        const shifts: { clip: Rect; dx: number; dy: number }[] = [];
-        for (let i = 0; i < laid.length; i++) {
-            const element = laid[i].element;
+        let shifts: { clip: Rect; dx: number; dy: number }[] | null = null;
+        for (let i = 0; i < this.cachedScrollItems.length; i++) {
+            const element = this.cachedScrollItems[i].element;
             if (element.kind !== "scroll") continue;
             const state = getScrollState(element.id);
             const previous = this.displayedScrollOffsets[element.id] ?? state.offset;
@@ -113,6 +119,7 @@ export class Panel {
             if (Math.abs(next - built) > 24) return false;
             const delta = Math.round(previous) - Math.round(next);
             if (delta !== 0) {
+                if (shifts === null) shifts = [];
                 shifts.push({
                     clip: state.viewportRect,
                     dx: state.axis === "x" ? delta : 0,
@@ -121,6 +128,7 @@ export class Panel {
             }
             this.displayedScrollOffsets[element.id] = next;
         }
+        if (shifts === null) return true;
         for (let i = 0; i < shifts.length; i++) {
             translateClipGroup(laid, shifts[i].clip, shifts[i].dx, shifts[i].dy);
         }
@@ -148,7 +156,7 @@ export class Panel {
         const y = mcToOverlay(rawY);
         warmIconTextures();
         if (this.paintBackground) {
-            Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
+            fillRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
         }
         const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
         const renderStart = Date.now();

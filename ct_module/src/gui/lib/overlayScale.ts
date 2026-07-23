@@ -22,6 +22,10 @@ const ScaledResolutionClass = javaType("net.minecraft.client.gui.ScaledResolutio
 // this target. We never render bigger than MC's own GUI; we only render smaller when a modded
 // MC scale exceeds our cap.
 const OVERLAY_SCALE_TARGET = 4;
+let cachedMcScale = 0;
+let cachedMcScaleRealW = -1;
+let cachedMcScaleRealH = -1;
+let cachedMcScaleAt = 0;
 
 // Effective overlay scale this frame: MC's current real scale capped at OVERLAY_SCALE_TARGET.
 // When MC is at-or-below the cap (the common case — vanilla maxes at 4), we match it exactly so
@@ -39,13 +43,27 @@ export function getEffectiveOverlayScale(): number {
 // effective ratio. The result can be non-integer if the mod uses fractional scales.
 export function getMcScale(): number {
     const mc = getMinecraft();
-    const sr = new ScaledResolutionClass(mc);
     const realW = mc.field_71443_c;
+    const realH = mc.field_71440_d;
+    const now = Date.now();
+    if (
+        realW === cachedMcScaleRealW &&
+        realH === cachedMcScaleRealH &&
+        now - cachedMcScaleAt < 500
+    ) {
+        return cachedMcScale;
+    }
+    const sr = new ScaledResolutionClass(mc);
     const scaledW = sr.func_78326_a();
     if (typeof scaledW === "number" && scaledW > 0) {
-        return realW / scaledW;
+        cachedMcScale = realW / scaledW;
+    } else {
+        cachedMcScale = sr.func_78325_e();
     }
-    return sr.func_78325_e();
+    cachedMcScaleRealW = realW;
+    cachedMcScaleRealH = realH;
+    cachedMcScaleAt = now;
+    return cachedMcScale;
 }
 
 // Convert a coord/length from MC's current scaled-coord space to overlay space (1 overlay unit

@@ -13,6 +13,10 @@ import {
 import { javaType } from "../lib/java";
 import { autoTrackRefresh } from "../autoTrack";
 
+let fileExistsPath = "";
+let fileExistsAt = 0;
+let fileExistsResult = false;
+
 /**
  * `reparse` is a thin DRIVER over the single parse authority,
  * `parseImportJsonBlocking` (parses.ts). It owns no parsing, snapshotting, or
@@ -25,13 +29,18 @@ import { autoTrackRefresh } from "../autoTrack";
  */
 
 function fileExistsSafe(path: string): boolean {
+    const now = Date.now();
+    if (path === fileExistsPath && now - fileExistsAt < 500) return fileExistsResult;
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        return Files.exists(Paths.get(path));
+        fileExistsResult = Files.exists(Paths.get(path));
     } catch (_e) {
-        return false;
+        fileExistsResult = false;
     }
+    fileExistsPath = path;
+    fileExistsAt = now;
+    return fileExistsResult;
 }
 
 // ── driver state ──────────────────────────────────────────────────────
