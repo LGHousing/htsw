@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 
 import { acceptHouseLockAsCurrent } from "../src/importCache/acceptHouseLock";
 import { importableHash } from "../src/importCache/hash";
@@ -162,5 +162,82 @@ describe("acceptHouseLockAsCurrent", () => {
 
         expect(result).toMatchObject({ ok: true, accepted: [], skipped: 1 });
         expect(write).not.toHaveBeenCalled();
+    });
+
+    it("only accepts action-bearing item knowledge when its interaction blob exists", () => {
+        const uuid = "item-lock-house";
+        const importJsonPath = "./projects/items/import.json";
+        const missing: ImportableItem = {
+            type: "ITEM",
+            name: "Missing Blob",
+            nbt: { type: "compound", value: {} },
+            rightClickActions: [{ type: "MESSAGE", message: "missing" }],
+        };
+        const cached: ImportableItem = {
+            type: "ITEM",
+            name: "Cached Blob",
+            nbt: { type: "compound", value: {} },
+            rightClickActions: [{ type: "MESSAGE", message: "cached" }],
+        };
+        const emptyDependencies: ItemDependencySnapshot = {
+            version: 1,
+            dependencies: [],
+        };
+        const files: Partial<Record<string, string>> = {
+            "./projects/items/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {
+                    "ITEM:Missing Blob": {
+                        type: "ITEM",
+                        identity: "Missing Blob",
+                        hash: importableHash(missing),
+                        itemDependencies: emptyDependencies,
+                    },
+                    "ITEM:Cached Blob": {
+                        type: "ITEM",
+                        identity: "Cached Blob",
+                        hash: importableHash(cached),
+                        itemDependencies: emptyDependencies,
+                    },
+                },
+            }),
+            [`./htsw/.cache/${uuid}/interact_data/v2-Cached Blob.snbt`]:
+                '{version:3,right:"blob"}',
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: (path: string, content: string) => {
+                if (path.indexOf(".tmp") >= 0) throw new Error("force fallback write");
+                files[path] = content;
+            },
+        });
+        const itemDependencies = {
+            snapshotOf: () => emptyDependencies,
+            clickActionsFingerprint: (item: ImportableItem) => `v2-${item.name}`,
+        } as unknown as ItemDependencyIndex;
+
+        const result = acceptHouseLockAsCurrent(
+            { displayMessage: vi.fn() } as unknown as TaskContext,
+            importJsonPath,
+            [missing, cached],
+            itemDependencies
+        );
+
+        expect(result).toMatchObject({
+            ok: true,
+            accepted: [cached],
+            skipped: 1,
+            failed: 0,
+        });
+        expect(
+            files[`./htsw/.cache/${uuid}/item/Missing_0020Blob.knowledge.json`]
+        ).toBeUndefined();
+        expect(
+            JSON.parse(
+                files[`./htsw/.cache/${uuid}/item/Cached_0020Blob.knowledge.json`]!
+            )
+        ).toMatchObject({ importable: cached, writer: "project-lock" });
     });
 });

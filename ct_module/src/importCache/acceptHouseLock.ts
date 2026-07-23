@@ -10,6 +10,10 @@ import {
     sameItemDependencySnapshot,
     type ItemDependencyIndex,
 } from "../importables/items/dependencyIndex";
+import {
+    hasItemClickActions,
+    hasRequiredInteractDataCache,
+} from "../importables/items/interactDataCache";
 
 export type AcceptHouseLockResult =
     | { ok: false; reason: "missing-lock" }
@@ -48,10 +52,16 @@ export function acceptHouseLockAsCurrent(
             dependencySnapshot === undefined
                 ? entry?.itemDependencies === undefined
                 : sameItemDependencySnapshot(entry?.itemDependencies, dependencySnapshot);
+        const itemBlobAvailable =
+            importable.type !== "ITEM" ||
+            !hasItemClickActions(importable) ||
+            (dependencyIndex !== undefined &&
+                hasRequiredInteractDataCache(importable, dependencyIndex, housingUuid));
         if (
             entry === null ||
             entry.hash !== importableHash(importable) ||
-            !dependenciesMatch
+            !dependenciesMatch ||
+            !itemBlobAvailable
         ) {
             skipped++;
             continue;

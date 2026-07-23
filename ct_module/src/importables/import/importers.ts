@@ -47,9 +47,8 @@ import {
 import { importableIdentity, importableKey } from "../identity";
 import {
     applyImportableItemPlan,
-    hydrateImportableItem,
     planImportableItem,
-    scanImportableItem,
+    readImportableItem,
     type ItemImportPlan,
     type ItemRead,
 } from "../items/import";
@@ -288,9 +287,8 @@ const IMPORTERS = {
     ITEM: defineImporter<"ITEM", ItemRead, ItemImportPlan>({
         type: "ITEM",
         reader: {
-            kind: "staged",
-            scan: scanImportableItem,
-            hydrate: hydrateImportableItem,
+            kind: "direct",
+            read: readImportableItem,
         },
         plan: planImportableItem,
         apply: applyImportableItemPlan,

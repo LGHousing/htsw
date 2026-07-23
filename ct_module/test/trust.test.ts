@@ -3,6 +3,7 @@ import type {
     Action,
     ImportableCommand,
     ImportableFunction,
+    ImportableItem,
     ImportableNpc,
 } from "htsw/types";
 
@@ -165,6 +166,49 @@ describe("trustedChildListPathsForImportable", () => {
 });
 
 describe("buildTrustPlan house lock gating", () => {
+    it("does not trust item knowledge without its interaction blob", () => {
+        const uuid = "missing-item-blob";
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "Wand",
+            nbt: { type: "compound", value: {} },
+            rightClickActions: [chat("use")],
+        };
+        const entry: ImportableCacheEntry = {
+            schemaVersion: 2,
+            writtenAt: "2026-07-23T00:00:00.000Z",
+            writer: "importer",
+            importable: item,
+            hash: importableHash(item),
+            lists: listHashes(item),
+            itemDependencies: { version: 1, dependencies: [] },
+        };
+        const files: Partial<Record<string, string>> = {
+            [`./htsw/.cache/${uuid}/item/Wand.knowledge.json`]: JSON.stringify(entry),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+        const itemDependencies = {
+            snapshotOf: () => ({ version: 1, dependencies: [] }),
+            clickActionsFingerprint: () => "v2-missing",
+        } as unknown as ItemDependencyIndex;
+
+        const trust = buildTrustPlan(
+            uuid,
+            [item],
+            true,
+            undefined,
+            itemDependencies
+        ).importables.get("ITEM:Wand");
+
+        expect(trust?.entry?.importable).toEqual(item);
+        expect(trust?.trustMode).toBe(false);
+        expect(trust?.wholeImportableTrusted).toBe(false);
+    });
+
     it("does not trust an old cache entry when the source has item dependencies", () => {
         const uuid = "dependency-cache-missing";
         const desired = fn([chat("same")]);
@@ -385,5 +429,34 @@ describe("trusted action-list planning", () => {
         expect(result.plan.diff.operations).toHaveLength(1);
         expect(result.plan.phaseUnits.reading).toBe(0);
         expect(result.plan.phaseUnits.hydrating).toBe(0);
+
+        const knownEmpty = await readActionListSync(null as unknown as TaskContext, {
+            desired: desired.actions,
+            basePath: "actions",
+            sync: session,
+            trustPlan: {
+                importable: desired,
+                identity: desired.name,
+                entry,
+                sourceHash: importableHash(desired),
+                cacheHash: importableHash(cached),
+                lockHash: importableHash(cached),
+                lockListScanHashes: null,
+                cacheMatchesLock: true,
+                trustMode: true,
+                wholeImportableTrusted: false,
+                trustedChildListPaths: new Set(["actions"]),
+                trustedChildLists: new Map(),
+            },
+            current: { kind: "known-empty" },
+            open,
+        });
+
+        expect(knownEmpty.kind).toBe("planned");
+        if (knownEmpty.kind !== "planned") return;
+        expect(knownEmpty.plan.observed).toEqual([]);
+        expect(
+            knownEmpty.plan.diff.operations.map((operation) => operation.kind)
+        ).toEqual(["add"]);
     });
 });

@@ -3,7 +3,7 @@ import type { ImportableItem } from "htsw/types";
 
 import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
 import { IMPORT_CACHE_ROOT } from "../../importCache/paths";
-import { ensureParentDirs } from "../../utils/filesystem";
+import { atomicWriteText } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { runtimeString } from "../../utils/java";
 import type { ItemDependencyIndex } from "./dependencyIndex";
@@ -38,7 +38,9 @@ export function readInteractDataCache(
     try {
         if (!FileLib.exists(path)) return undefined;
         const value = FileLib.read(path) as unknown as string | null;
-        return value === null ? undefined : runtimeString(value);
+        if (value === null) return undefined;
+        const snbt = runtimeString(value);
+        return isInteractDataSnbt(snbt) ? snbt : undefined;
     } catch (_error) {
         return undefined;
     }
@@ -52,16 +54,26 @@ export function hasInteractDataCache(
     return readInteractDataCache(item, dependencies, housingUuid) !== undefined;
 }
 
+export function hasRequiredInteractDataCache(
+    item: ImportableItem,
+    dependencies: ItemDependencyIndex,
+    housingUuid: string
+): boolean {
+    return (
+        !hasItemClickActions(item) ||
+        hasInteractDataCache(item, dependencies, housingUuid)
+    );
+}
+
 export function writeInteractDataCache(
     item: ImportableItem,
     dependencies: ItemDependencyIndex,
     housingUuid: string,
     interactDataSnbt: string
-): void {
-    if (!hasItemClickActions(item)) return;
+): boolean {
+    if (!hasItemClickActions(item)) return false;
     const path = cachePath(item, dependencies, housingUuid);
-    ensureParentDirs(path);
-    FileLib.write(path, interactDataSnbt, true);
+    return atomicWriteText(path, interactDataSnbt);
 }
 
 function cachePath(
@@ -103,5 +115,13 @@ function canonicalSnbt(value: unknown): string | null {
         return stableStringify(parsed);
     } catch (_error) {
         return null;
+    }
+}
+
+function isInteractDataSnbt(value: string): boolean {
+    try {
+        return htsw.nbt.parseSnbtText(value).type === "compound";
+    } catch (_error) {
+        return false;
     }
 }

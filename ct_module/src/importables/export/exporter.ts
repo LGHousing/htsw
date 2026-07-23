@@ -19,6 +19,7 @@ import {
 } from "./projectDestination";
 import { createProjectItemIndex } from "../items/projectItems";
 import { createItemDependencyIndex } from "../items/dependencyIndex";
+import { hasRequiredInteractDataCache } from "../items/interactDataCache";
 import { importableIdentity } from "../identity";
 
 // Scratch shared across every item in one export/read run: the dedup registry
@@ -145,6 +146,9 @@ function refreshExportedItemDependencies(
             }
         }
         if (importable.type === "ITEM" && capturedItemNames.has(identity)) {
+            if (!hasRequiredInteractDataCache(importable, dependencies, housingUuid)) {
+                continue;
+            }
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
                 quiet: true,
                 itemDependencies: dependencies.snapshotOf(importable),

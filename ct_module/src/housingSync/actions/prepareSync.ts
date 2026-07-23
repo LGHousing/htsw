@@ -58,9 +58,6 @@ export async function scanActionListSync(
     if (target.desired === undefined) {
         return { kind: "skipped", reason: "undeclared" };
     }
-    if (isActionListTrusted(target.trustPlan, target.basePath)) {
-        return { kind: "skipped", reason: "trusted" };
-    }
     if (target.current?.kind === "known-empty") {
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
     }
@@ -69,6 +66,9 @@ export async function scanActionListSync(
             createKnownActionListPlan(target.desired, target.current.actions, target),
             target
         );
+    }
+    if (isActionListTrusted(target.trustPlan, target.basePath)) {
+        return { kind: "skipped", reason: "trusted" };
     }
     const trustedBaseline = getTrustedBaselineActionList(
         target.trustPlan,

@@ -21,7 +21,7 @@ import { createProjectItemIndex } from "./projectItems";
 import { readParsedImportablesForExport } from "../export/projectDestination";
 import { itemEditorOpened } from "../waiters";
 import { type CapturedItem, type ItemCaptureRegistry } from "./captureRegistry";
-import { writeInteractDataCache } from "./interactDataCache";
+import { hasItemClickActions, writeInteractDataCache } from "./interactDataCache";
 
 type ExportedClickActions = {
     left?: Action[];
@@ -148,21 +148,31 @@ export async function exportCapturedItems(
         const dependencies = createItemDependencyIndex(parsed.value, items);
         for (const importable of parsed.value) {
             if (importable.type !== "ITEM" || !written.has(importable.name)) continue;
-            const interactData = registry.capturedInteractData(importable.name);
-            if (interactData !== null) {
+            let interactionCacheReady = !hasItemClickActions(importable);
+            if (!interactionCacheReady) {
                 try {
-                    writeInteractDataCache(
-                        importable,
-                        dependencies,
-                        housingUuid,
-                        interactData
-                    );
+                    const interactData = registry.capturedInteractData(importable.name);
+                    if (interactData === null) {
+                        throw new Error("captured item has no interact_data");
+                    }
+                    if (
+                        !writeInteractDataCache(
+                            importable,
+                            dependencies,
+                            housingUuid,
+                            interactData
+                        )
+                    ) {
+                        throw new Error("write failed");
+                    }
+                    interactionCacheReady = true;
                 } catch (error) {
                     ctx.displayMessage(
                         `&7[export] &eCould not cache click actions for '${importable.name}': ${String(error)}`
                     );
                 }
             }
+            if (!interactionCacheReady) continue;
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
                 quiet: true,
                 itemDependencies: dependencies.snapshotOf(importable),

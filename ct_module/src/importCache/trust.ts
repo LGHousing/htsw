@@ -20,6 +20,10 @@ import {
     sameItemDependencySnapshot,
     type ItemDependencyIndex,
 } from "../importables/items/dependencyIndex";
+import {
+    hasItemClickActions,
+    hasRequiredInteractDataCache,
+} from "../importables/items/interactDataCache";
 
 export type {
     TrustedChildListPath,
@@ -92,6 +96,16 @@ export function buildTrustPlan(
         const dependenciesMatch =
             dependencySnapshot === undefined ||
             sameItemDependencySnapshot(entry?.itemDependencies, dependencySnapshot);
+        const itemBlobAvailable =
+            entry === null ||
+            entry.importable.type !== "ITEM" ||
+            !hasItemClickActions(entry.importable) ||
+            (dependencyIndex !== undefined &&
+                hasRequiredInteractDataCache(
+                    entry.importable,
+                    dependencyIndex,
+                    housingUuid
+                ));
         const cacheMatchesLock =
             lockEntry === null ||
             (entryHash === lockEntry.hash &&
@@ -99,7 +113,8 @@ export function buildTrustPlan(
                     entry?.itemDependencies,
                     lockEntry.itemDependencies
                 ));
-        const trustAllowed = trustMode && cacheMatchesLock && dependenciesMatch;
+        const trustAllowed =
+            trustMode && cacheMatchesLock && dependenciesMatch && itemBlobAvailable;
 
         if (trustAllowed && entry !== null) {
             sourceHash = importableHash(importable);

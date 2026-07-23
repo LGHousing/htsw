@@ -4,9 +4,8 @@ import { applyActionListPlan } from "../../housingSync/actions/apply";
 import type { ActionListPlan } from "../../housingSync/actions/plan";
 import {
     actionListPlanFromRead,
-    hydrateActionListSync,
-    scanActionListSync,
-    type ActionListSyncScanResult,
+    readActionListSync,
+    type ActionListSyncResult,
 } from "../../housingSync/actions/prepareSync";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
@@ -23,8 +22,6 @@ import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import {
     placeImportedItem,
     restoreImportedItemPlacement,
-    restoreTemporarilyHeldItem,
-    temporarilyHoldItem,
 } from "../../housingSync/items/heldItem";
 import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
@@ -55,16 +52,20 @@ function cachedSourceItemShellMatches(
     );
 }
 
-type ItemStart = {
-    item: Item;
-    mode: "cached" | "source";
-    cachedImportable?: ImportableItem;
-};
+type ItemStart =
+    | {
+          item: Item;
+          mode: "source";
+      }
+    | {
+          item: Item;
+          mode: "cached";
+          cachedImportable: ImportableItem;
+      };
 
 export type ItemImportPlan = {
     kind: "ITEM";
     importable: ImportableItem;
-    trustPlan?: ImportableTrustPlan;
     housingUuid: string;
     item: Item;
     leftPlan: ActionListPlan | null;
@@ -75,15 +76,14 @@ export type ItemImportPlan = {
 export type ItemRead = {
     kind: "ITEM";
     importable: ImportableItem;
-    trustPlan?: ImportableTrustPlan;
     housingUuid: string;
     item: Item;
-    left: ActionListSyncScanResult | null;
-    right: ActionListSyncScanResult | null;
+    left: ActionListSyncResult | null;
+    right: ActionListSyncResult | null;
     usesCachedInteractData: boolean;
 };
 
-export async function scanImportableItem(
+export async function readImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
     session: ImportContext,
@@ -99,7 +99,6 @@ export async function scanImportableItem(
         return {
             kind: "ITEM",
             importable,
-            trustPlan,
             housingUuid: session.housingUuid,
             item:
                 cachedInteractData === undefined
@@ -117,63 +116,21 @@ export async function scanImportableItem(
         trustPlan,
         dependencyIndex
     );
-    const held = await temporarilyHoldItem(ctx, start.item);
-    try {
-        await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
-        ctx.getItemSlot("Edit Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        const actions = await scanItemActionLists(
-            ctx,
-            importable,
-            session,
-            trustPlan,
-            start
-        );
-        return {
-            kind: "ITEM",
-            importable,
-            trustPlan,
-            housingUuid: session.housingUuid,
-            item: start.item,
-            ...actions,
-            usesCachedInteractData: false,
-        };
-    } finally {
-        await restoreTemporarilyHeldItem(ctx, held);
-    }
-}
-
-export async function hydrateImportableItem(
-    ctx: TaskContext,
-    read: ItemRead
-): Promise<void> {
-    if (read.left?.kind !== "hydrate" && read.right?.kind !== "hydrate") return;
-    const held = await temporarilyHoldItem(ctx, read.item);
-    try {
-        if (read.left?.kind === "hydrate") {
-            await openItemActionsRoot(ctx);
-            read.left = await hydrateActionListSync(ctx, read.left, false);
-        }
-        if (read.right?.kind === "hydrate") {
-            await openItemActionsRoot(ctx);
-            read.right = await hydrateActionListSync(ctx, read.right, false);
-        }
-    } finally {
-        await restoreTemporarilyHeldItem(ctx, held);
-    }
-}
-
-async function openItemActionsRoot(ctx: TaskContext): Promise<void> {
-    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
-    ctx.getItemSlot("Edit Actions").click();
-    await timedWaitForMenu(ctx, "menuClickWait");
+    const actions = await scanItemActionLists(ctx, importable, session, start);
+    return {
+        kind: "ITEM",
+        importable,
+        housingUuid: session.housingUuid,
+        item: start.item,
+        ...actions,
+        usesCachedInteractData: false,
+    };
 }
 
 export function planImportableItem(read: ItemRead): ItemImportPlan {
     return {
         kind: "ITEM",
         importable: read.importable,
-        trustPlan: read.trustPlan,
         housingUuid: read.housingUuid,
         item: read.item,
         leftPlan: read.left === null ? null : actionListPlanFromRead(read.left),
@@ -236,8 +193,15 @@ export async function applyImportableItemPlan(
         if (!snbt) throw Error("Why don't we have the item?");
 
         const interactData = extractInteractDataSnbt(snbt);
-        if (interactData !== null) {
-            writeInteractDataCache(importable, dependencyIndex, uuid, interactData);
+        if (interactData === null) {
+            throw new Error(
+                `Could not capture interact_data after applying click actions to '${importable.name}'.`
+            );
+        }
+        if (!writeInteractDataCache(importable, dependencyIndex, uuid, interactData)) {
+            throw new Error(
+                `Could not save interact_data after applying click actions to '${importable.name}'.`
+            );
         }
         await tryWriteImportableCache(ctx, importable, "importer", uuid, {
             itemDependencies: dependencyIndex.snapshotOf(importable),
@@ -290,48 +254,47 @@ async function scanItemActionLists(
     ctx: TaskContext,
     importable: ImportableItem,
     session: ImportContext,
-    trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart
 ): Promise<Pick<ItemRead, "left" | "right">> {
+    const cachedLeft =
+        start.mode === "cached" ? start.cachedImportable.leftClickActions : undefined;
+    const cachedRight =
+        start.mode === "cached" ? start.cachedImportable.rightClickActions : undefined;
     const leftDesired = actionListToSync(
         importable.leftClickActions,
-        start.cachedImportable?.leftClickActions,
+        cachedLeft,
         start.mode
     );
     const rightDesired = actionListToSync(
         importable.rightClickActions,
-        start.cachedImportable?.rightClickActions,
+        cachedRight,
         start.mode
     );
 
-    const leftEditor = { opened: false };
-    const left = await scanActionListSync(ctx, {
+    const left = await readActionListSync(ctx, {
         desired: leftDesired,
         sync: session.actions,
-        trustPlan,
         basePath: "leftClickActions",
-        open: async () => {
-            ctx.getItemSlot("Left Click Actions").click();
-            await timedWaitForMenu(ctx, "menuClickWait");
-            leftEditor.opened = true;
-        },
+        current: currentItemActionList(start.mode, cachedLeft),
     });
-    if (leftEditor.opened) {
-        await clickGoBack(ctx);
-    }
 
-    const right = await scanActionListSync(ctx, {
+    const right = await readActionListSync(ctx, {
         desired: rightDesired,
         sync: session.actions,
-        trustPlan,
         basePath: "rightClickActions",
-        open: async () => {
-            ctx.getItemSlot("Right Click Actions").click();
-            await timedWaitForMenu(ctx, "menuClickWait");
-        },
+        current: currentItemActionList(start.mode, cachedRight),
     });
 
     return { left, right };
+}
+
+function currentItemActionList(
+    mode: ItemStart["mode"],
+    cached: readonly Action[] | undefined
+): { kind: "known-empty" } | { kind: "known"; actions: readonly Action[] } {
+    return mode === "source"
+        ? { kind: "known-empty" }
+        : { kind: "known", actions: cached ?? [] };
 }
 
 async function applyItemActionPlans(
