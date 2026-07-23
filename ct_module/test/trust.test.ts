@@ -346,6 +346,39 @@ describe("buildTrustPlan house lock gating", () => {
         expect(row?.lockListScanHashes).toBeNull();
     });
 
+    it("keeps trust available when the project lock has no entry for the importable", () => {
+        const uuid = "lock-test-missing-entry";
+        const importJsonPath = "./projects/demo/import.json";
+        const cached = fn([chat("same")]);
+        const files: Partial<Record<string, string>> = {
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+                JSON.stringify(cacheEntry(cached)),
+            "./projects/demo/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {},
+            }),
+        };
+
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        const row = buildTrustPlan(
+            uuid,
+            [cached],
+            true,
+            importJsonPath
+        ).importables.get("FUNCTION:Debug");
+
+        expect(row?.trustMode).toBe(true);
+        expect(row?.wholeImportableTrusted).toBe(true);
+        expect(row?.cacheMatchesLock).toBe(true);
+        expect(row?.lockHash).toBeNull();
+    });
+
     it("exposes current-version lock scan hashes", () => {
         const uuid = "lock-test-scan-hash";
         const importJsonPath = "./projects/demo/import.json";

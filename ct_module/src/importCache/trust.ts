@@ -179,13 +179,7 @@ function lockEntryForImportable(
             itemDependencies: undefined,
         };
     }
-    return (
-        houseLockEntryFor(lock, type, identity) ?? {
-            hash: "",
-            listScanHashes: undefined,
-            itemDependencies: undefined,
-        }
-    );
+    return houseLockEntryFor(lock, type, identity);
 }
 
 export function trustedChildListSnapshotsForImportable(
