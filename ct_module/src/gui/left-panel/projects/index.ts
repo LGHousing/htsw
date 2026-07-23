@@ -17,7 +17,6 @@ import { openFileBrowser } from "../../popovers/file-browser";
 import {
     getHousingUuid,
     isHouseTrusted,
-    isParseInProgress,
     setHouseTrust,
     setImportJsonPath,
 } from "../../state";
@@ -219,25 +218,6 @@ function emptyStateRow(): Element {
     });
 }
 
-function loadingRow(): Element {
-    return Container({
-        style: {
-            direction: "row",
-            align: "center",
-            justify: "center",
-            width: { kind: "grow" },
-            height: { kind: "px", value: 32 },
-            padding: 6,
-        },
-        children: [
-            Text({
-                text: "Parsing project…",
-                color: COLOR_TEXT_DIM,
-            }),
-        ],
-    });
-}
-
 export function ProjectsView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" } },
@@ -364,15 +344,8 @@ export function ProjectsView(): Element {
                     padding: { side: "right", value: SCROLLBAR_WIDTH + 4 },
                 },
                 children: () => {
-                    // Keep the tree mounted while a load parses: blanking it
-                    // here made loading a file collapse and re-expand the
-                    // whole panel. The indicator only earns its place when
-                    // there is nothing else to show.
                     const rows = renderRows();
-                    if (rows.length === 0) {
-                        return [isParseInProgress() ? loadingRow() : emptyStateRow()];
-                    }
-                    return rows;
+                    return rows.length === 0 ? [emptyStateRow()] : rows;
                 },
             }),
         ],

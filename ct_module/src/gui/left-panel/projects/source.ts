@@ -11,6 +11,7 @@ import {
 } from "../../parsing/parses";
 import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
 import { recordPhase } from "../../lib/framePerf";
+import { getImportJsonPath, setImportJsonPath } from "../../state";
 
 export type SourceDir = {
     kind: "dir";
@@ -113,12 +114,29 @@ export function getSources(): Source[] {
 export function removeSource(fullPath: string): void {
     for (let i = 0; i < sources.length; i++) {
         if (sources[i].fullPath === fullPath) {
+            const removed = sources[i];
             sources.splice(i, 1);
             enumerationCache.delete(fullPath);
+            const activePath = getImportJsonPath();
+            if (
+                activePath !== "" &&
+                sourceContainsPath(removed, activePath) &&
+                !sources.some((source) => sourceContainsPath(source, activePath))
+            ) {
+                setImportJsonPath("");
+            }
             bumpTreeRevision();
             return;
         }
     }
+}
+
+function sourceContainsPath(source: Source, path: string): boolean {
+    const sourcePath = canonicalPath(source.fullPath);
+    const targetPath = canonicalPath(path);
+    if (source.kind === "file") return sourcePath === targetPath;
+    const prefix = sourcePath.endsWith("/") ? sourcePath : `${sourcePath}/`;
+    return targetPath === sourcePath || targetPath.startsWith(prefix);
 }
 
 function relativePath(root: HtswJavaPath, p: HtswJavaPath): string {

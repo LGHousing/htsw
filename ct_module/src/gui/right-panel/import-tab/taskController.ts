@@ -551,6 +551,10 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
 
 let importPreparationRunning = false;
 
+export function isImportPreparationRunning(): boolean {
+    return importPreparationRunning;
+}
+
 export function startImport(explicit?: readonly ImportQueueItem[]): void {
     if (TaskManager.isBusy() || importPreparationRunning) {
         ChatLib.chat(

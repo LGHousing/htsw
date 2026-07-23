@@ -64,7 +64,6 @@ import {
 } from "./lib/popovers";
 import { maybeAutoStartTour } from "./popovers/tour";
 import { debugLog, flushGuiDebug, isGuiDebugArmed } from "./lib/debugLog";
-import { isParseInProgress } from "./state";
 import {
     closeHoverCard,
     drawHoverCard,
@@ -786,7 +785,7 @@ export function initHtswGui(): void {
                 lastDebugSampleAt = now;
                 debugLog(
                     `tick frameVisible=${frameVisible()} popovers=${getOpenPopoverContents().length} ` +
-                    `parseInProgress=${isParseInProgress()} uuid=${getHousingUuid()}`
+                    `uuid=${getHousingUuid()}`
                 );
             }
         }

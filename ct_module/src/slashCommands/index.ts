@@ -426,7 +426,7 @@ function commandTreePerf(): void {
     ChatLib.chat(
         `&7[treeperf] importables tree: ${s.rows} rows, ` +
             `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
-            `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
+            `Rebuilds should only follow project, expansion, sort, or filter changes.`
     );
 }
 

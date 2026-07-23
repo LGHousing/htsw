@@ -4,18 +4,6 @@ import {
     setMuteTaskSounds,
     setPlayImportCompletionSound,
 } from "../../settings";
-import { markGuiDirty } from "../lib/dirty";
-
-let parseInProgress = false;
-export function isParseInProgress(): boolean {
-    return parseInProgress;
-}
-export function setParseInProgress(v: boolean): void {
-    if (parseInProgress === v) return;
-    parseInProgress = v;
-    markGuiDirty();
-}
-
 /**
  * When true, sound effects fired by `Forge.PlaySoundEvent` are cancelled
  * while a Housing sync task is in flight. Suppresses the repetitive sounds
