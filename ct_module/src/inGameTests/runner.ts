@@ -23,6 +23,7 @@ import {
     type ImportablePlanDetails,
 } from "../importables/import/importers";
 import type { ImportContext } from "../importables/import/context";
+import { createImportedItemPlacementSession } from "../housingSync/items/heldItem";
 import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import { resetFunctionNameSession } from "../importables/functions/listFunctions";
 import {
@@ -389,6 +390,7 @@ function fixtureImportContext(
     return {
         items,
         itemDependencies,
+        itemPlacement: createImportedItemPlacementSession(),
         parsed: fixture.parsed,
         housingUuid,
         npcLookup: createNpcLookupCache(),

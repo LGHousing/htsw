@@ -5,6 +5,7 @@ import { pollTicks } from "../tasks/poll";
 import { getMinecraft, getPlayer, javaType } from "../utils/java";
 
 const KeyBinding = javaType("net.minecraft.client.settings.KeyBinding");
+const GuiInventory = javaType("net.minecraft.client.gui.inventory.GuiInventory");
 
 /**
  * Side effects coordinating the importer with the surrounding game:
@@ -68,6 +69,14 @@ export async function closeOpenScreen(ctx: TaskContext): Promise<void> {
     // func_71053_j = EntityPlayer.closeScreen — same as pressing Esc on a
     // container, including notifying the server.
     getPlayer().func_71053_j();
+    await ctx.waitFor("tick");
+}
+
+export async function ensurePlayerInventoryScreen(ctx: TaskContext): Promise<void> {
+    const minecraft = getMinecraft();
+    if (GuiInventory.class.isInstance(minecraft.field_71462_r)) return;
+    await closeOpenScreen(ctx);
+    minecraft.func_147108_a(new GuiInventory(getPlayer()));
     await ctx.waitFor("tick");
 }
 

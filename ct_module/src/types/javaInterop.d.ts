@@ -583,6 +583,11 @@ declare global {
         setClipboardString(value: string): void;
     }
 
+    interface HtswGuiInventoryClass {
+        readonly class: HtswJavaClass;
+        new (player: HtswMinecraftPlayer): HtswMinecraftGuiScreen;
+    }
+
     interface HtswMinecraftKeyBindingClass {
         func_74507_a(keyCode: number): void;
         func_74510_a(keyCode: number, pressed: boolean): void;
@@ -671,6 +676,7 @@ declare global {
         "net.minecraft.client.gui.GuiScreen": HtswGuiScreenClass;
         "net.minecraft.client.gui.GuiTextField": HtswGuiTextFieldClass;
         "net.minecraft.client.gui.inventory.GuiEditSign": HtswMinecraftGuiEditSignClass;
+        "net.minecraft.client.gui.inventory.GuiInventory": HtswGuiInventoryClass;
         "net.minecraft.client.gui.ScaledResolution": HtswScaledResolutionClass;
         "net.minecraft.client.settings.KeyBinding": HtswMinecraftKeyBindingClass;
         "net.minecraft.client.renderer.GlStateManager": HtswGlStateManagerClass;

@@ -1,7 +1,7 @@
 import TaskContext from "../../tasks/context";
 import { pollTicks } from "../../tasks/poll";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
-import { closeOpenScreen } from "../sideEffects";
+import { closeOpenScreen, ensurePlayerInventoryScreen } from "../sideEffects";
 import {
     SET_SLOT_ACK_MAX_TICKS,
     selectedHotbarSlot,
@@ -18,61 +18,65 @@ import {
     type InventorySlotSnapshot,
 } from "./playerInventory";
 
-export type ImportedItemPlacement = {
-    borrowed: {
-        slot: InventorySlotSnapshot;
-        selectedHotbarSlot: number;
-    } | null;
+type BorrowedHotbarSlot = {
+    slot: InventorySlotSnapshot;
+    selectedHotbarSlot: number;
 };
+
+export type ImportedItemPlacementSession = {
+    place(ctx: TaskContext, item: Item): Promise<void>;
+    restore(ctx: TaskContext): Promise<void>;
+};
+
+export function createImportedItemPlacementSession(): ImportedItemPlacementSession {
+    let borrowed: BorrowedHotbarSlot | null = null;
+
+    return {
+        async place(ctx: TaskContext, item: Item): Promise<void> {
+            const stack = item.getItemStack() as MCItemStack | null;
+            if (stack === null) throw new Error("Cannot inject an empty item stack.");
+
+            await ensurePlayerInventoryScreen(ctx);
+            const emptySlot = findEmptyHotbarSlot();
+            if (emptySlot !== undefined) {
+                await placeInHotbarSlot(ctx, emptySlot, stack);
+                return;
+            }
+
+            if (borrowed === null) {
+                borrowed = {
+                    slot: readInventorySlot(0, "player"),
+                    selectedHotbarSlot: selectedHotbarSlot(),
+                };
+                ctx.displayMessage(
+                    "&e[import] Hotbar full — temporarily using the first hotbar slot during this import."
+                );
+            }
+
+            try {
+                await clearInventorySlot(ctx, 0, "player");
+                await placeInHotbarSlot(ctx, 0, stack);
+            } catch (error) {
+                await restoreBorrowedSlot(ctx, borrowed);
+                borrowed = null;
+                throw error;
+            }
+        },
+
+        async restore(ctx: TaskContext): Promise<void> {
+            if (borrowed === null) return;
+            const slot = borrowed;
+            borrowed = null;
+            await ensurePlayerInventoryScreen(ctx);
+            await restoreBorrowedSlot(ctx, slot);
+        },
+    };
+}
 
 export type TemporarilyHeldItem = {
     slot: InventorySlotSnapshot;
     selectedHotbarSlot: number;
 };
-
-export async function placeImportedItem(
-    ctx: TaskContext,
-    item: Item
-): Promise<ImportedItemPlacement> {
-    const stack = item.getItemStack() as MCItemStack | null;
-    if (stack === null) throw new Error("Cannot inject an empty item stack.");
-
-    await closeOpenScreen(ctx);
-    const emptySlot = findEmptyHotbarSlot();
-    if (emptySlot !== undefined) {
-        await injectIntoHotbarSlot(ctx, emptySlot, stack);
-        await selectHotbarSlotAndWait(ctx, emptySlot);
-        await waitForHeldItem(ctx);
-        return { borrowed: null };
-    }
-
-    const borrowed = {
-        slot: readInventorySlot(0, "player"),
-        selectedHotbarSlot: selectedHotbarSlot(),
-    };
-    ctx.displayMessage(
-        `&e[import] Hotbar full — temporarily using the first hotbar slot for ${item.getName()}.`
-    );
-    try {
-        await clearInventorySlot(ctx, 0, "player");
-        await injectIntoHotbarSlot(ctx, 0, stack);
-        await selectHotbarSlotAndWait(ctx, 0);
-        await waitForHeldItem(ctx);
-        return { borrowed };
-    } catch (error) {
-        await restoreBorrowedSlot(ctx, borrowed);
-        throw error;
-    }
-}
-
-export async function restoreImportedItemPlacement(
-    ctx: TaskContext,
-    placement: ImportedItemPlacement
-): Promise<void> {
-    if (placement.borrowed === null) return;
-    await closeOpenScreen(ctx);
-    await restoreBorrowedSlot(ctx, placement.borrowed);
-}
 
 export async function temporarilyHoldItem(
     ctx: TaskContext,
@@ -136,6 +140,16 @@ async function injectIntoHotbarSlot(
     await ctx.waitFor("tick");
 }
 
+async function placeInHotbarSlot(
+    ctx: TaskContext,
+    slotId: number,
+    stack: MCItemStack
+): Promise<void> {
+    await injectIntoHotbarSlot(ctx, slotId, stack);
+    await selectHotbarSlotAndWait(ctx, slotId);
+    await waitForHeldItem(ctx);
+}
+
 async function waitForStack(
     ctx: TaskContext,
     slotId: number,
@@ -161,7 +175,7 @@ function stacksMatch(current: MCItemStack, expected: MCItemStack): boolean {
 
 async function restoreBorrowedSlot(
     ctx: TaskContext,
-    borrowed: NonNullable<ImportedItemPlacement["borrowed"]>
+    borrowed: BorrowedHotbarSlot
 ): Promise<void> {
     try {
         await restoreInventorySlots(ctx, [borrowed.slot]);

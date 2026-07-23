@@ -27,6 +27,7 @@ vi.mock("../src/tasks/poll", () => ({
 
 vi.mock("../src/housingSync/sideEffects", () => ({
     closeOpenScreen: vi.fn(async () => undefined),
+    ensurePlayerInventoryScreen: vi.fn(async () => undefined),
 }));
 
 vi.mock("../src/housingSync/progress/timing", () => ({
@@ -67,8 +68,7 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
 }));
 
 import {
-    placeImportedItem,
-    restoreImportedItemPlacement,
+    createImportedItemPlacementSession,
     restoreTemporarilyHeldItem,
     temporarilyHoldItem,
 } from "../src/housingSync/items/heldItem";
@@ -110,35 +110,43 @@ describe("held item placement", () => {
     test("uses an empty hotbar slot without borrowing another item", async () => {
         mocks.slots[3] = null;
         const injected = stack("injected");
+        const placement = createImportedItemPlacementSession();
 
-        const placement = await placeImportedItem(
+        await placement.place(
             ctx as never,
             {
                 getItemStack: () => injected,
-                getName: () => "Injected",
             } as never
         );
 
-        expect(placement.borrowed).toBeNull();
         expect(mocks.slots[0]?.name).toBe("original-0");
         expect(mocks.slots[3]).toBe(injected);
         expect(mocks.selectedSlot).toBe(3);
+        await placement.restore(ctx as never);
+        expect(mocks.restoreInventorySlots).not.toHaveBeenCalled();
     });
 
-    test("restores slot 0 and the previous selection when the hotbar is full", async () => {
-        const placement = await placeImportedItem(
+    test("borrows and restores slot 0 once across a full-hotbar batch", async () => {
+        const placement = createImportedItemPlacementSession();
+        await placement.place(
             ctx as never,
             {
-                getItemStack: () => stack("injected"),
-                getName: () => "Injected",
+                getItemStack: () => stack("first"),
             } as never
         );
 
-        expect(placement.borrowed?.slot.slotId).toBe(0);
-        expect(mocks.slots[0]?.name).toBe("injected");
+        await placement.place(
+            ctx as never,
+            {
+                getItemStack: () => stack("second"),
+            } as never
+        );
+
+        expect(mocks.slots[0]?.name).toBe("second");
         expect(mocks.selectedSlot).toBe(0);
 
-        await restoreImportedItemPlacement(ctx as never, placement);
+        await placement.restore(ctx as never);
+        await placement.restore(ctx as never);
 
         expect(mocks.restoreInventorySlots).toHaveBeenCalledOnce();
         expect(mocks.slots[0]?.name).toBe("restored");

@@ -19,10 +19,6 @@ import {
     itemWithInteractData,
 } from "../../utils/nbt";
 import { selectedHotbarSlot } from "../../housingSync/menus/packets";
-import {
-    placeImportedItem,
-    restoreImportedItemPlacement,
-} from "../../housingSync/items/heldItem";
 import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
 import { itemEditorOpened } from "../waiters";
@@ -156,59 +152,51 @@ export async function applyImportableItemPlan(
     const dependencyIndex = session.itemDependencies;
     const needsActionApply = plan.leftPlan !== null || plan.rightPlan !== null;
     if (!needsActionApply) {
-        const placement = await placeImportedItem(ctx, plan.item);
-        try {
-            setup(
-                plan.usesCachedInteractData
-                    ? `gave cached ${importable.name}`
-                    : `gave ${importable.name}`
-            );
-            await tryWriteImportableCache(ctx, importable, "importer", uuid, {
-                itemDependencies: dependencyIndex.snapshotOf(importable),
-            });
-        } finally {
-            await restoreImportedItemPlacement(ctx, placement);
-        }
-        return;
-    }
-
-    const placement = await placeImportedItem(ctx, plan.item);
-    try {
-        setup(`injected item ${importable.name}`);
-
-        await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
-        setup(`opened item editor`);
-
-        ctx.getItemSlot("Edit Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        setup(`opened Edit Actions for ${importable.name}`);
-
-        await applyItemActionPlans(ctx, plan, session);
-
-        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
-
-        const snbt = Player.getInventory()
-            ?.getStackInSlot(selectedHotbarSlot())
-            ?.getRawNBT();
-        if (!snbt) throw Error("Why don't we have the item?");
-
-        const interactData = extractInteractDataSnbt(snbt);
-        if (interactData === null) {
-            throw new Error(
-                `Could not capture interact_data after applying click actions to '${importable.name}'.`
-            );
-        }
-        if (!writeInteractDataCache(importable, dependencyIndex, uuid, interactData)) {
-            throw new Error(
-                `Could not save interact_data after applying click actions to '${importable.name}'.`
-            );
-        }
+        await session.itemPlacement.place(ctx, plan.item);
+        setup(
+            plan.usesCachedInteractData
+                ? `gave cached ${importable.name}`
+                : `gave ${importable.name}`
+        );
         await tryWriteImportableCache(ctx, importable, "importer", uuid, {
             itemDependencies: dependencyIndex.snapshotOf(importable),
         });
-    } finally {
-        await restoreImportedItemPlacement(ctx, placement);
+        return;
     }
+
+    await session.itemPlacement.place(ctx, plan.item);
+    setup(`injected item ${importable.name}`);
+
+    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
+    setup(`opened item editor`);
+
+    ctx.getItemSlot("Edit Actions").click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    setup(`opened Edit Actions for ${importable.name}`);
+
+    await applyItemActionPlans(ctx, plan, session);
+
+    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+
+    const snbt = Player.getInventory()
+        ?.getStackInSlot(selectedHotbarSlot())
+        ?.getRawNBT();
+    if (!snbt) throw Error("Why don't we have the item?");
+
+    const interactData = extractInteractDataSnbt(snbt);
+    if (interactData === null) {
+        throw new Error(
+            `Could not capture interact_data after applying click actions to '${importable.name}'.`
+        );
+    }
+    if (!writeInteractDataCache(importable, dependencyIndex, uuid, interactData)) {
+        throw new Error(
+            `Could not save interact_data after applying click actions to '${importable.name}'.`
+        );
+    }
+    await tryWriteImportableCache(ctx, importable, "importer", uuid, {
+        itemDependencies: dependencyIndex.snapshotOf(importable),
+    });
 }
 
 function chooseItemStart(

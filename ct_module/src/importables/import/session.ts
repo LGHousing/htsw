@@ -49,6 +49,7 @@ import { writeImportFailureLog } from "../../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer";
 import type { ImportConflict } from "./conflicts";
 import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
+import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -196,6 +197,7 @@ async function runImportSessionInner(
         items,
         housingUuid: selection.housingUuid,
         itemDependencies,
+        itemPlacement: createImportedItemPlacementSession(),
         npcLookup: createNpcLookupCache(),
         actions: {
             canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
@@ -560,9 +562,11 @@ async function runImportSessionInner(
                 break;
             }
         }
+        await session.itemPlacement.restore(ctx);
     } catch (error) {
         if (!isTaskCancelled(error)) throw error;
 
+        await session.itemPlacement.restore(ctx);
         let invalidatedCurrent = false;
         let invalidationFailed = false;
         if (activePlanIndex !== null) {

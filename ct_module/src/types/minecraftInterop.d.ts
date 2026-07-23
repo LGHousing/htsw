@@ -16,6 +16,7 @@ declare global {
         };
         getName(): unknown;
         getSuperclass(): HtswJavaClass | null;
+        isInstance(value: unknown): boolean;
     }
 
     interface HtswJavaObject {
