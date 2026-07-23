@@ -26,10 +26,14 @@ import {
     listAllFunctionNames,
     resetFunctionNameSession,
 } from "./listFunctions";
-import { functionSettingsForExport } from "./settings";
+import {
+    functionSettingsForExport,
+    type FunctionSettings,
+} from "./settings";
 
 type PendingFunctionRead = {
     scan: ActionListScan;
+    settings: FunctionSettings;
 };
 
 async function scanFunction(
@@ -39,6 +43,7 @@ async function scanFunction(
     onReadProgress: ProgressHandler | undefined,
     events: SyncEventHandler | undefined
 ): Promise<PendingFunctionRead> {
+    const settings = functionSettingsForExport(await readFunctionSettings(ctx, name));
     if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
@@ -61,7 +66,7 @@ async function scanFunction(
     );
 
     await clickGoBack(ctx);
-    return { scan };
+    return { scan, settings };
 }
 
 async function hydrateFunction(
@@ -90,13 +95,11 @@ async function hydrateFunction(
     });
     await clickGoBack(ctx);
 
-    const settings = functionSettingsForExport(await readFunctionSettings(ctx, name));
-
     return {
         type: "FUNCTION",
         name,
         actions,
-        ...settings,
+        ...pending.settings,
     };
 }
 

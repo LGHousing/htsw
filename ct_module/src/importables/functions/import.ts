@@ -67,6 +67,12 @@ export async function scanImportableFunction(
     const exists = (await getSessionFunctionNamesLower(ctx)).has(
         importable.name.toLowerCase()
     );
+    const settingsTrusted = exists && functionSettingsTrusted(importable, trustPlan);
+    const settings = settingsTrusted
+        ? null
+        : exists
+          ? await readFunctionSettings(ctx, importable.name)
+          : { icon: undefined, repeatTicks: 0 };
     const actionsEditor = { opened: false };
     const actions = await scanActionListSync(ctx, {
         desired: importable.actions,
@@ -88,12 +94,6 @@ export async function scanImportableFunction(
     });
     if (actionsEditor.opened) await clickGoBack(ctx);
 
-    const settingsTrusted = exists && functionSettingsTrusted(importable, trustPlan);
-    const settings = settingsTrusted
-        ? null
-        : exists
-          ? await readFunctionSettings(ctx, importable.name)
-          : { icon: undefined, repeatTicks: 0 };
     setup(exists ? `scanned ${importable.name}` : `${importable.name} is missing`);
     return { kind: "FUNCTION", importable, trustPlan, exists, actions, settings };
 }
