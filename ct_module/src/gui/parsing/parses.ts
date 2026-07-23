@@ -21,6 +21,7 @@ import {
     settledChange,
     type FingerprintFreshness,
 } from "./freshness";
+import { markGuiDirty } from "../lib/dirty";
 
 /**
  * The mtime fingerprint for a parsed import.json: the import.json plus
@@ -212,6 +213,7 @@ function commitParseEntry(
     };
     cache.set(canon, entry);
     parseCacheRevision++;
+    markGuiDirty();
     if (parsed !== null) {
         createItemDependencyIndex(
             parsed.value,
@@ -247,6 +249,56 @@ function snapshotEntryIfFresh(
     );
 }
 
+function fingerprintMatchesDisk(
+    canon: string,
+    mtime: number,
+    fingerprint: { [path: string]: number }
+): boolean {
+    for (const path in fingerprint) {
+        const actual = path === canon ? mtime : getMtimeMs(path);
+        if (actual !== fingerprint[path]) return false;
+    }
+    return true;
+}
+
+function parseImportJsonFromDisk(
+    canon: string,
+    rawPath: string,
+    mtime: number,
+    startedAt: number
+): CachedParse {
+    let parsed: ImportablesParseResult | null = null;
+    let error: string | null = null;
+    let source: ParsePerfEntry["source"] = "full";
+    const sm = new SourceMap(new FileSystemFileLoader());
+    try {
+        // Parse with the canonical absolute path, not the stored
+        // `./htsw/...` form: the loader resolves every include to an
+        // absolute path, and mixing forms in the file tree breaks any
+        // path comparison against the root node (e.g. rehomeFileTree's
+        // directory-containment check, which can never match a `./`
+        // root against absolute children).
+        parsed = parseImportablesResult(sm, canon);
+    } catch (e) {
+        const msg =
+            e && (e as { message?: string }).message
+                ? (e as { message: string }).message
+                : String(e);
+        error = msg;
+        source = "error";
+    }
+    return commitParseEntry(
+        canon,
+        rawPath,
+        mtime,
+        parsed,
+        error,
+        source,
+        null,
+        startedAt
+    );
+}
+
 /**
  * Parse `rawPath` if not cached or if the file changed on disk, and return
  * the cached parse (with `parsed: null + error: ...` on failure).
@@ -275,38 +327,31 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         return existing;
     }
 
-    let parsed: ImportablesParseResult | null = null;
-    let error: string | null = null;
-    let source: ParsePerfEntry["source"] = "full";
     const snapshotEntry = snapshotEntryIfFresh(canon, rawPath, mtime, startedAt);
     if (snapshotEntry !== null) return snapshotEntry;
-    const sm = new SourceMap(new FileSystemFileLoader());
-    try {
-        // Parse with the canonical absolute path, not the stored
-        // `./htsw/...` form: the loader resolves every include to an
-        // absolute path, and mixing forms in the file tree breaks any
-        // path comparison against the root node (e.g. rehomeFileTree's
-        // directory-containment check, which can never match a `./`
-        // root against absolute children).
-        parsed = parseImportablesResult(sm, canon);
-    } catch (e) {
-        const msg =
-            e && (e as { message?: string }).message
-                ? (e as { message: string }).message
-                : String(e);
-        error = msg;
-        source = "error";
+    return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
+}
+
+/**
+ * Synchronously verify every dependency once. An unchanged warm parse stays
+ * in memory; a changed dependency goes straight to a full disk parse.
+ */
+export function parseImportJsonCurrentBlocking(rawPath: string): CachedParse {
+    const startedAt = Date.now();
+    const canon = canonicalPath(rawPath);
+    const mtime = getMtimeMs(canon);
+    const existing = cache.get(canon);
+    if (
+        existing !== undefined &&
+        fingerprintMatchesDisk(canon, mtime, existing.fingerprint)
+    ) {
+        existing.mtime = mtime;
+        resetFreshness(existing.freshness);
+        recordParsePerf(canon, Date.now() - startedAt, "memory");
+        return existing;
     }
-    return commitParseEntry(
-        canon,
-        rawPath,
-        mtime,
-        parsed,
-        error,
-        source,
-        null,
-        startedAt
-    );
+    if (existing === undefined) return parseImportJsonBlocking(rawPath);
+    return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
 }
 
 /** Look up a previously-parsed import.json by canonical path. */
@@ -380,6 +425,13 @@ export function processPendingParses(onParsed?: (entry: CachedParse) => void): v
             }
             if (
                 parsedEntry !== null &&
+                (parsedEntry.freshness.sweep !== null ||
+                    parsedEntry.freshness.pending !== null)
+            ) {
+                pendingParsePaths.set(parseCanon, nextRaw);
+            }
+            if (
+                parsedEntry !== null &&
                 parsedEntry !== previousEntry &&
                 onParsed !== undefined
             ) {
@@ -444,7 +496,9 @@ export function touchParseCacheFile(rawPath: string): void {
  * parse regardless of the fingerprint.
  */
 export function invalidateParseCacheEntry(rawPath: string): void {
-    if (cache.delete(canonicalPath(rawPath))) parseCacheRevision++;
+    if (!cache.delete(canonicalPath(rawPath))) return;
+    parseCacheRevision++;
+    markGuiDirty();
 }
 
 /**

@@ -9,6 +9,11 @@ import {
 const AUTO_TRACK_FILE_NAME = "auto-track.json";
 let autoTrackSourcesLoaded = false;
 const autoTrackSources: Set<string> = new Set();
+let autoTrackRevision = 0;
+
+export function getAutoTrackRevision(): number {
+    return autoTrackRevision;
+}
 
 function loadAutoTrackSources(): boolean {
     if (autoTrackSourcesLoaded) return true;
@@ -48,6 +53,7 @@ export function toggleAutoTrackSource(sourcePath: string): boolean | null {
             autoTrackSources.add(canon);
             return null;
         }
+        autoTrackRevision++;
         return false;
     }
     autoTrackSources.add(canon);
@@ -55,6 +61,7 @@ export function toggleAutoTrackSource(sourcePath: string): boolean | null {
         autoTrackSources.delete(canon);
         return null;
     }
+    autoTrackRevision++;
     return true;
 }
 export function isAnyAutoTrackEnabled(): boolean {

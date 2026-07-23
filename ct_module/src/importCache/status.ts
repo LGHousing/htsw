@@ -1,9 +1,12 @@
 import type { Action, Importable } from "htsw/types";
 
-import type { ImportableCacheEntry } from "./cache";
+import {
+    cacheEntryHash,
+    readImportableCache,
+    type ImportableCacheEntry,
+} from "./cache";
 import { importableHash, listHashes } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { readImportableCache } from "./cache";
 import { stableStringify } from "../utils/helpers";
 import {
     itemDependencyIndexFor,
@@ -142,25 +145,10 @@ export function seedImportableHash(importable: Importable, hash: string): void {
     });
 }
 
-// Recompute the entry's hash instead of trusting the stored `entry.hash`:
-// a stored hash freezes the hash function's behavior at write time, so any
-// later normalization change would mark every old entry "modified" forever.
-// Memoized per entry object — `readImportableCache` returns the same object
-// until the file is rewritten, at which point the WeakMap entry just drops.
-const entryHashCache = new WeakMap<ImportableCacheEntry, string>();
 const entryListHashesCache = new WeakMap<
     ImportableCacheEntry,
     Record<string, string[]>
 >();
-
-export function cacheEntryHash(entry: ImportableCacheEntry): string {
-    let hash = entryHashCache.get(entry);
-    if (hash === undefined) {
-        hash = importableHash(entry.importable);
-        entryHashCache.set(entry, hash);
-    }
-    return hash;
-}
 
 export function cacheEntryListHashes(
     entry: ImportableCacheEntry
@@ -179,8 +167,17 @@ export function buildCacheStatusRow(
     itemDependencies?: ItemDependencyIndex
 ): CacheStatusRow {
     const identity = importableIdentity(importable);
-    const hash = memoizedImportableHash(importable);
     const entry = readImportableCache(housingUuid, importable.type, identity);
+    return buildCacheStatusRowFromEntry(importable, entry, itemDependencies);
+}
+
+export function buildCacheStatusRowFromEntry(
+    importable: Importable,
+    entry: ImportableCacheEntry | null,
+    itemDependencies?: ItemDependencyIndex
+): CacheStatusRow {
+    const identity = importableIdentity(importable);
+    const hash = memoizedImportableHash(importable);
     const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
     const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
     const state =

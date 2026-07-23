@@ -64,6 +64,7 @@ import type { Importable } from "htsw/types";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
 import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
+import { markGuiDirty } from "../../lib/dirty";
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
 const SCAN_DOTS = ["", ".", "..", "..."];
@@ -317,6 +318,7 @@ function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): 
             value: () => itemSearch,
             onChange: (v) => {
                 itemSearch = v;
+                markGuiDirty();
             },
             placeholder: `Search ${t.label.toLowerCase()}…`,
             style: {

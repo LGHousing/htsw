@@ -114,6 +114,7 @@ import {
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
+import { processImportableCacheWarm } from "./cache-status/cacheWarm";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -634,9 +635,8 @@ export function initHtswGui(): void {
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
         if (frameVisible() && getShowChatPanel() && refreshChatLines()) markGuiDirty();
-        // Rebuild every frame while the thumb is dragged or the wheel offset is
-        // still easing, so scrolled content tracks at the refresh rate instead
-        // of stepping on the dirty backstop.
+        // Rebuild every frame while the thumb is dragged so scrolled content
+        // tracks at the refresh rate.
         if (dragging) markGuiDirty();
     });
     register("guiMouseRelease", () => {
@@ -754,9 +754,6 @@ export function initHtswGui(): void {
                 typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
             if (newText !== current) {
                 inputEl.onChange(newText);
-                // Typing changes what the tree shows (filtered results, text
-                // width) — rebuild next paint instead of waiting on the backstop.
-                markGuiDirty();
             }
         }
         cancel(event);
@@ -776,6 +773,7 @@ export function initHtswGui(): void {
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Projects tree, queue rows) so a cold parse never blocks render.
             processPendingParses(handleCompletedParse);
+            processImportableCacheWarm();
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.

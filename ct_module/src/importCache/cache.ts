@@ -16,6 +16,7 @@ import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
 import type { ItemDependencySnapshot } from "../importables/items/dependencyIndex";
 import { javaType } from "../utils/java";
+import { runOnMainThread } from "../utils/mainThread";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -30,6 +31,16 @@ const ACCEPTED_SCHEMA_VERSIONS = [1, 2];
 
 export type CacheWriter = "exporter" | "importer" | "reader" | "project-lock";
 
+export type HouseImportable = {
+    name: string;
+    type: Importable["type"];
+    verified: boolean;
+    importable: Importable | null;
+    label?: string;
+    icon?: FunctionIcon;
+    color?: Color;
+};
+
 // In-memory mirror of the on-disk cache, keyed by cache-file path. The
 // knowledge-status build reads every importable's cache entry on every
 // rebuild (one per dot); without this each rebuild did a `FileLib.read` +
@@ -38,6 +49,7 @@ export type CacheWriter = "exporter" | "importer" | "reader" | "project-lock";
 // periodic mtime checks pick up changes made outside this process.
 type ReadCacheMemo = {
     entry: ImportableCacheEntry | null;
+    house: HouseImportable | null;
     mtime: number;
     checkedAt: number;
 };
@@ -86,6 +98,19 @@ export type ImportableCacheEntry = {
     /** Referenced item contents verified along with this importable. */
     itemDependencies?: ItemDependencySnapshot;
 };
+
+// Recompute old entries instead of trusting their stored hash because the
+// normalization rules can change between versions.
+const entryHashCache = new WeakMap<ImportableCacheEntry, string>();
+
+export function cacheEntryHash(entry: ImportableCacheEntry): string {
+    let hash = entryHashCache.get(entry);
+    if (hash === undefined) {
+        hash = importableHash(entry.importable);
+        entryHashCache.set(entry, hash);
+    }
+    return hash;
+}
 
 export type ImportableCacheWriteOptions = {
     quiet?: boolean;
@@ -165,12 +190,22 @@ export function writeImportableCache(
             : (quietOrOptions ?? {});
     const path = cachePathFor(housingUuid, importable);
     const entry = buildImportableCacheEntry(importable, writer, options.itemDependencies);
+    entryHashCache.set(entry, entry.hash);
     try {
         if (!atomicWriteText(path, JSON.stringify(entry, null, 4))) {
             throw new Error("write failed");
         }
         readCache.set(path, {
             entry,
+            house: {
+                name: importableIdentity(importable),
+                type: importable.type,
+                verified: true,
+                importable,
+                label: houseDisplayLabel(importable),
+                icon: importable.type === "FUNCTION" ? importable.icon : undefined,
+                color: houseDisplayColor(importable),
+            },
             mtime: getFileMtimeMs(path),
             checkedAt: Date.now(),
         });
@@ -285,6 +320,15 @@ export function writePresence(
         if (!atomicWriteText(path, JSON.stringify(record, null, 4))) return false;
         readCache.set(path, {
             entry: null,
+            house: {
+                name,
+                type,
+                verified: false,
+                importable: null,
+                label: label ?? existing?.label,
+                icon,
+                color,
+            },
             mtime: getFileMtimeMs(path),
             checkedAt: Date.now(),
         });
@@ -367,10 +411,124 @@ export function readImportableCache(
     }
     readCache.set(path, {
         entry,
+        house: parseHouseRecord(raw, type),
         mtime: mtimeBeforeRead,
         checkedAt: now,
     });
     return entry;
+}
+
+export type ImportableCachePeek =
+    | { loaded: false }
+    | {
+          loaded: true;
+          entry: ImportableCacheEntry | null;
+          house: HouseImportable | null;
+      };
+
+export function peekImportableCache(
+    housingUuid: string,
+    type: Importable["type"],
+    identity: string
+): ImportableCachePeek {
+    const memo = readCache.get(cachePathForId(housingUuid, type, identity));
+    return memo === undefined
+        ? { loaded: false }
+        : { loaded: true, entry: memo.entry, house: memo.house };
+}
+
+export type ImportableCacheLoadRequest = {
+    housingUuid: string;
+    type: Importable["type"];
+    identity: string;
+};
+
+type LoadedCacheFile = {
+    path: string;
+    type: Importable["type"];
+    entry: ImportableCacheEntry | null;
+    entryHash: string | null;
+    house: HouseImportable | null;
+    mtime: number;
+};
+
+export function loadImportableCachesOffThread(
+    requests: readonly ImportableCacheLoadRequest[],
+    onComplete: () => void
+): void {
+    if (requests.length === 0) {
+        onComplete();
+        return;
+    }
+    const startedAt = Date.now();
+    const Thread = javaType("java.lang.Thread");
+    const Runnable = javaType("java.lang.Runnable");
+    try {
+        const thread = new Thread(
+            new Runnable({
+                run: function () {
+                    const loaded: LoadedCacheFile[] = [];
+                    for (let i = 0; i < requests.length; i++) {
+                        const request = requests[i];
+                        const path = cachePathForId(
+                            request.housingUuid,
+                            request.type,
+                            request.identity
+                        );
+                        const mtime = getFileMtimeMs(path);
+                        let raw: string | null;
+                        try {
+                            raw = FileLib.read(path);
+                        } catch {
+                            raw = null;
+                        }
+                        const entry = parseCacheEntry(raw);
+                        loaded.push({
+                            path,
+                            type: request.type,
+                            entry,
+                            entryHash:
+                                entry === null ? null : importableHash(entry.importable),
+                            house: parseHouseRecord(raw, request.type),
+                            mtime,
+                        });
+                    }
+                    runOnMainThread(() => {
+                        for (let i = 0; i < loaded.length; i++) {
+                            const result = loaded[i];
+                            const current = readCache.get(result.path);
+                            if (
+                                current !== undefined &&
+                                current.checkedAt > startedAt
+                            ) {
+                                continue;
+                            }
+                            if (
+                                result.entry !== null &&
+                                result.entryHash !== null
+                            ) {
+                                entryHashCache.set(
+                                    result.entry,
+                                    result.entryHash
+                                );
+                            }
+                            readCache.set(result.path, {
+                                entry: result.entry,
+                                house: result.house,
+                                mtime: result.mtime,
+                                checkedAt: Date.now(),
+                            });
+                        }
+                        onComplete();
+                    });
+                },
+            })
+        );
+        thread.setDaemon(true);
+        thread.start();
+    } catch (_error) {
+        onComplete();
+    }
 }
 
 /** Remove an importable cache entry. No-op if it doesn't exist. */
@@ -455,20 +613,6 @@ function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): voi
 // render frame. So results live in an in-memory index: a lazy one-time disk scan
 // per (uuid, type), then kept current by writes/deletes (above), so reads after
 // the first are pure memory.
-
-/** A house importable as the Houses tab sees it: a name, whether its content is
- *  known (verified), and the content itself when verified. */
-export type HouseImportable = {
-    name: string;
-    type: Importable["type"];
-    verified: boolean;
-    importable: Importable | null;
-    // Human-readable label when `name` (the identity) isn't itself a name, e.g.
-    // an NPC keyed by position. Undefined = display `name` directly.
-    label?: string;
-    icon?: FunctionIcon;
-    color?: Color;
-};
 
 const enumIndex = new Map<string, HouseImportable[]>();
 const scanMarkerCache = new Map<string, boolean>();
@@ -644,6 +788,13 @@ export function houseTypeScanned(uuid: string | null, type: Importable["type"]):
     const scanned = FileLib.exists(cacheScanMarkerPath(uuid, type));
     scanMarkerCache.set(key, scanned);
     return scanned;
+}
+
+export function peekHouseTypeScanned(
+    uuid: string,
+    type: Importable["type"]
+): boolean | null {
+    return scanMarkerCache.get(enumKey(uuid, type)) ?? null;
 }
 
 /**

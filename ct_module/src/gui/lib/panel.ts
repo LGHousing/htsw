@@ -11,7 +11,7 @@ import {
 } from "./layout";
 import { Extractable, extract } from "./extractable";
 import { drawLaid, dispatchClick } from "./render";
-import { getGuiRevision, markGuiDirty, GUI_REBUILD_BACKSTOP_MS } from "./dirty";
+import { getGuiRevision, markGuiDirty } from "./dirty";
 import { warmIconTextures } from "./images";
 import { debugLogError } from "./debugLog";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
@@ -50,11 +50,9 @@ export class Panel {
     // where nothing structural changed. See lib/dirty for when we rebuild.
     private cachedLaid: LaidOut[] | null;
     private builtRevision: number;
-    private builtAt: number;
     private builtBounds: Rect | null;
     private builtScrollOffsets: { [id: string]: number };
     private displayedScrollOffsets: { [id: string]: number };
-    private lastScrollAt: number;
 
     constructor(
         bounds: Extractable<Rect>,
@@ -70,11 +68,9 @@ export class Panel {
         this.clickTrigger = null;
         this.cachedLaid = null;
         this.builtRevision = -1;
-        this.builtAt = 0;
         this.builtBounds = null;
         this.builtScrollOffsets = {};
         this.displayedScrollOffsets = {};
-        this.lastScrollAt = 0;
     }
 
     public setRoot(root: Element): void {
@@ -85,13 +81,6 @@ export class Panel {
     private needsRebuild(b: Rect): boolean {
         if (this.cachedLaid === null) return true;
         if (getGuiRevision() !== this.builtRevision) return true;
-        const now = Date.now();
-        if (
-            now - this.builtAt >= GUI_REBUILD_BACKSTOP_MS
-            && now - this.lastScrollAt >= 500
-        ) {
-            return true;
-        }
         const pb = this.builtBounds;
         return (
             pb === null || pb.x !== b.x || pb.y !== b.y || pb.w !== b.w || pb.h !== b.h
@@ -124,7 +113,6 @@ export class Panel {
             if (Math.abs(next - built) > 24) return false;
             const delta = Math.round(previous) - Math.round(next);
             if (delta !== 0) {
-                this.lastScrollAt = Date.now();
                 shifts.push({
                     clip: state.viewportRect,
                     dx: state.axis === "x" ? delta : 0,
@@ -172,7 +160,6 @@ export class Panel {
                 this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
                 recordPhase("layout-total", Date.now() - layoutStart);
                 this.builtRevision = getGuiRevision();
-                this.builtAt = Date.now();
                 this.builtBounds = b;
                 this.captureScrollOffsets();
             }
@@ -186,18 +173,31 @@ export class Panel {
     }
 
     public clickAt(rawX: number, rawY: number, btn: number): boolean {
-        markGuiDirty();
         const x = mcToOverlay(rawX);
         const y = mcToOverlay(rawY);
         if (popoverIsOpen() && claimPopoverClick(x, y)) {
-            if (tryDispatchPopoverClick(x, y, btn)) return true;
+            if (tryDispatchPopoverClick(x, y, btn)) {
+                markGuiDirty();
+                return true;
+            }
         }
         if (tryDispatchHoverCardClick(x, y)) return true;
         if (!extract(this.shouldBeVisible)) return false;
         const b = extract(this.bounds);
         if (!pointInRect(b, x, y)) return false;
-        const laid = layoutElement(this.root, b.x, b.y, b.w, b.h);
-        return dispatchClick(laid, x, y, btn);
+        const pb = this.builtBounds;
+        const laid =
+            this.cachedLaid !== null &&
+            pb !== null &&
+            pb.x === b.x &&
+            pb.y === b.y &&
+            pb.w === b.w &&
+            pb.h === b.h
+                ? this.cachedLaid
+                : layoutElement(this.root, b.x, b.y, b.w, b.h);
+        const consumed = dispatchClick(laid, x, y, btn);
+        if (consumed) markGuiDirty();
+        return consumed;
     }
 
     public register(): void {

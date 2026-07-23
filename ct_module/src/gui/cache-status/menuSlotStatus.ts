@@ -1,12 +1,13 @@
 import type { Importable, MenuSlot } from "htsw/types";
 
 import { menuSlotCompareKey } from "../../importables/menus/slotComparison";
-import { readImportableCache } from "../../importCache/cache";
+import { peekImportableCache } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state/housing";
 import { isHouseTrusted } from "../state/trust";
 import type { LinkStatusKey } from "./linkStatus";
 import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
+import { requestImportableCacheWarm } from "./cacheWarm";
 
 export type MenuSlotCacheStatus = { key: LinkStatusKey; tooltip: string };
 
@@ -37,7 +38,12 @@ export function menuSlotCacheStatus(
     if (menu.type !== "MENU") return null;
     const uuid = getHousingUuid();
     if (uuid === null || !isHouseTrusted(uuid)) return null;
-    const entry = readImportableCache(uuid, menu.type, importableIdentity(menu));
+    const cache = peekImportableCache(uuid, menu.type, importableIdentity(menu));
+    if (!cache.loaded) {
+        requestImportableCacheWarm(uuid, menu);
+        return null;
+    }
+    const entry = cache.entry;
     if (entry === null || entry.importable.type !== "MENU") return null;
     const cachedSlots = entry.importable.slots;
     let cached: MenuSlot | null = null;

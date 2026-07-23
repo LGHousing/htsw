@@ -1,10 +1,13 @@
 import type { Action, Importable } from "htsw/types";
 
-import type { ImportableCacheEntry } from "./cache";
+import {
+    cacheEntryHash,
+    readImportableCache,
+    type ImportableCacheEntry,
+} from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { readImportableCache } from "./cache";
-import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
+import { cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
 import { actionListsOfImportable, readCachedActionList } from "./actionLists";
 import type {

@@ -16,16 +16,17 @@ import {
     parseImportJsonBlocking,
 } from "./parsing/parses";
 import { importableIdentity } from "../importables/identity";
-import { statusForImportable } from "./cache-status";
+import { cachedStatusForImportable } from "./cache-status";
 import {
     addToQueue,
     isInQueue,
     makeImportableQueueItem,
     queueItemKey,
 } from "./right-panel/import-tab/queue";
+import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 
 export function needsModifiedQueue(imp: Importable): boolean {
-    return statusForImportable(imp) === "modified";
+    return cachedStatusForImportable(imp) === "modified";
 }
 
 export function queueModifiedImportables(
@@ -68,3 +69,5 @@ export function autoTrackRefresh(): void {
         queueModifiedImportables(entry.canonicalPath, entry.parsed.value);
     });
 }
+
+onImportableCacheWarm(autoTrackRefresh);

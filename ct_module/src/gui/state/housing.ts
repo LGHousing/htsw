@@ -3,6 +3,7 @@
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { setExportImportJsonPath } from "./paths";
 import { runtimeString, type RuntimeString } from "../lib/java";
+import { markGuiDirty } from "../lib/dirty";
 
 // Persisted across /ct reload: the in-memory uuid being wiped left every
 // house-derived UI (bind chips, bound markers, house names) in its gray
@@ -50,6 +51,7 @@ export function setHousingUuid(uuid: string | null): void {
     const changed = uuid !== housingUuid;
     housingUuid = uuid;
     persist();
+    if (changed) markGuiDirty();
     // Entering a bound house points the export/compare destination at its
     // import.json, so the Houses tab and exporters line up without a manual
     // destination pick. Manual picks still win afterwards — this only fires

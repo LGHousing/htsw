@@ -9,6 +9,11 @@ import { markGuiDirty } from "../lib/dirty";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 
 const checkedImportableKeys: Set<string> = new Set();
+let selectionRevision = 0;
+
+export function getImportableSelectionRevision(): number {
+    return selectionRevision;
+}
 
 export function importableSelectionKey(
     sourcePath: string,
@@ -24,15 +29,18 @@ export function isImportableChecked(key: string): boolean {
 export function toggleImportableChecked(key: string): boolean {
     if (checkedImportableKeys.has(key)) {
         checkedImportableKeys.delete(key);
+        selectionRevision++;
         markGuiDirty();
         return false;
     }
     checkedImportableKeys.add(key);
+    selectionRevision++;
     markGuiDirty();
     return true;
 }
 export function clearImportableChecks(): void {
     if (checkedImportableKeys.size === 0) return;
     checkedImportableKeys.clear();
+    selectionRevision++;
     markGuiDirty();
 }

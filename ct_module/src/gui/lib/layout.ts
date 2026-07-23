@@ -377,11 +377,9 @@ export function setScrollOffset(id: string, offset: number): void {
 /** Set where the offset eases toward (the smoothed wheel path). */
 export function setScrollTarget(id: string, target: number): void {
     const s = getScrollState(id);
-    // A stale animAt means this input starts a NEW ease episode — the scroll
-    // has been idle, so nothing advanced it recently (idle rebuilds only
-    // happen on the ~200ms dirty backstop). Refresh it so the first advance
-    // eases from now instead of hitting the >100ms gap-snap and dumping the
-    // whole first notch into one frame.
+    // A stale animAt means this input starts a NEW ease episode. Refresh it so
+    // the first advance eases from now instead of hitting the >100ms gap-snap
+    // and dumping the whole first notch into one frame.
     const now = Date.now();
     if (now - s.animAt > 100) s.animAt = now;
     s.target = clampOffset(s, target);
@@ -603,7 +601,7 @@ function layoutScroll(
     // time — extracting first and advancing after made them materialize for
     // the PREVIOUS frame's position, so a fast flick (or the >100ms low-FPS
     // snap in advanceScrollOffset) scrolled the viewport past every
-    // materialized row and painted blank until the dirty backstop.
+    // materialized row and painted blank until the next rebuild.
     advanceScrollOffset(state, Math.max(0, state.contentLength - mainLen));
 
     const children = extractChildren(s.children);

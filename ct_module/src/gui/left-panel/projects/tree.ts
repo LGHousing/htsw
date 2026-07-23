@@ -8,7 +8,14 @@ import {
 } from "../../lib/layout";
 import { Col, Container, Text } from "../../lib/components";
 import { COLOR_TEXT_DIM } from "../../lib/theme";
-import { Source, SourceDir, SourceFile, enumerateForSource, getSources } from "./source";
+import {
+    Source,
+    SourceDir,
+    SourceFile,
+    enumerateForSource,
+    getSources,
+    requestResultParse,
+} from "./source";
 import { sortResults } from "./sort";
 import {
     isImportableStatusFilterActive,
@@ -62,13 +69,17 @@ import {
     standaloneCloseAction,
 } from "./rows";
 import type { Importable } from "htsw/types";
-import { importableLinkStatus } from "../../cache-status";
+import { cachedImportableLinkStatus } from "../../cache-status";
+import { getImportableCacheWarmRevision } from "../../cache-status/cacheWarm";
 import {
     getImportCachePresenceRevision,
     getImportCacheWriteRevision,
 } from "../../../importCache/cache";
 import { getHousingUuid } from "../../state/housing";
 import { isHouseTrusted } from "../../state/trust";
+import { getImportableSelectionRevision } from "../../state/selectionSet";
+import { getAutoTrackRevision } from "../../state/autoTrack";
+import { getAliasRevision } from "../../../importCache/aliases";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -90,7 +101,6 @@ type TreeRow = {
     height: number;
     key?: string;
     cachedElement?: Element;
-    cachedEpisode?: number;
 };
 
 function pixel(w: number, h: number): Element {
@@ -183,14 +193,8 @@ function gapBandFor(r: TreeRow): Element {
     });
 }
 
-function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
-    if (
-        cacheEpisode !== null &&
-        r.cachedEpisode === cacheEpisode &&
-        r.cachedElement !== undefined
-    ) {
-        return r.cachedElement;
-    }
+function composeTreeRow(r: TreeRow): Element {
+    if (r.cachedElement !== undefined) return r.cachedElement;
     const cols: Element[] = [spacer(LEFT_PAD, r.height)];
     for (let i = 0; i < r.levels.length; i++) {
         cols.push(
@@ -200,6 +204,7 @@ function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
         );
     }
     if (r.branch !== null) cols.push(branchCol(r.height, r.branch));
+    const content = r.content();
     cols.push(
         Container({
             style: {
@@ -207,7 +212,7 @@ function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
                 width: { kind: "grow" },
                 height: { kind: "px", value: r.height },
             },
-            children: [r.content()],
+            children: [content],
         })
     );
     const body = Container({
@@ -222,10 +227,7 @@ function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
         style: { width: { kind: "grow" } },
         children: [gapBandFor(r), body],
     });
-    if (cacheEpisode !== null) {
-        r.cachedEpisode = cacheEpisode;
-        r.cachedElement = element;
-    }
+    r.cachedElement = element;
     return element;
 }
 
@@ -265,7 +267,9 @@ function filterImportableList(r: ResultImport, list: Importable[]): Importable[]
         if (!isImportableTypeActive(imp.type)) continue;
         if (
             isImportableStatusFilterActive() &&
-            !isLinkStatusActive(importableLinkStatus(imp).key)
+            !isLinkStatusActive(
+                cachedImportableLinkStatus(imp)?.key ?? "unknown"
+            )
         )
             continue;
         if (q.length > 0 && !pathMatch) {
@@ -339,14 +343,51 @@ function resultsForSource(s: Source): Result[] {
         includesByRow.push(set);
         anyIncludes = true;
     }
-    if (!anyIncludes) return all;
-    const out: Result[] = [];
-    for (let i = 0; i < all.length; i++) {
-        const r = all[i];
-        if (r.type === "import" && isIncludedElsewhere(all, includesByRow, i)) continue;
-        out.push(r);
+    let visible = all;
+    if (anyIncludes) {
+        visible = [];
+        for (let i = 0; i < all.length; i++) {
+            const r = all[i];
+            if (r.type === "import" && isIncludedElsewhere(all, includesByRow, i))
+                continue;
+            visible.push(r);
+        }
     }
-    return out;
+    requestShallowestColdParses(visible);
+    return visible;
+}
+
+function pathDepth(path: string): number {
+    let depth = 0;
+    for (let i = 0; i < path.length; i++) {
+        if (path.charAt(i) === "/") depth++;
+    }
+    return depth;
+}
+
+function requestShallowestColdParses(results: Result[]): void {
+    let coldDepth = Infinity;
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.type !== "import") continue;
+        if (r.parse !== null || r.parseError !== undefined) {
+            requestResultParse(r);
+            continue;
+        }
+        coldDepth = Math.min(coldDepth, pathDepth(r.path));
+    }
+    if (coldDepth === Infinity) return;
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (
+            r.type === "import" &&
+            r.parse === null &&
+            r.parseError === undefined &&
+            pathDepth(r.path) === coldDepth
+        ) {
+            requestResultParse(r);
+        }
+    }
 }
 
 function isIncludedElsewhere(
@@ -538,10 +579,11 @@ function formatFullDir(fullPath: string): string {
 // content() never runs. Descriptors only encode STRUCTURE (per-frame state
 // like dots/checkboxes lives inside content(), which still runs per visible
 // row per frame), so reuse is safe. Interactions bump the revision for an
-// instant rebuild; the TTL picks up async changes (reparse, enumeration).
+// instant rebuild; parse changes carry their own revision.
 let cachedTreeRows: TreeRow[] | null = null;
 let cachedTreeRevision = -1;
 let cachedParseRevision = -1;
+let cachedVisualFingerprint = "";
 let cachedTreeAt = 0;
 let cachedTreeFingerprint = "";
 let cachedRowStarts: number[] = [];
@@ -565,15 +607,14 @@ function parseIdOf(parse: object | null): number {
 // Everything the descriptor build reads that is NOT guarded by
 // bumpTreeRevision(): the per-source enumeration and each result's parse
 // (identified by object identity — the parse cache replaces the object on
-// every reparse). When this string is unchanged at TTL expiry, the cached
-// descriptors are still exact and the rebuild is skipped. Status-filter inputs
-// join the fingerprint only while that filter narrows.
+// every reparse). Status-filter inputs join the fingerprint only while that
+// filter narrows.
 function treeInputsFingerprint(): string {
     const sources = getSources();
     let fp = "";
     if (isImportableStatusFilterActive()) {
         const uuid = getHousingUuid();
-        fp += `status:${uuid ?? ""}|${uuid !== null && isHouseTrusted(uuid) ? 1 : 0}|${getImportCacheWriteRevision()}|${getImportCachePresenceRevision()};`;
+        fp += `status:${uuid ?? ""}|${uuid !== null && isHouseTrusted(uuid) ? 1 : 0}|${getImportCacheWriteRevision()}|${getImportCachePresenceRevision()}|${getImportableCacheWarmRevision()};`;
     }
     for (let i = 0; i < sources.length; i++) {
         const s = sources[i];
@@ -589,6 +630,20 @@ function treeInputsFingerprint(): string {
         }
     }
     return fp;
+}
+
+function treeVisualFingerprint(): string {
+    const uuid = getHousingUuid();
+    return [
+        uuid ?? "",
+        uuid !== null && isHouseTrusted(uuid) ? "1" : "0",
+        String(getImportCacheWriteRevision()),
+        String(getImportCachePresenceRevision()),
+        String(getImportableCacheWarmRevision()),
+        String(getImportableSelectionRevision()),
+        String(getAutoTrackRevision()),
+        String(getAliasRevision()),
+    ].join("|");
 }
 
 let lastBuildMs = 0;
@@ -612,10 +667,12 @@ export function getTreePerfStats(): {
 function treeRows(): TreeRow[] {
     const now = Date.now();
     const parseRevision = getParseCacheRevision();
+    const visualFingerprint = treeVisualFingerprint();
     if (
         cachedTreeRows !== null &&
         cachedTreeRevision === getTreeRevision() &&
-        cachedParseRevision === parseRevision
+        cachedParseRevision === parseRevision &&
+        cachedVisualFingerprint === visualFingerprint
     ) {
         if (now - cachedTreeAt < TREE_ROWS_TTL_MS || anyScrollAnimating()) {
             return cachedTreeRows;
@@ -633,6 +690,7 @@ function treeRows(): TreeRow[] {
     cachedTreeRows = buildTreeRows();
     cachedTreeRevision = getTreeRevision();
     cachedParseRevision = getParseCacheRevision();
+    cachedVisualFingerprint = visualFingerprint;
     cachedTreeAt = buildStart;
     indexTreeRows(cachedTreeRows);
     lastBuildMs = Date.now() - buildStart;
@@ -669,12 +727,21 @@ export function firstTreeRowEndingAtOrAfter(
 
 function buildTreeRows(): TreeRow[] {
     const roots = buildRoots();
+    const preparedBySource = new Map<string, Result[]>();
+    const preparedResults = (source: Source): Result[] => {
+        const key = `${source.kind}:${source.fullPath}`;
+        const cached = preparedBySource.get(key);
+        if (cached !== undefined) return cached;
+        const results = resultsForSource(source);
+        preparedBySource.set(key, results);
+        return results;
+    };
     let totalImports = 0;
     let soleImportKey = "";
     for (let ri = 0; ri < roots.length; ri++) {
         const root = roots[ri];
         if (root.kind === "dir") {
-            const allResults = resultsForSource(root.source);
+            const allResults = preparedResults(root.source);
             for (let i = 0; i < allResults.length; i++) {
                 if (allResults[i].type === "import") {
                     totalImports++;
@@ -684,7 +751,7 @@ function buildTreeRows(): TreeRow[] {
         } else {
             for (let fi = 0; fi < root.files.length; fi++) {
                 const file = root.files[fi];
-                const allResults = resultsForSource(file);
+                const allResults = preparedResults(file);
                 for (let i = 0; i < allResults.length; i++) {
                     if (allResults[i].type === "import") {
                         totalImports++;
@@ -718,7 +785,7 @@ function buildTreeRows(): TreeRow[] {
             if (collapsedRoots.has(root.key)) continue;
 
             const dirSourceKey = root.key;
-            const results = filterAndSort(resultsForSource(root.source));
+            const results = filterAndSort(preparedResults(root.source));
             for (let i = 0; i < results.length; i++) {
                 const r = results[i];
                 const isLastResult = i === results.length - 1;
@@ -740,7 +807,7 @@ function buildTreeRows(): TreeRow[] {
             for (let i = 0; i < root.files.length; i++) {
                 const file = root.files[i];
                 const fileSourceKey = `file:${file.fullPath}`;
-                const fileResults = filterAndSort(resultsForSource(file));
+                const fileResults = filterAndSort(preparedResults(file));
                 for (let j = 0; j < fileResults.length; j++) {
                     const r = fileResults[j];
                     const expKey = expansionKey(fileSourceKey, r.fullPath);
@@ -775,8 +842,6 @@ function buildTreeRows(): TreeRow[] {
 
 export const RESULTS_SCROLL_ID = "left-results-scroll";
 const VIRTUAL_OVERSCAN_PX = 96;
-let rowCacheEpisode = 0;
-let treeWasAnimating = false;
 
 // Reveal the home group of a repeat-included file: expand the groups above
 // it, rebuild the descriptors, scroll its row into the upper third of the
@@ -934,10 +999,6 @@ function renderRowsInner(): Element[] {
     const rows = treeRows();
     if (rows.length === 0) return [];
     const totalH = cachedTreeHeight;
-    const animating = anyScrollAnimating();
-    if (animating && !treeWasAnimating) rowCacheEpisode++;
-    treeWasAnimating = animating;
-    const cacheEpisode = animating ? rowCacheEpisode : null;
 
     const state = getScrollState(RESULTS_SCROLL_ID);
     const viewportH = state.viewportRect.h;
@@ -946,7 +1007,7 @@ function renderRowsInner(): Element[] {
         let initialH = 0;
         const limitH = 420;
         for (let i = 0; i < rows.length && initialH < limitH; i++) {
-            initial.push(composeTreeRow(rows[i], cacheEpisode));
+            initial.push(composeTreeRow(rows[i]));
             initialH += rows[i].height + ROW_GAP_H;
         }
         if (totalH > initialH) initial.push(spacer(1, totalH - initialH));
@@ -970,7 +1031,7 @@ function renderRowsInner(): Element[] {
                 if (topPad > 0) out.push(spacer(1, topPad));
                 started = true;
             }
-            out.push(composeTreeRow(rows[i], cacheEpisode));
+            out.push(composeTreeRow(rows[i]));
             visibleH += rowH;
         } else if (started && rowStart > maxY) {
             break;

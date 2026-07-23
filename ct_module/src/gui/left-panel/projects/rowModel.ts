@@ -35,8 +35,7 @@ export type Result = ResultImport | ResultScript | ResultItem;
 // (which rows exist, not their per-frame content) are cached across frames;
 // any interaction that changes the row set — expansion toggles, search,
 // filter, sort, source add/remove — must bump this so the next frame
-// rebuilds immediately. A short TTL on the cache covers async changes
-// (reparses, enumeration refreshes) and any missed bump site.
+// rebuilds immediately. Parse changes use the parse cache's own revision.
 let treeRevision = 0;
 export function bumpTreeRevision(): void {
     treeRevision++;

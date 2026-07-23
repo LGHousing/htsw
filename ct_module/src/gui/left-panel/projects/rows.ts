@@ -10,7 +10,6 @@ import {
     getHousingUuid,
     importableSelectionKey,
     isAutoTrackSource,
-    isHouseTrusted,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
@@ -26,11 +25,11 @@ import {
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
-    cacheStateForImportable,
-    importableLinkStatus,
+    cachedImportableLinkStatus,
     linkStatusIcon,
 } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
+import { requestImportableCacheWarm } from "../../cache-status/cacheWarm";
 import {
     hasChildList,
     importableDeclaringPath,
@@ -53,7 +52,7 @@ import {
     requestParse,
 } from "../../parsing/parses";
 import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
-import { readImportableCache } from "../../../importCache/cache";
+import { peekImportableCache } from "../../../importCache/cache";
 import {
     importableMetadataComparisonValue,
     importableMetadataEntries,
@@ -234,16 +233,17 @@ export type MetadataField = {
 function getCachedImportable(imp: Importable): Importable | null {
     const uuid = getHousingUuid();
     if (uuid === null) return null;
-    const entry = readImportableCache(uuid, imp.type, importableIdentity(imp));
-    return entry === null ? null : entry.importable;
+    const cached = peekImportableCache(uuid, imp.type, importableIdentity(imp));
+    if (!cached.loaded) {
+        requestImportableCacheWarm(uuid, imp);
+        return null;
+    }
+    return cached.entry === null ? null : cached.entry.importable;
 }
 
-// The file<->house link icon for one of your importables. The decision (and
-// its file-side tooltip wording) lives in cache-status/importableLinkStatus so
-// the type/status filter reads the same key this icon shows.
-function importableStatus(imp: Importable): Element {
-    const s = importableLinkStatus(imp);
-    return linkStatusIcon(s.key, s.tooltip);
+function importableStatus(imp: Importable): Element | false {
+    const status = cachedImportableLinkStatus(imp);
+    return status === null ? false : linkStatusIcon(status.key, status.tooltip);
 }
 
 function showDiffValue(v: unknown): string {
@@ -276,7 +276,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
             const fields: MetadataField[] = [
                 { key: "nbt", label: "NBT", value: "Item data" },
             ];
-            if (importableLinkStatus(imp).key === "differs") {
+            if (cachedImportableLinkStatus(imp)?.key === "differs") {
                 fields.push({
                     key: "legacyDiff",
                     label: "Diff",
@@ -317,7 +317,11 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
     }));
 }
 function isImportableExpandable(imp: Importable): boolean {
-    return childListsOf(imp).length > 0 || metadataFieldsOf(imp).length > 0;
+    return (
+        childListsOf(imp).length > 0 ||
+        imp.type === "ITEM" ||
+        importableMetadataEntries(imp).length > 0
+    );
 }
 
 function importableLabel(imp: Importable): string {
@@ -851,57 +855,26 @@ function collectSubtreeImportables(node: IncludeNode, out: Importable[]): void {
     }
 }
 
-type SubtreeAggregate = { changed: number; errors: number };
-type CachedSubtreeAggregate = SubtreeAggregate & { at: number };
+type SubtreeAggregate = { errors: number };
+type CachedSubtreeAggregate = SubtreeAggregate & { parse: object | null };
 
-const SUBTREE_AGGREGATE_TTL_MS = 300;
 const subtreeAggregateCache = new Map<string, CachedSubtreeAggregate>();
 
 function subtreeAggregate(parent: ResultImport, node: IncludeNode): SubtreeAggregate {
-    const uuid = getHousingUuid();
-    const key = `${canonicalPath(node.path)}::${uuid ?? ""}`;
-    const now = Date.now();
+    const key = canonicalPath(node.path);
     const cached = subtreeAggregateCache.get(key);
-    if (cached !== undefined && now - cached.at < SUBTREE_AGGREGATE_TTL_MS) {
+    if (cached !== undefined && cached.parse === parent.parse) {
         return cached;
     }
     const importables: Importable[] = [];
     collectSubtreeImportables(node, importables);
-    let changed = 0;
     let errors = 0;
     for (let i = 0; i < importables.length; i++) {
-        const imp = importables[i];
-        if (cacheStateForImportable(imp) === "modified") changed++;
-        errors += diagnosticCountsFor(parent.parse, imp).errors;
+        errors += diagnosticCountsFor(parent.parse, importables[i]).errors;
     }
-    const aggregate = { changed, errors, at: now };
+    const aggregate = { errors, parse: parent.parse };
     subtreeAggregateCache.set(key, aggregate);
     return aggregate;
-}
-
-function changedAggregate(count: number): Element {
-    const tooltip = `${count} will change on import`;
-    return Container({
-        style: { direction: "row", gap: 2, align: "center" },
-        children: [
-            Container({
-                style: {
-                    width: { kind: "px", value: 5 },
-                    height: { kind: "px", value: 5 },
-                    background: ACCENT_WARN,
-                },
-                tooltip,
-                tooltipColor: ACCENT_WARN,
-                children: [],
-            }),
-            Text({
-                text: String(count),
-                color: ACCENT_WARN,
-                tooltip,
-                tooltipColor: ACCENT_WARN,
-            }),
-        ],
-    });
 }
 
 function errorAggregate(count: number): Element {
@@ -936,11 +909,7 @@ function errorAggregate(count: number): Element {
 
 function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): Element[] {
     const aggregate = subtreeAggregate(parent, node);
-    const uuid = getHousingUuid();
     const out: Element[] = [];
-    if (uuid !== null && isHouseTrusted(uuid) && aggregate.changed > 0) {
-        out.push(changedAggregate(aggregate.changed), rowSlot(INNER_GAP));
-    }
     if (aggregate.errors > 0) {
         out.push(errorAggregate(aggregate.errors), rowSlot(INNER_GAP));
     }
@@ -1048,7 +1017,13 @@ function rowSlot(w: number): Element {
     });
 }
 
-function rowMenuButton(actions: MenuAction[], key: string): Element {
+type RowActions = MenuAction[] | (() => MenuAction[]);
+
+function resolveRowActions(actions: RowActions): MenuAction[] {
+    return typeof actions === "function" ? actions() : actions;
+}
+
+function rowMenuButton(actions: RowActions, key: string): Element {
     return Button({
         style: {
             width: { kind: "px", value: 16 },
@@ -1062,7 +1037,7 @@ function rowMenuButton(actions: MenuAction[], key: string): Element {
             if (info.button !== 0 || info.isDoubleClickSecond) return;
             lastMenuX = rect.x + rect.w;
             lastMenuY = rect.y;
-            openMenu(rect.x + rect.w, rect.y, actions, {
+            openMenu(rect.x + rect.w, rect.y, resolveRowActions(actions), {
                 key: `project-row:${key}`,
                 trigger: rect,
             });
@@ -1081,7 +1056,7 @@ function rowMenuButton(actions: MenuAction[], key: string): Element {
 }
 
 function rowHandler(
-    actions: MenuAction[],
+    actions: RowActions,
     defaultLeftAction?: () => void
 ): (rect: Rect, info: ClickInfo) => void {
     return (_rect, info) => {
@@ -1089,7 +1064,7 @@ function rowHandler(
         if (info.button === 1) {
             lastMenuX = info.x;
             lastMenuY = info.y;
-            openMenu(info.x, info.y, actions);
+            openMenu(info.x, info.y, resolveRowActions(actions));
             return;
         }
         if (info.button !== 0) return;
@@ -1097,7 +1072,7 @@ function rowHandler(
         else {
             lastMenuX = info.x;
             lastMenuY = info.y;
-            openMenu(info.x, info.y, actions);
+            openMenu(info.x, info.y, resolveRowActions(actions));
         }
     };
 }
@@ -1252,8 +1227,9 @@ export function resultRow(
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
     const aggregateIndicators =
         isImport && !expanded ? collapsedSubtreeAggregates(r, includeTreeOf(r)) : [];
-    const fileExtras: MenuAction[] = isImport
-        ? [
+    const actions = (): MenuAction[] => {
+        const fileExtras: MenuAction[] = isImport
+            ? [
               {
                   label: "Queue all for import",
                   icon: Icons.listPlus,
@@ -1319,11 +1295,12 @@ export function resultRow(
                   icon: Icons.trash2,
                   onClick: () => confirmDeleteProject(r.fullPath),
               },
-          ]
-        : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
-    const actions = isImport
-        ? fileExtras
-        : composeFileMenu(fileExtras, r.fullPath, importJsonPath);
+              ]
+            : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
+        return isImport
+            ? fileExtras
+            : composeFileMenu(fileExtras, r.fullPath, importJsonPath);
+    };
     return Container({
         style: {
             direction: "row",
@@ -1430,7 +1407,7 @@ export function includeGroupRow(
     const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
     const count = subtreeHouseExportCount(node);
     const declaredImportables = subtreeImportables(node);
-    const actions: MenuAction[] = [
+    const actions = (): MenuAction[] => [
         {
             label: "Queue all for import",
             icon: Icons.listPlus,
@@ -1518,11 +1495,12 @@ function includeReferenceRow(
     onJump?: () => void
 ): Element {
     const fullPath = canonicalPath(node.path);
-    const actions = composeFileMenu(
-        [openInViewAction(fullPath, parent.fullPath)],
-        fullPath,
-        parent.fullPath
-    );
+    const actions = (): MenuAction[] =>
+        composeFileMenu(
+            [openInViewAction(fullPath, parent.fullPath)],
+            fullPath,
+            parent.fullPath
+        );
     const home = findIncludeNode(includeTreeOf(parent), fullPath);
     return Container({
         style: {
@@ -1654,6 +1632,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
         name: importableLabel(imp),
         importable: imp,
     });
+    const status = importableStatus(imp);
+    const actions = (): MenuAction[] => importableActions(parent, imp);
     return Container({
         style: {
             direction: "row",
@@ -1668,7 +1648,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             background: () => (isJumpFlashing(expKey) ? ROW_HOVER_BG : ROW_BG),
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(importableActions(parent, imp), () =>
+        onClick: rowHandler(actions, () =>
             previewSelect(previewPath, parent.fullPath)
         ),
         onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
@@ -1678,8 +1658,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             ),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
             rowSlot(INNER_GAP),
-            importableStatus(imp),
-            rowSlot(INNER_GAP),
+            status,
+            status !== false && rowSlot(INNER_GAP),
             contentIcon,
             contentIcon !== false && rowSlot(INNER_GAP),
             Text({
@@ -1697,7 +1677,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                     else importableExpansion.add(expKey);
                     bumpTreeRevision();
                 }),
-            rowMenuButton(importableActions(parent, imp), `importable:${expKey}`),
+            rowMenuButton(actions, `importable:${expKey}`),
         ],
     });
 }

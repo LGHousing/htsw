@@ -4,13 +4,16 @@ import {
     setMuteTaskSounds,
     setPlayImportCompletionSound,
 } from "../../settings";
+import { markGuiDirty } from "../lib/dirty";
 
 let parseInProgress = false;
 export function isParseInProgress(): boolean {
     return parseInProgress;
 }
 export function setParseInProgress(v: boolean): void {
+    if (parseInProgress === v) return;
     parseInProgress = v;
+    markGuiDirty();
 }
 
 /**

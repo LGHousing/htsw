@@ -2,8 +2,15 @@
 
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
 import { toForwardSlashes } from "../../lib/pathDisplay";
-import { canonicalPath, isParsePending, requestParse } from "../../parsing/parses";
+import {
+    canonicalPath,
+    getParseAt,
+    isParsePending,
+    requestParse,
+    type CachedParse,
+} from "../../parsing/parses";
 import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
+import { recordPhase } from "../../lib/framePerf";
 
 export type SourceDir = {
     kind: "dir";
@@ -154,13 +161,13 @@ function visitFile(p: HtswJavaPath, root: HtswJavaPath, out: Result[]): void {
         fname === "import.json" ||
         (fname.length >= 5 && fname.lastIndexOf(".json") === fname.length - 5);
     if (isImportJson) {
-        const cached = requestParse(fullPath);
+        const cached = getParseAt(fullPath);
         const r: ResultImport = {
             type: "import",
             path,
             fullPath,
             importables: cached?.parsed?.value ?? [],
-            parsePending: cached === null || isParsePending(fullPath),
+            parsePending: cached === null && isParsePending(fullPath),
             parse: cached?.parsed ?? null,
             parseError: cached?.error ?? undefined,
         };
@@ -227,67 +234,76 @@ function walkDir(
     }
 }
 
-// Per-source TTL cache. The full directory walk is expensive (recursive readdir + stat per
-// entry), and `buildTreeRows()` runs every frame as a Scroll children extractable, so without
-// a cache we'd hit the filesystem hundreds of times per second. 1s TTL means new files appear
-// with at most ~1s lag; that's acceptable for this UI.
-const ENUMERATION_TTL_MS = 1000;
-const enumerationCache = new Map<string, { at: number; results: Result[] }>();
+// File discovery is retained for the lifetime of an open source. Project
+// parsing owns freshness for files already in the project; repeating this
+// recursive directory walk from a GUI rebuild made an unrelated caret click
+// synchronously stat the whole source.
+const enumerationCache = new Map<string, Result[]>();
 
 function enumerateForSourceUncached(s: Source): Result[] {
+    const startedAt = Date.now();
     const Paths = javaType("java.nio.file.Paths");
     const Files = javaType("java.nio.file.Files");
     const out: Result[] = [];
-    let p: HtswJavaPath;
     try {
-        p = Paths.get(s.fullPath);
-    } catch (_e) {
-        return out;
-    }
-    let exists = false;
-    try {
-        exists = Files.exists(p);
-    } catch (_e) {
-        return out;
-    }
-    if (!exists) return out;
-    if (s.kind === "dir") {
-        walkDir(p, p, out);
-    } else {
-        const parent = p.getParent();
-        const root = parent === null ? p : parent;
+        let p: HtswJavaPath;
         try {
-            visitFile(p, root, out);
+            p = Paths.get(s.fullPath);
         } catch (_e) {
-            /* skip */
+            return out;
         }
+        let exists = false;
+        try {
+            exists = Files.exists(p);
+        } catch (_e) {
+            return out;
+        }
+        if (!exists) return out;
+        if (s.kind === "dir") {
+            walkDir(p, p, out);
+        } else {
+            const parent = p.getParent();
+            const root = parent === null ? p : parent;
+            try {
+                visitFile(p, root, out);
+            } catch (_e) {
+                /* skip */
+            }
+        }
+        return out;
+    } finally {
+        recordPhase("source-enumeration", Date.now() - startedAt);
     }
-    return out;
+}
+
+function adoptParse(r: ResultImport, cached: CachedParse | null): void {
+    r.parsePending = cached === null && isParsePending(r.fullPath);
+    if (cached === null) return;
+    if (cached.parsed !== r.parse) {
+        r.importables = cached.parsed?.value ?? [];
+        r.parse = cached.parsed;
+    }
+    if (cached.error !== null) r.parseError = cached.error;
+    else delete r.parseError;
+}
+
+export function requestResultParse(r: ResultImport): void {
+    adoptParse(r, requestParse(r.fullPath));
 }
 
 export function enumerateForSource(s: Source): Result[] {
-    const now = Date.now();
     const cached = enumerationCache.get(s.fullPath);
     let results: Result[];
-    if (cached !== undefined && now - cached.at < ENUMERATION_TTL_MS) {
-        results = cached.results;
+    if (cached !== undefined) {
+        results = cached;
     } else {
         results = enumerateForSourceUncached(s);
-        enumerationCache.set(s.fullPath, { at: now, results });
+        enumerationCache.set(s.fullPath, results);
     }
     for (let i = 0; i < results.length; i++) {
         const r = results[i];
         if (r.type !== "import") continue;
-        // Cold entries return null here and warm up off-frame; only adopt a
-        // real parse so we never blank out rows we've already shown.
-        const fresh = requestParse(r.fullPath);
-        r.parsePending = fresh === null || isParsePending(r.fullPath);
-        if (fresh !== null && fresh.parsed !== r.parse) {
-            r.importables = fresh.parsed?.value ?? [];
-            r.parse = fresh.parsed;
-            if (fresh.error !== null) r.parseError = fresh.error;
-            else delete r.parseError;
-        }
+        adoptParse(r, getParseAt(r.fullPath));
     }
     return results;
 }

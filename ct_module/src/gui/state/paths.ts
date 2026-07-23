@@ -1,6 +1,7 @@
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { getHousingUuid } from "./housing";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
+import { markGuiDirty } from "../lib/dirty";
 
 let importJsonPath = "";
 let exportImportJsonPath: string | null = null;
@@ -9,7 +10,10 @@ export function getImportJsonPath(): string {
     return importJsonPath;
 }
 export function setImportJsonPath(path: string): void {
-    importJsonPath = normalizeHtswPath(path);
+    const next = normalizeHtswPath(path);
+    if (next === importJsonPath) return;
+    importJsonPath = next;
+    markGuiDirty();
 }
 
 // The effective export destination. A manual pick wins; otherwise it falls back
@@ -27,5 +31,8 @@ export function getExportImportJsonPath(): string {
     return importJsonPath;
 }
 export function setExportImportJsonPath(path: string): void {
-    exportImportJsonPath = normalizeHtswPath(path);
+    const next = normalizeHtswPath(path);
+    if (next === exportImportJsonPath) return;
+    exportImportJsonPath = next;
+    markGuiDirty();
 }

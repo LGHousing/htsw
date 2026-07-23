@@ -5,6 +5,7 @@ import {
     readJsonSettingsFile,
     writeJsonSettingsFile,
 } from "../../persistence/settingsFiles";
+import { markGuiDirty } from "../lib/dirty";
 
 const TRUSTED_HOUSES_FILE_NAME = "trusted-houses.json";
 let trustedHousesLoaded = false;
@@ -45,7 +46,10 @@ export function setHouseTrust(uuid: string, trusted: boolean): boolean {
     if (wasTrusted === trusted) return true;
     if (trusted) trustedHouses.add(uuid);
     else trustedHouses.delete(uuid);
-    if (saveTrustedHouses()) return true;
+    if (saveTrustedHouses()) {
+        markGuiDirty();
+        return true;
+    }
     if (wasTrusted) trustedHouses.add(uuid);
     else trustedHouses.delete(uuid);
     return false;

@@ -18,7 +18,7 @@ export const FP_RECHECK_MS = 400;
 // N referenced files spreads over ceil(N/BUDGET) ticks instead of landing as
 // one N-stat spike — that spike was a visible hitch mid-import on big
 // projects.
-const FP_SWEEP_BUDGET = 32;
+const FP_SWEEP_BUDGET = 4;
 
 type FingerprintSweep = {
     /** Fingerprint keys captured at sweep start. */
