@@ -521,7 +521,7 @@ function rebuildSnapshot(
 /**
  * Parked importables' contribution to the session totals: the sum of their
  * refinements (current − initial, since `totalSessionUnits` already carries
- * each one's initial estimate) and their pass-1 completed units. Folding
+ * each one's initial estimate) and their read-pass completed units. Folding
  * these in keeps the session total/completed stable across active-importable
  * switches instead of dropping a parked importable's estimate until it's
  * applied.

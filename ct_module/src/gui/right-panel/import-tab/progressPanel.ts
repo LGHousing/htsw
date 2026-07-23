@@ -280,9 +280,9 @@ function progressBar(): Element {
                         })
                     );
                 } else if (parkedTaskFor(p, row.key) !== undefined) {
-                    // Pass-1 finished read/hydrate for this row but pass-2
-                    // hasn't reached it yet. Show the parked phase fill so
-                    // the segment doesn't visually rewind.
+                    // The read/hydrate pass finished this row but the apply
+                    // pass hasn't reached it yet. Show the parked phase fill
+                    // so the segment doesn't visually rewind.
                     children.push(
                         Container({
                             style: {

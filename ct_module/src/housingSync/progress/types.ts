@@ -95,9 +95,9 @@ export type TaskProgress = {
     failure?: { key: string; message: string } | null;
     active: TaskProgressActive | null;
     /**
-     * Per-key snapshots of importables that completed pass-1 (read +
-     * hydrate) but haven't reached pass-2 (apply). The queue mini bar
-     * uses these to keep showing pass-1 progress on rows the active
+     * Per-key snapshots of importables that completed the read/hydrate
+     * pass but haven't reached the apply pass. The queue mini bar
+     * uses these to keep showing read-pass progress on rows the active
      * cursor has moved past.
      */
     parked: { [key: string]: TaskProgressActive };

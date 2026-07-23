@@ -449,7 +449,8 @@ async function runImportSessionInner(
         }
     }
 
-    // ── Pass 3: convert complete observations into exact apply plans. ───
+    // ── Planning: convert complete observations into exact apply plans
+    // (in-memory, instant — not a pass over the house). ─────────────────
     for (const { row, read } of reads) {
         const plan = read.plan(session);
         observedPlans.push({ plan });
@@ -536,7 +537,7 @@ async function runImportSessionInner(
             );
         }
 
-        // ── Pass 4: apply every collected plan in original order. ──────────
+        // ── Apply pass: apply every collected plan in original order. ──────
         for (let planIndex = 0; planIndex < plans.length; planIndex++) {
             activePlanIndex = planIndex;
             const { row, plan } = plans[planIndex];
