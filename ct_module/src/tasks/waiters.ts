@@ -1,6 +1,7 @@
 import type TaskContext from "./context";
 import type { TaskWaiter } from "./context";
 import type { WaitForPromise } from "./specifics/waitFor";
+import { isTaskCancelled } from "./cancellation";
 
 type AnyWaiter = TaskWaiter<unknown>;
 type WaiterKey<T> = Extract<keyof T, string>;
@@ -90,6 +91,19 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
                     reject(new Error(`${label}: ${failures.join("; ")}`));
                 };
 
+                const handleFailure = (key: WaiterKey<T>, error: unknown): void => {
+                    if (settled) return;
+                    if (isTaskCancelled(error)) {
+                        settled = true;
+                        cleanupWaiters(waiters);
+                        reject(error);
+                        return;
+                    }
+                    remaining--;
+                    failures.push(`${key}: ${errorMessage(error)}`);
+                    failIfDone();
+                };
+
                 for (let i = 0; i < keys.length; i++) {
                     const key = keys[i];
                     try {
@@ -102,17 +116,10 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
                                 cleanupWaiters(waiters);
                                 resolve(key);
                             },
-                            (error: unknown) => {
-                                if (settled) return;
-                                remaining--;
-                                failures.push(`${key}: ${errorMessage(error)}`);
-                                failIfDone();
-                            }
+                            (error: unknown) => handleFailure(key, error)
                         );
                     } catch (error) {
-                        remaining--;
-                        failures.push(`${key}: ${errorMessage(error)}`);
-                        failIfDone();
+                        handleFailure(key, error);
                     }
                 }
             }) as WaitForPromise<WaiterKey<T>>;
