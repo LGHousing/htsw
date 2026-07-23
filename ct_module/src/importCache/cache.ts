@@ -244,10 +244,10 @@ export async function tryWriteImportableCache(
     writer: CacheWriter,
     cachedUuid?: string,
     options?: ImportableCacheWriteOptions
-): Promise<void> {
+): Promise<boolean> {
     try {
         const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        writeImportableCache(ctx, housingUuid, importable, writer, options);
+        return writeImportableCache(ctx, housingUuid, importable, writer, options);
     } catch (error) {
         if (writer === "exporter") {
             ctx.displayMessage(`&7[export] &eCache write skipped: ${String(error)}`);
@@ -257,6 +257,7 @@ export async function tryWriteImportableCache(
                 `skipped cache write for ${importable.type}: ${String(error)}`
             );
         }
+        return false;
     }
 }
 
@@ -462,11 +463,7 @@ export function loadImportableCachesOffThread(
     }
     const startedAt = Date.now();
     const plans = requests.map((request) => {
-        const path = cachePathForId(
-            request.housingUuid,
-            request.type,
-            request.identity
-        );
+        const path = cachePathForId(request.housingUuid, request.type, request.identity);
         return {
             path,
             type: request.type,
@@ -483,10 +480,7 @@ export function loadImportableCachesOffThread(
                     for (let i = 0; i < plans.length; i++) {
                         const plan = plans[i];
                         const mtime = getFileMtimeMs(plan.path);
-                        if (
-                            plan.memo !== undefined &&
-                            plan.memo.mtime === mtime
-                        ) {
+                        if (plan.memo !== undefined && plan.memo.mtime === mtime) {
                             loaded.push({
                                 path: plan.path,
                                 type: plan.type,
@@ -518,20 +512,11 @@ export function loadImportableCachesOffThread(
                         for (let i = 0; i < loaded.length; i++) {
                             const result = loaded[i];
                             const current = readCache.get(result.path);
-                            if (
-                                current !== undefined &&
-                                current.checkedAt > startedAt
-                            ) {
+                            if (current !== undefined && current.checkedAt > startedAt) {
                                 continue;
                             }
-                            if (
-                                result.entry !== null &&
-                                result.entryHash !== null
-                            ) {
-                                entryHashCache.set(
-                                    result.entry,
-                                    result.entryHash
-                                );
+                            if (result.entry !== null && result.entryHash !== null) {
+                                entryHashCache.set(result.entry, result.entryHash);
                             }
                             readCache.set(result.path, {
                                 entry: result.entry,

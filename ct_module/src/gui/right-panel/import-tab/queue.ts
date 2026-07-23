@@ -133,11 +133,6 @@ export function getQueueLength(): number {
     return items.length;
 }
 
-export function isInQueue(key: string): boolean {
-    for (let i = 0; i < items.length; i++) if (queueItemKey(items[i]) === key) return true;
-    return false;
-}
-
 function sameImportWork(left: QueueItem, right: QueueItem): boolean {
     return left.operation === "import"
         && left.kind === "importable"
@@ -147,11 +142,25 @@ function sameImportWork(left: QueueItem, right: QueueItem): boolean {
         && left.identity === right.identity;
 }
 
-export function addToQueue(item: QueueItem): boolean {
+function queuedItemIndex(item: QueueItem): number {
     const key = queueItemKey(item);
     for (let i = 0; i < items.length; i++) {
-        if (queueItemKey(items[i]) === key || sameImportWork(items[i], item)) return false;
+        if (queueItemKey(items[i]) === key || sameImportWork(items[i], item)) return i;
     }
+    return -1;
+}
+
+export function getQueuedItemKey(item: QueueItem): string | null {
+    const index = queuedItemIndex(item);
+    return index < 0 ? null : queueItemKey(items[index]);
+}
+
+export function isQueueItemQueued(item: QueueItem): boolean {
+    return queuedItemIndex(item) >= 0;
+}
+
+export function addToQueue(item: QueueItem): boolean {
+    if (isQueueItemQueued(item)) return false;
     items = items.concat([item]);
     queueChanged();
     return true;
@@ -165,9 +174,9 @@ export function addToQueue(item: QueueItem): boolean {
  * run is actually doing.
  */
 export function addSessionQueueItem(item: QueueItem): void {
-    const key = queueItemKey(item);
-    const added = addToQueue(item);
-    if (sessionKeys !== null && (added || isInQueue(key)) && !sessionKeys.has(key)) {
+    addToQueue(item);
+    const key = getQueuedItemKey(item);
+    if (sessionKeys !== null && key !== null && !sessionKeys.has(key)) {
         sessionKeys.add(key);
         markGuiDirty();
     }
@@ -178,11 +187,18 @@ export function removeFromQueueKey(key: string): void {
     items = items.filter((i) => queueItemKey(i) !== key);
     if (items.length !== beforeLen) queueChanged();
 }
+
+export function removeFromQueue(item: QueueItem): void {
+    const index = queuedItemIndex(item);
+    if (index < 0) return;
+    items = items.slice(0, index).concat(items.slice(index + 1));
+    queueChanged();
+}
+
 /** Toggle membership. Returns the *new* state (true = now in the queue). */
 export function toggleQueue(item: QueueItem): boolean {
-    const key = queueItemKey(item);
-    if (isInQueue(key)) {
-        removeFromQueueKey(key);
+    if (isQueueItemQueued(item)) {
+        removeFromQueue(item);
         return false;
     }
     return addToQueue(item);

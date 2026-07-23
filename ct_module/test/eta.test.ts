@@ -89,6 +89,36 @@ describe("import ETA", () => {
         expect(laterEta).toBeLessThan(7);
     });
 
+    test("phase ETA covers parked rows still waiting for the phase", () => {
+        const p = progress(10, "hydrating");
+        // A scanned row waiting for pass-2: read done (completed = setup +
+        // reading), hydration units unspent.
+        p.parked["FUNCTION:waiting"] = {
+            key: "FUNCTION:waiting",
+            type: "FUNCTION",
+            identity: "waiting",
+            phase: "reading",
+            completedUnits: 10,
+            totalUnits: 70,
+            phaseUnits: { setup: 0, reading: 10, hydrating: 50, applying: 10 },
+            sync: null,
+        };
+        // A row already hydrated and parked again: its hydrating units were
+        // trued to zero, so it must not inflate the countdown.
+        p.parked["FUNCTION:done"] = {
+            key: "FUNCTION:done",
+            type: "FUNCTION",
+            identity: "done",
+            phase: "hydrating",
+            completedUnits: 60,
+            totalUnits: 70,
+            phaseUnits: { setup: 0, reading: 60, hydrating: 0, applying: 10 },
+            sync: null,
+        };
+        // Active remaining 100 + waiting row's 50 = 150 units * 150 ms/u.
+        expect(eta.getPhase(p, 0)).toBe(22.5);
+    });
+
     test("setup phase remaining accounts for the setup segment", () => {
         const p: TaskProgress = { ...progress(0, "setup") };
         p.active!.phaseUnits = { setup: 5, reading: 10, hydrating: 100, applying: 10 };

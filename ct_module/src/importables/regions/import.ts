@@ -11,6 +11,7 @@ import {
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
+import { createProgressGroup } from "../../housingSync/progress/group";
 import { ensureCreativeFlight } from "../../housingSync/sideEffects";
 import TaskContext from "../../tasks/context";
 import type { ImportContext } from "../import/context";
@@ -185,6 +186,7 @@ export async function scanImportableRegion(
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
     const current = liveRegion === null ? { kind: "known-empty" as const } : undefined;
+    const progress = createProgressGroup(session.actions.events, 2);
 
     const enter = await scanActionListSync(ctx, {
         desired: importable.onEnterActions,
@@ -198,6 +200,7 @@ export async function scanImportableRegion(
             basePath: "onEnterActions",
         },
         open: () => openRegionActionList(ctx, importable.name, "Entry Actions"),
+        progress: progress.part(0),
     });
     const exit = await scanActionListSync(ctx, {
         desired: importable.onExitActions,
@@ -211,6 +214,7 @@ export async function scanImportableRegion(
             basePath: "onExitActions",
         },
         open: () => openRegionActionList(ctx, importable.name, "Exit Actions"),
+        progress: progress.part(1),
     });
     return { kind: "REGION", importable, trustPlan, liveRegion, enter, exit };
 }

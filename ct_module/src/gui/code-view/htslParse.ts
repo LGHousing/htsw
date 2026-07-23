@@ -66,6 +66,7 @@ export function actionLineRange(
 }
 
 const parseCache = new Map<string, ParsedFile>();
+const MAX_PARSE_CACHE_ENTRIES = 64;
 
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
@@ -89,6 +90,10 @@ export function parseHtslFile(path: string): ParsedFile {
         parseError = errorMessage(err);
     }
     const entry: ParsedFile = { mtime, actions, parseError, spans, file };
+    if (!parseCache.has(path) && parseCache.size >= MAX_PARSE_CACHE_ENTRIES) {
+        const oldest = parseCache.keys().next();
+        if (!oldest.done) parseCache.delete(oldest.value);
+    }
     parseCache.set(path, entry);
     return entry;
 }

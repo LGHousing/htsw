@@ -5,6 +5,7 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { readCachedActionList } from "../../importCache/actionLists";
 import TaskContext from "../../tasks/context";
 import type { ActionListTrust } from "./applyTrust";
+import type { ProgressHandler } from "../progress/types";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
 import {
@@ -16,6 +17,7 @@ import {
     type ActionListPlan,
 } from "./plan";
 import { emitDiffPlanned } from "./apply/progress";
+import { emitKnowledgeSource } from "../progress/knowledge";
 
 export type ActionListSyncResult =
     | { kind: "skipped"; reason: "undeclared" | "trusted" }
@@ -38,6 +40,7 @@ export type ActionListSyncTarget = {
     current?: { kind: "known-empty" } | { kind: "known"; actions: readonly Action[] };
     listPath?: ActionListPath;
     progressScope?: ProgressScope;
+    progress?: ProgressHandler;
     conflictTarget?: ActionSyncConflict;
 };
 
@@ -46,9 +49,7 @@ export async function readActionListSync(
     target: ActionListSyncTarget
 ): Promise<ActionListSyncResult> {
     const scan = await scanActionListSync(ctx, target);
-    return scan.kind === "hydrate"
-        ? hydrateActionListSync(ctx, scan, false)
-        : scan;
+    return scan.kind === "hydrate" ? hydrateActionListSync(ctx, scan, false) : scan;
 }
 
 export async function scanActionListSync(
@@ -59,15 +60,18 @@ export async function scanActionListSync(
         return { kind: "skipped", reason: "undeclared" };
     }
     if (target.current?.kind === "known-empty") {
+        emitKnowledgeSource(target.sync.events, "known", "known-empty", target.trustPlan);
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
     }
     if (target.current?.kind === "known") {
+        emitKnowledgeSource(target.sync.events, "cache", "cached-list", target.trustPlan);
         return planned(
             createKnownActionListPlan(target.desired, target.current.actions, target),
             target
         );
     }
     if (isActionListTrusted(target.trustPlan, target.basePath)) {
+        emitKnowledgeSource(target.sync.events, "cache", "cached-list", target.trustPlan);
         return { kind: "skipped", reason: "trusted" };
     }
     const trustedBaseline = getTrustedBaselineActionList(
@@ -76,25 +80,41 @@ export async function scanActionListSync(
     );
     const needsConflictScan = conflictScanRequired(target);
     if (trustedBaseline !== undefined && !needsConflictScan) {
+        emitKnowledgeSource(target.sync.events, "cache", "cached-list", target.trustPlan);
         return planned(
             createKnownActionListPlan(target.desired, trustedBaseline, target),
             target
         );
     }
+    emitKnowledgeSource(
+        target.sync.events,
+        "house",
+        needsConflictScan ? "lock-verification" : "full-read",
+        target.trustPlan
+    );
     if (target.open !== undefined) {
         await target.open();
     }
     const scan = await scanActionListForPlan(ctx, target.desired, {
-            sync: target.sync,
-            listPath: target.listPath,
-            progressScope: target.progressScope,
-            baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
-            trustedBaselineAfterUnchangedScan: needsConflictScan
-                ? trustedBaseline
-                : undefined,
-            trust: getActionListTrust(target.trustPlan, target.basePath),
-            conflictTarget: target.conflictTarget,
-        });
+        sync: target.sync,
+        listPath: target.listPath,
+        progressScope: target.progressScope,
+        progress: target.progress,
+        baselineCurrent: getBaselineActionList(target.trustPlan, target.basePath),
+        trustedBaselineAfterUnchangedScan: needsConflictScan
+            ? trustedBaseline
+            : undefined,
+        trust: getActionListTrust(target.trustPlan, target.basePath),
+        conflictTarget: target.conflictTarget,
+    });
+    if (needsConflictScan) {
+        emitKnowledgeSource(
+            target.sync.events,
+            "house",
+            "lock-verified",
+            target.trustPlan
+        );
+    }
     return scan.kind === "planned"
         ? planned(scan.plan, target)
         : { kind: "hydrate", pending: scan, target };

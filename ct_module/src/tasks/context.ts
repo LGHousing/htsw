@@ -73,6 +73,7 @@ export type TaskWaiter<T> = {
 
 export default class TaskContext {
     private cancelled: boolean = false;
+    private cancellationDeferrals: number = 0;
     private heatLevel: number = 0;
     private heatLastUpdate: number = 0;
     private heatLastChatAt: number = 0;
@@ -87,9 +88,22 @@ export default class TaskContext {
     }
 
     public checkCancelled() {
-        if (this.cancelled) {
+        if (this.cancelled && this.cancellationDeferrals === 0) {
             throw createTaskCancelledError();
         }
+    }
+
+    public async finishBeforeCancelling<T>(run: () => Promise<T>): Promise<T> {
+        this.checkCancelled();
+        this.cancellationDeferrals++;
+        let result: T;
+        try {
+            result = await run();
+        } finally {
+            this.cancellationDeferrals--;
+        }
+        this.checkCancelled();
+        return result;
     }
 
     private decayHeatToNow(): number {
@@ -201,7 +215,7 @@ export default class TaskContext {
         reason: string,
         duration: number = 2000
     ): WaitForPromise<T> {
-        if (this.cancelled) {
+        if (this.cancelled && this.cancellationDeferrals === 0) {
             const rejected = Promise.reject(
                 createTaskCancelledError()
             ) as WaitForPromise<T>;
@@ -214,8 +228,8 @@ export default class TaskContext {
         const timeout = waitForTimeout(
             reason,
             duration,
-            () => this.cancelled,
-            innerCleanup,
+            () => this.cancelled && this.cancellationDeferrals === 0,
+            innerCleanup
         );
         timeout.catch(() => {});
 

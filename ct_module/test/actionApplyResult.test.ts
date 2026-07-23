@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
         }
     ),
     writeOpenAction: vi.fn(async () => undefined),
+    getSlotPaginate: vi.fn(),
 }));
 
 vi.mock("../src/housingSync/menus/paginatedList", () => ({
@@ -39,7 +40,7 @@ vi.mock("../src/housingSync/menus/menuWait", () => ({
 
 vi.mock("../src/housingSync/menus/menuUtils", () => ({
     clickGoBack: mocks.clickGoBack,
-    getSlotPaginate: vi.fn(() => null),
+    getSlotPaginate: mocks.getSlotPaginate,
     isLimitExceeded: vi.fn(() => false),
     setListItemNote: mocks.setListItemNote,
     setNoteOnLastVisibleSlot: vi.fn(
@@ -107,6 +108,31 @@ function editPlan(observed: ObservedActionSlot[], desired: Action[]): ActionList
     };
 }
 
+function addPlan(observed: ObservedActionSlot[], desired: Action[]): ActionListPlan {
+    const added = desired[desired.length - 1];
+    return {
+        desired,
+        observed,
+        diff: {
+            desiredLength: desired.length,
+            operations: [
+                {
+                    kind: "add",
+                    desiredIndex: desired.length - 1,
+                    desired: added,
+                    toIndex: desired.length - 1,
+                },
+            ],
+        },
+        phaseUnits: {
+            setup: 0,
+            reading: 0,
+            hydrating: 0,
+            applying: 1,
+        },
+    };
+}
+
 describe("ActionListApplyResult", () => {
     beforeEach(() => {
         mocks.clickGoBack.mockReset();
@@ -114,6 +140,7 @@ describe("ActionListApplyResult", () => {
         mocks.setListItemNote.mockClear();
         mocks.writeOpenAction.mockReset();
         mocks.writeOpenAction.mockResolvedValue(undefined);
+        mocks.getSlotPaginate.mockReset();
     });
 
     test("does not expose a cacheable result when an edit writer throws before state is updated", async () => {
@@ -126,7 +153,10 @@ describe("ActionListApplyResult", () => {
         let thrown: unknown = null;
         try {
             await applyActionListPlan(
-                null as never,
+                {
+                    checkCancelled: () => undefined,
+                    finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+                } as never,
                 editPlan([observedSlot(0, oldAction)], [newAction]),
                 { sync: syncContext() }
             );
@@ -146,7 +176,10 @@ describe("ActionListApplyResult", () => {
         let thrown: unknown = null;
         try {
             await applyActionListPlan(
-                null as never,
+                {
+                    checkCancelled: () => undefined,
+                    finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+                } as never,
                 editPlan([observedSlot(0, oldAction)], [newAction]),
                 { sync: syncContext() }
             );
@@ -158,5 +191,60 @@ describe("ActionListApplyResult", () => {
         expect(actionListApplyResultFromError(thrown)).toEqual({
             currentSnapshot: [newAction],
         });
+    });
+
+    test("keeps the previous result cacheable when opening Add Action fails before mutation", async () => {
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
+        const ctx = {
+            checkCancelled: () => undefined,
+            finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+            getMenuItemSlot: () => {
+                throw new Error("Add Action is not in this menu");
+            },
+        };
+
+        let thrown: unknown = null;
+        try {
+            await applyActionListPlan(
+                ctx as never,
+                addPlan([observedSlot(0, oldAction)], [oldAction, newAction]),
+                { sync: syncContext() }
+            );
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(actionListApplyResultFromError(thrown)).toEqual({
+            currentSnapshot: [oldAction],
+        });
+    });
+
+    test("does not expose a result after the Add Action choice may have mutated Housing", async () => {
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
+        mocks.getSlotPaginate.mockReturnValue({
+            click: () => {
+                throw new Error("selection failed after click");
+            },
+        });
+        const ctx = {
+            checkCancelled: () => undefined,
+            finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+            getMenuItemSlot: () => ({ click: () => undefined }),
+        };
+
+        let thrown: unknown = null;
+        try {
+            await applyActionListPlan(
+                ctx as never,
+                addPlan([observedSlot(0, oldAction)], [oldAction, newAction]),
+                { sync: syncContext() }
+            );
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(actionListApplyResultFromError(thrown)).toBeNull();
     });
 });

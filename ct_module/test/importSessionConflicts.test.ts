@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
     scanImportable: vi.fn(),
     hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
-    upsertHouseLockImportable: vi.fn(),
+    deleteImportableCache: vi.fn(() => true),
+    upsertHouseLockImportables: vi.fn(() => true),
 }));
 
 vi.mock("../src/importables/import/importers", () => ({
@@ -42,11 +43,12 @@ vi.mock("../src/importCache", async (importOriginal) => ({
             ])
         ),
     }),
+    deleteImportableCache: mocks.deleteImportableCache,
     tryWriteImportableCache: mocks.tryWriteImportableCache,
 }));
 
 vi.mock("../src/importCache/houseLock", () => ({
-    upsertHouseLockImportable: mocks.upsertHouseLockImportable,
+    upsertHouseLockImportables: mocks.upsertHouseLockImportables,
 }));
 
 import { runImportSession } from "../src/importables/import/session";
@@ -61,6 +63,8 @@ describe("import conflict gate", () => {
         mocks.applyImportablePlan.mockResolvedValue(undefined);
         mocks.hydrateImportable.mockResolvedValue(undefined);
         mocks.tryWriteImportableCache.mockResolvedValue(true);
+        mocks.deleteImportableCache.mockReturnValue(true);
+        mocks.upsertHouseLockImportables.mockReturnValue(true);
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -114,7 +118,7 @@ describe("import conflict gate", () => {
 
         expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
         expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
-        expect(mocks.upsertHouseLockImportable).not.toHaveBeenCalled();
+        expect(mocks.upsertHouseLockImportables).not.toHaveBeenCalled();
         expect(events).toContainEqual({
             kind: "importableFinished",
             key: "./project/import.json|FUNCTION:Debug",
@@ -126,7 +130,7 @@ describe("import conflict gate", () => {
         );
     });
 
-    it("leaves caches and the lock untouched when hydration is cancelled", async () => {
+    it("saves completed observations when hydration is cancelled", async () => {
         const importables: ImportableFunction[] = [
             { type: "FUNCTION", name: "First", actions: [message("first")] },
             { type: "FUNCTION", name: "Second", actions: [message("second")] },
@@ -151,9 +155,10 @@ describe("import conflict gate", () => {
                 }),
             })
         );
+        const messages: string[] = [];
         const ctx = {
             sleep: async () => undefined,
-            displayMessage: () => undefined,
+            displayMessage: (text: string) => messages.push(text),
         } as unknown as TaskContext;
 
         await expect(
@@ -166,11 +171,20 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
-        expect(mocks.upsertHouseLockImportable).not.toHaveBeenCalled();
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(1);
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledWith(
+            ctx,
+            importables[0],
+            "importer",
+            "test-house"
+        );
+        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
+        expect(messages).toContain(
+            "&a[htsw] Cancellation saved verified house state for &f1&a importable; retry can reuse the cache."
+        );
     });
 
-    it("leaves the lock untouched when a later apply is cancelled", async () => {
+    it("saves a safe partial state and flushes the lock when apply is cancelled", async () => {
         const importables: ImportableFunction[] = [
             { type: "FUNCTION", name: "First", actions: [message("first")] },
             { type: "FUNCTION", name: "Second", actions: [message("second")] },
@@ -195,9 +209,10 @@ describe("import conflict gate", () => {
                 }),
             })
         );
+        const messages: string[] = [];
         const ctx = {
             sleep: async () => undefined,
-            displayMessage: () => undefined,
+            displayMessage: (text: string) => messages.push(text),
         } as unknown as TaskContext;
 
         await expect(
@@ -210,7 +225,61 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(1);
-        expect(mocks.upsertHouseLockImportable).not.toHaveBeenCalled();
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(2);
+        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
+        expect(messages).toContain(
+            "&a[htsw] Cancellation saved verified house state for &f2&a importables; retry can reuse the cache."
+        );
+    });
+
+    it("invalidates the current cache when cancellation leaves its state unverified", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Unsafe",
+            actions: [message("unsafe")],
+        };
+        mocks.scanImportable.mockResolvedValue({
+            kind: "FUNCTION",
+            importable,
+            hydrate: mocks.hydrateImportable,
+            plan: () => ({
+                kind: "FUNCTION",
+                importable,
+                isNoOp: () => false,
+                apply: async () => {
+                    throw createTaskCancelledError();
+                },
+                reconstructObserved: () => importable,
+                reconstructPartial: () => null,
+            }),
+        });
+        const messages: string[] = [];
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: (text: string) => messages.push(text),
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables: [importable],
+                trustMode: false,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: [importable] } as never,
+            })
+        ).rejects.toMatchObject({ __taskCancelled: true });
+
+        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
+        expect(mocks.deleteImportableCache).toHaveBeenCalledWith(
+            "test-house",
+            "FUNCTION",
+            "Unsafe"
+        );
+        expect(messages).toContain(
+            "&7[htsw] Cancellation could not save a verified state for the current importable."
+        );
+        expect(messages).toContain(
+            "&e[htsw] The current importable stopped during an unverified change, so its stale cache entry was removed."
+        );
     });
 });

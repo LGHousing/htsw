@@ -4,7 +4,7 @@ import {
     parseImportablesResult,
     type ImportablesParseResult,
 } from "htsw";
-import type { Importable, ImportableItem } from "htsw/types";
+import type { Importable } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
@@ -12,15 +12,15 @@ import { isTaskTraceEnabled, traceNote } from "../../housingSync/trace/taskTrace
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
     buildTrustPlan,
+    deleteImportableCache,
     loadImportableCachesOffThread,
     tryWriteImportableCache,
     type ImportableCacheLoadRequest,
 } from "../../importCache";
 import { upsertHouseLockImportables } from "../../importCache/houseLock";
 import { importableIdentity, importableKey } from "../identity";
-import { createProjectItemIndex } from "../items/projectItems";
 import {
-    createItemDependencyIndex,
+    type ItemDependencyIndex,
     type ItemDependencySnapshot,
 } from "../items/dependencyIndex";
 import { createItemDiffContext } from "../items/diff";
@@ -30,17 +30,9 @@ import { resetFunctionNameSession } from "../functions/listFunctions";
 import { resetMenuNameSession } from "../menus/listMenus";
 import { resetCommandNameSession } from "../commands/listCommands";
 import { createNpcLookupCache } from "../npcs/listNpcs";
-import {
-    scanImportable,
-    type ImportablePlan,
-    type ImportableRead,
-} from "./importers";
+import { scanImportable, type ImportablePlan, type ImportableRead } from "./importers";
 import type { ImportContext } from "./context";
-import {
-    expandDeclaredTeamAndGroupDependencies,
-    expandClickActionItemDependencies,
-    referencedItemNames,
-} from "../items/dependencies";
+import { expandImportDependencies } from "./dependencyExpansion";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import type { TaskProgressEntry } from "../../housingSync/progress/types";
 import { queueRowKey } from "../../housingSync/progress/queueRowKey";
@@ -48,6 +40,7 @@ import {
     estimateImportableUnits,
     setupUnitsForImportable,
 } from "../../housingSync/progress/costs";
+import { emitKnowledgeSource } from "../../housingSync/progress/knowledge";
 import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
@@ -55,10 +48,9 @@ import {
 import { writeImportFailureLog } from "../../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer";
 import type { ImportConflict } from "./conflicts";
-import {
-    applyReferencedShellPlan,
-    planMissingReferencedShells,
-} from "./references";
+import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
+
+export { orderImportablesForSession } from "./dependencyExpansion";
 
 export type ImportSessionRequest = {
     importables: Importable[];
@@ -68,12 +60,7 @@ export type ImportSessionRequest = {
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
     confirmConflicts?: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
-    /**
-     * Called for each click-action item dependency the session adds beyond
-     * `importables`. Expansion needs the housing UUID, so it can only run
-     * here, after the caller's queue snapshot — this hands the additions
-     * back so the visible queue can stay in sync with the actual work set.
-     */
+    /** Called for dependencies that were not already included by the caller. */
     onImportableAutoAdded?: (importable: Importable) => void;
 };
 
@@ -91,43 +78,6 @@ function toImportDiagnostic(
     const verb = phase === "read" ? "read" : "import";
     const message = error instanceof Error ? error.message : String(error);
     return Diagnostic.error(`Failed to ${verb} ${type}: ${message}`);
-}
-
-export function orderImportablesForSession(
-    _allImportables: readonly Importable[],
-    selectedImportables: readonly Importable[]
-): Importable[] {
-    const prerequisites: Importable[] = [];
-    const selectedItems: ImportableItem[] = [];
-    const rest: Importable[] = [];
-    for (const imp of selectedImportables) {
-        if (imp.type === "TEAM" || imp.type === "GROUP") prerequisites.push(imp);
-        else if (imp.type === "ITEM") selectedItems.push(imp);
-        else rest.push(imp);
-    }
-
-    const itemsByName = new Map<string, ImportableItem>();
-    for (const item of selectedItems) itemsByName.set(item.name, item);
-
-    const orderedItems: Importable[] = [];
-    const state = new Map<string, "visiting" | "done">();
-
-    function visit(item: ImportableItem): void {
-        const current = state.get(item.name);
-        if (current === "done") return;
-        if (current === "visiting") return;
-
-        state.set(item.name, "visiting");
-        for (const name of referencedItemNames(item)) {
-            const dependency = itemsByName.get(name);
-            if (dependency !== undefined) visit(dependency);
-        }
-        state.set(item.name, "done");
-        orderedItems.push(item);
-    }
-
-    for (const item of selectedItems) visit(item);
-    return prerequisites.concat(orderedItems, rest);
 }
 
 function warmImportableCaches(
@@ -151,6 +101,25 @@ export async function runImportSession(
     ctx: TaskContext,
     selection: ImportSessionRequest
 ): Promise<void> {
+    try {
+        await runImportSessionInner(ctx, selection);
+    } catch (error) {
+        if (isTaskCancelled(error)) {
+            reportCancellationCache(ctx, error, {
+                savedCount: 0,
+                lockUpdated: true,
+                invalidatedCurrent: false,
+                invalidationFailed: false,
+            });
+        }
+        throw error;
+    }
+}
+
+async function runImportSessionInner(
+    ctx: TaskContext,
+    selection: ImportSessionRequest
+): Promise<void> {
     resetRuntimeDebugRecords();
     resetFunctionNameSession();
     resetMenuNameSession();
@@ -162,48 +131,34 @@ export async function runImportSession(
             new SourceMap(new FileSystemFileLoader()),
             selection.sourcePath
         );
-    const items = createProjectItemIndex(parsed.value, parsed.gcx);
-    const itemDependencies = createItemDependencyIndex(parsed.value, items);
+    const expansion = expandImportDependencies(
+        parsed,
+        selection.importables,
+        selection.housingUuid
+    );
+    const { items, itemDependencies } = expansion;
     if (itemDependencies.cycles.length > 0) {
         throw Diagnostic.error(
             `Item click actions form a cycle: ${itemDependencies.cycles[0].itemNames.join(" -> ")}`
         );
     }
 
-    const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
-        parsed.value,
-        selection.importables
-    );
-    for (const team of teamGroupExpansion.addedTeams) {
-        selection.onImportableAutoAdded?.(team);
-        ctx.displayMessage(
-            `&7[htsw] Also importing team '&f${team.name}&7' — it is referenced by this import.`
-        );
+    for (const importable of expansion.addedImportables) {
+        selection.onImportableAutoAdded?.(importable);
+        if (importable.type === "TEAM" || importable.type === "GROUP") {
+            ctx.displayMessage(
+                `&7[htsw] Also importing ${importable.type.toLowerCase()} '&f${importable.name}&7' — it is referenced by this import.`
+            );
+        }
     }
-    for (const group of teamGroupExpansion.addedGroups) {
-        selection.onImportableAutoAdded?.(group);
+    if (expansion.addedItems.length > 0) {
+        const count = expansion.addedItems.length;
         ctx.displayMessage(
-            `&7[htsw] Also importing group '&f${group.name}&7' — it is referenced by this import.`
-        );
-    }
-
-    const expansion = expandClickActionItemDependencies(
-        items,
-        itemDependencies,
-        teamGroupExpansion.importables,
-        selection.housingUuid
-    );
-    for (const item of expansion.addedItems) {
-        selection.onImportableAutoAdded?.(item);
-        ctx.displayMessage(
-            `&7[htsw] Also importing item '&f${item.name}&7' — it has click actions and isn't in this house yet.`
+            `&7[htsw] Also importing &f${count}&7 required click-action item${count === 1 ? "" : "s"} — house item data is not cached.`
         );
     }
 
-    const orderedImportables = orderImportablesForSession(
-        parsed.value,
-        expansion.importables
-    );
+    const orderedImportables = expansion.importables;
     await warmImportableCaches(selection.housingUuid, orderedImportables);
     await ctx.sleep(1);
     // Building a trust plan hashes every importable and all of its actions,
@@ -271,11 +226,14 @@ export async function runImportSession(
             key: queueRowKey(importable.type, identity, selection.sourcePath),
             rowIndex,
             trustPlan: tp,
-            units: estimateImportableUnits(
-                importable,
-                tp?.entry ?? null,
-                tp?.trustMode === true
-            ),
+            units:
+                tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
+                    ? 1
+                    : estimateImportableUnits(
+                          importable,
+                          tp?.entry ?? null,
+                          tp?.trustMode === true
+                      ),
         };
     });
 
@@ -295,7 +253,8 @@ export async function runImportSession(
     );
 
     const plans: Array<{ row: (typeof rowsMeta)[number]; plan: ImportablePlan }> = [];
-    const noOpRows: (typeof rowsMeta)[number][] = [];
+    const noOpRows: Array<{ row: (typeof rowsMeta)[number]; plan: ImportablePlan }> = [];
+    const observedPlans: Array<{ plan: ImportablePlan }> = [];
     const trustedRows: (typeof rowsMeta)[number][] = [];
     const reads: Array<{ row: (typeof rowsMeta)[number]; read: ImportableRead }> = [];
     const pendingHouseLockEntries: PendingHouseLockEntry[] = [];
@@ -318,10 +277,12 @@ export async function runImportSession(
         // A trusted ITEM still has work to do: the item itself must land in
         // the player's inventory (its apply spawns from the SNBT cache).
         if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
+            emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
             trustedRows.push(row);
             continue;
         }
 
+        emitKnowledgeSource(events, "house", "shell-read", row.trustPlan);
         try {
             reads.push({
                 row,
@@ -369,25 +330,39 @@ export async function runImportSession(
     // ── Pass 2: hydrate every typed scan before planning any writes. ────
     const hydrated: typeof reads = [];
     for (const entry of reads) {
+        events?.emit({
+            kind: "importableReactivated",
+            key: entry.row.key,
+            rowIndex: entry.row.rowIndex,
+            phase: "hydrating",
+        });
         try {
             await entry.read.hydrate(ctx);
             hydrated.push(entry);
         } catch (error) {
-            if (isTaskCancelled(error)) throw error;
             const observedPlans = hydrated.map(({ read }) => ({
                 plan: read.plan(session),
             }));
-            await writeObservedPlanCaches(
+            const savedCount = await writeObservedPlanCaches(
                 ctx,
                 observedPlans,
                 selection.housingUuid,
                 pendingHouseLockEntries
             );
-            flushHouseLockEntries(
+            const lockUpdated = flushHouseLockEntries(
                 selection.sourcePath,
                 selection.housingUuid,
                 pendingHouseLockEntries
             );
+            if (isTaskCancelled(error)) {
+                reportCancellationCache(ctx, error, {
+                    savedCount,
+                    lockUpdated,
+                    invalidatedCurrent: false,
+                    invalidationFailed: false,
+                });
+                throw error;
+            }
             const row = entry.row;
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({
@@ -419,8 +394,9 @@ export async function runImportSession(
     // ── Pass 3: convert complete observations into exact apply plans. ───
     for (const { row, read } of reads) {
         const plan = read.plan(session);
+        observedPlans.push({ plan });
         if (plan.isNoOp()) {
-            noOpRows.push(row);
+            noOpRows.push({ row, plan });
         } else {
             plans.push({ row, plan });
         }
@@ -450,121 +426,186 @@ export async function runImportSession(
         }
     }
 
-    await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
-        ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
-    });
-    for (const name of referencedShellPlan.functions) {
-        session.ensuredReferencedShells.functions.add(name.toLowerCase());
-    }
-    for (const name of referencedShellPlan.menus) {
-        session.ensuredReferencedShells.menus.add(name.toLowerCase());
-    }
-    for (const name of referencedShellPlan.regions) {
-        session.ensuredReferencedShells.regions.add(name.toLowerCase());
-    }
-
-    for (const row of trustedRows) {
-        events?.emit({
-            kind: "importableReactivated",
-            key: row.key,
-            rowIndex: row.rowIndex,
+    let activePlanIndex: number | null = null;
+    try {
+        await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
+            ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
         });
-        await finishWithoutApply(
-            ctx,
-            row,
-            "skipped",
-            selection,
-            itemDependencies,
-            events,
-            pendingHouseLockEntries
-        );
-    }
+        for (const name of referencedShellPlan.functions) {
+            session.ensuredReferencedShells.functions.add(name.toLowerCase());
+        }
+        for (const name of referencedShellPlan.menus) {
+            session.ensuredReferencedShells.menus.add(name.toLowerCase());
+        }
+        for (const name of referencedShellPlan.regions) {
+            session.ensuredReferencedShells.regions.add(name.toLowerCase());
+        }
 
-    for (const row of noOpRows) {
-        events?.emit({
-            kind: "importableReactivated",
-            key: row.key,
-            rowIndex: row.rowIndex,
-        });
-        await finishWithoutApply(
-            ctx,
-            row,
-            "imported",
-            selection,
-            itemDependencies,
-            events,
-            pendingHouseLockEntries
-        );
-    }
-
-    // ── Pass 4: apply every collected plan in original order. ──────────
-    for (let planIndex = 0; planIndex < plans.length; planIndex++) {
-        const { row, plan } = plans[planIndex];
-        events?.emit({
-            kind: "importableReactivated",
-            key: row.key,
-            rowIndex: row.rowIndex,
-        });
-        try {
-            await plan.apply(ctx, session);
-            // ITEM manages its own per-NBT cache during apply.
-            if (plan.kind !== "ITEM") {
-                await tryWriteImportableCache(
-                    ctx,
-                    row.importable,
-                    "importer",
-                    selection.housingUuid,
-                    { itemDependencies: itemDependencies.snapshotOf(row.importable) }
-                );
-            }
-            pendingHouseLockEntries.push({
-                importable: row.importable,
-                itemDependencies: itemDependencies.snapshotOf(row.importable),
-            });
+        for (const row of trustedRows) {
             events?.emit({
-                kind: "importableFinished",
+                kind: "importableReactivated",
                 key: row.key,
-                status: "imported",
+                rowIndex: row.rowIndex,
             });
-        } catch (error) {
-            if (isTaskCancelled(error)) throw error;
-            await maybeWritePartialImportCache(
+            await finishWithoutApply(
                 ctx,
-                plan,
+                row,
+                "skipped",
+                selection,
+                itemDependencies,
+                events,
+                pendingHouseLockEntries
+            );
+        }
+
+        for (const { row } of noOpRows) {
+            events?.emit({
+                kind: "importableReactivated",
+                key: row.key,
+                rowIndex: row.rowIndex,
+            });
+            await finishWithoutApply(
+                ctx,
+                row,
+                "imported",
+                selection,
+                itemDependencies,
+                events,
+                pendingHouseLockEntries
+            );
+        }
+
+        // ── Pass 4: apply every collected plan in original order. ──────────
+        for (let planIndex = 0; planIndex < plans.length; planIndex++) {
+            activePlanIndex = planIndex;
+            const { row, plan } = plans[planIndex];
+            events?.emit({
+                kind: "importableReactivated",
+                key: row.key,
+                rowIndex: row.rowIndex,
+            });
+            try {
+                await plan.apply(ctx, session);
+                // ITEM manages its own per-NBT cache during apply.
+                let cacheSaved = true;
+                if (plan.kind !== "ITEM") {
+                    cacheSaved = await tryWriteImportableCache(
+                        ctx,
+                        row.importable,
+                        "importer",
+                        selection.housingUuid,
+                        { itemDependencies: itemDependencies.snapshotOf(row.importable) }
+                    );
+                }
+                if (cacheSaved) {
+                    pendingHouseLockEntries.push({
+                        importable: row.importable,
+                        itemDependencies: itemDependencies.snapshotOf(row.importable),
+                    });
+                }
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "imported",
+                });
+            } catch (error) {
+                if (isTaskCancelled(error)) throw error;
+                const partialSaved = await maybeWritePartialImportCache(
+                    ctx,
+                    plan,
+                    selection.housingUuid,
+                    actionListApplyResultFromError(error),
+                    pendingHouseLockEntries
+                );
+                if (!partialSaved) {
+                    deleteImportableCache(
+                        selection.housingUuid,
+                        row.importable.type,
+                        row.identity
+                    );
+                }
+                await writeObservedPlanCaches(
+                    ctx,
+                    plans.slice(planIndex + 1),
+                    selection.housingUuid,
+                    pendingHouseLockEntries
+                );
+                const diag = toImportDiagnostic(error, "import", row.importable.type);
+                events?.emit({
+                    kind: "importableFinished",
+                    key: row.key,
+                    status: "failed",
+                    error: diag.message,
+                });
+                const logPath = writeImportFailureLog(
+                    {
+                        phase: "apply",
+                        sourcePath: selection.sourcePath,
+                        housingUuid: selection.housingUuid,
+                        importableType: row.importable.type,
+                        identity: row.identity,
+                        rowIndex: row.rowIndex,
+                    },
+                    error
+                );
+                ctx.displayMessage(
+                    `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
+                );
+                ctx.displayMessage(
+                    partialSaved
+                        ? "&7[htsw] Saved the last verified partial state to cache for retry."
+                        : "&7[htsw] No verified partial state was available; the stale cache entry was removed."
+                );
+                ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
+                break;
+            }
+        }
+    } catch (error) {
+        if (!isTaskCancelled(error)) throw error;
+
+        let invalidatedCurrent = false;
+        let invalidationFailed = false;
+        if (activePlanIndex !== null) {
+            const active = plans[activePlanIndex];
+            const partialSaved = await maybeWritePartialImportCache(
+                ctx,
+                active.plan,
                 selection.housingUuid,
                 actionListApplyResultFromError(error),
                 pendingHouseLockEntries
             );
-            await writeObservedPlanCaches(
-                ctx,
-                plans.slice(planIndex + 1),
-                selection.housingUuid,
-                pendingHouseLockEntries
-            );
-            const diag = toImportDiagnostic(error, "import", row.importable.type);
-            events?.emit({
-                kind: "importableFinished",
-                key: row.key,
-                status: "failed",
-                error: diag.message,
-            });
-            const logPath = writeImportFailureLog(
-                {
-                    phase: "apply",
-                    sourcePath: selection.sourcePath,
-                    housingUuid: selection.housingUuid,
-                    importableType: row.importable.type,
-                    identity: row.identity,
-                    rowIndex: row.rowIndex,
-                },
-                error
-            );
-            ctx.displayMessage(
-                `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
-            );
-            ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
-            break;
+            if (!partialSaved) {
+                const invalidated = deleteImportableCache(
+                    selection.housingUuid,
+                    active.row.importable.type,
+                    active.row.identity
+                );
+                invalidatedCurrent = invalidated;
+                invalidationFailed = !invalidated;
+            }
         }
+
+        const remainingPlans =
+            activePlanIndex === null ? observedPlans : plans.slice(activePlanIndex + 1);
+        await writeObservedPlanCaches(
+            ctx,
+            remainingPlans,
+            selection.housingUuid,
+            pendingHouseLockEntries
+        );
+        const savedCount = countPendingHouseLockEntries(pendingHouseLockEntries);
+        const lockUpdated = flushHouseLockEntries(
+            selection.sourcePath,
+            selection.housingUuid,
+            pendingHouseLockEntries
+        );
+        reportCancellationCache(ctx, error, {
+            savedCount,
+            lockUpdated,
+            invalidatedCurrent,
+            invalidationFailed,
+        });
+        throw error;
     }
 
     flushHouseLockEntries(
@@ -583,22 +624,24 @@ async function finishWithoutApply(
     },
     status: "imported" | "skipped",
     selection: ImportSessionRequest,
-    itemDependencies: ReturnType<typeof createItemDependencyIndex>,
+    itemDependencies: ItemDependencyIndex,
     events: SyncEventHandler | undefined,
     pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
     const dependencies = itemDependencies.snapshotOf(row.importable);
-    await tryWriteImportableCache(
+    const cacheSaved = await tryWriteImportableCache(
         ctx,
         row.importable,
         "importer",
         selection.housingUuid,
         { itemDependencies: dependencies }
     );
-    pendingHouseLockEntries.push({
-        importable: row.importable,
-        itemDependencies: dependencies,
-    });
+    if (cacheSaved) {
+        pendingHouseLockEntries.push({
+            importable: row.importable,
+            itemDependencies: dependencies,
+        });
+    }
     events?.emit({ kind: "importableFinished", key: row.key, status });
 }
 
@@ -609,11 +652,14 @@ async function maybeWritePartialImportCache(
     housingUuid: string,
     result: ActionListApplyResult | null,
     pendingHouseLockEntries: PendingHouseLockEntry[]
-): Promise<void> {
+): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
-    if (partial === null) return;
-    await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
+    if (partial === null) return false;
+    if (!(await tryWriteImportableCache(ctx, partial, "importer", housingUuid))) {
+        return false;
+    }
     pendingHouseLockEntries.push({ importable: partial });
+    return true;
 }
 
 /**
@@ -628,19 +674,89 @@ async function writeObservedPlanCaches(
     plans: ReadonlyArray<{ plan: ImportablePlan }>,
     housingUuid: string,
     pendingHouseLockEntries: PendingHouseLockEntry[]
-): Promise<void> {
+): Promise<number> {
+    let savedCount = 0;
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
-        await tryWriteImportableCache(ctx, observed, "importer", housingUuid);
+        if (!(await tryWriteImportableCache(ctx, observed, "importer", housingUuid))) {
+            continue;
+        }
         pendingHouseLockEntries.push({ importable: observed });
+        savedCount++;
     }
+    return savedCount;
 }
 
 function flushHouseLockEntries(
     sourcePath: string,
     housingUuid: string,
     entries: readonly PendingHouseLockEntry[]
+): boolean {
+    return upsertHouseLockImportables(sourcePath, housingUuid, entries);
+}
+
+function countPendingHouseLockEntries(entries: readonly PendingHouseLockEntry[]): number {
+    const keys = new Set<string>();
+    for (const entry of entries) {
+        keys.add(
+            importableKey(entry.importable.type, importableIdentity(entry.importable))
+        );
+    }
+    return keys.size;
+}
+
+type CancellationCacheOutcome = {
+    savedCount: number;
+    lockUpdated: boolean;
+    invalidatedCurrent: boolean;
+    invalidationFailed: boolean;
+};
+
+type CancellationWithCacheReport = {
+    __htswCancellationCacheReported?: boolean;
+};
+
+function reportCancellationCache(
+    ctx: TaskContext,
+    error: unknown,
+    outcome: CancellationCacheOutcome
 ): void {
-    upsertHouseLockImportables(sourcePath, housingUuid, entries);
+    const reportable =
+        error !== null && (typeof error === "object" || typeof error === "function")
+            ? (error as CancellationWithCacheReport)
+            : null;
+    if (reportable?.__htswCancellationCacheReported === true) return;
+    if (reportable !== null) reportable.__htswCancellationCacheReported = true;
+
+    if (outcome.savedCount > 0) {
+        const noun = outcome.savedCount === 1 ? "importable" : "importables";
+        const retry = outcome.lockUpdated ? "; retry can reuse the cache" : "";
+        ctx.displayMessage(
+            `&a[htsw] Cancellation saved verified house state for &f${outcome.savedCount}&a ${noun}${retry}.`
+        );
+        if (!outcome.lockUpdated) {
+            ctx.displayMessage(
+                "&e[htsw] The cache files were saved, but house.lock could not be updated; retry may need to read them again."
+            );
+        }
+    } else if (!outcome.invalidatedCurrent && !outcome.invalidationFailed) {
+        ctx.displayMessage(
+            "&7[htsw] Cancellation had no new verified house state to save; existing cache was left unchanged."
+        );
+    } else {
+        ctx.displayMessage(
+            "&7[htsw] Cancellation could not save a verified state for the current importable."
+        );
+    }
+
+    if (outcome.invalidatedCurrent) {
+        ctx.displayMessage(
+            "&e[htsw] The current importable stopped during an unverified change, so its stale cache entry was removed."
+        );
+    } else if (outcome.invalidationFailed) {
+        ctx.displayMessage(
+            "&c[htsw] The current importable stopped during an unverified change and its stale cache entry could not be removed. Retry with Trusted disabled."
+        );
+    }
 }

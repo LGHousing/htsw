@@ -308,7 +308,7 @@ export async function setListItemNote(
     ctx: TaskContext,
     slot: ItemSlot,
     note: string | undefined,
-    options?: { onApplied?: () => void }
+    options?: { onMutationStarted?: () => void; onApplied?: () => void }
 ): Promise<void> {
     const normalizedNote = note === undefined ? undefined : normalizeNoteText(note);
     const currentNote = readListItemNote(slot);
@@ -324,6 +324,7 @@ export async function setListItemNote(
         return;
     }
 
+    options?.onMutationStarted?.();
     slot.drop();
     if (normalizedNote === undefined) {
         await waitForChatInputPrompt(ctx);
@@ -773,7 +774,7 @@ export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): b
 export async function setNoteOnLastVisibleSlot(
     ctx: TaskContext,
     note: string | undefined,
-    options?: { onApplied?: () => void }
+    options?: { onMutationStarted?: () => void; onApplied?: () => void }
 ): Promise<void> {
     if (!note) return;
     const slots = getVisiblePaginatedItemSlots(ctx);

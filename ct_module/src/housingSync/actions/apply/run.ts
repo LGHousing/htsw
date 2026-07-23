@@ -214,9 +214,14 @@ export class ActionListApplyRun {
             if (index === -1) continue;
 
             await this.beginOperation(op);
-            this.markSnapshotUnsafe();
-            await deleteObservedAction(this.ctx, index, this.current.length);
-            this.completeDelete(op, index);
+            await this.ctx.finishBeforeCancelling(async () => {
+                await deleteObservedAction(this.ctx, index, this.current.length, {
+                    onMutationStarted: () => {
+                        this.markSnapshotUnsafe();
+                    },
+                });
+                this.completeDelete(op, index);
+            });
         }
     }
 
@@ -229,72 +234,77 @@ export class ActionListApplyRun {
             if (currentIndex === -1) continue;
 
             await this.beginOperation(op);
+            await this.ctx.finishBeforeCancelling(async () => {
+                const actionSlot = await getPaginatedListSlotAtIndex(
+                    this.ctx,
+                    currentIndex,
+                    this.current.length,
+                    ACTION_LIST_CONFIG
+                );
 
-            const actionSlot = await getPaginatedListSlotAtIndex(
-                this.ctx,
-                currentIndex,
-                this.current.length,
-                ACTION_LIST_CONFIG
-            );
-
-            if (op.noteOnly) {
-                const snapshot = { updated: false };
-                const updateSnapshot = (): void => {
-                    this.updateCurrentAction(currentIndex, op.desired);
-                    snapshot.updated = true;
-                };
-                this.markSnapshotUnsafe();
-                await setListItemNote(this.ctx, actionSlot, op.desired.note, {
-                    onApplied: () => {
+                if (op.noteOnly) {
+                    const snapshot = { updated: false };
+                    const updateSnapshot = (): void => {
+                        this.updateCurrentAction(currentIndex, op.desired);
+                        snapshot.updated = true;
+                    };
+                    await setListItemNote(this.ctx, actionSlot, op.desired.note, {
+                        onMutationStarted: () => {
+                            this.markSnapshotUnsafe();
+                        },
+                        onApplied: () => {
+                            updateSnapshot();
+                            this.markSnapshotSafe();
+                        },
+                    });
+                    if (!snapshot.updated) {
                         updateSnapshot();
+                        this.markSnapshotSafe();
+                    }
+                    this.completeEdit(op);
+                    return;
+                }
+
+                const spec = getActionIo(op.desired.type);
+                const actionWithCurrentNote = (): Action =>
+                    actionWithNote(op.desired, op.baselineAction.note);
+                const desiredSnapshot = { updated: false };
+                const updateEditSnapshot = (action: Action, isDesired: boolean): void => {
+                    this.updateCurrentAction(currentIndex, action);
+                    if (isDesired) desiredSnapshot.updated = true;
+                };
+                if (spec.write) {
+                    actionSlot.click();
+                    await timedWaitForMenu(this.ctx, "menuClickWait");
+
+                    const apply = this.writerHooksFor(op, applyChildActionList);
+
+                    this.markSnapshotUnsafe();
+                    await writeOpenAction(this.ctx, op.desired, {
+                        current: op.baselineAction,
+                        resolveItem: this.options.sync.resolveItem,
+                        apply,
+                    });
+                    updateEditSnapshot(actionWithCurrentNote(), false);
+                    this.markSnapshotSafe();
+                    await clickGoBack(this.ctx);
+                }
+
+                await setListItemNote(this.ctx, actionSlot, op.desired.note, {
+                    onMutationStarted: () => {
+                        this.markSnapshotUnsafe();
+                    },
+                    onApplied: () => {
+                        updateEditSnapshot(op.desired, true);
                         this.markSnapshotSafe();
                     },
                 });
-                if (!snapshot.updated) {
-                    updateSnapshot();
+                if (!desiredSnapshot.updated) {
+                    updateEditSnapshot(op.desired, true);
                     this.markSnapshotSafe();
                 }
                 this.completeEdit(op);
-                continue;
-            }
-
-            const spec = getActionIo(op.desired.type);
-            const actionWithCurrentNote = (): Action =>
-                actionWithNote(op.desired, op.baselineAction.note);
-            const desiredSnapshot = { updated: false };
-            const updateEditSnapshot = (action: Action, isDesired: boolean): void => {
-                this.updateCurrentAction(currentIndex, action);
-                if (isDesired) desiredSnapshot.updated = true;
-            };
-            if (spec.write) {
-                actionSlot.click();
-                await timedWaitForMenu(this.ctx, "menuClickWait");
-
-                const apply = this.writerHooksFor(op, applyChildActionList);
-
-                this.markSnapshotUnsafe();
-                await writeOpenAction(this.ctx, op.desired, {
-                    current: op.baselineAction,
-                    resolveItem: this.options.sync.resolveItem,
-                    apply,
-                });
-                updateEditSnapshot(actionWithCurrentNote(), false);
-                this.markSnapshotSafe();
-                await clickGoBack(this.ctx);
-            }
-
-            this.markSnapshotUnsafe();
-            await setListItemNote(this.ctx, actionSlot, op.desired.note, {
-                onApplied: () => {
-                    updateEditSnapshot(op.desired, true);
-                    this.markSnapshotSafe();
-                },
             });
-            if (!desiredSnapshot.updated) {
-                updateEditSnapshot(op.desired, true);
-                this.markSnapshotSafe();
-            }
-            this.completeEdit(op);
         }
     }
 
@@ -307,10 +317,21 @@ export class ActionListApplyRun {
             if (fromIndex === -1) continue;
 
             await this.beginOperation(op);
-            this.markSnapshotUnsafe();
-            await moveActionToIndex(this.ctx, fromIndex, op.toIndex, this.current.length);
-            this.completeMove(op, fromIndex);
-            this.markSnapshotSafe();
+            await this.ctx.finishBeforeCancelling(async () => {
+                await moveActionToIndex(
+                    this.ctx,
+                    fromIndex,
+                    op.toIndex,
+                    this.current.length,
+                    {
+                        onMutationStarted: () => {
+                            this.markSnapshotUnsafe();
+                        },
+                    }
+                );
+                this.completeMove(op, fromIndex);
+                this.markSnapshotSafe();
+            });
         }
     }
 
@@ -322,70 +343,79 @@ export class ActionListApplyRun {
         let currentLength = this.current.length;
         for (const op of adds) {
             await this.beginOperation(op);
+            await this.ctx.finishBeforeCancelling(async () => {
+                const actionToImport = actionWithNote(op.desired, undefined);
 
-            const actionToImport = actionWithNote(op.desired, undefined);
-
-            const added = { value: false };
-            const updateAddedSnapshot = (): void => {
-                if (added.value) return;
-                this.appendCurrentAction(actionToImport);
-                added.value = true;
-            };
-            const apply = this.writerHooksFor(op, applyChildActionList);
-            this.markSnapshotUnsafe();
-            await addAction(
-                this.ctx,
-                actionToImport,
-                this.options.sync.resolveItem,
-                apply,
-                {
-                    onActionAdded: () => {
-                        updateAddedSnapshot();
-                        this.markSnapshotSafe();
-                    },
-                }
-            );
-            if (!added.value) {
-                updateAddedSnapshot();
-                this.markSnapshotSafe();
-            }
-
-            this.markSnapshotUnsafe();
-            await moveActionToIndex(
-                this.ctx,
-                currentLength,
-                op.toIndex,
-                currentLength + 1
-            );
-
-            this.moveCurrentEntry(currentLength, op.toIndex);
-            currentLength += 1;
-
-            if (op.desired.note !== undefined) {
-                const addedSlot = await getPaginatedListSlotAtIndex(
-                    this.ctx,
-                    op.toIndex,
-                    currentLength,
-                    ACTION_LIST_CONFIG
-                );
-                const noteSnapshot = { updated: false };
-                const updateNoteSnapshot = (): void => {
-                    this.updateCurrentAction(op.toIndex, op.desired);
-                    noteSnapshot.updated = true;
+                const added = { value: false };
+                const updateAddedSnapshot = (): void => {
+                    if (added.value) return;
+                    this.appendCurrentAction(actionToImport);
+                    added.value = true;
                 };
-                this.markSnapshotUnsafe();
-                await setListItemNote(this.ctx, addedSlot, op.desired.note, {
-                    onApplied: () => {
-                        updateNoteSnapshot();
-                        this.markSnapshotSafe();
-                    },
-                });
-                if (!noteSnapshot.updated) {
-                    updateNoteSnapshot();
+                const apply = this.writerHooksFor(op, applyChildActionList);
+                await addAction(
+                    this.ctx,
+                    actionToImport,
+                    this.options.sync.resolveItem,
+                    apply,
+                    {
+                        onMutationStarted: () => {
+                            this.markSnapshotUnsafe();
+                        },
+                        onActionAdded: () => {
+                            updateAddedSnapshot();
+                            this.markSnapshotSafe();
+                        },
+                    }
+                );
+                if (!added.value) {
+                    updateAddedSnapshot();
                     this.markSnapshotSafe();
                 }
-            }
-            this.completeAdd(op);
+
+                await moveActionToIndex(
+                    this.ctx,
+                    currentLength,
+                    op.toIndex,
+                    currentLength + 1,
+                    {
+                        onMutationStarted: () => {
+                            this.markSnapshotUnsafe();
+                        },
+                    }
+                );
+
+                this.moveCurrentEntry(currentLength, op.toIndex);
+                currentLength += 1;
+
+                if (op.desired.note !== undefined) {
+                    const addedSlot = await getPaginatedListSlotAtIndex(
+                        this.ctx,
+                        op.toIndex,
+                        currentLength,
+                        ACTION_LIST_CONFIG
+                    );
+                    const noteSnapshot = { updated: false };
+                    const updateNoteSnapshot = (): void => {
+                        this.updateCurrentAction(op.toIndex, op.desired);
+                        noteSnapshot.updated = true;
+                    };
+                    await setListItemNote(this.ctx, addedSlot, op.desired.note, {
+                        onMutationStarted: () => {
+                            this.markSnapshotUnsafe();
+                        },
+                        onApplied: () => {
+                            updateNoteSnapshot();
+                            this.markSnapshotSafe();
+                        },
+                    });
+                    if (!noteSnapshot.updated) {
+                        updateNoteSnapshot();
+                        this.markSnapshotSafe();
+                    }
+                }
+                this.completeAdd(op);
+            });
         }
     }
 
@@ -397,6 +427,7 @@ export class ActionListApplyRun {
     }
 
     private async beginOperation(op: ActionListOperation): Promise<void> {
+        this.ctx.checkCancelled();
         this.operationStartUnits = this.appliedUnits;
         this.emitStarted(op, this.pathForOp(op));
     }

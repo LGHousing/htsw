@@ -3,6 +3,7 @@ import type { ImportableNpc } from "htsw/types";
 import { applyActionListPlan } from "../../housingSync/actions/apply";
 import type { ActionListPlan } from "../../housingSync/actions/plan";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
+import { createProgressGroup } from "../../housingSync/progress/group";
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import {
@@ -50,8 +51,7 @@ function leftClickRedirectTrusted(
     plan: ImportableTrustPlan | undefined
 ): boolean {
     if (importable.leftClickRedirect === undefined) return true;
-    if (plan?.trustMode !== true || plan.entry?.importable.type !== "NPC")
-        return false;
+    if (plan?.trustMode !== true || plan.entry?.importable.type !== "NPC") return false;
     return plan.entry.importable.leftClickRedirect === importable.leftClickRedirect;
 }
 
@@ -72,6 +72,7 @@ export async function scanImportableNpc(
     setup(`opened NPC ${liveNpc.name}`);
 
     const leftEditor = { opened: false };
+    const progress = createProgressGroup(session.actions.events, 2);
     const left = await scanActionListSync(ctx, {
         desired: importable.leftClickActions,
         sync: session.actions,
@@ -86,6 +87,7 @@ export async function scanImportableNpc(
             await openNpcLeftClickActions(ctx, importable, session.npcLookup);
             leftEditor.opened = true;
         },
+        progress: progress.part(0),
     });
     if (redirectEligible && !leftEditor.opened) {
         await openNpcLeftClickActions(ctx, importable, session.npcLookup);
@@ -106,6 +108,7 @@ export async function scanImportableNpc(
         open: async () => {
             await openNpcRightClickActions(ctx, importable, session.npcLookup);
         },
+        progress: progress.part(1),
     });
 
     return {
@@ -161,7 +164,9 @@ export async function applyImportableNpcPlan(
         if (!plan.leftClickRedirectHandled) {
             const redirect = plan.importable.leftClickRedirect;
             if (redirect === undefined) {
-                throw new Error("NPC left-click redirect became unavailable during apply");
+                throw new Error(
+                    "NPC left-click redirect became unavailable during apply"
+                );
             }
             await setLeftClickRedirect(ctx, redirect);
         }

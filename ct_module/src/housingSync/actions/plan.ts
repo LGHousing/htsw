@@ -1,10 +1,7 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type {
-    ActionSyncConflict,
-    ActionSyncContext,
-} from "./syncContext";
+import type { ActionSyncConflict, ActionSyncContext } from "./syncContext";
 import type { ActionListTrust } from "./applyTrust";
 import type { ActionListDiff } from "./diff/types";
 import type { ObservedActionSlot } from "../observedActions";
@@ -40,6 +37,7 @@ export type ActionListPrereadOptions = ActionListApplyOptions & {
     baselineCurrent?: readonly Action[];
     trustedBaselineAfterUnchangedScan?: readonly Action[];
     conflictTarget?: ActionSyncConflict;
+    progress?: ProgressHandler;
 };
 
 export type ActionListPlan = {
@@ -67,9 +65,7 @@ export async function readActionListPlan(
     options: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
     const scan = await scanActionListForPlan(ctx, desired, options);
-    return scan.kind === "planned"
-        ? scan.plan
-        : hydrateActionListForPlan(ctx, scan);
+    return scan.kind === "planned" ? scan.plan : hydrateActionListForPlan(ctx, scan);
 }
 
 export async function scanActionListForPlan(
@@ -80,14 +76,15 @@ export async function scanActionListForPlan(
     const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
-        options.sync.events === undefined
+        options.progress ??
+        (options.sync.events === undefined
             ? undefined
             : (event) =>
                   options.sync.events?.emit({
                       kind: "progress",
                       scope: progressScope,
                       progress: event,
-                  });
+                  }));
     const itemRead =
         options.sync.itemRead.mode === "sync"
             ? {
@@ -158,10 +155,7 @@ export async function hydrateActionListForPlan(
     const observed = scan.slots;
     for (const entry of observed) {
         if (entry.action !== null) {
-            canonicalizeActionItemName(
-                entry.action,
-                options.sync.canonicalizeItemName
-            );
+            canonicalizeActionItemName(entry.action, options.sync.canonicalizeItemName);
         }
     }
     for (const action of desired) {

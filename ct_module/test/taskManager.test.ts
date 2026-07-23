@@ -33,3 +33,20 @@ test("keeps task admission exclusive until cancellation finishes unwinding", asy
     await expect(first).resolves.toBeUndefined();
     expect(TaskManager.isBusy()).toBe(false);
 });
+
+test("defers cancellation until the active mutation finishes", async () => {
+    let mutationFinished = false;
+    let continuedAfterMutation = false;
+
+    await TaskManager.run(async (ctx) => {
+        await ctx.finishBeforeCancelling(async () => {
+            ctx.cancel();
+            ctx.checkCancelled();
+            mutationFinished = true;
+        });
+        continuedAfterMutation = true;
+    });
+
+    expect(mutationFinished).toBe(true);
+    expect(continuedAfterMutation).toBe(false);
+});

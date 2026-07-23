@@ -16,6 +16,7 @@ import type {
     PhaseUnits,
     ProgressPayload,
     MenuSlotFocus,
+    ImportKnowledgeState,
 } from "./types";
 
 type ActiveBookkeeping = {
@@ -31,6 +32,7 @@ type ActiveBookkeeping = {
     phase: TaskProgressActive["phase"];
     sync: TaskProgressActive["sync"];
     currentSlot: MenuSlotFocus | null;
+    knowledge: ImportKnowledgeState | null;
 };
 
 export type ProgressReducerState = {
@@ -78,6 +80,8 @@ export function reduce(
             return applySetupStep(state, event.completed, event.total);
         case "progress":
             return applyProgress(state, event.scope, event.progress);
+        case "knowledgeSourceUsed":
+            return applyKnowledgeSource(state, event);
         case "menuSlotStarted":
             return applyMenuSlotStarted(state, {
                 slot: event.slot,
@@ -152,6 +156,7 @@ function startImportable(
         phase: "setup",
         sync: null,
         currentSlot: null,
+        knowledge: null,
     };
     return rebuildSnapshot(carriedActive, active);
 }
@@ -263,6 +268,23 @@ function applyMenuSlotStarted(
 ): ProgressReducerState {
     if (state.active === null) return state;
     return rebuildSnapshot(state, { ...state.active, currentSlot: focus });
+}
+
+function applyKnowledgeSource(
+    state: ProgressReducerState,
+    event: Extract<SyncEvent, { kind: "knowledgeSourceUsed" }>
+): ProgressReducerState {
+    if (state.active === null) return state;
+    const previous = state.active.knowledge;
+    const knowledge: ImportKnowledgeState = {
+        usedCache: previous?.usedCache === true || event.source === "cache",
+        usedHouse: previous?.usedHouse === true || event.source === "house",
+        usedKnownState: previous?.usedKnownState === true || event.source === "known",
+        currentSource: event.source,
+        currentReason: event.reason,
+        lockStatus: event.lockStatus ?? previous?.lockStatus ?? null,
+    };
+    return rebuildSnapshot(state, { ...state.active, knowledge });
 }
 
 function applyProgress(
@@ -474,6 +496,7 @@ function rebuildSnapshot(
         phaseUnits: active.currentPhaseUnits,
         sync: active.sync,
         currentSlot: active.currentSlot,
+        knowledge: active.knowledge,
     };
     return {
         ...state,
@@ -527,6 +550,7 @@ function deriveParked(
             phaseUnits: b.currentPhaseUnits,
             sync: b.sync,
             currentSlot: b.currentSlot,
+            knowledge: b.knowledge,
         };
     }
     const derived = { refinement, completed, snapshots };

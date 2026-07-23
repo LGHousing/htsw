@@ -56,9 +56,10 @@ import {
 } from "htsw-editor-common/project";
 import {
     addToQueue,
-    isInQueue,
+    isQueueItemQueued,
     makeImportableQueueItem,
     queueItemKey,
+    removeFromQueue,
     removeFromQueueKey,
     toggleQueue,
 } from "../../right-panel/import-tab/queue";
@@ -797,7 +798,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     const deepRead = readImportableAction(parent, imp);
     const actions: MenuAction[] = [
         {
-            label: isInQueue(queueItemKey(item))
+            label: isQueueItemQueued(item)
                 ? "Remove from queue"
                 : "Queue for import",
             icon: Icons.listPlus,
@@ -931,9 +932,10 @@ function queueImportJsonSubtree(parent: ResultImport, node: IncludeNode): void {
 }
 
 function queueModifiedSubtree(parent: ResultImport, node: IncludeNode): void {
+    if (parent.parse === null) return;
     const importables: Importable[] = [];
     collectSubtreeImportables(node, importables);
-    queueModifiedImportables(parent.fullPath, importables);
+    queueModifiedImportables(parent.fullPath, parent.parse, importables);
 }
 
 // Where the last row menu opened. Submenus ("Move to…") anchor here because
@@ -966,8 +968,10 @@ function fileIconFor(r: Result): Element {
     return Icon({ name: Icons.fileBox, color: IMPORTABLE_TYPE_COLORS.ITEM });
 }
 
-function queueCheckbox(checked: boolean, onToggle: () => void): Element {
-    const color = checked ? ACCENT_SUCCESS : COLOR_TEXT_DIM;
+function queueCheckbox(
+    checked: () => boolean,
+    onToggle: (checked: boolean) => void
+): Element {
     return Container({
         style: {
             direction: "row",
@@ -980,14 +984,14 @@ function queueCheckbox(checked: boolean, onToggle: () => void): Element {
         onClick: (_rect, info) => {
             if (info.isDoubleClickSecond) return;
             if (info.button !== 0) return;
-            onToggle();
+            onToggle(checked());
         },
         children: [
             Icon({
-                name: checked ? Icons.squareCheck : Icons.square,
-                color,
-                tooltip: checked ? "Queued" : "Add to queue",
-                tooltipColor: color,
+                name: () => (checked() ? Icons.squareCheck : Icons.square),
+                color: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
+                tooltip: () => (checked() ? "Queued" : "Add to queue"),
+                tooltipColor: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -1593,7 +1597,7 @@ function toggleImportableInQueue(
 ): void {
     if (checked && isTaskRunning()) return; // would remove — locked mid-run
     const item = makeImportableQueueItem(imp, parent.fullPath);
-    if (checked) removeFromQueueKey(queueItemKey(item));
+    if (checked) removeFromQueue(item);
     else addToQueue(item);
 }
 
@@ -1603,7 +1607,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
     const queueItem = makeImportableQueueItem(imp, parent.fullPath);
-    const checked = isInQueue(queueItemKey(queueItem));
+    const checked = (): boolean => isQueueItemQueued(queueItem);
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
     const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
     const contentIcon = ImportableIcon({
@@ -1632,8 +1636,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
         ),
         onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
         children: [
-            queueCheckbox(checked, () =>
-                toggleImportableInQueue(parent, imp, checked)
+            queueCheckbox(checked, (isChecked) =>
+                toggleImportableInQueue(parent, imp, isChecked)
             ),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
             rowSlot(INNER_GAP),

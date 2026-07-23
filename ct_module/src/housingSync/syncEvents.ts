@@ -1,5 +1,11 @@
 import type { Action, Importable } from "htsw/types";
-import type { TaskProgressEntry, ProgressPayload } from "./progress/types";
+import type {
+    KnowledgeLockStatus,
+    KnowledgeSourceKind,
+    KnowledgeSourceReason,
+    TaskProgressEntry,
+    ProgressPayload,
+} from "./progress/types";
 import type {
     ActionListPath,
     ActionPath,
@@ -130,6 +136,12 @@ export type SyncEvent =
       }
     | { kind: "sessionFinished" }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
+    | {
+          kind: "knowledgeSourceUsed";
+          source: KnowledgeSourceKind;
+          reason: KnowledgeSourceReason;
+          lockStatus?: KnowledgeLockStatus;
+      }
     | {
           /**
            * A MENU import's apply pass moved to a grid slot. Carries the slot's

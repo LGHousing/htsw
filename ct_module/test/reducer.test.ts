@@ -175,6 +175,47 @@ describe("progress reducer", () => {
         });
     });
 
+    test("knowledge source events retain the importable's cache and house mix", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "m", status: "queued", ...baseRow }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "m",
+                type: "MENU",
+                identity: "Shop",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "knowledgeSourceUsed",
+                source: "house",
+                reason: "shell-read",
+                lockStatus: "matched",
+            },
+            {
+                kind: "knowledgeSourceUsed",
+                source: "cache",
+                reason: "cached-list",
+                lockStatus: "matched",
+            },
+        ]);
+
+        expect(s.progress.active?.knowledge).toEqual({
+            usedCache: true,
+            usedHouse: true,
+            usedKnownState: false,
+            currentSource: "cache",
+            currentReason: "cached-list",
+            lockStatus: "matched",
+        });
+    });
+
     test("menu slot action progress uses nested-list accounting without an action path", () => {
         const s = emit([
             {

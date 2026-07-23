@@ -21,9 +21,15 @@ import type { ActionApplyContext } from "../../context/actionApplyContext";
 import { appendConditionsToOpenConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import { getActionIo, writeOpenAction } from "../io";
+import { isTaskCancelled } from "../../../tasks/manager";
 
 type ImportActionCallbacks = {
+    onMutationStarted?: () => void;
     onActionAdded?: () => void;
+};
+
+type MutationCallbacks = {
+    onMutationStarted?: () => void;
 };
 
 export function actionWithNote(action: Action, note: string | undefined): Action {
@@ -43,7 +49,7 @@ export async function addAction(
     const spec = getActionIo(action.type);
     const displayName = spec.displayName;
 
-    await clickAddActionOption(ctx, action.type, displayName);
+    await clickAddActionOption(ctx, action.type, displayName, callbacks);
     if (!spec.write) {
         callbacks?.onActionAdded?.();
     }
@@ -88,7 +94,8 @@ export async function appendActionsToOpenActionList(
 export async function deleteObservedAction(
     ctx: TaskContext,
     index: number,
-    listLength: number
+    listLength: number,
+    callbacks?: MutationCallbacks
 ): Promise<void> {
     const slot = await getPaginatedListSlotAtIndex(
         ctx,
@@ -96,6 +103,7 @@ export async function deleteObservedAction(
         listLength,
         ACTION_LIST_CONFIG
     );
+    callbacks?.onMutationStarted?.();
     slot.click(MouseButton.RIGHT);
     await timedWaitForMenu(ctx, "menuClickWait");
 }
@@ -104,7 +112,8 @@ export async function moveActionToIndex(
     ctx: TaskContext,
     fromIndex: number,
     toIndex: number,
-    listLength: number
+    listLength: number,
+    callbacks?: MutationCallbacks
 ): Promise<void> {
     if (listLength <= 1) {
         return;
@@ -125,6 +134,7 @@ export async function moveActionToIndex(
             listLength,
             ACTION_LIST_CONFIG
         );
+        callbacks?.onMutationStarted?.();
         currentSlot.click(button, true);
         await timed("reorderStep", COST.reorderStep, () => waitForMenu(ctx));
 
@@ -145,7 +155,8 @@ export async function moveActionToIndex(
 async function clickAddActionOption(
     ctx: TaskContext,
     actionType: Action["type"],
-    displayName: string
+    displayName: string,
+    callbacks?: ImportActionCallbacks
 ): Promise<void> {
     const slot = await getSlotPaginate(ctx, displayName);
 
@@ -154,10 +165,12 @@ async function clickAddActionOption(
     }
 
     const wait = timedWaitForMenu(ctx, "menuClickWait");
+    callbacks?.onMutationStarted?.();
     slot.click();
     try {
         await wait;
     } catch (error) {
+        if (isTaskCancelled(error)) throw error;
         throw new Error(
             `After clicking Add Action option "${displayName}" (${actionType})${menuStateDescription()}: ${errorMessage(error)}`
         );

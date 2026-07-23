@@ -33,6 +33,7 @@ import {
     orderImportablesForSession,
     runImportSession,
 } from "../../../importables/import/session";
+import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
 import { importableIdentity } from "../../../importables/identity";
 import { HOUSE_READERS } from "../../../importables/export/readers";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
@@ -279,6 +280,7 @@ function createSyncEventHandler(args: {
             activeViewPath = null;
         },
         progress: () => {},
+        knowledgeSourceUsed: () => {},
         // Slot focus lives on the progress snapshot (set by the reducer); the
         // panel reads it from there. Nothing to mirror into the code view.
         menuSlotStarted: () => {},
@@ -382,9 +384,7 @@ const importablesByKeyByParse = new WeakMap<
     Map<string, Importable>
 >();
 
-function importablesByKey(
-    parsed: ImportablesParseResult
-): Map<string, Importable> {
+function importablesByKey(parsed: ImportablesParseResult): Map<string, Importable> {
     const cached = importablesByKeyByParse.get(parsed);
     if (cached !== undefined) return cached;
     const byKey = new Map<string, Importable>();
@@ -614,6 +614,33 @@ async function prepareAndStartImport(
         return;
     }
     const trustMode = isCurrentHouseTrusted();
+    const selectedCount = batches.reduce(
+        (total, batch) => total + batch.importables.length,
+        0
+    );
+    const dependencyAdditions: Array<{
+        importable: Importable;
+        sourcePath: string;
+    }> = [];
+    let addedItemCount = 0;
+    const knownHousingUuid = getHousingUuid();
+    if (knownHousingUuid !== null) {
+        for (const batch of batches) {
+            const expansion = expandImportDependencies(
+                batch.parsed,
+                batch.importables,
+                knownHousingUuid
+            );
+            batch.importables = expansion.importables;
+            addedItemCount += expansion.addedItems.length;
+            for (const importable of expansion.addedImportables) {
+                dependencyAdditions.push({
+                    importable,
+                    sourcePath: batch.sourcePath,
+                });
+            }
+        }
+    }
 
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
@@ -639,6 +666,11 @@ async function prepareAndStartImport(
     if (explicit !== undefined) {
         for (const item of explicit) addToQueue(item);
     }
+    for (const addition of dependencyAdditions) {
+        addToQueue(
+            makeImportableQueueItem(addition.importable, addition.sourcePath)
+        );
+    }
     beginQueueSession();
 
     // Snapshot this session's queue keys so the post-run cleanup can drop
@@ -646,6 +678,29 @@ async function prepareAndStartImport(
     const sessionItemKeys: string[] = (
         explicit ?? getQueue().filter(isImportQueueItem)
     ).map(queueItemKey);
+    if (explicit !== undefined) {
+        for (const addition of dependencyAdditions) {
+            const key = queueItemKey(
+                makeImportableQueueItem(addition.importable, addition.sourcePath)
+            );
+            if (sessionItemKeys.indexOf(key) < 0) sessionItemKeys.push(key);
+        }
+    }
+    if (dependencyAdditions.length > 0) {
+        const totalCount = batches.reduce(
+            (total, batch) => total + batch.importables.length,
+            0
+        );
+        const dependencyLabel =
+            addedItemCount === dependencyAdditions.length
+                ? `${addedItemCount} required click-action item${addedItemCount === 1 ? "" : "s"}`
+                : `${dependencyAdditions.length} required dependenc${dependencyAdditions.length === 1 ? "y" : "ies"}`;
+        showToast(
+            `Queued ${dependencyLabel} · ${selectedCount} selected → ${totalCount} total`,
+            0xff5c9ded,
+            8000
+        );
+    }
     const startedAt = Date.now();
     let reviewRequest: ConflictReviewRequest | null = null;
 
@@ -708,7 +763,10 @@ async function prepareAndStartImport(
                         // Track it with this session's keys so the
                         // post-success cleanup removes it like any other
                         // session row.
-                        sessionItemKeys.push(queueItemKey(queueItem));
+                        const key = queueItemKey(queueItem);
+                        if (sessionItemKeys.indexOf(key) < 0) {
+                            sessionItemKeys.push(key);
+                        }
                     },
                 });
                 const c = events.counts();

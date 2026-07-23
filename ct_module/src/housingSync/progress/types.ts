@@ -10,12 +10,7 @@ export type PhaseUnits = {
     applying: number;
 };
 
-type TaskRunRowStatus =
-    | "queued"
-    | "current"
-    | "imported"
-    | "skipped"
-    | "failed";
+type TaskRunRowStatus = "queued" | "current" | "imported" | "skipped" | "failed";
 
 type ListSyncProgress = {
     completedUnits: number;
@@ -53,6 +48,28 @@ export type MenuSlotFocus = {
     count: number;
 };
 
+export type KnowledgeSourceKind = "cache" | "house" | "known";
+
+export type KnowledgeSourceReason =
+    | "whole-importable"
+    | "cached-list"
+    | "shell-read"
+    | "full-read"
+    | "lock-verification"
+    | "lock-verified"
+    | "known-empty";
+
+export type KnowledgeLockStatus = "matched" | "missing" | "mismatch";
+
+export type ImportKnowledgeState = {
+    usedCache: boolean;
+    usedHouse: boolean;
+    usedKnownState: boolean;
+    currentSource: KnowledgeSourceKind;
+    currentReason: KnowledgeSourceReason;
+    lockStatus: KnowledgeLockStatus | null;
+};
+
 export type TaskProgressActive = {
     key: string;
     type: Importable["type"];
@@ -63,6 +80,7 @@ export type TaskProgressActive = {
     phaseUnits: PhaseUnits;
     sync: ListSyncProgress | null;
     currentSlot?: MenuSlotFocus | null;
+    knowledge?: ImportKnowledgeState | null;
 };
 
 export type TaskProgress = {
@@ -99,9 +117,11 @@ export function isTaskTotalLocked(progress: TaskProgress): boolean {
     return progress.active.phase === "applying" || progress.active.phase === "done";
 }
 
-export function countTaskRowsByStatus(
-    progress: TaskProgress
-): { completed: number; failed: number; total: number } {
+export function countTaskRowsByStatus(progress: TaskProgress): {
+    completed: number;
+    failed: number;
+    total: number;
+} {
     let completed = 0;
     let failed = 0;
     for (let i = 0; i < progress.rows.length; i++) {

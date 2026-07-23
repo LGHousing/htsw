@@ -41,7 +41,7 @@ import {
 import { canonicalPath } from "../parsing/parses";
 import {
     getQueue,
-    isInQueue,
+    getQueuedItemKey,
     queueItemKey,
     queueItemsForPath,
     type QueueItem,
@@ -116,8 +116,8 @@ function queuedCountForTab(tab: Extract<Tab, { kind: "file" }>): number {
     const seen = new Set<string>();
     let count = 0;
     for (let i = 0; i < matches.length; i++) {
-        const key = queueItemKey(matches[i]);
-        if (isInQueue(key) && !seen.has(key)) {
+        const key = getQueuedItemKey(matches[i]);
+        if (key !== null && !seen.has(key)) {
             seen.add(key);
             count++;
         }

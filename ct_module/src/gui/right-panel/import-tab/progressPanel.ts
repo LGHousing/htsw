@@ -24,7 +24,6 @@ import {
 } from "../../lib/theme";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
-import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
@@ -106,10 +105,15 @@ function opCounterText(): string {
  * (and the item going into it), not the current slot's action-list op count.
  * Returns the parts to show in place of `opCounterText` while a slot is active.
  */
-function menuSlotParts(slot: MenuSlotFocus): string[] {
+function menuSlotParts(slot: MenuSlotFocus, phase: string): string[] {
     const named = slot.label !== null && slot.label.length > 0 ? ` (${slot.label})` : "";
-    const parts = [`slot ${slot.slot}${named}`];
-    if (slot.count > 1) parts.push(`${slot.index}/${slot.count}`);
+    const parts: string[] = [];
+    if (slot.count > 1) {
+        parts.push(
+            `${phase === "applying" ? "step" : "item"} ${slot.index}/${slot.count}`
+        );
+    }
+    parts.push(`slot ${slot.slot}${named}`);
     return parts;
 }
 
@@ -117,17 +121,12 @@ function phaseEtaText(suffix: string): string {
     // Show a phase countdown only when this phase's size is actually known:
     //   - hydrating: the hydration plan gives exact units at phase start
     //   - applying:  the diff is computed, op count fixed
-    //   - trusted:   real counts up front for every phase
-    // Setup and untrusted reading are discovery — their totals aren't known
+    // Setup and reading are discovery — their totals aren't known
     // yet, so a countdown there would be invented. (Reading also self-
     // suppresses: its remaining stays ~0 until the read finishes.)
     const p = getTaskProgress();
     const phase = p !== null && p.active !== null ? p.active.phase : null;
-    const phaseKnown =
-        isCurrentHouseTrusted() ||
-        phase === "hydrating" ||
-        phase === "applying" ||
-        phase === "done";
+    const phaseKnown = phase === "hydrating" || phase === "applying" || phase === "done";
     if (p !== null && !phaseKnown) return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
@@ -143,8 +142,8 @@ function currentPhaseLabel(): string {
     const etaSuffix = isEtaEstimating() ? "scan" : labels.etaSuffix;
     const parts: string[] = [];
     const slot = p.active.currentSlot;
-    if (slot != null && p.active.phase === "applying") {
-        for (const part of menuSlotParts(slot)) parts.push(part);
+    if (slot != null && p.active.type === "MENU") {
+        for (const part of menuSlotParts(slot, p.active.phase)) parts.push(part);
     } else {
         const counter = opCounterText();
         if (counter.length > 0) parts.push(counter);
@@ -162,11 +161,7 @@ function currentPhaseLabel(): string {
  * progress bar (reading/hydrating/applying) and reused by `queue.ts`'s
  * per-row mini bar.
  */
-function phaseSegment(
-    widthFactor: number,
-    fraction: number,
-    color: number
-): Element {
+function phaseSegment(widthFactor: number, fraction: number, color: number): Element {
     return Container({
         style: {
             direction: "row",
@@ -322,9 +317,8 @@ function progressTotalEtaLine(): string {
     // Until the apply phase, the per-importable apply cost is just a rough
     // guess — the real op-by-op diff isn't known until each importable has
     // been read + hydrated. Showing a total before then is fiction, so we
-    // withhold it (the per-phase ETA still ticks). Exception: trust on, where
-    // cache baselines make every importable's diff cost real from the start.
-    const ready = isTaskTotalLocked(p) || isCurrentHouseTrusted();
+    // withhold it (the per-phase ETA still ticks).
+    const ready = isTaskTotalLocked(p);
     if (!ready) {
         return "total estimating…";
     }
@@ -338,6 +332,41 @@ function progressTotalEtaLine(): string {
     return `total ${rough}${formatEtaSeconds(secs)}${etcText}`;
 }
 
+function knowledgeSourceText(): string {
+    if (getSessionVerb() !== "import") return "";
+    const knowledge = getTaskProgress()?.active?.knowledge;
+    if (knowledge == null) return "";
+    if (knowledge.currentReason === "lock-verification") {
+        return "Source: House verification · checking house.lock";
+    }
+
+    let source: string;
+    if (knowledge.usedHouse && knowledge.usedCache) {
+        source = "House + trusted cache";
+    } else if (knowledge.usedCache) {
+        source = "Trusted cache";
+    } else if (knowledge.usedHouse) {
+        source =
+            knowledge.currentReason === "shell-read"
+                ? "Reading house shell"
+                : "Full house read";
+    } else {
+        source = "Known empty house state";
+    }
+
+    const lock =
+        knowledge.currentReason === "lock-verified"
+            ? " · house.lock checked"
+            : knowledge.lockStatus === "matched"
+              ? " · house.lock matched"
+              : knowledge.lockStatus === "missing"
+                ? " · no house.lock entry"
+                : knowledge.lockStatus === "mismatch"
+                  ? " · house.lock mismatch"
+                  : "";
+    return `Source: ${source}${lock}`;
+}
+
 type ProgressPosition = {
     current: NonNullable<ReturnType<typeof getTaskProgress>>["active"];
     currentNumber: number;
@@ -347,7 +376,8 @@ type ProgressPosition = {
     allDone: boolean;
 };
 
-let progressPositionRows: NonNullable<ReturnType<typeof getTaskProgress>>["rows"] | null = null;
+let progressPositionRows: NonNullable<ReturnType<typeof getTaskProgress>>["rows"] | null =
+    null;
 let progressPositionActiveKey: string | null = null;
 let cachedProgressPosition: ProgressPosition | null = null;
 
@@ -473,6 +503,14 @@ export function liveTaskFooterPanel(): Element {
                         truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
+                    knowledgeSourceText().length > 0 &&
+                        Text({
+                            text: () => knowledgeSourceText(),
+                            color: COLOR_TEXT_DIM,
+                            truncate: true,
+                            tooltip: () => knowledgeSourceText(),
+                            style: { width: { kind: "grow" } },
+                        }),
                     Container({
                         style: {
                             width: { kind: "grow" },

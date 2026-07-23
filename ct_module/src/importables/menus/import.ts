@@ -21,12 +21,14 @@ import {
     phaseUnitsTotal,
 } from "../../housingSync/progress/costs";
 import type { ProgressScope } from "../../housingSync/syncEvents";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/itemPicker";
 import { canonicalItemShellKey, snbtFromItem } from "../../housingSync/items/itemNbt";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
+import { createProgressGroup } from "../../housingSync/progress/group";
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
@@ -37,10 +39,7 @@ import { importableIdentity } from "../identity";
 import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
 import { planMenuChanges, type MenuSlotSnapshot } from "./menuChanges";
-import {
-    snapshotLiveMenuGrid,
-    type LiveMenuGrid,
-} from "./read";
+import { snapshotLiveMenuGrid, type LiveMenuGrid } from "./read";
 import { openMenuEditor, openMenuElements, setMenuSize } from "./housing";
 
 /**
@@ -132,6 +131,7 @@ export type MenuImportPlan = {
 type MenuSlotRead = {
     desiredIndex: number;
     slot: number;
+    label: string | null;
     actions: ActionListSyncScanResult;
 };
 
@@ -141,6 +141,7 @@ export type MenuRead = {
     trustPlan?: ImportableTrustPlan;
     grid: LiveMenuGrid | null;
     slots: MenuSlotRead[];
+    events?: SyncEventHandler;
 };
 
 export async function scanImportableMenu(
@@ -154,28 +155,47 @@ export async function scanImportableMenu(
     const grid = status === "missing" ? null : await snapshotLiveMenuGrid(ctx);
     const populated = new Set(grid?.slots.map((slot) => slot.slot) ?? []);
     const slots: MenuSlotRead[] = [];
+    const progress = createProgressGroup(session.actions.events, importable.slots.length);
     for (let i = 0; i < importable.slots.length; i++) {
         const desired = importable.slots[i];
+        const label = menuItemLabel(getItemFromNbt(desired.nbt));
+        session.actions.events?.emit({
+            kind: "menuSlotStarted",
+            slot: desired.slot,
+            label,
+            index: i + 1,
+            count: importable.slots.length,
+        });
         const basePath = `slots[${i}].actions`;
         const actions = await scanActionListSync(ctx, {
             desired: desired.actions ?? [],
             sync: session.actions,
             trustPlan: grid === null ? undefined : trustPlan,
             basePath,
-            current: populated.has(desired.slot)
-                ? undefined
-                : { kind: "known-empty" },
+            current: populated.has(desired.slot) ? undefined : { kind: "known-empty" },
             conflictTarget: {
                 type: importable.type,
                 identity: importableIdentity(importable),
                 basePath,
             },
             open: () => openMenuSlotActions(ctx, importable.name, desired.slot),
+            progress: progress.part(i),
         });
-        slots.push({ desiredIndex: i, slot: desired.slot, actions });
+        slots.push({ desiredIndex: i, slot: desired.slot, label, actions });
     }
-    setup(grid === null ? `menu ${importable.name} is missing` : `scanned menu ${importable.name}`);
-    return { kind: "MENU", importable, trustPlan, grid, slots };
+    setup(
+        grid === null
+            ? `menu ${importable.name} is missing`
+            : `scanned menu ${importable.name}`
+    );
+    return {
+        kind: "MENU",
+        importable,
+        trustPlan,
+        grid,
+        slots,
+        events: session.actions.events,
+    };
 }
 
 async function openMenuSlotActions(
@@ -197,6 +217,13 @@ export async function hydrateImportableMenu(
 ): Promise<void> {
     for (const slot of read.slots) {
         if (slot.actions.kind === "hydrate") {
+            read.events?.emit({
+                kind: "menuSlotStarted",
+                slot: slot.slot,
+                label: slot.label,
+                index: slot.desiredIndex + 1,
+                count: read.slots.length,
+            });
             slot.actions = await hydrateActionListSync(ctx, slot.actions);
         }
     }

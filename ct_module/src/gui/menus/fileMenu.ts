@@ -8,11 +8,10 @@ import {
     setClipboardString,
 } from "../../utils/osShell";
 import {
-    isInQueue,
-    queueItemKey,
+    addToQueue,
+    isQueueItemQueued,
     queueItemsForPath,
-    removeFromQueueKey,
-    toggleQueue,
+    removeFromQueue,
 } from "../right-panel/import-tab/queue";
 
 function isImportJsonPath(filePath: string): boolean {
@@ -31,7 +30,7 @@ function queueActionForPath(filePath: string, importJsonPath?: string | null): M
     if (items.length === 0) return null;
     // Multi-match: an htsl referenced by N importables. Treat the whole
     // group as a unit so the toggle reflects "are they all queued?"
-    const allQueued = items.every((it) => isInQueue(queueItemKey(it)));
+    const allQueued = items.every(isQueueItemQueued);
     const label =
         items.length === 1
             ? allQueued
@@ -44,9 +43,9 @@ function queueActionForPath(filePath: string, importJsonPath?: string | null): M
         label,
         onClick: () => {
             if (allQueued) {
-                for (const it of items) removeFromQueueKey(queueItemKey(it));
+                for (const it of items) removeFromQueue(it);
             } else {
-                for (const it of items) toggleQueue(it);
+                for (const it of items) addToQueue(it);
             }
         },
     };

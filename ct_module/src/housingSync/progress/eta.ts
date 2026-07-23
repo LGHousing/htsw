@@ -1,4 +1,4 @@
-import type { TaskProgress, ProgressPhase } from "./types";
+import type { TaskProgress, ProgressPhase, PhaseUnits } from "./types";
 import { getTimingStats, getSessionTimingUnits } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
@@ -159,7 +159,25 @@ export function currentMsPerUnit(): number {
 function phaseRemainingUnits(progress: TaskProgress, phase: ProgressPhase): number {
     const current = progress.active;
     if (current === null) return 0;
-    const units = current.phaseUnits;
+    // The staged importer runs each pass row by row; scanned rows waiting
+    // their turn sit in `parked` with this phase's units still unspent, and a
+    // row that already ran the phase parks with those units trued to zero
+    // (`trueUpReadHydrate`). Summing them makes the countdown cover the rest
+    // of the pass instead of just the active row — with hundreds of rows the
+    // per-row remainder is seconds and reads as no ETA at all.
+    let remaining = snapshotPhaseRemaining(current, phase);
+    for (const key in progress.parked) {
+        if (key === current.key) continue;
+        remaining += snapshotPhaseRemaining(progress.parked[key], phase);
+    }
+    return remaining;
+}
+
+function snapshotPhaseRemaining(
+    snapshot: { phaseUnits: PhaseUnits; completedUnits: number },
+    phase: ProgressPhase
+): number {
+    const units = snapshot.phaseUnits;
     const phaseStart =
         phase === "setup"
             ? 0
@@ -170,7 +188,7 @@ function phaseRemainingUnits(progress: TaskProgress, phase: ProgressPhase): numb
                 : units.setup + units.reading + units.hydrating;
     const phaseLength = units[phase];
     const phaseEnd = phaseStart + phaseLength;
-    const within = current.completedUnits;
+    const within = snapshot.completedUnits;
     if (within >= phaseEnd) return 0;
     if (within <= phaseStart) return phaseLength;
     return Math.max(0, phaseEnd - within);

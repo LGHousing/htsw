@@ -19,7 +19,7 @@ import {
     type HtslLine,
 } from "./htslParse";
 import { getSelectedParsedResult } from "../parsing/selectedParse";
-import { getParseAt } from "../parsing/parses";
+import { getParseAt, onParseCacheEntryChanged } from "../parsing/parses";
 import {
     tokenizeHtsl,
     tokenizeJson,
@@ -614,6 +614,13 @@ const htslRawCache = new Map<
     string,
     { mtime: number; parsedRef: object | null; lines: RenderableLine[] }
 >();
+
+onParseCacheEntryChanged(() => {
+    htslCache.clear();
+    jsonCache.clear();
+    snbtCache.clear();
+    htslRawCache.clear();
+});
 
 function htslRawRenderableLines(
     path: string,
