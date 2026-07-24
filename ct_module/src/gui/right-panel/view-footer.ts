@@ -80,11 +80,20 @@ function queueSummary(): Element {
             style: { width: { kind: "grow" } },
         }),
         Button({
-            icon: () => (queueFollowRequested ? Icons.locateFixed : Icons.locate),
+            children: [
+                Icon({
+                    name: () => (queueFollowRequested ? Icons.locateFixed : Icons.locate),
+                    style: {
+                        width: { kind: "px", value: 12 },
+                        height: { kind: "px", value: 12 },
+                    },
+                }),
+            ],
             tooltip: "Follow the running row — turns off when you scroll",
             style: {
                 width: { kind: "px", value: 18 },
                 height: { kind: "grow" },
+                padding: { side: "x", value: 0 },
                 background: () =>
                     queueFollowRequested ? COLOR_ROW_SELECTED : COLOR_BUTTON,
                 hoverBackground: () =>
