@@ -15,9 +15,18 @@ import {
 } from "./right-panel/import-tab/queue";
 import { getAutoTrackSources } from "./state";
 import { showToast } from "./toast";
+import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
 
 const WATCH_COLOR = 0xffe85c5c;
+
+registerBadge(() => {
+    if (!getWatchMode()) return null;
+    return {
+        text: watchImportRunning ? "WATCH: importing…" : "WATCH",
+        color: WATCH_COLOR,
+    };
+});
 let debounceRevision = 0;
 let watchImportRunning = false;
 let lastSuccessfulRunKeys: string[] | null = null;

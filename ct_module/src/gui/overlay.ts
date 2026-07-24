@@ -84,6 +84,7 @@ import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
+import { renderBadges } from "./badge";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
@@ -461,12 +462,14 @@ export function initHtswGui(): void {
         const screen = getMinecraft().field_71462_r;
         if (screen !== null) return;
         paintImportShade(0, 0, frame);
+        renderBadges();
         renderToast();
         }
     );
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         sampleProgressTraceTick();
         paintImportShade(mouseX, mouseY, frame);
+        renderBadges();
         renderToast();
     });
 
