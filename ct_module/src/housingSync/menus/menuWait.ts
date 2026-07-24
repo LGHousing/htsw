@@ -26,6 +26,7 @@ import {
     describeRecentWindowOpens,
     type WaitForPromise,
 } from "../../tasks/specifics/waitFor";
+import { removedFormatting } from "../../utils/helpers";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
@@ -409,5 +410,25 @@ export function timedWaitForMenu(
               : kind === "commandMenuWait"
                 ? COST.commandMenuWait
                 : COST.menuClickWait;
-    return timed(kind, expected, () => waitForMenu(ctx));
+    return timed(kind, expected, () => {
+        const menuWaiter = waitForMenu(ctx);
+        if (kind !== "commandMenuWait") return menuWaiter;
+
+        const permissionWaiter = ctx.waitFor(
+            "message",
+            (message) =>
+                removedFormatting(message) ===
+                "You do not have permission to use this command!"
+        );
+        const permissionRejected = permissionWaiter.then(() => {
+            throw new Error(
+                "Housing rejected the command: you do not have permission to use it in this house."
+            );
+        });
+        permissionRejected.catch(() => {});
+        return ctx.race([
+            [menuWaiter, menuWaiter],
+            [permissionRejected, permissionWaiter],
+        ]);
+    });
 }
