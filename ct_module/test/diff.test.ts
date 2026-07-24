@@ -86,6 +86,34 @@ describe("diffActionList — adds / deletes", () => {
         const result = ops(observed, []);
         expect(kindCounts(result)).toMatchObject({ delete: 1 });
     });
+
+    test("unhydrated observed action is deleted when desired is empty", () => {
+        const live = obs(0, conditional({ ifActions: [message("live")] }));
+        live.hydrated = false;
+
+        const result = ops([live], []);
+
+        expect(kindCounts(result)).toMatchObject({ delete: 1, edit: 0, add: 0 });
+    });
+
+    test("extra unhydrated conditionals are deleted from a shorter desired list", () => {
+        const kept = message("kept");
+        const extra = obs(1, conditional({ ifActions: [message("live")] }));
+        extra.hydrated = false;
+
+        const result = ops([obs(0, kept), extra], [kept]);
+
+        expect(kindCounts(result)).toMatchObject({ delete: 1, edit: 0, add: 0 });
+    });
+
+    test("unhydrated conditional replaced by another type is deleted and added", () => {
+        const live = obs(0, conditional({ ifActions: [message("live")] }));
+        live.hydrated = false;
+
+        const result = ops([live], [message("replacement")]);
+
+        expect(kindCounts(result)).toMatchObject({ delete: 1, edit: 0, add: 1 });
+    });
 });
 
 describe("diffActionList — edits", () => {

@@ -8,6 +8,7 @@ import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
 import { applyActionListPlan } from "../../housingSync/actions/apply";
 import type { ActionListPlan } from "../../housingSync/actions/plan";
 import { fullyHydratedActionsFromSlots } from "../../housingSync/actions/hydration/plan";
+import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { emitApplyProgress } from "../../housingSync/actions/apply/progress";
 import {
     actionListPlanFromRead,
@@ -230,7 +231,46 @@ export async function hydrateImportableMenu(
 }
 
 /** The live-grid slot data `buildMenuDiff` compares the desired menu against. */
-type BaselineMenuSlot = { slot: number; item: Item; actions: Action[] };
+type BaselineMenuSlot = {
+    slot: number;
+    item: Item;
+    actions: Action[];
+    actionsKnown: boolean;
+};
+
+export function menuActionBaseline(
+    actionPlan: ActionListPlan | null,
+    cached: Action[] | undefined,
+    menuName: string,
+    path: string,
+    slot: number,
+    declared: boolean
+): { actions: Action[]; actionsKnown: boolean } {
+    if (actionPlan === null) {
+        if (cached !== undefined) {
+            return { actions: cached, actionsKnown: true };
+        }
+        // A live slot the project doesn't declare is only ever cleared, so an
+        // empty baseline is fine; a declared slot with neither a plan nor a
+        // cached list has nothing sound to diff against.
+        if (!declared) {
+            return { actions: [], actionsKnown: true };
+        }
+        throw new Error(
+            `Menu "${menuName}" has no usable baseline for ${path} ` +
+                `(Housing slot ${slot}; unhydrated action indexes/types: ` +
+                "unavailable because no action plan exists)."
+        );
+    }
+    const hydrated = fullyHydratedActionsFromSlots(actionPlan.observed);
+    if (hydrated !== null) {
+        return { actions: hydrated, actionsKnown: true };
+    }
+    return {
+        actions: observedSlotsToActions(actionPlan.observed),
+        actionsKnown: false,
+    };
+}
 
 export function planImportableMenu(
     read: MenuRead,
@@ -249,17 +289,26 @@ export function planImportableMenu(
         const actionRead = actionReadBySlot.get(slot.slot)?.actions;
         const actionPlan =
             actionRead === undefined ? null : actionListPlanFromRead(actionRead);
-        const observed =
-            actionPlan === null
-                ? null
-                : fullyHydratedActionsFromSlots(actionPlan.observed);
-        if (actionPlan !== null && observed === null) {
-            throw new Error(
-                `Menu slot ${slot.slot} was planned before its actions were fully read.`
-            );
-        }
-        const actions = observed ?? cachedBySlot.get(slot.slot) ?? [];
-        return { slot: slot.slot, item: getItemFromSnbt(slot.snbt), actions };
+        const cached = cachedBySlot.get(slot.slot);
+        const desiredIndex = actionReadBySlot.get(slot.slot)?.desiredIndex;
+        const path =
+            desiredIndex === undefined
+                ? "slots[unknown].actions"
+                : `slots[${desiredIndex}].actions`;
+        const actionBaseline = menuActionBaseline(
+            actionPlan,
+            cached,
+            read.importable.name,
+            path,
+            slot.slot,
+            desiredIndex !== undefined
+        );
+        return {
+            slot: slot.slot,
+            item: getItemFromSnbt(slot.snbt),
+            actions: actionBaseline.actions,
+            actionsKnown: actionBaseline.actionsKnown,
+        };
     });
     const diff = buildMenuDiff(
         read.importable,
@@ -308,6 +357,7 @@ function buildMenuDiff(
         slot: s.slot,
         itemKey: canonicalItemShellKey(s.item),
         actions: s.actions,
+        actionsKnown: s.actionsKnown,
     }));
     const baselineBySlot = new Map<number, BaselineMenuSlot>();
     for (const s of baselineSlots) baselineBySlot.set(s.slot, s);

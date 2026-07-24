@@ -69,6 +69,7 @@ export type CurrentActionListEntry = {
     entryId: number;
     index: number;
     action: Observed | null;
+    editable: boolean;
 };
 
 export type CurrentConditionListEntry = {

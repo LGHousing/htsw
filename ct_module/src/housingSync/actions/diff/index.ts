@@ -299,6 +299,7 @@ function indexOfExactActionAtDesiredIndex(
     return indexOfAction(
         current,
         (entry) =>
+            entry.editable &&
             entry.index === desired.index &&
             !itemActionDiffers(itemDiff, entry.action, desired.action) &&
             actionsEqual(entry.action, desired.action)
@@ -313,6 +314,7 @@ function indexOfExactActionAtAnyIndex(
     return indexOfAction(
         current,
         (entry) =>
+            entry.editable &&
             !itemActionDiffers(itemDiff, entry.action, desired.action) &&
             actionsEqual(entry.action, desired.action)
     );
@@ -326,6 +328,7 @@ function indexOfNoteOnlyActionAtDesiredIndex(
     return indexOfAction(
         current,
         (entry) =>
+            entry.editable &&
             entry.index === desired.index &&
             !itemActionDiffers(itemDiff, entry.action, desired.action) &&
             actionOnlyNoteDiffers(desired.action, entry.action)
@@ -340,6 +343,7 @@ function indexOfNoteOnlyActionAtAnyIndex(
     return indexOfAction(
         current,
         (entry) =>
+            entry.editable &&
             !itemActionDiffers(itemDiff, entry.action, desired.action) &&
             actionOnlyNoteDiffers(desired.action, entry.action)
     );
@@ -494,7 +498,7 @@ function matchActions(
     const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.action.type));
     for (const type of remainingTypes) {
         const currentBucket = unmatchedCurrent.filter(
-            (entry) => entry.action.type === type
+            (entry) => entry.editable && entry.action.type === type
         );
         const desiredBucket = unmatchedDesired.filter(
             (entry) => entry.action.type === type
@@ -626,6 +630,7 @@ export function baselineActionListFromSlots(
             entryId: i,
             index: slots[i].index,
             action: slots[i].action,
+            editable: slots[i].hydrated,
         });
     }
     return out;
@@ -641,6 +646,7 @@ export function baselineActionListFromActions(
             entryId: i,
             index: i,
             action,
+            editable: true,
         });
     }
     return out;

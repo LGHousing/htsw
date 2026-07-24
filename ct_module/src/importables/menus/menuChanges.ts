@@ -11,6 +11,7 @@ export type MenuSlotSnapshot = {
     slot: number;
     itemKey: string;
     actions: Action[];
+    actionsKnown?: boolean;
 };
 
 /** One slot the trusted import must write, and what part of it changed. */
@@ -66,7 +67,8 @@ export function planMenuChanges(
         }
 
         const itemDiffers = slot.itemKey !== base.itemKey;
-        const actsDiffer = actionsDiffer(base.actions, slot.actions);
+        const actsDiffer =
+            base.actionsKnown === false || actionsDiffer(base.actions, slot.actions);
         if (!itemDiffers && !actsDiffer) continue;
 
         changes.push({
