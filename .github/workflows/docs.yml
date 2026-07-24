@@ -49,6 +49,9 @@ jobs:
       - name: Build book
         run: mdbook build
 
+      - name: Emit raw markdown
+        run: node scripts/docs-raw.mjs
+
       - name: Publish docs to VM
         env:
           DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
