@@ -42,6 +42,7 @@ import { giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 import { commandCacheReport } from "./cacheReport";
+import { commandQueue } from "./queue";
 
 type HtswSubcommand = {
     name: string;
@@ -77,6 +78,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Explain what the importer will trust from cache for a project",
         run: commandCacheReport,
         usage: "cache <import.json>",
+    },
+    {
+        name: "queue",
+        summary: "Manage the import queue",
+        run: commandQueue,
+        hidden: true,
     },
     {
         name: "giveitem",
