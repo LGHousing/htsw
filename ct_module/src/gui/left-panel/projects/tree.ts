@@ -18,10 +18,9 @@ import {
 import { sortResults } from "./sort";
 import {
     isImportableStatusFilterActive,
-    isImportableTypeActive,
     isFilterDefault,
     getFilterRevision,
-    isLinkStatusActive,
+    importableMatchesFilters,
     resetFilters,
 } from "./filter";
 import {
@@ -69,10 +68,7 @@ import {
     standaloneCloseAction,
 } from "./rows";
 import type { Importable } from "htsw/types";
-import {
-    cachedImportableLinkStatus,
-    importableLinkStatusContextKey,
-} from "../../cache-status";
+import { importableLinkStatusContextKey } from "../../cache-status";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -247,10 +243,6 @@ function buildRoots(): Root[] {
     return out;
 }
 
-function importableName(imp: Importable): string {
-    return imp.type === "EVENT" ? imp.event : imp.name;
-}
-
 type FilteredImportables = {
     fingerprint: string;
     importables: Importable[];
@@ -275,17 +267,7 @@ function filterImportableList(r: ResultImport, list: Importable[]): Importable[]
     const out: Importable[] = [];
     for (let j = 0; j < list.length; j++) {
         const imp = list[j];
-        if (!isImportableTypeActive(imp.type)) continue;
-        if (
-            isImportableStatusFilterActive() &&
-            !isLinkStatusActive(
-                cachedImportableLinkStatus(imp)?.key ?? "unknown"
-            )
-        )
-            continue;
-        if (q.length > 0 && !pathMatch) {
-            if (importableName(imp).toLowerCase().indexOf(q) < 0) continue;
-        }
+        if (!importableMatchesFilters(imp, r.path, q)) continue;
         out.push(imp);
     }
     filteredImportablesByList.set(list, { fingerprint, importables: out });

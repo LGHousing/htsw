@@ -2,7 +2,10 @@ import type { Importable } from "htsw/types";
 
 import { Element } from "../../lib/layout";
 import { Container, Scroll } from "../../lib/components";
-import { type LinkStatusKey } from "../../cache-status";
+import {
+    cachedImportableLinkStatus,
+    type LinkStatusKey,
+} from "../../cache-status";
 import {
     PROJECT_LINK_STATUSES,
     checkboxRow,
@@ -24,17 +27,33 @@ export function getFilterRevision(): number {
     return filterRevision;
 }
 
-export function isImportableTypeActive(t: ImportableType): boolean {
+function isImportableTypeActive(t: ImportableType): boolean {
     return selectedTypes.size === 0 || selectedTypes.has(t);
 }
 export function isImportableStatusFilterActive(): boolean {
     return selectedStatuses.size > 0;
 }
-export function isLinkStatusActive(key: LinkStatusKey): boolean {
+function isLinkStatusActive(key: LinkStatusKey): boolean {
     return selectedStatuses.size === 0 || selectedStatuses.has(key);
 }
 export function isFilterDefault(): boolean {
     return selectedTypes.size === 0 && selectedStatuses.size === 0;
+}
+export function importableMatchesFilters(
+    imp: Importable,
+    parentPath: string,
+    query: string
+): boolean {
+    if (!isImportableTypeActive(imp.type)) return false;
+    if (
+        isImportableStatusFilterActive() &&
+        !isLinkStatusActive(cachedImportableLinkStatus(imp)?.key ?? "unknown")
+    )
+        return false;
+    const q = query.toLowerCase();
+    if (q.length === 0 || parentPath.toLowerCase().indexOf(q) >= 0) return true;
+    const name = imp.type === "EVENT" ? imp.event : imp.name;
+    return name.toLowerCase().indexOf(q) >= 0;
 }
 export function resetFilters(): void {
     if (selectedTypes.size === 0 && selectedStatuses.size === 0) return;

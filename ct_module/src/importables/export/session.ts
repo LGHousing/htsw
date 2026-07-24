@@ -162,14 +162,24 @@ export async function exportBatch(
 
 export async function exportExisting(
     ctx: TaskContext,
-    destination: ProjectExportDestination
+    destination: ProjectExportDestination,
+    importables?: readonly Importable[]
 ): Promise<ReadResult> {
     const { importJsonPath } = destination;
     const batches: ExportSessionBatch[] = [];
 
     for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
         const spec = HOUSE_EXPORT_TYPES[i];
-        const names = spec.declaredNames(importJsonPath);
+        const names: string[] = [];
+        if (importables === undefined) {
+            names.push(...spec.declaredNames(importJsonPath));
+        } else {
+            for (let j = 0; j < importables.length; j++) {
+                const imp = importables[j];
+                if (imp.type !== spec.type) continue;
+                names.push(imp.type === "EVENT" ? imp.event : imp.name);
+            }
+        }
         if (names.length === 0) continue;
         batches.push({
             type: spec.type,
@@ -177,7 +187,18 @@ export async function exportExisting(
         });
     }
 
-    const npcEntries = readNpcEntriesFromImportJson(importJsonPath);
+    let npcEntries: ReturnType<typeof readNpcEntriesFromImportJson>;
+    if (importables === undefined) {
+        npcEntries = readNpcEntriesFromImportJson(importJsonPath);
+    } else {
+        npcEntries = [];
+        for (let i = 0; i < importables.length; i++) {
+            const imp = importables[i];
+            if (imp.type === "NPC") {
+                npcEntries.push({ name: imp.name, pos: imp.pos });
+            }
+        }
+    }
     if (npcEntries.length > 0) {
         batches.push({
             type: "NPC",

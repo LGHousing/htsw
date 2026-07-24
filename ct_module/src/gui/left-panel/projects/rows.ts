@@ -68,7 +68,6 @@ import { composeFileMenu } from "../../menus/fileMenu";
 import {
     autoTrackRefresh,
     needsModifiedQueue,
-    queueModifiedFromPath,
     queueModifiedImportables,
 } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
@@ -76,7 +75,6 @@ import {
     type IncludeNode,
     findIncludeNode,
     includeTreeOf,
-    subtreeHouseExportCount,
     subtreeImportableCount,
 } from "./includeTree";
 import {
@@ -117,6 +115,7 @@ import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
 import { HOUSE_READERS } from "../../../importables/export/readers";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
+import { importableMatchesFilters } from "./filter";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -592,7 +591,7 @@ function finishProjectReExport(
 function runProjectReExport(
     parent: ResultImport,
     importJsonPath: string,
-    count: number
+    importables: readonly Importable[]
 ): void {
     if (TaskManager.isBusy()) {
         showToast("A task is already running — wait for it to finish", ACCENT_WARN);
@@ -604,7 +603,8 @@ function runProjectReExport(
             readProjectExportDestination({
                 rootDir: projectDirOf(importJsonPath),
                 importJsonPath,
-            })
+            }),
+            importables
         )
     )
         .then((result) => {
@@ -620,7 +620,7 @@ function runProjectReExport(
                 );
                 return;
             }
-            finishProjectReExport(parent, importJsonPath, count);
+            finishProjectReExport(parent, importJsonPath, houseExportCount(importables));
         })
         .catch((err: unknown) => {
             showToast(`Re-export failed: ${String(err)}`, ACCENT_DANGER, 8000);
@@ -630,8 +630,9 @@ function runProjectReExport(
 function confirmProjectReExport(
     parent: ResultImport,
     importJsonPath: string,
-    count: number
+    importables: readonly Importable[]
 ): void {
+    const count = houseExportCount(importables);
     openConfirmPopover({
         title: `Re-export ${count} declared from the house?`,
         lines: [
@@ -640,7 +641,7 @@ function confirmProjectReExport(
         ],
         confirmLabel: "Re-export",
         danger: true,
-        onConfirm: () => runProjectReExport(parent, importJsonPath, count),
+        onConfirm: () => runProjectReExport(parent, importJsonPath, importables),
     });
 }
 
@@ -700,11 +701,19 @@ function queueModifiedAction(
     if (!hasModifiedForQueue(importables)) return [];
     return [
         {
-            label: "Queue modified for import",
+            label: `Queue modified for import (${modifiedQueueCount(importables)})`,
             icon: Icons.listChecks,
             onClick,
         },
     ];
+}
+
+function modifiedQueueCount(importables: readonly Importable[]): number {
+    let count = 0;
+    for (let i = 0; i < importables.length; i++) {
+        if (needsModifiedQueue(importables[i])) count++;
+    }
+    return count;
 }
 
 function subtreeImportables(node: IncludeNode): Importable[] {
@@ -714,6 +723,28 @@ function subtreeImportables(node: IncludeNode): Importable[] {
         importables.push(...subtreeImportables(node.includes[i]));
     }
     return importables;
+}
+
+function filteredSubtreeImportables(
+    parent: ResultImport,
+    node: IncludeNode
+): Importable[] {
+    const importables = subtreeImportables(node);
+    const filtered: Importable[] = [];
+    for (let i = 0; i < importables.length; i++) {
+        if (importableMatchesFilters(importables[i], parent.path, searchQuery)) {
+            filtered.push(importables[i]);
+        }
+    }
+    return filtered;
+}
+
+function houseExportCount(importables: readonly Importable[]): number {
+    let count = 0;
+    for (let i = 0; i < importables.length; i++) {
+        if (importables[i].type !== "ITEM") count++;
+    }
+    return count;
 }
 
 function deepReadableCount(importables: readonly Importable[]): number {
@@ -925,16 +956,11 @@ function queueImportables(
     }
 }
 
-function queueImportJsonSubtree(parent: ResultImport, node: IncludeNode): void {
-    const importables: Importable[] = [];
-    collectSubtreeImportables(node, importables);
-    queueImportables(parent, importables);
-}
-
-function queueModifiedSubtree(parent: ResultImport, node: IncludeNode): void {
+function queueModifiedSubtree(
+    parent: ResultImport,
+    importables: readonly Importable[]
+): void {
     if (parent.parse === null) return;
-    const importables: Importable[] = [];
-    collectSubtreeImportables(node, importables);
     queueModifiedImportables(parent.fullPath, parent.parse, importables);
 }
 
@@ -1222,38 +1248,40 @@ export function resultRow(
     const aggregateIndicators =
         isImport && !expanded ? collapsedSubtreeAggregates(r, includeTreeOf(r)) : [];
     const actions = (): MenuAction[] => {
+        const filteredImportables = isImport
+            ? filteredSubtreeImportables(r, includeTreeOf(r))
+            : [];
+        const exportCount = houseExportCount(filteredImportables);
         const fileExtras: MenuAction[] = isImport
             ? [
               {
-                  label: "Queue all for import",
+                  label: `Queue all for import (${filteredImportables.length})`,
                   icon: Icons.listPlus,
-                  onClick: () => {
-                      queueImportJsonSubtree(r, includeTreeOf(r));
-                  },
+                  onClick: () => queueImportables(r, filteredImportables),
               },
-              ...queueModifiedAction(subtreeImportables(includeTreeOf(r)), () =>
-                  queueModifiedFromPath(r.fullPath)
+              ...queueModifiedAction(filteredImportables, () =>
+                  queueModifiedSubtree(r, filteredImportables)
               ),
               {
-                  label: `Re-export from house (${subtreeHouseExportCount(includeTreeOf(r))})`,
+                  label: `Re-export from house (${exportCount})`,
                   icon: Icons.refreshCw,
                   disabled: () => getHousingUuid() === null,
                   onClick: () =>
                       confirmProjectReExport(
                           r,
                           r.fullPath,
-                          subtreeHouseExportCount(includeTreeOf(r))
+                          filteredImportables
                       ),
               },
               {
-                  label: `Read from house (${deepReadableCount(subtreeImportables(includeTreeOf(r)))})`,
+                  label: `Read from house (${deepReadableCount(filteredImportables)})`,
                   icon: Icons.scanEye,
                   disabled: () => getHousingUuid() === null,
                   onClick: () =>
                       runProjectDeepRead(
                           r,
                           r.fullPath,
-                          subtreeImportables(includeTreeOf(r))
+                          filteredImportables
                       ),
               },
               { kind: "separator" },
@@ -1399,22 +1427,24 @@ export function includeGroupRow(
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
     const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
-    const count = subtreeHouseExportCount(node);
-    const declaredImportables = subtreeImportables(node);
-    const actions = (): MenuAction[] => [
+    const actions = (): MenuAction[] => {
+        const declaredImportables = filteredSubtreeImportables(parent, node);
+        const count = houseExportCount(declaredImportables);
+        return [
         {
-            label: "Queue all for import",
+            label: `Queue all for import (${declaredImportables.length})`,
             icon: Icons.listPlus,
-            onClick: () => queueImportJsonSubtree(parent, node),
+            onClick: () => queueImportables(parent, declaredImportables),
         },
         ...queueModifiedAction(declaredImportables, () =>
-            queueModifiedSubtree(parent, node)
+            queueModifiedSubtree(parent, declaredImportables)
         ),
         {
             label: `Re-export from house (${count})`,
             icon: Icons.refreshCw,
             disabled: () => getHousingUuid() === null,
-            onClick: () => confirmProjectReExport(parent, fullPath, count),
+            onClick: () =>
+                confirmProjectReExport(parent, fullPath, declaredImportables),
         },
         {
             label: `Read from house (${deepReadableCount(declaredImportables)})`,
@@ -1433,7 +1463,8 @@ export function includeGroupRow(
             onClick: () =>
                 confirmDeleteIncludedProject(canonicalPath(parentNodePath), fullPath),
         },
-    ];
+        ];
+    };
     return Container({
         style: {
             direction: "row",
