@@ -10,6 +10,7 @@ import {
     getEventContainerCounts,
 } from "../tasks/specifics/waitFor";
 import { uploadImportFailureLog } from "./importFailureUpload";
+import { readLocalVersion } from "../autoUpdate";
 
 export type ImportFailureDetails = {
     phase: string;
@@ -61,6 +62,7 @@ export function writeImportFailureLog(
     const path = `./htsw/import-errors/import-error-${timestampForPath()}.json`;
     const body = {
         capturedAt: new Date().toISOString(),
+        htswVersion: safeRead("version", () => readLocalVersion()),
         context,
         error: errorDetails(error),
         currentState: {

@@ -11,7 +11,7 @@ HOST = "127.0.0.1"
 PORT = 37124
 DEST_DIR = Path("/var/lib/htsw/import-errors")
 INDEX_PATH = DEST_DIR / "index.jsonl"
-MAX_BYTES = 8 * 1024 * 1024
+MAX_BYTES = 24 * 1024 * 1024
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -68,6 +68,7 @@ class Handler(BaseHTTPRequestHandler):
             "uploadedAt": now,
             "remoteAddr": self.headers.get("X-Forwarded-For", self.client_address[0]),
             "userAgent": self.headers.get("User-Agent", ""),
+            "htswVersion": parsed.get("htswVersion"),
             "context": parsed.get("context"),
             "errorMessage": (parsed.get("error") or {}).get("message")
             if isinstance(parsed.get("error"), dict)
