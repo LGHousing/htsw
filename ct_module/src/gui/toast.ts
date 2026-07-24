@@ -9,6 +9,9 @@ type Toast = {
     color: number;
     shownAt: number;
     durationMs: number;
+    fitText: string;
+    fitWidth: number;
+    fitScreenW: number;
 };
 
 let active: Toast | null = null;
@@ -18,9 +21,42 @@ const BG_COLOR = 0xee1a1e26 | 0;
 const PADDING_X = 12;
 const PADDING_Y = 6;
 const TOAST_H = 14;
+const SCREEN_MARGIN = 10;
 
 export function showToast(message: string, color: number, durationMs: number = 4000): void {
-    active = { message, color, shownAt: Date.now(), durationMs };
+    active = {
+        message: message.replace(/\s+/g, " ").trim(),
+        color,
+        shownAt: Date.now(),
+        durationMs,
+        fitText: "",
+        fitWidth: 0,
+        fitScreenW: -1,
+    };
+}
+
+function fitToScreen(toast: Toast, screenW: number): void {
+    if (toast.fitScreenW === screenW) return;
+    toast.fitScreenW = screenW;
+    const maxTextW = screenW - SCREEN_MARGIN * 2 - PADDING_X * 2;
+    const fullW = Renderer.getStringWidth(toast.message);
+    if (fullW <= maxTextW) {
+        toast.fitText = toast.message;
+        toast.fitWidth = fullW;
+        return;
+    }
+    const ellipsis = "…";
+    const budget = maxTextW - Renderer.getStringWidth(ellipsis);
+    let width = 0;
+    let end = 0;
+    while (end < toast.message.length) {
+        const charWidth = Renderer.getStringWidth(toast.message.charAt(end));
+        if (width + charWidth > budget) break;
+        width += charWidth;
+        end++;
+    }
+    toast.fitText = toast.message.substring(0, end) + ellipsis;
+    toast.fitWidth = Renderer.getStringWidth(toast.fitText);
 }
 
 export function renderToast(): void {
@@ -40,11 +76,11 @@ export function renderToast(): void {
         return;
     }
 
-    const textW = Renderer.getStringWidth(active.message);
-    const boxW = textW + PADDING_X * 2;
-    const boxH = TOAST_H + PADDING_Y * 2;
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
+    fitToScreen(active, screenW);
+    const boxW = active.fitWidth + PADDING_X * 2;
+    const boxH = TOAST_H + PADDING_Y * 2;
     const x = Math.floor((screenW - boxW) / 2);
     const y = Math.floor(screenH * 0.3 - boxH / 2);
 
@@ -57,7 +93,7 @@ export function renderToast(): void {
     beginHtswOverlayDraw();
     Renderer.drawRect(bg, x, y, boxW, boxH);
     getMinecraft().field_71466_p.func_175065_a(
-        active.message,
+        active.fitText,
         x + PADDING_X,
         y + PADDING_Y + 2,
         textColor,

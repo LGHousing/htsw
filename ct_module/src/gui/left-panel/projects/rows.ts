@@ -50,11 +50,12 @@ import {
     markParseStale,
     requestParse,
 } from "../../parsing/parses";
-import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
+import { shortPath } from "../../lib/pathDisplay";
 import { peekImportableCache } from "../../../importCache/cache";
 import {
     importableMetadataComparisonValue,
     importableMetadataEntries,
+    normalizePathSeparators,
 } from "htsw-editor-common/project";
 import {
     addToQueue,
@@ -1464,7 +1465,7 @@ function relativePath(fromDir: string, fullPath: string): string | null {
 }
 
 function pathSegments(path: string): string[] {
-    return toForwardSlashes(path)
+    return normalizePathSeparators(path)
         .split("/")
         .filter((part) => part.length > 0);
 }

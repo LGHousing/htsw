@@ -1,24 +1,16 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { javaType } from "./java";
+import { normalizePathSeparators } from "htsw-editor-common/project";
+import { normalizeHtswPath } from "../../project/htswPath";
 
 // Shared path-shortening helpers used by the GUI. Display paths under
 // `/projects/...` as if that directory were the user's root.
 
-let cachedMcRoot: string | null = null;
-
-// Rhino regex on CT 1.8.9 has been seen swallowing `/\\/g`-style replacements
-// in production (the regex returns the input unchanged), so we use split/join
-// for backslash conversion everywhere. These are exported as the GUI's shared
-// path primitives — never re-implement slash conversion or basename inline
-// (an inline `/\\/g` regex is exactly the unsafe form).
-export function toForwardSlashes(s: string): string {
-    return s.split("\\").join("/");
-}
+export { normalizeHtswPath };
 
 /** Lowercased forward-slash form — the key to use for path comparisons. */
 function pathKey(p: string): string {
-    return toForwardSlashes(p).toLowerCase();
+    return normalizePathSeparators(p).toLowerCase();
 }
 
 export function hasExt(p: string, ext: string): boolean {
@@ -26,13 +18,13 @@ export function hasExt(p: string, ext: string): boolean {
 }
 
 export function basename(p: string): string {
-    const norm = toForwardSlashes(p);
+    const norm = normalizePathSeparators(p);
     const slash = norm.lastIndexOf("/");
     return slash < 0 ? norm : norm.substring(slash + 1);
 }
 
 export function dirname(p: string): string {
-    const norm = toForwardSlashes(p);
+    const norm = normalizePathSeparators(p);
     const slash = norm.lastIndexOf("/");
     return slash < 0 ? "" : norm.substring(0, slash);
 }
@@ -45,41 +37,6 @@ function parentBasename(norm: string): string {
 
 function endsWith(s: string, suffix: string): boolean {
     return s.length >= suffix.length && s.substring(s.length - suffix.length) === suffix;
-}
-
-function mcRoot(): string {
-    if (cachedMcRoot !== null) return cachedMcRoot;
-    try {
-        const Paths = javaType("java.nio.file.Paths");
-        cachedMcRoot = toForwardSlashes(
-            String(Paths.get(".").toAbsolutePath().normalize().toString())
-        );
-    } catch (_e) {
-        cachedMcRoot = "";
-    }
-    return cachedMcRoot;
-}
-
-/**
- * Normalize a path for storage / display. If the path passes through `/htsw/`
- * we anchor it there (`./htsw/...`); otherwise we relativize against the MC
- * root. The result always uses forward slashes.
- *
- * Used by `setImportJsonPath` so absolute paths (typed in or returned from
- * the file browser) collapse to the canonical `./htsw/...` form.
- */
-export function normalizeHtswPath(p: string): string {
-    const norm = toForwardSlashes(p);
-    const idx = norm.lastIndexOf("/htsw/");
-    if (idx >= 0) return `.${norm.substring(idx)}`;
-    const root = mcRoot();
-    if (root.length > 0 && norm.length > root.length) {
-        if (norm.substring(0, root.length + 1) === `${root}/`) {
-            return `./${norm.substring(root.length + 1)}`;
-        }
-    }
-    if (root.length > 0 && norm === root) return ".";
-    return norm;
 }
 
 function projectPath(norm: string): string | null {
@@ -99,11 +56,11 @@ function compactPathFromNormalized(norm: string): string {
 }
 
 export function compactPath(p: string): string {
-    return compactPathFromNormalized(normalizeHtswPath(p).split("\\").join("/"));
+    return compactPathFromNormalized(normalizePathSeparators(normalizeHtswPath(p)));
 }
 
 export function compactFileLabel(p: string): string {
-    const norm = toForwardSlashes(p);
+    const norm = normalizePathSeparators(p);
     const base = basename(norm);
     const lower = base.toLowerCase();
     if (lower === "import.json") {
@@ -120,7 +77,7 @@ export function compactFileLabel(p: string): string {
  * trailing `/import.json` so the folder reads as the destination, not the file.
  */
 export function shortPath(p: string): string {
-    let norm = normalizeHtswPath(p).split("\\").join("/");
+    let norm = normalizePathSeparators(normalizeHtswPath(p));
     const tail = "/import.json";
     if (endsWith(norm, tail)) {
         norm = norm.substring(0, norm.length - tail.length);

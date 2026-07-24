@@ -32,6 +32,10 @@ import {
     setExportImportJsonPath,
     setNewExportTarget,
 } from "../state";
+import {
+    isSectionLayoutProject,
+    setSectionLayoutProject,
+} from "../../project/sectionLayoutProjects";
 import { addRecent, getRecents } from "../persistence/recents";
 import {
     canonicalPath,
@@ -54,13 +58,15 @@ import { openNewProjectPopover } from "./newProjectPopover";
 import { showToast } from "../toast";
 import { getAlias } from "../../importCache/aliases";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
-import { createEmptyProjectFiles } from "htsw-editor-common/project";
+import {
+    createEmptyProjectFiles,
+    normalizePathSeparators,
+} from "htsw-editor-common/project";
 import { ctProjectFs } from "../../project/projectFs";
 import {
     PROJECTS_ROOT,
     createIncludedFolderInTree,
     projectPathExists,
-    projectSectionFolders,
     restructureProjectPerSection,
 } from "../../project/paths";
 import { getExportDestinationStatus } from "./destinationStatus";
@@ -79,9 +85,8 @@ function aliasPrefill(): string {
 
 function createExportProject(name: string, sectionFolders: boolean): void {
     try {
-        const result = createEmptyProjectFiles(ctProjectFs, PROJECTS_ROOT, name, {
-            sectionFolders,
-        });
+        const result = createEmptyProjectFiles(ctProjectFs, PROJECTS_ROOT, name);
+        setSectionLayoutProject(result.importJsonPath, sectionFolders);
         selectExportImportJson(result.importJsonPath);
         closeAllPopovers();
         ChatLib.chat(
@@ -177,6 +182,7 @@ function destinationRow(path: string, boundPath: string | null): Element {
 function splitIntoSectionFolders(importJsonPath: string): void {
     try {
         const result = restructureProjectPerSection(importJsonPath);
+        setSectionLayoutProject(importJsonPath, true);
         markParseStale(importJsonPath);
         const moved = result.moved.length;
         if (result.failures.length > 0) {
@@ -213,7 +219,7 @@ const exportSubExpansion: Set<string> = new Set();
 let exportSubSig = "";
 
 function dirOfPath(p: string): string {
-    const s = p.split("\\").join("/");
+    const s = normalizePathSeparators(p);
     const i = s.lastIndexOf("/");
     return i < 0 ? s : s.substring(0, i);
 }
@@ -345,7 +351,7 @@ function newExportFileRow(): Element {
 // project. Once split, the folders show up as selectable rows in the tree.
 function splitAction(dest: string): Element | false {
     if (dest.trim() === "" || !projectPathExists(dest)) return false;
-    if (projectSectionFolders(dest).length > 0) return false;
+    if (isSectionLayoutProject(dest)) return false;
     return Button({
         icon: Icons.folderTree,
         text: "Split by type…",

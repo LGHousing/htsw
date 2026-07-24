@@ -21,3 +21,8 @@ examples/imports/
 
 # session scratch files
 .claude/tmp/
+
+# htsw:managed START
+# These downloaded docs are private; this keeps public project repos from leaking them.
+.htsw/
+# htsw:managed END

@@ -1,5 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { normalizePathSeparators } from "htsw-editor-common/project";
 import { getTaskProgress } from "../gui/right-panel/import-tab/taskProgress";
 import { getParsePerfStats } from "../gui/parsing/parses";
 import { debugLog, debugLogError, flushGuiDebug } from "../gui/lib/debugLog";
@@ -174,7 +175,7 @@ function screenName(): string {
 }
 
 function shortPath(path: string): string {
-    const norm = path.replace(/\\/g, "/");
+    const norm = normalizePathSeparators(path);
     const parts = norm.split("/").filter((p) => p.length > 0);
     if (parts.length <= 3) return norm;
     return ".../" + parts.slice(parts.length - 3).join("/");

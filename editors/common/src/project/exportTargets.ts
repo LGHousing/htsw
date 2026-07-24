@@ -1,7 +1,7 @@
 import * as json from "jsonc-parser";
 import { findDeclaringImportJson, walkImportJsonTree } from "./includeWalk";
 import { canonicalSlug } from "./filenames";
-import { joinPath, type ProjectFs } from "./fs";
+import { joinPath, normalizePathSeparators, type ProjectFs } from "./fs";
 import {
     importableEntryMatchesIdentity,
     findDeclaringImportJsonForSection,
@@ -16,6 +16,12 @@ export type NpcExportEntry = {
     name: string;
     pos: PosLike;
 };
+
+export type SectionFolderImportJsonResolver = (
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    section: Section
+) => string | null;
 
 // Resolve a path to the fs's own canonical form before comparing. The include
 // walk yields whatever `fs.resolvePath`/`parentDir` produce (absolute, OS
@@ -503,7 +509,8 @@ export function importJsonTargetForSectionEntry(
     entryImportJsonPath: string,
     section: Section,
     identity: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver: SectionFolderImportJsonResolver = sectionFolderImportJson
 ): string {
     const declared = findDeclaringImportJsonForSection(
         fs,
@@ -518,7 +525,7 @@ export function importJsonTargetForSectionEntry(
         preferredNewTargetImportJson
     );
     if (preferred !== null) return preferred;
-    return sectionFolderImportJson(fs, entryImportJsonPath, section) ?? entryImportJsonPath;
+    return sectionFolderResolver(fs, entryImportJsonPath, section) ?? entryImportJsonPath;
 }
 
 function htslTargetForSection(
@@ -528,14 +535,16 @@ function htslTargetForSection(
     identityField: string,
     identity: string,
     label: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver: SectionFolderImportJsonResolver = sectionFolderImportJson
 ): HtslExportTarget {
     const importJsonPath = importJsonTargetForSectionEntry(
         fs,
         entryImportJsonPath,
         section,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        sectionFolderResolver
     );
     const refs = readActionReferencesForSection(
         fs,
@@ -556,7 +565,8 @@ export function htslTargetForFunctionExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     identity: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver?: SectionFolderImportJsonResolver
 ): HtslExportTarget {
     return htslTargetForSection(
         fs,
@@ -565,7 +575,8 @@ export function htslTargetForFunctionExport(
         "name",
         identity,
         "function",
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        sectionFolderResolver
     );
 }
 
@@ -573,7 +584,8 @@ export function htslTargetForEventExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     identity: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver?: SectionFolderImportJsonResolver
 ): HtslExportTarget {
     return htslTargetForSection(
         fs,
@@ -582,7 +594,8 @@ export function htslTargetForEventExport(
         "event",
         identity,
         "event",
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        sectionFolderResolver
     );
 }
 
@@ -590,7 +603,8 @@ export function htslTargetForCommandExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     identity: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver?: SectionFolderImportJsonResolver
 ): HtslExportTarget {
     return htslTargetForSection(
         fs,
@@ -599,7 +613,8 @@ export function htslTargetForCommandExport(
         "name",
         identity,
         "command",
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        sectionFolderResolver
     );
 }
 
@@ -686,14 +701,16 @@ export function htslTargetsForRegionExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     identity: string,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver: SectionFolderImportJsonResolver = sectionFolderImportJson
 ): RegionHtslExportTargets {
     const importJsonPath = importJsonTargetForSectionEntry(
         fs,
         entryImportJsonPath,
         "regions",
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        sectionFolderResolver
     );
     const refs = readActionReferencesForFields(
         fs,
@@ -778,12 +795,13 @@ export function htslTargetsForNpcExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     entry: NpcExportEntry,
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver: SectionFolderImportJsonResolver = sectionFolderImportJson
 ): NpcHtslExportTargets {
     const importJsonPath =
         readDeclaringNpcNode(fs, entryImportJsonPath, entry.pos)?.importJsonPath ??
         reachablePreferredTarget(fs, entryImportJsonPath, preferredNewTargetImportJson) ??
-        sectionFolderImportJson(fs, entryImportJsonPath, "npcs") ??
+        sectionFolderResolver(fs, entryImportJsonPath, "npcs") ??
         entryImportJsonPath;
     const refs = readActionReferencesForNpc(
         fs,
@@ -825,7 +843,7 @@ export function htslTargetsForNpcExport(
 
 export function sanitizeRelativeReference(raw: string): string | null {
     if (raw.length === 0) return null;
-    const normalized = raw.replace(/\\/g, "/");
+    const normalized = normalizePathSeparators(raw);
     if (normalized.charAt(0) === "/") return null;
     if (/^[A-Za-z]:\//.test(normalized)) return null;
 
@@ -889,16 +907,18 @@ export function snbtTargetForItemExport(
     rootDir: string,
     itemName: string,
     subdir: string = "items",
-    preferredNewTargetImportJson?: string
+    preferredNewTargetImportJson?: string,
+    sectionFolderResolver: SectionFolderImportJsonResolver = sectionFolderImportJson
 ): SnbtExportTarget {
-    const sectionJson = sectionFolderImportJson(fs, entryImportJsonPath, "items");
-    const sectionKey = sectionJson !== null ? fs.pathKey(sectionJson) : null;
+    const itemsSectionKey = fs.pathKey(
+        fs.resolvePath(fs.parentDir(entryImportJsonPath), "items/import.json")
+    );
 
     function freshTarget(baseDir: string, importJsonPath: string): SnbtExportTarget {
         // Inside the items section folder the file sits beside its
         // import.json — a `<subdir>/` there would nest items/items/.
         const effectiveSubdir =
-            fs.pathKey(importJsonPath) === sectionKey ? "" : subdir;
+            fs.pathKey(importJsonPath) === itemsSectionKey ? "" : subdir;
         const dir =
             effectiveSubdir.length > 0 ? fs.resolvePath(baseDir, effectiveSubdir) : baseDir;
         const filename = snbtFilenameForItemExport(fs, dir, itemName);
@@ -937,6 +957,7 @@ export function snbtTargetForItemExport(
     if (preferred !== null) {
         return freshTarget(fs.parentDir(preferred), preferred);
     }
+    const sectionJson = sectionFolderResolver(fs, entryImportJsonPath, "items");
     if (sectionJson !== null) {
         return freshTarget(fs.parentDir(sectionJson), sectionJson);
     }

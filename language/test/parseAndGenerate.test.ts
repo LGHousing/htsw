@@ -63,4 +63,13 @@ describe("HTSL printer round-trip", () => {
             });
         }
     }
+
+    it("round-trips backslashes and quotes inside a string", () => {
+        const source = 'chat "back\\\\slash and \\"quoted\\""\n';
+        const actions = parseSource(source);
+
+        const printed = htsw.htsl.printActions(actions);
+        expect(printed).toContain("\\\\");
+        expect(parseSource(printed)).toEqual(actions);
+    });
 });

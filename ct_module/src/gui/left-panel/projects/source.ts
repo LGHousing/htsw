@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
-import { toForwardSlashes } from "../../lib/pathDisplay";
+import { normalizePathSeparators } from "htsw-editor-common/project";
 import {
     canonicalPath,
     getParseAt,
@@ -141,7 +141,7 @@ function sourceContainsPath(source: Source, path: string): boolean {
 
 function relativePath(root: HtswJavaPath, p: HtswJavaPath): string {
     const rel = root.relativize(p);
-    return toForwardSlashes(String(rel.toString()));
+    return normalizePathSeparators(String(rel.toString()));
 }
 
 function isRegularFileSafe(p: HtswJavaPath): boolean {
@@ -167,7 +167,7 @@ function visitFile(p: HtswJavaPath, root: HtswJavaPath, out: Result[]): void {
     try {
         fname = String(fileName.toString()).toLowerCase();
         path = relativePath(root, p);
-        fullPath = toForwardSlashes(String(p.toString()));
+        fullPath = normalizePathSeparators(String(p.toString()));
     } catch (_e) {
         return;
     }

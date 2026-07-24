@@ -93,6 +93,18 @@ def write_runtime_env(stage: Path, env: dict[str, str]) -> None:
         )
 
 
+def deployment_scratch_parent(destination: Path) -> Path:
+    if destination.parent.name.casefold() == "modules":
+        return destination.parent.parent
+    return destination.parent
+
+
+def remove_stale_module_stages(destination: Path) -> None:
+    for stage in destination.parent.glob(f".{destination.name}-install-*"):
+        if stage.is_dir():
+            remove_tree(stage)
+
+
 def build_stage(destination: Path, env: dict[str, str]) -> Path:
     dist = HERE / "dist"
     metadata = HERE / "metadata.json"
@@ -102,7 +114,9 @@ def build_stage(destination: Path, env: dict[str, str]) -> Path:
         raise FileNotFoundError(f"Missing module metadata: {metadata}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".HTSW-install-", dir=destination.parent))
+    scratch_parent = deployment_scratch_parent(destination)
+    scratch_parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".HTSW-install-", dir=scratch_parent))
     try:
         shutil.copytree(dist, stage, dirs_exist_ok=True)
         shutil.copy2(metadata, stage / "metadata.json")
@@ -120,7 +134,7 @@ def build_stage(destination: Path, env: dict[str, str]) -> Path:
 
 
 def replace_destination(stage: Path, destination: Path) -> None:
-    backup = destination.parent / f".{destination.name}-backup-{os.getpid()}"
+    backup = deployment_scratch_parent(destination) / f".{destination.name}-backup-{os.getpid()}"
     if backup.exists():
         raise FileExistsError(f"Refusing to overwrite existing backup: {backup}")
 
@@ -182,11 +196,17 @@ def main() -> None:
             "CT_MODULE_DESTINATION is not set; add it to ct_module/.env or use --destination"
         )
     destination = resolve_destination(raw_destination)
+    remove_stale_module_stages(destination)
 
     if not args.no_build:
         run_build()
     stage = build_stage(destination, env)
-    replace_destination(stage, destination)
+    try:
+        replace_destination(stage, destination)
+    finally:
+        if stage.exists():
+            with suppress(OSError):
+                remove_tree(stage)
     print(f"Deployed HTSW to {destination}")
 
     if args.open:

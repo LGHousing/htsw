@@ -5,8 +5,6 @@ import { ALL_SECTIONS, moveImportableEntry } from "./moveImportable";
 import { importableEntryIdentity, type Section } from "./importJsonMutations";
 import type { ProjectFs } from "./fs";
 
-// Every section gets its own `<section>/import.json` folder in the per-section
-// layout; newly exported importables land there instead of in the root file.
 export const SECTION_FOLDERS: Section[] = ALL_SECTIONS;
 
 function includedFileKeys(fs: ProjectFs, entryImportJsonPath: string): Set<string> {
@@ -40,6 +38,27 @@ export function sectionFolderImportJson(
     const candidate = sectionCandidatePath(fs, entryImportJsonPath, section);
     const keys = includedFileKeys(fs, entryImportJsonPath);
     return keys.has(fs.pathKey(candidate)) ? candidate : null;
+}
+
+export function ensureSectionFolderImportJson(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    section: Section
+): string {
+    const included = sectionFolderImportJson(fs, entryImportJsonPath, section);
+    if (included !== null) return included;
+
+    const target = sectionCandidatePath(fs, entryImportJsonPath, section);
+    if (!fs.exists(target)) {
+        fs.ensureDir(fs.parentDir(target));
+        fs.writeFile(target, "{}\n");
+    }
+    const source = fs.readFile(entryImportJsonPath);
+    fs.writeFile(
+        entryImportJsonPath,
+        addIncludeToImportJsonSource(source, `${section}/import.json`)
+    );
+    return target;
 }
 
 export function projectSectionFolders(
@@ -79,9 +98,9 @@ function rootDeclaredIdentities(
 }
 
 /**
- * Convert a project to the per-section layout: ensure every section folder's
- * import.json exists and is included from the root, then move each importable
- * declared in the ROOT file into its section's file. Importables the user
+ * Convert a project to the per-section layout: move each importable declared in
+ * the ROOT file into its `<section>/import.json`, creating and including that
+ * file only for sections that have something to move. Importables the user
  * already placed in other included files are left where they are.
  */
 export function restructureProjectPerSection(
@@ -92,28 +111,23 @@ export function restructureProjectPerSection(
         throw new Error(`No import.json at ${importJsonPath}`);
     }
 
-    const createdIncludes: string[] = [];
-    const existingKeys = includedFileKeys(fs, importJsonPath);
+    const identitiesBySection = new Map<Section, string[]>();
     for (const section of SECTION_FOLDERS) {
-        const target = sectionCandidatePath(fs, importJsonPath, section);
-        if (existingKeys.has(fs.pathKey(target))) continue;
-        if (!fs.exists(target)) {
-            fs.ensureDir(fs.parentDir(target));
-            fs.writeFile(target, "{}\n");
-        }
-        const source = fs.readFile(importJsonPath);
-        fs.writeFile(
-            importJsonPath,
-            addIncludeToImportJsonSource(source, `${section}/import.json`)
+        identitiesBySection.set(
+            section,
+            rootDeclaredIdentities(fs, importJsonPath, section)
         );
-        createdIncludes.push(target);
     }
 
+    const createdIncludes: string[] = [];
     const moved: RestructureResult["moved"] = [];
     const failures: RestructureResult["failures"] = [];
     for (const section of SECTION_FOLDERS) {
-        const dest = sectionCandidatePath(fs, importJsonPath, section);
-        const identities = rootDeclaredIdentities(fs, importJsonPath, section);
+        const identities = identitiesBySection.get(section) ?? [];
+        if (identities.length === 0) continue;
+        const existing = sectionFolderImportJson(fs, importJsonPath, section);
+        const dest = ensureSectionFolderImportJson(fs, importJsonPath, section);
+        if (existing === null) createdIncludes.push(dest);
         for (const identity of identities) {
             const result = moveImportableEntry(fs, importJsonPath, section, identity, dest);
             if (result.ok) {

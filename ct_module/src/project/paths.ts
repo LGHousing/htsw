@@ -23,8 +23,8 @@ import {
     regionExportReferencesExist as regionExportReferencesExistWithFs,
     snbtTargetForItemExport as snbtTargetForItemExportWithFs,
     createIncludedFolderInTree as createIncludedFolderInTreeWithFs,
+    ensureSectionFolderImportJson as ensureSectionFolderImportJsonWithFs,
     sectionFolderImportJson as sectionFolderImportJsonWithFs,
-    projectSectionFolders as projectSectionFoldersWithFs,
     restructureProjectPerSection as restructureProjectPerSectionWithFs,
     type HtslExportTarget,
     type NpcExportEntry,
@@ -35,6 +35,7 @@ import {
     type SnbtExportTarget,
 } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
+import { isSectionLayoutProject } from "./sectionLayoutProjects";
 
 export { canonicalSlug, type HtslExportTarget, type NpcExportEntry, type NpcHtslExportTargets, type RegionHtslExportTargets, type RestructureResult, type SnbtExportTarget };
 
@@ -43,10 +44,6 @@ export function sectionFolderImportJson(
     section: Section
 ): string | null {
     return sectionFolderImportJsonWithFs(ctProjectFs, entryImportJsonPath, section);
-}
-
-export function projectSectionFolders(entryImportJsonPath: string): Section[] {
-    return projectSectionFoldersWithFs(ctProjectFs, entryImportJsonPath);
 }
 
 export function importJsonTargetForSectionEntry(
@@ -60,8 +57,19 @@ export function importJsonTargetForSectionEntry(
         entryImportJsonPath,
         section,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
+}
+
+function exportSectionFolderResolver(
+    fs: typeof ctProjectFs,
+    entryImportJsonPath: string,
+    section: Section
+): string | null {
+    return isSectionLayoutProject(entryImportJsonPath)
+        ? ensureSectionFolderImportJsonWithFs(fs, entryImportJsonPath, section)
+        : sectionFolderImportJsonWithFs(fs, entryImportJsonPath, section);
 }
 
 export function restructureProjectPerSection(importJsonPath: string): RestructureResult {
@@ -188,7 +196,8 @@ export function htslTargetForFunctionExport(
         ctProjectFs,
         entryImportJsonPath,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }
 
@@ -201,7 +210,8 @@ export function htslTargetForEventExport(
         ctProjectFs,
         entryImportJsonPath,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }
 
@@ -214,7 +224,8 @@ export function htslTargetForCommandExport(
         ctProjectFs,
         entryImportJsonPath,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }
 
@@ -227,7 +238,8 @@ export function htslTargetsForRegionExport(
         ctProjectFs,
         entryImportJsonPath,
         identity,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }
 
@@ -240,7 +252,8 @@ export function htslTargetsForNpcExport(
         ctProjectFs,
         entryImportJsonPath,
         entry,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }
 
@@ -257,6 +270,7 @@ export function snbtTargetForItemExport(
         rootDir,
         itemName,
         subdir,
-        preferredNewTargetImportJson
+        preferredNewTargetImportJson,
+        exportSectionFolderResolver
     );
 }

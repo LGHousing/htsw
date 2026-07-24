@@ -28,7 +28,8 @@ import {
 } from "../lib/theme";
 import { setImportJsonPath } from "../state";
 import { addRecent } from "../persistence/recents";
-import { normalizeHtswPath, toForwardSlashes } from "../lib/pathDisplay";
+import { normalizePathSeparators } from "htsw-editor-common/project";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
@@ -92,7 +93,7 @@ function dirExists(path: string): boolean {
 
 /** Walk up parents until an existing directory is found, falling back to ".". */
 function resolveExistingDir(start: string): string {
-    let cur = toForwardSlashes(start);
+    let cur = normalizePathSeparators(start);
     for (let i = 0; i < 10 && cur !== "" && cur !== "." && cur !== "/"; i++) {
         if (dirExists(cur)) return normalizeHtswPath(cur);
         const slash = cur.lastIndexOf("/");
@@ -253,7 +254,7 @@ function commitPathDraft(): void {
         }
         const parent = p.getParent();
         if (parent !== null) {
-            navigateTo(String(parent.toString()).split("\\").join("/"));
+            navigateTo(normalizePathSeparators(String(parent.toString())));
             ChatLib.chat(`&7[htsw] ${fname} is not an import.json — jumped to its folder`);
             return;
         }

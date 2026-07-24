@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 import {
     createEmptyProjectFiles,
     createIncludedFolderInTree,
+    ensureSectionFolderImportJson,
     htslTargetForFunctionExport,
     importJsonTargetForSectionEntry,
     moveImportableEntry,
     projectSectionFolders,
     restructureProjectPerSection,
     snbtTargetForItemExport,
+    upsertImportableEntry,
     walkImportJsonTree,
     type ProjectFs,
 } from "htsw-editor-common/project";
@@ -470,8 +472,11 @@ describe("restructureProjectPerSection", () => {
         };
         expect(root.include).toContain("functions/import.json");
         expect(root.include).toContain("items/import.json");
-        expect(root.include).toContain("teams/import.json");
-        expect(root.include).toContain("groups/import.json");
+        expect(root.include.sort()).toEqual([
+            "events/import.json",
+            "functions/import.json",
+            "items/import.json",
+        ]);
         expect(root.functions ?? []).toEqual([]);
         expect(root.events ?? []).toEqual([]);
         expect(root.items ?? []).toEqual([]);
@@ -600,22 +605,118 @@ describe("createIncludedFolderInTree", () => {
     });
 });
 
-describe("createEmptyProjectFiles with section folders", () => {
-    test("scaffolds an include per exportable section", () => {
+describe("lazy section folders", () => {
+    test("creates only the root file for a new section-layout project", () => {
         const fs = memoryFs({});
 
-        const result = createEmptyProjectFiles(fs, "/projects", "mygame", {
-            sectionFolders: true,
-        });
+        const result = createEmptyProjectFiles(fs, "/projects", "mygame");
         expect(result.created).toBe(true);
+        expect(result.writtenFiles).toEqual(["/projects/mygame/import.json"]);
 
         const root = JSON.parse(fs.readFile("/projects/mygame/import.json")) as {
-            include: string[];
+            include?: string[];
         };
-        expect(root.include).toContain("functions/import.json");
-        expect(root.include).toContain("events/import.json");
-        expect(fs.store.has("/projects/mygame/functions/import.json")).toBe(true);
-        expect(projectSectionFolders(fs, "/projects/mygame/import.json")).toContain("functions");
+        expect(root.include).toBeUndefined();
+        expect(Array.from(fs.store.keys())).toEqual(["/projects/mygame/import.json"]);
+        expect(projectSectionFolders(fs, "/projects/mygame/import.json")).toEqual([]);
+    });
+
+    test("creates each section on its first export and reuses it", () => {
+        const fs = memoryFs({ [ROOT]: "{}\n" });
+        const resolver = ensureSectionFolderImportJson;
+
+        const first = importJsonTargetForSectionEntry(
+            fs,
+            ROOT,
+            "teams",
+            "Red",
+            undefined,
+            resolver
+        );
+        upsertImportableEntry(fs, first, "teams", { name: "Red" });
+        expect(first).toBe("/project/teams/import.json");
+        expect(projectSectionFolders(fs, ROOT)).toEqual(["teams"]);
+        expect(
+            (JSON.parse(fs.readFile(first)) as { teams: unknown[] }).teams
+        ).toEqual([{ name: "Red" }]);
+
+        const second = importJsonTargetForSectionEntry(
+            fs,
+            ROOT,
+            "teams",
+            "Blue",
+            undefined,
+            resolver
+        );
+        expect(second).toBe(first);
+        const afterSecond = JSON.parse(fs.readFile(ROOT)) as { include: string[] };
+        expect(afterSecond.include).toEqual(["teams/import.json"]);
+
+        const groups = importJsonTargetForSectionEntry(
+            fs,
+            ROOT,
+            "groups",
+            "Default",
+            undefined,
+            resolver
+        );
+        expect(groups).toBe("/project/groups/import.json");
+        expect(projectSectionFolders(fs, ROOT)).toEqual(["teams", "groups"]);
+        const afterGroups = JSON.parse(fs.readFile(ROOT)) as { include: string[] };
+        expect(afterGroups.include).toEqual([
+            "teams/import.json",
+            "groups/import.json",
+        ]);
+    });
+
+    test("declaring and sticky targets win without creating a section folder", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({ include: ["custom/import.json"] }),
+            "/project/custom/import.json": JSON.stringify({
+                teams: [{ name: "Red" }],
+            }),
+        });
+        const resolver = ensureSectionFolderImportJson;
+
+        expect(
+            importJsonTargetForSectionEntry(
+                fs,
+                ROOT,
+                "teams",
+                "Red",
+                ROOT,
+                resolver
+            )
+        ).toBe("/project/custom/import.json");
+        expect(
+            importJsonTargetForSectionEntry(
+                fs,
+                ROOT,
+                "teams",
+                "Blue",
+                "/project/custom/import.json",
+                resolver
+            )
+        ).toBe("/project/custom/import.json");
+        expect(fs.store.has("/project/teams/import.json")).toBe(false);
+    });
+
+    test("puts a lazily-created item beside its section import.json", () => {
+        const fs = memoryFs({ [ROOT]: "{}\n" });
+
+        const target = snbtTargetForItemExport(
+            fs,
+            ROOT,
+            "/project",
+            "Wand",
+            undefined,
+            undefined,
+            ensureSectionFolderImportJson
+        );
+
+        expect(target.importJsonPath).toBe("/project/items/import.json");
+        expect(target.snbtPath).toBe("/project/items/Wand.snbt");
+        expect(target.snbtReference).toBe("Wand.snbt");
     });
 
     test("defaults to the flat layout when no option is passed", () => {

@@ -86,3 +86,11 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - Import, export, and deep-read reuse the same live-menu readers (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate that read logic.
 - A list/browser opener that walks `/hmenu` -> submenu (e.g. `openNpcBrowser`, `openGroupsList`) guards on `housingSync/menus/currentMenu.ts:isAtMenuTitle` and early-returns when already at that menu, so the list phase -> per-item phase doesn't re-run the whole `/hmenu` round-trip. It compares the _base_ title (pagination's `(page/total)` prefix stripped), which is safe because the paginated navigation reads the live page from the title and self-corrects from any page. Only guard _list_ openers this way — never early-return into a specific item's editor unless the menu title uniquely identifies that item (NPCs are position-keyed with non-unique names; the group edit menu title doesn't name the group).
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
+
+<!-- htsw:guides START -->
+## HTSW + Housing guides for agents
+
+These docs are managed by `htsw-docs sync`. Start with
+`.htsw/agents/information.md`; it links to the Housing reference under
+`.htsw/housing/` and the HTSW reference under `.htsw/htsw/`.
+<!-- htsw:guides END -->

@@ -1,4 +1,5 @@
 import { SourceMap, parseActionsResult, parseImportablesResult, Diagnostic } from "htsw";
+import { normalizePathSeparators } from "htsw-editor-common/project";
 
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
@@ -461,7 +462,7 @@ function commandParsePerf(): void {
 }
 
 function shortPerfPath(path: string): string {
-    const norm = path.replace(/\\/g, "/");
+    const norm = normalizePathSeparators(path);
     const parts = norm.split("/").filter((p) => p.length > 0);
     if (parts.length <= 4) return norm;
     return `.../${parts.slice(parts.length - 4).join("/")}`;

@@ -19,7 +19,7 @@ export function joinPath(left: string, right: string): string {
 }
 
 export function parentDir(path: string): string {
-    const normalized = path.split("\\").join("/");
+    const normalized = normalizePathSeparators(path);
     const slash = normalized.lastIndexOf("/");
     if (slash < 0) return ".";
     if (slash === 0) return "/";

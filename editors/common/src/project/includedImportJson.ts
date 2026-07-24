@@ -1,5 +1,6 @@
 import {
     joinPath,
+    normalizePathSeparators,
     normalizeRelativeProjectPath,
     parentDir,
     type ProjectFs,
@@ -297,7 +298,7 @@ export function relativePath(fromDirectory: string, targetPath: string): string 
 }
 
 function pathParts(path: string): string[] {
-    return path.split("\\").join("/").split("/").filter((part) => part.length > 0);
+    return normalizePathSeparators(path).split("/").filter((part) => part.length > 0);
 }
 
 function samePathPart(left: string, right: string): boolean {
