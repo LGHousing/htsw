@@ -7,6 +7,7 @@ import {
     fetchSoundsJson,
     fetchVersionJson,
     resolveSoundObject,
+    soundEventsWithAudio,
     verifySha1,
 } from "./mojangAssets";
 import type { SoundVersionId } from "../webview/protocol";
@@ -25,6 +26,11 @@ export class SoundCache {
 
     public cacheRootUri(): Uri {
         return Uri.file(this.rootPath);
+    }
+
+    public async soundEvents(version: SoundVersionId): Promise<string[]> {
+        const versionData = await this.ensureVersionData(version);
+        return soundEventsWithAudio(versionData.index, versionData.sounds);
     }
 
     public async ensureSound(version: SoundVersionId, eventName: string): Promise<CachedSound> {

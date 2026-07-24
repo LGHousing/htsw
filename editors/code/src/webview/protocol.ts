@@ -51,6 +51,7 @@ export type ItemPreviewData = {
 export type SoundEntry = {
     name: string;
     path: string;
+    mapped1_8: string | null;
     mapped1_21: string | null;
 };
 
@@ -200,6 +201,7 @@ export type SoundPreviewFromHostMessage =
           sounds: SoundEntry[];
           settings: { version: SoundVersionId; pitch: number; volume: number };
       }
+    | { type: "soundCatalog"; sounds: SoundEntry[] }
     | {
           type: "playState";
           ok: true;

@@ -194,6 +194,9 @@ export const SOUND_NAME_1_8_TO_1_21: Record<string, string | null> = {
 };
 
 export function soundEventForVersion(version: SoundVersionId, soundPath: string): string | null {
+    if (soundPath.startsWith("minecraft:")) {
+        return version === "1.21.1" ? soundPath.slice("minecraft:".length) : null;
+    }
     if (version === "1.8.9") return soundPath;
     return SOUND_NAME_1_8_TO_1_21[soundPath] ?? null;
 }

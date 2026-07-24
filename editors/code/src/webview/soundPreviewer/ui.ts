@@ -55,6 +55,12 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
             return;
         }
 
+        if (message.type === "soundCatalog") {
+            state.sounds = message.sounds;
+            render();
+            return;
+        }
+
         if (message.type === "playState") {
             state.loadingPath = null;
             if (!message.ok) {
@@ -261,12 +267,13 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
 function soundRow(sound: SoundEntry, state: State): string {
     const disabled = !canPlay(sound, state.version);
     const loading = state.loadingPath === sound.path;
+    const unavailableVersion = state.version === "1.8.9" ? "1.8" : "1.21";
     return `
         <div class="sound-row">
             <div>
                 <div class="sound-name">${escapeHtml(sound.name)}</div>
                 <div class="sound-path">${escapeHtml(sound.path)}</div>
-                ${disabled ? `<span class="badge">No 1.21 audio</span>` : ""}
+                ${disabled ? `<span class="badge">No ${unavailableVersion} audio</span>` : ""}
             </div>
             <button data-play-path="${escapeAttr(sound.path)}" type="button" ${disabled || loading ? "disabled" : ""}>${loading ? "Loading" : "Play"}</button>
             <button data-copy-path="${escapeAttr(sound.path)}" class="secondary copy" type="button">Copy</button>
@@ -275,7 +282,7 @@ function soundRow(sound: SoundEntry, state: State): string {
 }
 
 function canPlay(sound: SoundEntry, version: SoundVersionId): boolean {
-    return version === "1.8.9" || sound.mapped1_21 !== null;
+    return version === "1.8.9" ? sound.mapped1_8 !== null : sound.mapped1_21 !== null;
 }
 
 function filterSounds(sounds: SoundEntry[], query: string): SoundEntry[] {

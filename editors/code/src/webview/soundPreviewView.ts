@@ -35,9 +35,10 @@ export class SoundPreviewController {
             case "ready":
                 await this.post(webview, {
                     type: "init",
-                    sounds: soundEntries(),
+                    sounds: soundEntries([]),
                     settings: this.readSettings(),
                 });
+                await this.loadModernSoundCatalog(webview);
                 return;
             case "requestPlay":
                 await this.play(webview, message.version, message.soundPath);
@@ -122,6 +123,17 @@ export class SoundPreviewController {
         await this.globalState.update(VOLUME_KEY, volume);
     }
 
+    private async loadModernSoundCatalog(webview: vscode.Webview): Promise<void> {
+        try {
+            await this.post(webview, {
+                type: "soundCatalog",
+                sounds: soundEntries(await this.cache.soundEvents("1.21.1")),
+            });
+        } catch {
+            return;
+        }
+    }
+
     private async post(
         webview: vscode.Webview,
         message: SoundPreviewFromHostMessage,
@@ -130,10 +142,34 @@ export class SoundPreviewController {
     }
 }
 
-function soundEntries(): SoundEntry[] {
-    return htsw.types.SOUNDS.map((sound) => ({
+function soundEntries(modernSoundEvents: readonly string[]): SoundEntry[] {
+    const housingSounds = htsw.types.SOUNDS.map((sound) => ({
         name: sound.name,
         path: sound.path,
+        mapped1_8: sound.path,
         mapped1_21: SOUND_NAME_1_8_TO_1_21[sound.path] ?? null,
     }));
+    const housingEvents1_21 = new Set(
+        housingSounds
+            .map((sound) => sound.mapped1_21)
+            .filter((sound): sound is string => sound !== null)
+    );
+    const modernOnlySounds = modernSoundEvents
+        .filter((eventName) => !housingEvents1_21.has(eventName))
+        .map((eventName) => ({
+            name: soundEventDisplayName(eventName),
+            path: `minecraft:${eventName}`,
+            mapped1_8: null,
+            mapped1_21: eventName,
+        }));
+
+    return [...housingSounds, ...modernOnlySounds];
+}
+
+function soundEventDisplayName(eventName: string): string {
+    return eventName
+        .split(/[./_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
 }

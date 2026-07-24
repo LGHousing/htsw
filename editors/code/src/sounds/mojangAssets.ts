@@ -25,12 +25,17 @@ type AssetIndex = {
 
 type SoundsJson = Record<string, { sounds?: SoundVariant[] }>;
 
-type SoundVariant = string | { name?: string };
+type SoundVariant = string | { name?: string; type?: string };
 
 export type ResolvedSoundObject = {
     hash: string;
     variants: string[];
     objectKey: string;
+};
+
+type SoundResolution = {
+    variants: string[];
+    available: Array<Omit<ResolvedSoundObject, "variants">>;
 };
 
 async function resolveVersionJsonUrl(version: SoundVersionId): Promise<string> {
@@ -65,27 +70,57 @@ export function resolveSoundObject(
     sounds: SoundsJson,
     eventName: string,
 ): ResolvedSoundObject {
-    const event = sounds[eventName];
-    const variants = (event?.sounds ?? [])
-        .map(soundVariantName)
-        .filter((name): name is string => Boolean(name));
-    if (variants.length === 0) {
+    const resolved = resolveSoundObjects(index, sounds, eventName);
+    if (resolved.variants.length === 0) {
         throw new Error(`No audio variants for sound event "${eventName}".`);
     }
+    if (resolved.available.length > 0) {
+        return {
+            ...resolved.available[Math.floor(Math.random() * resolved.available.length)],
+            variants: resolved.variants,
+        };
+    }
+    throw new Error(`No cached object entry for sound event "${eventName}".`);
+}
 
-    const available: ResolvedSoundObject[] = [];
-    for (const variant of variants) {
-        const objectKey = `minecraft/sounds/${variant}.ogg`;
+export function soundEventsWithAudio(index: AssetIndex, sounds: SoundsJson): string[] {
+    return Object.keys(sounds)
+        .filter((eventName) => resolveSoundObjects(index, sounds, eventName).available.length > 0)
+        .sort();
+}
+
+function resolveSoundObjects(
+    index: AssetIndex,
+    sounds: SoundsJson,
+    eventName: string,
+    ancestors = new Set<string>(),
+): SoundResolution {
+    if (ancestors.has(eventName)) return { variants: [], available: [] };
+
+    const event = sounds[eventName];
+    const variants: string[] = [];
+    const available: SoundResolution["available"] = [];
+    const nextAncestors = new Set(ancestors);
+    nextAncestors.add(eventName);
+
+    for (const variant of event?.sounds ?? []) {
+        const name = soundVariantName(variant);
+        if (name === null) continue;
+        if (typeof variant !== "string" && variant.type === "event") {
+            const nested = resolveSoundObjects(index, sounds, name, nextAncestors);
+            variants.push(...nested.variants);
+            available.push(...nested.available);
+            continue;
+        }
+
+        variants.push(name);
+        const objectKey = `minecraft/sounds/${name}.ogg`;
         const object = index.objects[objectKey];
         if (!object) continue;
-        available.push({ hash: object.hash, objectKey, variants });
+        available.push({ hash: object.hash, objectKey });
     }
 
-    if (available.length > 0) {
-        return available[Math.floor(Math.random() * available.length)];
-    }
-
-    throw new Error(`No cached object entry for sound event "${eventName}".`);
+    return { variants: [...new Set(variants)], available };
 }
 
 export async function downloadObject(hash: string, destPath: string): Promise<void> {
