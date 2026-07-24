@@ -1,13 +1,23 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { getScrollState, type Child, type Element } from "../lib/layout";
+import {
+    clearUserScrollOverride,
+    getScrollState,
+    isScrollUserOverridden,
+    setScrollOffset,
+    type Child,
+    type Element,
+} from "../lib/layout";
 import { Button, Col, Container, Icon, Row, Scroll, Text } from "../lib/components";
 import { Icons } from "../lib/icons.generated";
+import { markGuiDirty } from "../lib/dirty";
 import {
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_DIVIDER,
     COLOR_ROW,
+    COLOR_ROW_SELECTED,
+    COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT,
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
@@ -17,6 +27,7 @@ import {
     getFinishedTaskFailure,
     getSessionVerb,
     getTaskProgress,
+    isCurrentQueueItem,
 } from "./import-tab/taskProgress";
 import { isLiveTabActive } from "./selection";
 import {
@@ -39,6 +50,8 @@ import {
 } from "./import-tab/progressPanel";
 
 let queueExpanded = true;
+let queueFollowRequested = false;
+let queueFollowEngaged = false;
 const QUEUE_SCROLL_ID = "right-import-queue-scroll";
 const QUEUE_SCROLL_H = 120;
 const QUEUE_ROW_GAP = 2;
@@ -65,6 +78,27 @@ function queueSummary(): Element {
             color: COLOR_TEXT,
             truncate: true,
             style: { width: { kind: "grow" } },
+        }),
+        Button({
+            icon: () => (queueFollowRequested ? Icons.locateFixed : Icons.locate),
+            tooltip: "Follow the running row — turns off when you scroll",
+            style: {
+                width: { kind: "px", value: 18 },
+                height: { kind: "grow" },
+                background: () =>
+                    queueFollowRequested ? COLOR_ROW_SELECTED : COLOR_BUTTON,
+                hoverBackground: () =>
+                    queueFollowRequested
+                        ? COLOR_ROW_SELECTED_HOVER
+                        : COLOR_BUTTON_HOVER,
+            },
+            onClick: (_rect, info) => {
+                if (info.button !== 0) return;
+                queueFollowRequested = !queueFollowRequested;
+                queueFollowEngaged = false;
+                if (queueFollowRequested) clearUserScrollOverride(QUEUE_SCROLL_ID);
+                markGuiDirty();
+            },
         }),
         Button({
             text: "Clear",
@@ -116,10 +150,35 @@ function queueScroll(): Element {
     });
 }
 
+/**
+ * Advance the follow toggle's engagement for this rebuild. A manual scroll
+ * only disarms follow after it has actually followed once (engaged) — the
+ * user browsing the queue before a run starts must not silently disarm the
+ * button they just armed.
+ */
+function advanceQueueFollow(): boolean {
+    if (!queueFollowRequested || getActiveTaskLabel() === null) {
+        queueFollowEngaged = false;
+        return false;
+    }
+    if (!queueFollowEngaged) {
+        clearUserScrollOverride(QUEUE_SCROLL_ID);
+        queueFollowEngaged = true;
+    } else if (isScrollUserOverridden(QUEUE_SCROLL_ID)) {
+        queueFollowRequested = false;
+        queueFollowEngaged = false;
+        return false;
+    }
+    return true;
+}
+
 function virtualQueueRows(): Child[] {
     const state = getScrollState(QUEUE_SCROLL_ID);
     const viewportH = state.viewportRect.h > 0 ? state.viewportRect.h : QUEUE_SCROLL_H;
     const groups = queueDisplayGroups();
+    const followOn = advanceQueueFollow();
+    const activeIdentity = followOn ? getActiveTaskLabel() : null;
+    let activeTop = -1;
     let measuredRows = 0;
     let measuredH = 0;
 
@@ -130,17 +189,44 @@ function virtualQueueRows(): Child[] {
         measuredRows += count;
     };
 
+    const nextRowTop = (): number =>
+        measuredRows > 0 ? measuredH + QUEUE_ROW_GAP : measuredH;
+
+    const isActiveImportableRow = (item: QueueItem): boolean =>
+        item.kind === "importable" &&
+        item.identity === activeIdentity &&
+        isCurrentQueueItem(item);
+
     const measureItems = (items: readonly QueueItem[]): void => {
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            measureRows(1, SIZE_ROW_H);
-            if (
+            const expanded =
                 item.operation === "import" &&
                 item.kind === "importJson" &&
-                isQueueImportJsonExpanded(item)
-            ) {
-                measureRows(queueImportJsonChildren(item).length, SIZE_ROW_H);
+                isQueueImportJsonExpanded(item);
+            const rowTop = nextRowTop();
+            if (activeTop < 0 && activeIdentity !== null && !expanded) {
+                const current =
+                    item.kind === "importable"
+                        ? isActiveImportableRow(item)
+                        : isCurrentQueueItem(item);
+                if (current) activeTop = rowTop;
             }
+            measureRows(1, SIZE_ROW_H);
+            if (!expanded) continue;
+            const children = queueImportJsonChildren(item);
+            if (children.length === 0) continue;
+            if (activeTop < 0 && activeIdentity !== null) {
+                const blockTop = nextRowTop();
+                for (let j = 0; j < children.length; j++) {
+                    if (isActiveImportableRow(children[j])) {
+                        activeTop = blockTop + j * (SIZE_ROW_H + QUEUE_ROW_GAP);
+                        break;
+                    }
+                }
+                if (activeTop < 0 && isCurrentQueueItem(item)) activeTop = rowTop;
+            }
+            measureRows(children.length, SIZE_ROW_H);
         }
     };
 
@@ -148,6 +234,21 @@ function virtualQueueRows(): Child[] {
     if (groups.showDivider) measureRows(1, PENDING_DIVIDER_H);
     measureItems(groups.pending);
     if (measuredRows === 0) return [];
+
+    // Apply follow before the window below reads the offset, so the same
+    // rebuild materializes the rows around the followed position.
+    if (followOn && activeTop >= 0) {
+        const followTarget = Math.max(
+            0,
+            Math.min(
+                Math.max(0, measuredH - viewportH),
+                activeTop - (viewportH - SIZE_ROW_H) / 2
+            )
+        );
+        if (Math.abs(state.target - followTarget) > 0.5) {
+            setScrollOffset(QUEUE_SCROLL_ID, followTarget);
+        }
+    }
 
     const offset = Math.max(
         0,
