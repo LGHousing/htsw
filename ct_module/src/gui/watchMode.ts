@@ -25,6 +25,7 @@ registerBadge(() => {
     return {
         text: watchImportRunning ? "WATCH: importing…" : "WATCH",
         color: WATCH_COLOR,
+        pulse: true,
     };
 });
 let debounceRevision = 0;
