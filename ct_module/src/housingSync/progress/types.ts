@@ -57,6 +57,8 @@ export type KnowledgeSourceReason =
     | "full-read"
     | "lock-verification"
     | "lock-verified"
+    | "cache-missing"
+    | "lock-conflict"
     | "known-empty";
 
 export type KnowledgeLockStatus = "matched" | "missing" | "mismatch";

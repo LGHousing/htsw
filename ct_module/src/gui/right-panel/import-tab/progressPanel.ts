@@ -470,6 +470,12 @@ function knowledgeSourceText(): string {
     if (knowledge.currentReason === "lock-verification") {
         return "Source: Checking house against house.lock";
     }
+    if (knowledge.currentReason === "cache-missing") {
+        return "Source: No cache saved · rebuilding from house";
+    }
+    if (knowledge.currentReason === "lock-conflict") {
+        return "Source: House changed since lock · full read";
+    }
 
     // An untrusted session was never going to use the cache, so the lock
     // chips ("cache matches lock", …) only read as a cache problem that

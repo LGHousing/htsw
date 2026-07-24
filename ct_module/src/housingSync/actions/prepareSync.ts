@@ -114,8 +114,12 @@ export async function scanActionListSync(
     if (needsConflictScan) {
         emitKnowledgeSource(
             target.sync.events,
-            "house",
-            "lock-verified",
+            scan.kind === "planned" ? "cache" : "house",
+            scan.kind === "planned"
+                ? "lock-verified"
+                : trustedBaseline === undefined
+                  ? "cache-missing"
+                  : "lock-conflict",
             target.trustPlan
         );
     }
