@@ -7,6 +7,8 @@ on:
       - 'book.toml'
       - 'language/src/**'
       - 'language/package.json'
+      - 'scripts/docs-raw.mjs'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
