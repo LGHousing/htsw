@@ -3,6 +3,8 @@ export {};
 declare global {
     interface Java {
         to(values: readonly number[], type: "byte[]" | "int[]"): HtswJavaNumberArray;
+        to(values: readonly unknown[], type: "java.lang.Object[]"): HtswJavaObjectArray<unknown>;
+        to(values: readonly string[], type: "java.lang.String[]"): HtswJavaObjectArray<string>;
     }
 
     interface HtswJavaIterator<T> {
@@ -321,10 +323,54 @@ declare global {
         getProperty(name: string): unknown;
     }
 
-    type HtswJavaFile = object;
+    interface HtswJavaFile {
+        getAbsolutePath(): unknown;
+        getParentFile(): HtswJavaFile | null;
+        length(): unknown;
+        mkdirs(): boolean;
+    }
 
     interface HtswJavaFileClass {
         new (path: string): HtswJavaFile;
+    }
+
+    interface HtswJavaRuntime {
+        freeMemory(): unknown;
+        maxMemory(): unknown;
+        totalMemory(): unknown;
+    }
+
+    interface HtswJavaRuntimeClass {
+        getRuntime(): HtswJavaRuntime;
+    }
+
+    interface HtswGarbageCollectorMxBean {
+        getCollectionCount(): unknown;
+        getCollectionTime(): unknown;
+        getName(): unknown;
+    }
+
+    interface HtswJavaManagementFactoryClass {
+        getGarbageCollectorMXBeans(): {
+            get(index: number): HtswGarbageCollectorMxBean;
+            size(): number;
+        };
+        getPlatformMBeanServer(): HtswMBeanServer;
+    }
+
+    type HtswObjectName = object;
+
+    interface HtswObjectNameClass {
+        new (name: string): HtswObjectName;
+    }
+
+    interface HtswMBeanServer {
+        invoke(
+            name: HtswObjectName,
+            operationName: string,
+            params: HtswJavaObjectArray<unknown>,
+            signature: HtswJavaObjectArray<string>
+        ): unknown;
     }
 
     interface HtswJavaDesktop {
@@ -657,10 +703,13 @@ declare global {
         "java.lang.Double": HtswJavaDoubleClass;
         "java.lang.Integer": HtswJavaIntegerClass;
         "java.lang.Long": HtswJavaLongClass;
+        "java.lang.Runtime": HtswJavaRuntimeClass;
         "java.lang.Runnable": HtswJavaRunnableClass;
         "java.lang.String": HtswJavaStringClass;
         "java.lang.System": HtswJavaSystemClass;
         "java.lang.Thread": HtswJavaThreadClass;
+        "java.lang.management.ManagementFactory": HtswJavaManagementFactoryClass;
+        "javax.management.ObjectName": HtswObjectNameClass;
         "java.net.URL": HtswJavaUrlClass;
         "java.net.URLClassLoader": HtswJavaUrlClassLoaderClass;
         "java.nio.charset.StandardCharsets": HtswJavaCharsetClass;

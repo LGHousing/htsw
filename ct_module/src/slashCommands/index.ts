@@ -41,6 +41,7 @@ import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
+import { commandHeap } from "./debugHeap";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 import { commandCacheReport } from "./cacheReport";
 import { commandQueue } from "./queue";
@@ -195,6 +196,12 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Show / reset / dump op-timing (ETA) samples",
         run: commandEta,
         usage: "eta [reset|dump|trace on|off]",
+    },
+    {
+        name: "heap",
+        summary: "JVM heap summary; heap dump [live] writes an .hprof",
+        run: commandHeap,
+        usage: "heap [dump [live]]",
     },
     {
         name: "trace",
