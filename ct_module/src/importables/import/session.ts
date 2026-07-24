@@ -487,7 +487,7 @@ async function runImportSessionInner(
 
     let activePlanIndex: number | null = null;
     try {
-        events?.emit({ kind: "applyPassStarted" });
+        events?.emit({ kind: "sessionTotalsLocked" });
         await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
             ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
         });

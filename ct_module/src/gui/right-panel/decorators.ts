@@ -9,6 +9,7 @@ import {
     type SourceDiffGhost,
 } from "../code-view/sourceDiff";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
+import { getSessionVerb } from "./import-tab/taskProgress";
 import { tokenizeHtsl } from "./syntax";
 import type {
     LineDecorations,
@@ -226,10 +227,18 @@ export function progressDecorator(path: string | null): LineDecorator {
             }
             return focusLineIdForFile(path);
         },
+        gutterVisibility(): { focus: boolean; state: boolean } {
+            // The live cursor comes and goes with each nested read, so
+            // reserve its column for the whole session instead of letting
+            // rows shift sideways every time it blinks out. Diff-state
+            // glyphs only ever appear for imports (apply-phase overlay);
+            // export/read previews shouldn't pay for that blank column.
+            return { focus: path !== null, state: getSessionVerb() === "import" };
+        },
         modelKey(): string | null {
             if (path === null) return "progress:none";
             const focusKey = focusPath === null ? "" : ActionPath.key(focusPath);
-            return `progress:${path}\n${previewRevision(path)}\n${focusKey}\n${isApplyPhase}`;
+            return `progress:${path}\n${previewRevision(path)}\n${focusKey}\n${isApplyPhase}\n${getSessionVerb()}`;
         },
     };
 }

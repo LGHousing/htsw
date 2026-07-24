@@ -631,6 +631,8 @@ export function touchParseCacheMtime(rawPath: string): void {
     resetFreshness(existing.freshness);
     invalidateParseDerivedCaches(existing);
     resaveSnapshot(existing);
+    parseCacheRevision++;
+    markGuiDirty();
     notifyParseCacheEntryChanged(existing);
 }
 
@@ -648,6 +650,8 @@ export function touchParseCacheFile(rawPath: string): void {
     existing.fingerprint[canon] = existing.mtime;
     resetFreshness(existing.freshness);
     resaveSnapshot(existing);
+    parseCacheRevision++;
+    markGuiDirty();
     notifyParseCacheEntryChanged(existing);
 }
 

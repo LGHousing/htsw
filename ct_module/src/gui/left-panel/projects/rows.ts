@@ -9,6 +9,7 @@ import { openConfirmPopover } from "../../popovers/confirm";
 import {
     getHousingUuid,
     isAutoTrackSource,
+    isCurrentHouseTrusted,
     toggleAutoTrackSource,
 } from "../../state";
 import {
@@ -23,6 +24,7 @@ import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } fro
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
     cachedImportableLinkStatus,
+    importableLinkStatusContextKey,
     linkStatusIcon,
 } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
@@ -884,26 +886,66 @@ function collectSubtreeImportables(node: IncludeNode, out: Importable[]): void {
     }
 }
 
-type SubtreeAggregate = { errors: number };
-type CachedSubtreeAggregate = SubtreeAggregate & { parse: object | null };
+type SubtreeAggregate = { changed: number; errors: number };
+type CachedSubtreeAggregate = SubtreeAggregate & {
+    parse: object | null;
+    statusKey: string;
+};
 
 const subtreeAggregateCache = new Map<string, CachedSubtreeAggregate>();
 
+// Recomputed only when the parse or the warmed status context changes — the
+// per-importable sweep here is what regressed GUI performance when it ran on
+// a timer (see f92fe28); keying on the status revision keeps the changed
+// count without the per-frame cost.
 function subtreeAggregate(parent: ResultImport, node: IncludeNode): SubtreeAggregate {
     const key = canonicalPath(node.path);
+    const statusKey = importableLinkStatusContextKey();
     const cached = subtreeAggregateCache.get(key);
-    if (cached !== undefined && cached.parse === parent.parse) {
+    if (
+        cached !== undefined &&
+        cached.parse === parent.parse &&
+        cached.statusKey === statusKey
+    ) {
         return cached;
     }
     const importables: Importable[] = [];
     collectSubtreeImportables(node, importables);
+    let changed = 0;
     let errors = 0;
     for (let i = 0; i < importables.length; i++) {
-        errors += diagnosticCountsFor(parent.parse, importables[i]).errors;
+        const imp = importables[i];
+        if (needsModifiedQueue(imp)) changed++;
+        errors += diagnosticCountsFor(parent.parse, imp).errors;
     }
-    const aggregate = { errors, parse: parent.parse };
+    const aggregate = { changed, errors, parse: parent.parse, statusKey };
     subtreeAggregateCache.set(key, aggregate);
     return aggregate;
+}
+
+function changedAggregate(count: number): Element {
+    const tooltip = `${count} will change on import`;
+    return Container({
+        style: { direction: "row", gap: 2, align: "center" },
+        children: [
+            Container({
+                style: {
+                    width: { kind: "px", value: 5 },
+                    height: { kind: "px", value: 5 },
+                    background: ACCENT_WARN,
+                },
+                tooltip,
+                tooltipColor: ACCENT_WARN,
+                children: [],
+            }),
+            Text({
+                text: String(count),
+                color: ACCENT_WARN,
+                tooltip,
+                tooltipColor: ACCENT_WARN,
+            }),
+        ],
+    });
 }
 
 function errorAggregate(count: number): Element {
@@ -939,6 +981,9 @@ function errorAggregate(count: number): Element {
 function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): Element[] {
     const aggregate = subtreeAggregate(parent, node);
     const out: Element[] = [];
+    if (isCurrentHouseTrusted() && aggregate.changed > 0) {
+        out.push(changedAggregate(aggregate.changed), rowSlot(INNER_GAP));
+    }
     if (aggregate.errors > 0) {
         out.push(errorAggregate(aggregate.errors), rowSlot(INNER_GAP));
     }
@@ -1223,6 +1268,14 @@ function houseBindControl(fullPath: string): Element | false {
     });
 }
 
+function parsePendingIndicator(r: Result): Element | false {
+    if (r.type !== "import" || r.parse !== null || !r.parsePending) return false;
+    return Text({
+        text: () => `parsing${".".repeat(1 + (Math.floor(Date.now() / 350) % 3))}`,
+        color: COLOR_TEXT_DIM,
+    });
+}
+
 function autoTrackIndicator(fullPath: string): Element | false {
     if (!isAutoTrackSource(fullPath)) return false;
     return Icon({
@@ -1242,6 +1295,7 @@ export function resultRow(
     labelOverride?: string
 ): Element {
     const isImport = r.type === "import";
+    const parsePending = r.type === "import" && r.parse === null && r.parsePending;
     const importJsonPath = isImport ? r.fullPath : null;
     const expKey = expansionKey(sourceKey, r.fullPath);
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
@@ -1357,6 +1411,8 @@ export function resultRow(
                 style: { width: { kind: "grow" } },
             }),
             ...aggregateIndicators,
+            parsePendingIndicator(r),
+            parsePending && rowSlot(INNER_GAP),
             isImport && autoTrackIndicator(r.fullPath),
             isImport && isAutoTrackSource(r.fullPath) && rowSlot(INNER_GAP),
             isImport && houseBindControl(r.fullPath),

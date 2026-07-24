@@ -2,14 +2,16 @@ import type { TaskProgress, ProgressPhase, PhaseUnits } from "./types";
 import { getTimingStats, getSessionTimingUnits } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
+const SESSION_RATE_PRIOR_UNITS = 150;
 // Strength of the lifetime-mix prior (in units) before the current import's
 // observed op-mix dominates the rate blend.
 const PRIOR_UNITS = 40;
 
 /**
  * Smoothed ETA display: a wall-clock countdown that prefers a steady ~1s/sec
- * descent over faithfully tracking the chunky honest candidate
- * (`remaining × msPerUnit`, which is flat between progress events then steps).
+ * descent over faithfully tracking the chunky candidate. Small upward changes
+ * stay inside a 5% + 3s target band, while downward changes and larger
+ * re-estimates move the target immediately.
  *
  * Each frame ticks the displayed value down by elapsed wall-clock
  * (`predicted = displayed − dt`) for steady motion, then reconciles with the
@@ -21,10 +23,9 @@ const PRIOR_UNITS = 40;
  *   as a multi-second-per-second slide, and the value never freezes either.
  *   When the candidate is more than `JUMP_GAP_SECONDS` below the line, take
  *   the difference as one visible jump instead of a long fast glide.
- * - **At/below the candidate** (a genuine stall, or a re-estimate upward):
- *   ease gently toward it with a ~3s time constant — coast to a near-stop a
- *   few seconds under the candidate rather than draining to zero, and never
- *   sawtooth upward in a stall.
+ * - **At/below the target** (a genuine stall, or a re-estimate upward):
+ *   ease gently toward it with a ~3s time constant, with a snap for drastic
+ *   startup re-estimates.
  *
  * Net: a clock-like second most of the time, with a rare honest jump on a
  * drastic re-estimate, rather than a continuously-variable "lying" second.
@@ -35,46 +36,75 @@ const MAX_DOWN_RATE = 1.4;
 const MIN_DOWN_RATE = 0.7;
 const JUMP_GAP_SECONDS = 4;
 
-type EtaSmoother = { displayed: number; at: number };
+export type EtaSmoother = { displayed: number; target: number; at: number };
 
 export type EtaCalculator = {
     getTotal(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
     getPhase(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
 };
 
-function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoother {
-    if (prev === null) return { displayed: candidate, at: now };
+export function easeEta(
+    prev: EtaSmoother | null,
+    candidate: number,
+    now: number
+): EtaSmoother {
+    if (prev === null) {
+        return { displayed: candidate, target: candidate, at: now };
+    }
+    const target =
+        candidate < prev.target || candidate > prev.target * 1.05 + 3
+            ? candidate
+            : prev.target;
     // Snap on a drastic upward jump rather than crawling over seconds. This is
     // the startup case — the smoother first sees the placeholder `totalUnits: 1`
     // (candidate ≈ 0) before `sessionStarted` installs the real total, and
     // also any large mid-run re-estimate. Easing those would show a slow ramp
     // up to the real ETA ("0 → 2min"). Normal tracking still eases.
-    if (candidate > prev.displayed * 2 + 3) {
-        return { displayed: candidate, at: now };
+    if (target > prev.displayed * 2 + 3) {
+        return { displayed: target, target, at: now };
     }
     const dt = Math.max(0, now - prev.at);
     const dtSec = dt / 1000;
     const predicted = prev.displayed - dtSec;
     const alpha = 1 - Math.exp(-dt / EASE_TAU_MS);
-    const eased = predicted + (candidate - predicted) * alpha;
+    const eased = predicted + (target - predicted) * alpha;
 
     let next: number;
-    if (prev.displayed > candidate) {
-        if (prev.displayed - candidate > JUMP_GAP_SECONDS) {
-            next = candidate;
+    if (prev.displayed > target) {
+        if (prev.displayed - target > JUMP_GAP_SECONDS) {
+            next = target;
         } else {
             const fastest = prev.displayed - dtSec * MAX_DOWN_RATE;
             const slowest = prev.displayed - dtSec * MIN_DOWN_RATE;
             next = Math.min(slowest, Math.max(fastest, eased));
-            if (next < candidate) next = candidate;
+            if (next < target) next = target;
         }
     } else {
         next = eased;
     }
     if (next < 0) next = 0;
     // Don't let the ease leave a tiny residual hanging near the end.
-    if (candidate <= 0 && next < SNAP_BELOW_SECONDS) next = 0;
-    return { displayed: next, at: now };
+    if (target <= 0 && next < SNAP_BELOW_SECONDS) next = 0;
+    return { displayed: next, target, at: now };
+}
+
+export function sessionBlendedMsPerUnit(
+    priorRate: number,
+    sessionRate: number | undefined,
+    completedUnits: number
+): number {
+    if (
+        sessionRate === undefined ||
+        sessionRate > priorRate * 10 ||
+        sessionRate < priorRate * 0.1
+    ) {
+        return priorRate;
+    }
+    return (
+        (sessionRate * completedUnits +
+            priorRate * SESSION_RATE_PRIOR_UNITS) /
+        (completedUnits + SESSION_RATE_PRIOR_UNITS)
+    );
 }
 
 // NOTE: the getters below advance smoother state as a side effect of being
@@ -86,20 +116,46 @@ function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoo
 export function createEtaCalculator(): EtaCalculator {
     let totalEta: EtaSmoother | null = null;
     let phaseEta: EtaSmoother | null = null;
+    let lastCompletedUnits: number | null = null;
+    let lastBlendedRate = MS_PER_UNIT_PRIOR;
+
+    function taskMsPerUnit(
+        progress: TaskProgress,
+        taskStartedAt: number | null,
+        now: number
+    ): number {
+        if (progress.completedUnits === lastCompletedUnits) {
+            return lastBlendedRate;
+        }
+        const priorRate = currentMsPerUnit();
+        const sessionRate =
+            taskStartedAt !== null && progress.completedUnits > 0
+                ? (now - taskStartedAt) / progress.completedUnits
+                : undefined;
+        lastCompletedUnits = progress.completedUnits;
+        lastBlendedRate = sessionBlendedMsPerUnit(
+            priorRate,
+            sessionRate,
+            progress.completedUnits
+        );
+        return lastBlendedRate;
+    }
 
     return {
-        getTotal(progress, _importStartedAt) {
+        getTotal(progress, taskStartedAt) {
             if (progress === null) return null;
             const now = Date.now();
             const remainingUnits = Math.max(
                 0,
                 progress.totalUnits - progress.completedUnits
             );
-            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
-            totalEta = ease(totalEta, candidate, now);
+            const candidate =
+                (remainingUnits * taskMsPerUnit(progress, taskStartedAt, now)) /
+                1000;
+            totalEta = easeEta(totalEta, candidate, now);
             return totalEta.displayed;
         },
-        getPhase(progress, _importStartedAt) {
+        getPhase(progress, taskStartedAt) {
             if (progress === null || progress.active === null) {
                 return null;
             }
@@ -107,8 +163,10 @@ export function createEtaCalculator(): EtaCalculator {
             if (phase === "done") return null;
             const now = Date.now();
             const remainingUnits = phaseRemainingUnits(progress, phase);
-            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
-            phaseEta = ease(phaseEta, candidate, now);
+            const candidate =
+                (remainingUnits * taskMsPerUnit(progress, taskStartedAt, now)) /
+                1000;
+            phaseEta = easeEta(phaseEta, candidate, now);
             return phaseEta.displayed;
         },
     };

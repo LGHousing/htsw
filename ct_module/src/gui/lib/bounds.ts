@@ -32,6 +32,7 @@ type ContainerFields = {
 
 let containerFields: ContainerFields | null = null;
 let cachedBounds: ContainerBounds | null = null;
+let cachedBoundsGui: HtswMinecraftGuiScreen | null = null;
 let cachedBoundsSuppressed = false;
 let cachedBoundsScreenW = -1;
 let cachedBoundsScreenH = -1;
@@ -120,7 +121,13 @@ function readOpenContainerBounds(): ContainerBounds | null {
     const screenH = gui.field_146295_m;
     if (typeof screenW !== "number" || typeof screenH !== "number") return null;
     const now = Date.now();
+    // The memo must be keyed on the screen INSTANCE, not just size + TTL:
+    // when the import placeholder replaces the housing menu, a size-only key
+    // kept returning the closed chest's bounds for up to the TTL, which made
+    // paintImportShade think a real container was still open and skip the
+    // gap shade — a visible world flash on every mid-import menu close.
     if (
+        gui === cachedBoundsGui &&
         screenW === cachedBoundsScreenW &&
         screenH === cachedBoundsScreenH &&
         now - cachedBoundsAt < 100
@@ -141,6 +148,7 @@ function readOpenContainerBounds(): ContainerBounds | null {
                 ? null
                 : { screenW, screenH, left, top, xSize, ySize };
     }
+    cachedBoundsGui = gui;
     cachedBoundsSuppressed = isSuppressedScreen(gui);
     cachedBoundsScreenW = screenW;
     cachedBoundsScreenH = screenH;

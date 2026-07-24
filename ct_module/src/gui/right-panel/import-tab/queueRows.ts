@@ -49,7 +49,7 @@ import {
 } from "../../parsing/parses";
 import { orderImportablesForSession } from "../../../importables/import/session";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { taskPhaseSegments } from "./progressPanel";
+import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
 import type { IncludeNode } from "../../left-panel/projects/includeTree";
@@ -270,7 +270,10 @@ function queueRowMiniBar(state: QueueItemRunState): Element {
             width: { kind: "grow" },
             height: { kind: "px", value: 2 },
         },
-        children: taskPhaseSegments(state),
+        children:
+            state.kind === "parked"
+                ? parkedSnapshotSegments(state, "slices")
+                : currentSnapshotSegments(state, "slices"),
     });
 }
 

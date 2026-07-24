@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { createEtaCalculator, type EtaCalculator } from "../src/housingSync/progress/eta";
+import {
+    createEtaCalculator,
+    easeEta,
+    sessionBlendedMsPerUnit,
+    type EtaCalculator,
+} from "../src/housingSync/progress/eta";
 import type { TaskProgress } from "../src/housingSync/progress/types";
 
 let now = 0;
@@ -46,6 +51,46 @@ function progress(
 }
 
 describe("import ETA", () => {
+    test("small candidate rises leave the target unchanged while display moves", () => {
+        const next = easeEta(
+            { displayed: 100, target: 100, at: 0 },
+            107,
+            1_000
+        );
+        expect(next.target).toBe(100);
+        expect(next.displayed).toBeLessThan(100);
+    });
+
+    test("large candidate rises still ease or snap upward", () => {
+        const eased = easeEta(
+            { displayed: 100, target: 100, at: 0 },
+            110,
+            1_000
+        );
+        expect(eased.displayed).toBeGreaterThan(100);
+        expect(eased.displayed).toBeLessThan(110);
+
+        expect(easeEta({ displayed: 10, target: 10, at: 0 }, 24, 1_000)).toEqual({
+            displayed: 24,
+            target: 24,
+            at: 1_000,
+        });
+    });
+
+    test("session rate takes over from the prior as units accumulate", () => {
+        const early = sessionBlendedMsPerUnit(180, 140, 10);
+        const mature = sessionBlendedMsPerUnit(180, 140, 1_500);
+
+        expect(early).toBeCloseTo(177.5);
+        expect(mature).toBeCloseTo(143.636, 3);
+        expect(Math.abs(mature - 140)).toBeLessThan(Math.abs(early - 140));
+    });
+
+    test("pathological session rates are ignored", () => {
+        expect(sessionBlendedMsPerUnit(150, 1_501, 1_000)).toBe(150);
+        expect(sessionBlendedMsPerUnit(150, 14.9, 1_000)).toBe(150);
+    });
+
     test("cold start uses the prior ms/unit", () => {
         const p = progress(10, "hydrating");
         // elapsedMs=0 → effectiveMsPerUnit = prior (150).
@@ -55,20 +100,13 @@ describe("import ETA", () => {
         expect(eta.getTotal(p, 0)).toBe(16.5);
     });
 
-    test("ETA decays smoothly toward a stalled candidate", () => {
+    test("session-blended candidate stays flat between progress events", () => {
         const p = progress(10, "hydrating");
-        // Initial snapshot at t=0 with no data: phase ETA = 15s.
         expect(eta.getPhase(p, 0)).toBe(15);
-        // No units complete, so the candidate stays flat at 15s. The smoother
-        // ticks the displayed value down by wall-clock but eases it back toward
-        // that flat candidate, so one second drops a little less than a full
-        // second rather than a naive 1:1 countdown.
         now = 1_000;
         const at1 = eta.getPhase(p, 0)!;
         expect(at1).toBeLessThan(15);
         expect(at1).toBeGreaterThan(14);
-        // Keeps decaying, but coasts toward candidate − tau rather than
-        // draining to zero during the stall.
         now = 3_000;
         const at3 = eta.getPhase(p, 0)!;
         expect(at3).toBeLessThan(at1);

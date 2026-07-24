@@ -3,8 +3,8 @@
 /**
  * Live importer progress display: the panel that shows WHO/WHAT/HOW-FAR
  * during an import, plus the multi-phase progress bar and ETA / clock-time
- * text. `phaseSegment` is exported so the per-queue-row mini bar (in
- * `queue.ts`) can reuse the same segmented look.
+ * text. The snapshot-segment helpers are exported so the per-queue-row mini
+ * bar (in `queueRows.ts`) renders the same fills as the footer bar.
  */
 
 import type { Element } from "../../lib/layout";
@@ -12,6 +12,7 @@ import { Button, Col, Container, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
+    ACCENT_INFO,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
     COLOR_BUTTON_DANGER,
@@ -22,7 +23,12 @@ import {
     COLOR_TEXT,
     COLOR_TEXT_DIM,
 } from "../../lib/theme";
-import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
+import {
+    PHASE_APPLYING,
+    PHASE_HYDRATING,
+    PHASE_READING,
+    PHASE_SCANNED,
+} from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
 import {
     getCurrentPhaseEtaSeconds,
@@ -32,6 +38,7 @@ import {
     getTaskEtcMs,
     getTaskProgress,
     getTaskProgressFraction,
+    getSessionTrustMode,
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
@@ -161,7 +168,12 @@ function currentPhaseLabel(): string {
  * progress bar (reading/hydrating/applying) and reused by `queue.ts`'s
  * per-row mini bar.
  */
-function phaseSegment(widthFactor: number, fraction: number, color: number): Element {
+function phaseSegment(
+    widthFactor: number,
+    fraction: number,
+    color: number,
+    trackColor?: number
+): Element {
     return Container({
         style: {
             direction: "row",
@@ -181,6 +193,7 @@ function phaseSegment(widthFactor: number, fraction: number, color: number): Ele
                 style: {
                     width: { kind: "grow", factor: Math.max(0.0001, 1 - fraction) },
                     height: { kind: "grow" },
+                    background: fraction >= 1 ? undefined : trackColor,
                 },
                 children: [],
             }),
@@ -188,15 +201,24 @@ function phaseSegment(widthFactor: number, fraction: number, color: number): Ele
     });
 }
 
-export function taskPhaseSegments(snapshot: {
+type PhaseSnapshot = {
+    phase: "setup" | "reading" | "hydrating" | "applying" | "done";
     phaseUnits: PhaseUnits;
     completedUnits: number;
-}): Element[] {
+};
+
+/**
+ * Three sub-slices sized by each phase's unit count, each filling with that
+ * phase's completion. Used by the queue-row mini bars, where one row has the
+ * whole bar's width to show intra-importable detail.
+ */
+function taskPhaseSliceSegments(snapshot: PhaseSnapshot): Element[] {
     const units = snapshot.phaseUnits;
-    const total = Math.max(
-        1,
-        units.setup + units.reading + units.hydrating + units.applying
-    );
+    const total = units.setup + units.reading + units.hydrating + units.applying;
+    // All-zero phase units would give the three slices equal floor grow
+    // factors — the layout normalizes those to filled-looking thirds, a
+    // fake blue/purple flash. Render a plain empty track instead.
+    if (total <= 0) return [phaseSegment(1, 0, PHASE_READING)];
     const f = phaseFractions(units, snapshot.completedUnits);
     return [
         phaseSegment(f.readingUnits / total, f.readFraction, PHASE_READING),
@@ -205,10 +227,65 @@ export function taskPhaseSegments(snapshot: {
     ];
 }
 
+/**
+ * One segment per importable: the current phase's color filling across the
+ * previous phase's solid color. A phase that finished leaves the segment
+ * solid in its color (read → blue, hydrated → purple, applied → green), so
+ * the footer bar reads left-to-right as green / purple / blue bands with at
+ * most one partially-filled segment per pass.
+ */
+function taskPhaseFillSegments(snapshot: PhaseSnapshot): Element[] {
+    const f = phaseFractions(snapshot.phaseUnits, snapshot.completedUnits);
+    if (snapshot.phase === "done") {
+        return [phaseSegment(1, 1, PHASE_APPLYING)];
+    }
+    if (snapshot.phase === "applying") {
+        return [phaseSegment(1, f.applyFraction, PHASE_APPLYING, PHASE_HYDRATING)];
+    }
+    if (snapshot.phase === "hydrating") {
+        return [phaseSegment(1, f.hydrateFraction, PHASE_HYDRATING, PHASE_READING)];
+    }
+    return [phaseSegment(1, f.readFraction, PHASE_READING)];
+}
+
+/**
+ * Segments for the importable currently being worked on. During the export
+ * scan pass the phase-unit math has nothing to show (a scan credits almost
+ * no units), so the segment fills solid reading-blue while its scan runs.
+ * `style` picks the renderer: "slices" for the queue-row mini bars, "fill"
+ * for the footer bar's per-importable segments.
+ */
+export function currentSnapshotSegments(
+    snapshot: PhaseSnapshot,
+    style: "slices" | "fill"
+): Element[] {
+    if (isEtaEstimating()) return [phaseSegment(1, 1, PHASE_READING)];
+    return style === "slices"
+        ? taskPhaseSliceSegments(snapshot)
+        : taskPhaseFillSegments(snapshot);
+}
+
+/**
+ * Segments for a parked importable. One still parked in the read phase has
+ * only been scanned — show the dim "scanned" fill instead of phase math
+ * over an almost entirely unstarted estimate (which renders as empty).
+ */
+export function parkedSnapshotSegments(
+    snapshot: PhaseSnapshot,
+    style: "slices" | "fill"
+): Element[] {
+    if (snapshot.phase === "setup" || snapshot.phase === "reading") {
+        return [phaseSegment(1, 1, PHASE_SCANNED)];
+    }
+    return style === "slices"
+        ? taskPhaseSliceSegments(snapshot)
+        : taskPhaseFillSegments(snapshot);
+}
+
 function activeRowPhaseChildren(): Element[] {
     const p = getTaskProgress();
     if (p === null || p.active === null) return [];
-    return taskPhaseSegments(p.active);
+    return currentSnapshotSegments(p.active, "fill");
 }
 
 function parkedRowPhaseChildren(key: string): Element[] {
@@ -216,7 +293,7 @@ function parkedRowPhaseChildren(key: string): Element[] {
     if (p === null) return [];
     const parked = parkedTaskFor(p, key);
     if (parked === undefined) return [];
-    return taskPhaseSegments(parked);
+    return parkedSnapshotSegments(parked, "fill");
 }
 
 function compactProgressBarChildren(): Element[] {
@@ -231,6 +308,71 @@ function compactProgressBarChildren(): Element[] {
         color = PHASE_APPLYING;
     } else if (p.failure) color = ACCENT_DANGER;
     return [phaseSegment(1, getTaskProgressFraction(), color)];
+}
+
+function segmentDivider(background?: number): Element {
+    return Container({
+        style: {
+            width: { kind: "px", value: 2 },
+            height: { kind: "grow" },
+            background,
+        },
+        children: [],
+    });
+}
+
+function activeSegmentCaret(): Element {
+    const step = (w: number): Element =>
+        Container({
+            style: {
+                width: { kind: "px", value: w },
+                height: { kind: "px", value: 1 },
+                background: ACCENT_INFO,
+            },
+            children: [],
+        });
+    return Container({
+        style: { direction: "col", align: "center", width: { kind: "auto" } },
+        children: [step(5), step(3), step(1)],
+    });
+}
+
+/**
+ * A 3px strip above the footer bar holding a small down-caret centered over
+ * the active importable's segment. It mirrors the bar's slot/divider widths
+ * so the caret lines up with the segment below without sharing layout state.
+ */
+function activeSegmentCaretRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "px", value: 3 },
+        },
+        children: () => {
+            const p = getTaskProgress();
+            if (p === null || p.totalUnits <= 0 || p.active === null) return [];
+            if (p.rows.length > MAX_DETAILED_PROGRESS_ROWS) return [];
+            const active = p.active;
+            const children: Element[] = [];
+            for (let i = 0; i < p.rows.length; i++) {
+                if (i > 0) children.push(segmentDivider());
+                children.push(
+                    Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                            justify: "center",
+                        },
+                        children:
+                            p.rows[i].key === active.key ? [activeSegmentCaret()] : [],
+                    })
+                );
+            }
+            return children;
+        },
+    });
 }
 
 function progressBar(): Element {
@@ -250,18 +392,7 @@ function progressBar(): Element {
             const children: Element[] = [];
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
-                if (i > 0) {
-                    children.push(
-                        Container({
-                            style: {
-                                width: { kind: "px", value: 2 },
-                                height: { kind: "grow" },
-                                background: COLOR_PANEL,
-                            },
-                            children: [],
-                        })
-                    );
-                }
+                if (i > 0) children.push(segmentDivider(COLOR_PANEL));
                 if (row.status === "imported") {
                     children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
                 } else if (row.status === "skipped") {
@@ -337,33 +468,41 @@ function knowledgeSourceText(): string {
     const knowledge = getTaskProgress()?.active?.knowledge;
     if (knowledge == null) return "";
     if (knowledge.currentReason === "lock-verification") {
-        return "Source: House verification · checking house.lock";
+        return "Source: Checking house against house.lock";
     }
+
+    // An untrusted session was never going to use the cache, so the lock
+    // chips ("cache matches lock", …) only read as a cache problem that
+    // isn't there. Say why the house is being read instead.
+    const trustOff = getSessionTrustMode() === false;
 
     let source: string;
     if (knowledge.usedHouse && knowledge.usedCache) {
-        source = "House + trusted cache";
+        source = "Reading changes, rest from cache";
     } else if (knowledge.usedCache) {
         source = "Trusted cache";
     } else if (knowledge.usedHouse) {
         source =
             knowledge.currentReason === "shell-read"
                 ? "Reading house shell"
-                : "Full house read";
+                : trustOff
+                  ? "Full read"
+                  : "Full house read";
     } else {
         source = "Known empty house state";
     }
 
-    const lock =
-        knowledge.currentReason === "lock-verified"
-            ? " · house.lock checked"
-            : knowledge.lockStatus === "matched"
-              ? " · house.lock matched"
-              : knowledge.lockStatus === "missing"
-                ? " · no house.lock entry"
-                : knowledge.lockStatus === "mismatch"
-                  ? " · house.lock mismatch"
-                  : "";
+    const lock = trustOff
+        ? " · trust off"
+        : knowledge.currentReason === "lock-verified"
+          ? " · house verified"
+          : knowledge.lockStatus === "matched"
+            ? " · cache matches lock"
+            : knowledge.lockStatus === "missing"
+              ? " · no house.lock entry"
+              : knowledge.lockStatus === "mismatch"
+                ? " · cache differs from lock"
+                : "";
     return `Source: ${source}${lock}`;
 }
 
@@ -508,17 +647,12 @@ export function liveTaskFooterPanel(): Element {
                             text: () => knowledgeSourceText(),
                             color: COLOR_TEXT_DIM,
                             truncate: true,
-                            tooltip: () => knowledgeSourceText(),
                             style: { width: { kind: "grow" } },
                         }),
-                    Container({
-                        style: {
-                            width: { kind: "grow" },
-                            height: { kind: "px", value: 2 },
-                        },
-                        children: [],
+                    Col({
+                        style: { gap: 1, width: { kind: "grow" } },
+                        children: [activeSegmentCaretRow(), progressBar()],
                     }),
-                    progressBar(),
                     // The total/ETA text and Cancel button get
                     // separate rows: sharing one row truncated the text to
                     // "total 9m37s - end…" on narrow GUIs.

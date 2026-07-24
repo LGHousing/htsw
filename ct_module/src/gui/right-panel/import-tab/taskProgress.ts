@@ -135,6 +135,23 @@ export function setEtaEstimating(v: boolean): void {
     markGuiDirty();
 }
 
+/**
+ * Whether the in-flight import session is allowed to trust the cache (the
+ * per-house Trust toggle, sampled at session start). Null while idle or for
+ * non-import sessions. The progress panel's Source line uses this to say
+ * "trust off" outright instead of implying a cache/lock problem when the
+ * session was never going to use the cache.
+ */
+let sessionTrustMode: boolean | null = null;
+export function getSessionTrustMode(): boolean | null {
+    return sessionTrustMode;
+}
+export function setSessionTrustMode(v: boolean | null): void {
+    if (sessionTrustMode === v) return;
+    sessionTrustMode = v;
+    markGuiDirty();
+}
+
 /** Display name of the importable currently being processed, or null when idle. */
 export function getActiveTaskLabel(): string | null {
     if (taskProgress === null || taskProgress.active === null) return null;
@@ -231,6 +248,7 @@ function updateTaskProgress(
         sessionVerb = "import";
         etaRough = false;
         etaEstimating = false;
+        sessionTrustMode = null;
     } else if (p === null) {
         lastFinishedTaskProgress = taskProgress;
         lastFinishedTaskRows = taskProgressRows;

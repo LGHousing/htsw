@@ -605,6 +605,11 @@ export function getTreePerfStats(): {
 }
 
 function treeRows(): TreeRow[] {
+    // A source queued from outside a rebuild (file browser Load, /htsw
+    // commands) only lands — and bumps the tree revision — when getSources()
+    // drains its queue. Drain before the revision check, or the new project
+    // stays invisible until its first parse bumps the parse revision.
+    getSources();
     const parseRevision = getParseCacheRevision();
     const statusFingerprint = treeStatusFingerprint();
     if (

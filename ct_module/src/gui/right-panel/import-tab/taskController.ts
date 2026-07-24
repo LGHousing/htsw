@@ -13,6 +13,7 @@ import {
     finishTaskProgress,
     getTaskProgress,
     setActiveTaskPath,
+    setSessionTrustMode,
     setTaskProgress,
 } from "./taskProgress";
 import {
@@ -276,7 +277,7 @@ function createSyncEventHandler(args: {
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
-        applyPassStarted: () => {},
+        sessionTotalsLocked: () => {},
         sessionFinished: () => {
             activeViewPath = null;
         },
@@ -656,6 +657,7 @@ async function prepareAndStartImport(
             rows,
         })
     );
+    setSessionTrustMode(trustMode);
     setActiveTaskPath(batches[0].sourcePath);
 
     // A command import (`explicit`) gets reflected into the visible queue so

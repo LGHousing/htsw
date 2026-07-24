@@ -57,6 +57,9 @@ export function createExportProgressSink(
     let currentIndex: number | null = null;
     /** True once the current item reached a terminal status (failed early). */
     let currentClosed = false;
+    /** True between `scanStarted` and the first pass-2 reactivation. */
+    let scanPass = false;
+    let totalsLocked = false;
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
     const livePreview = createExportLivePreview(type, canonicalImportJsonPath);
     const keyFor = (name: string): string =>
@@ -65,6 +68,16 @@ export function createExportProgressSink(
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
         setTaskProgress(state.progress);
+    };
+
+    // Exports have no apply pass, so per-item costs are final once the last
+    // pass begins: after the scan for staged reads, immediately for direct
+    // ones. Locking then lets the footer show a real total ETA instead of
+    // "total estimating…" forever (only imports emit this event otherwise).
+    const lockTotals = (): void => {
+        if (totalsLocked) return;
+        totalsLocked = true;
+        emit({ kind: "sessionTotalsLocked" });
     };
 
     const finishCurrent = (status: "imported" | "failed", error?: string): void => {
@@ -158,13 +171,16 @@ export function createExportProgressSink(
             }
         },
         scanStarted() {
-            if (names.length > 0) setEtaEstimating(true);
+            if (names.length === 0) return;
+            scanPass = true;
+            setEtaEstimating(true);
         },
         item(index, name) {
             if (names.length === 0) return;
             currentIndex = index;
             currentClosed = false;
             livePreview.activate(index, true);
+            if (!scanPass) lockTotals();
             emit({
                 kind: "importableStarted",
                 key: keyFor(name),
@@ -182,6 +198,7 @@ export function createExportProgressSink(
             currentClosed = false;
             livePreview.activate(index, false);
             setEtaEstimating(false);
+            lockTotals();
             emit({
                 kind: "importableReactivated",
                 key: keyFor(names[index]),

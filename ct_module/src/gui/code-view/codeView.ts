@@ -81,7 +81,8 @@ type LineModel = {
     lineIdToIndex: { [id: string]: number | undefined };
     orderedLines: RenderableLine[];
     idToOrdinal: { [id: string]: number | undefined };
-    showStatusGutters: boolean;
+    showFocusGutter: boolean;
+    showStateGutter: boolean;
     gutterW: number;
     lineNumDigits: number;
     bodyMaxWidth: number;
@@ -102,21 +103,25 @@ function buildLineModel(
     lineDecorator: LineDecorator
 ): LineModel {
     const decorated: DecoratedLine[] = [];
-    let showStatusGutters = false;
+    const reserved = lineDecorator.gutterVisibility?.();
+    let showFocusGutter = reserved?.focus === true;
+    let showStateGutter = reserved?.state === true;
     let maxLineNum = 1;
+    const noteGutterContent = (dec: LineDecorations): void => {
+        if (hasFocusGutterContent(dec)) showFocusGutter = true;
+        if (hasStateGutterContent(dec)) showStateGutter = true;
+    };
     for (let i = 0; i < lines.length; i++) {
         const dec = lineDecorator.decorateLine(lines[i]);
         if (lines[i].lineNum > maxLineNum) maxLineNum = lines[i].lineNum;
-        if (hasStatusGutterContent(dec)) showStatusGutters = true;
+        noteGutterContent(dec);
         if (dec.extraLinesBefore !== undefined) {
             for (let j = 0; j < dec.extraLinesBefore.length; j++) {
                 const extra = dec.extraLinesBefore[j];
                 if (extra.line.lineNum > maxLineNum) {
                     maxLineNum = extra.line.lineNum;
                 }
-                if (hasStatusGutterContent(extra.decorations)) {
-                    showStatusGutters = true;
-                }
+                noteGutterContent(extra.decorations);
             }
         }
         decorated.push({ line: lines[i], decorations: dec });
@@ -124,7 +129,7 @@ function buildLineModel(
     const endLines = lineDecorator.extraLinesAtEnd?.() ?? [];
     for (let i = 0; i < endLines.length; i++) {
         const extra = endLines[i];
-        if (hasStatusGutterContent(extra.decorations)) showStatusGutters = true;
+        noteGutterContent(extra.decorations);
         decorated.push(extra);
     }
     const gutterW = gutterWidthForLines(maxLineNum);
@@ -132,8 +137,8 @@ function buildLineModel(
     const bodyMaxWidth = bodyWidthForScroll(
         scrollId,
         gutterW,
-        showStatusGutters,
-        showStatusGutters
+        showFocusGutter,
+        showStateGutter
     );
 
     // Count visual rows per entry (each line can wrap into multiple rows)
@@ -181,7 +186,8 @@ function buildLineModel(
         lineIdToIndex,
         orderedLines,
         idToOrdinal,
-        showStatusGutters,
+        showFocusGutter,
+        showStateGutter,
         gutterW,
         lineNumDigits,
         bodyMaxWidth,
@@ -204,7 +210,8 @@ type RowCacheEntry = {
     gutterWidth: number;
     lineNumDigits: number;
     bodyMaxWidth: number;
-    showStatusGutters: boolean;
+    showFocusGutter: boolean;
+    showStateGutter: boolean;
     rows: Element[];
 };
 
@@ -237,7 +244,8 @@ function cachedLineRows(
         cached.gutterWidth === opts.gutterWidth &&
         cached.lineNumDigits === opts.lineNumDigits &&
         cached.bodyMaxWidth === opts.bodyMaxWidth &&
-        cached.showStatusGutters === opts.showFocusGutter
+        cached.showFocusGutter === opts.showFocusGutter &&
+        cached.showStateGutter === opts.showStateGutter
     ) {
         return cached.rows;
     }
@@ -248,7 +256,8 @@ function cachedLineRows(
         gutterWidth: opts.gutterWidth,
         lineNumDigits: opts.lineNumDigits,
         bodyMaxWidth: opts.bodyMaxWidth,
-        showStatusGutters: opts.showFocusGutter,
+        showFocusGutter: opts.showFocusGutter,
+        showStateGutter: opts.showStateGutter,
         rows,
     });
     return rows;
@@ -371,7 +380,8 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         lineIdToIndex,
         orderedLines,
         idToOrdinal,
-        showStatusGutters,
+        showFocusGutter,
+        showStateGutter,
         gutterW,
         lineNumDigits,
         bodyMaxWidth,
@@ -422,8 +432,8 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
                         gutterWidth: gutterW,
                         lineNumDigits,
                         bodyMaxWidth,
-                        showFocusGutter: showStatusGutters,
-                        showStateGutter: showStatusGutters,
+                        showFocusGutter,
+                        showStateGutter,
                         onOpenPath: props.onOpenPath,
                     },
                     lineSelectionFor(extra.line, resolvedSelection, idToOrdinal)
@@ -439,8 +449,8 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
                 gutterWidth: gutterW,
                 lineNumDigits,
                 bodyMaxWidth,
-                showFocusGutter: showStatusGutters,
-                showStateGutter: showStatusGutters,
+                showFocusGutter,
+                showStateGutter,
                 onOpenPath: props.onOpenPath,
             },
             lineSelectionFor(line, resolvedSelection, idToOrdinal)
@@ -560,12 +570,12 @@ function lineSelectionFor(
     return { start, end, continuesRight };
 }
 
-function hasStatusGutterContent(dec: LineDecorations): boolean {
-    return (
-        dec.state !== undefined ||
-        dec.isFocused === true ||
-        dec.cursorColumnBackground !== undefined
-    );
+function hasFocusGutterContent(dec: LineDecorations): boolean {
+    return dec.isFocused === true || dec.cursorColumnBackground !== undefined;
+}
+
+function hasStateGutterContent(dec: LineDecorations): boolean {
+    return dec.state !== undefined;
 }
 
 function bodyWidthForScroll(

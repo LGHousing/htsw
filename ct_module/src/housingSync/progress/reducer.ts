@@ -76,7 +76,7 @@ export function reduce(
             return startImportable(state, event);
         case "importableReactivated":
             return reactivateImportable(state, event.key, event.rowIndex, event.phase);
-        case "applyPassStarted":
+        case "sessionTotalsLocked":
             return {
                 ...state,
                 progress: { ...state.progress, totalsLocked: true },
@@ -222,26 +222,44 @@ function parkActiveIfNeeded(
  *
  * Pin the total to real work: `total = completed-so-far (= setup + actual
  * read/hydrate) + apply-diff cost`. Apply then credits completed exactly up
- * to that total, so finishing adds nothing and the ETA stays continuous. The
- * read/hydrate over-estimate is collapsed into the `reading` segment so the
- * phase units still sum to the (corrected) total.
+ * to that total, so finishing adds nothing and the ETA stays continuous.
  */
 function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
     const setup = active.currentPhaseUnits.setup;
     const applying = active.currentPhaseUnits.applying;
-    const preserveHydrating = active.phase === "setup" || active.phase === "reading";
-    const hydrating = preserveHydrating ? active.currentPhaseUnits.hydrating : 0;
-    const truedTotal = Math.max(
-        active.currentCompletedUnits,
-        active.currentCompletedUnits + hydrating + applying
-    );
+    if (active.phase === "setup" || active.phase === "reading") {
+        const hydrating = active.currentPhaseUnits.hydrating;
+        return {
+            ...active,
+            currentTotalUnits: Math.max(
+                active.currentCompletedUnits,
+                active.currentCompletedUnits + hydrating + applying
+            ),
+            currentPhaseUnits: {
+                setup,
+                reading: Math.max(0, active.currentCompletedUnits - setup),
+                hydrating,
+                applying,
+            },
+        };
+    }
+    // Hydration is done: everything completed beyond setup was real read +
+    // hydrate work. Split it using the actual read units so the phase bars
+    // keep their true blue/purple proportions (collapsing it all into
+    // `reading` made parked rows flip from purple to blue), while the units
+    // still sum to the trued-up total.
+    const completedPastSetup = Math.max(0, active.currentCompletedUnits - setup);
+    const reading = Math.min(active.currentPhaseUnits.reading, completedPastSetup);
     return {
         ...active,
-        currentTotalUnits: truedTotal,
+        currentTotalUnits: Math.max(
+            active.currentCompletedUnits,
+            active.currentCompletedUnits + applying
+        ),
         currentPhaseUnits: {
             setup,
-            reading: Math.max(0, active.currentCompletedUnits - setup),
-            hydrating,
+            reading,
+            hydrating: completedPastSetup - reading,
             applying,
         },
     };

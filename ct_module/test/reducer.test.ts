@@ -43,7 +43,7 @@ describe("progress reducer", () => {
                 rowIndex: 1,
                 cached: null,
             },
-            { kind: "applyPassStarted" },
+            { kind: "sessionTotalsLocked" },
             {
                 kind: "importableReactivated",
                 key: "a",
@@ -451,7 +451,7 @@ describe("progress reducer", () => {
         expect(s.progress.parked.a.totalUnits).toBe(12);
     });
 
-    test("parking after hydrating still collapses read and hydrate work", () => {
+    test("parking after hydrating keeps the read/hydrate split", () => {
         const s = emit([
             {
                 kind: "sessionStarted",
@@ -497,8 +497,8 @@ describe("progress reducer", () => {
 
         expect(s.progress.parked.a.phaseUnits).toEqual({
             setup: 2,
-            reading: 8,
-            hydrating: 0,
+            reading: 3,
+            hydrating: 5,
             applying: 0,
         });
         expect(s.progress.parked.a.totalUnits).toBe(10);

@@ -81,9 +81,6 @@ export async function readOpenConditional({
     const base: Observed<ActionConditional> = current ?? {
         type: "CONDITIONAL",
         matchAny: false,
-        conditions: [],
-        ifActions: [],
-        elseActions: [],
     };
     if (childListsToRead.has("conditions")) {
         ctx.getMenuItemSlot(conditionsLabel).click();
@@ -228,16 +225,19 @@ export async function readOpenSetCompassTarget({
 
 export async function readOpenRandom({
     ctx,
+    childListsToRead,
     read,
+    current,
 }: ActionReadArgs<ActionRandom>): Promise<Observed<ActionRandom>> {
-    ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
-    await waitForMenu(ctx);
-    const actions = read === undefined ? [] : await read.readChildActions("actions");
-    await clickGoBack(ctx);
-    return {
-        type: "RANDOM",
-        actions,
-    };
+    const base: Observed<ActionRandom> = current ?? { type: "RANDOM" };
+    if (childListsToRead.has("actions")) {
+        ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
+        await waitForMenu(ctx);
+        base.actions =
+            read === undefined ? [] : await read.readChildActions("actions");
+        await clickGoBack(ctx);
+    }
+    return base;
 }
 
 export async function readOpenFunction({
