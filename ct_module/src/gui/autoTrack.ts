@@ -22,11 +22,14 @@ import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
 import { importableIdentity } from "../importables/identity";
 import { showToast } from "./toast";
+import { watchModeRefresh } from "./watchMode";
 
 type ModifiedQueueResult = {
     changed: number;
     required: number;
+    newlyQueuedChanged: number;
     newlyQueuedRequired: number;
+    workKeys: string[];
 };
 
 export function needsModifiedQueue(imp: Importable): boolean {
@@ -55,13 +58,22 @@ export function queueModifiedImportables(
         requiredKeys.add(`${importable.type}:${importableIdentity(importable)}`);
     }
     let newlyQueuedRequired = 0;
+    let newlyQueuedChanged = 0;
+    const modifiedKeys = new Set<string>();
+    for (const importable of modified) {
+        modifiedKeys.add(`${importable.type}:${importableIdentity(importable)}`);
+    }
+    const workKeys: string[] = [];
     for (const importable of work) {
+        const identityKey = `${importable.type}:${importableIdentity(importable)}`;
+        workKeys.push(`${canonicalSourcePath}|${identityKey}`);
         const added = addToQueue(
             makeImportableQueueItem(importable, canonicalSourcePath)
         );
+        if (added && modifiedKeys.has(identityKey)) newlyQueuedChanged++;
         if (
             added &&
-            requiredKeys.has(`${importable.type}:${importableIdentity(importable)}`)
+            requiredKeys.has(identityKey)
         ) {
             newlyQueuedRequired++;
         }
@@ -69,7 +81,9 @@ export function queueModifiedImportables(
     return {
         changed: modified.length,
         required: required.length,
+        newlyQueuedChanged,
         newlyQueuedRequired,
+        workKeys,
     };
 }
 
@@ -82,21 +96,29 @@ export function queueModifiedFromPath(sourcePath: string): void {
     queueModifiedImportables(cached.canonicalPath, cached.parsed);
 }
 
-export function autoTrackRefresh(): void {
+export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
+
+export function autoTrackRefresh(
+    trigger: AutoTrackRefreshTrigger = "cacheWarm"
+): void {
     if (!isAnyAutoTrackEnabled()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
     const tracked = getAutoTrackSources();
     let changed = 0;
     let required = 0;
+    let newlyQueuedChanged = 0;
     let newlyQueuedRequired = 0;
+    const detectedWorkKeys: string[] = [];
     forEachCachedParse((entry) => {
         if (entry.parsed === null) return;
         if (!tracked.has(entry.canonicalPath)) return;
         const result = queueModifiedImportables(entry.canonicalPath, entry.parsed);
         changed += result.changed;
         required += result.required;
+        newlyQueuedChanged += result.newlyQueuedChanged;
         newlyQueuedRequired += result.newlyQueuedRequired;
+        for (const key of result.workKeys) detectedWorkKeys.push(key);
     });
     if (newlyQueuedRequired > 0) {
         showToast(
@@ -105,6 +127,13 @@ export function autoTrackRefresh(): void {
             8000
         );
     }
+    watchModeRefresh(
+        trigger,
+        changed,
+        newlyQueuedChanged,
+        detectedWorkKeys,
+        tracked
+    );
 }
 
 onImportableCacheWarm(autoTrackRefresh);

@@ -558,15 +558,30 @@ export function isImportPreparationRunning(): boolean {
 }
 
 export function startImport(explicit?: readonly ImportQueueItem[]): void {
+    startImportIfIdle(explicit);
+}
+
+type ImportStartOptions = {
+    silentBusy?: boolean;
+    onStarted?: () => void;
+    onComplete?: (successful: boolean) => void;
+};
+
+export function startImportIfIdle(
+    explicit?: readonly ImportQueueItem[],
+    options: ImportStartOptions = {}
+): boolean {
     if (TaskManager.isBusy() || importPreparationRunning) {
-        ChatLib.chat(
-            "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
-        );
-        return;
+        if (options.silentBusy !== true) {
+            ChatLib.chat(
+                "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
+            );
+        }
+        return false;
     }
     importPreparationRunning = true;
     showToast("Checking project files before import…", 0xff5c9ded, 5000);
-    void prepareAndStartImport(explicit).then(
+    void prepareAndStartImport(explicit, options).then(
         () => {
             importPreparationRunning = false;
         },
@@ -575,22 +590,28 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             ChatLib.chat(`&c[htsw] Couldn't prepare import: ${String(error)}`);
         }
     );
+    return true;
 }
 
 async function prepareAndStartImport(
-    explicit?: readonly ImportQueueItem[]
+    explicit: readonly ImportQueueItem[] | undefined,
+    options: ImportStartOptions
 ): Promise<void> {
     if (TaskManager.isBusy()) {
-        ChatLib.chat(
-            "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
-        );
+        if (options.silentBusy !== true) {
+            ChatLib.chat(
+                "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
+            );
+        }
         return;
     }
     const batches = await buildBatches(explicit);
     if (TaskManager.isBusy()) {
-        ChatLib.chat(
-            "&c[htsw] Another task started while the project was being checked."
-        );
+        if (options.silentBusy !== true) {
+            ChatLib.chat(
+                "&c[htsw] Another task started while the project was being checked."
+            );
+        }
         return;
     }
     if (batches === null) {
@@ -706,6 +727,7 @@ async function prepareAndStartImport(
     }
     const startedAt = Date.now();
     let reviewRequest: ConflictReviewRequest | null = null;
+    options.onStarted?.();
 
     runHousingSyncTask("import", async (ctx) => {
         gmcOnImportStart();
@@ -791,6 +813,7 @@ async function prepareAndStartImport(
             }
         } finally {
             setActiveTaskPath(null);
+            options.onComplete?.(importSucceeded);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             let failureMessage: string | null = null;

@@ -14,6 +14,7 @@ type Settings = {
     muteTaskSounds: boolean;
     playImportCompletionSound: boolean;
     smoothScrolling: boolean;
+    watchMode: boolean;
     autoUpdate: AutoUpdatePreference;
 };
 
@@ -23,6 +24,7 @@ let state: Settings = {
     muteTaskSounds: false,
     playImportCompletionSound: true,
     smoothScrolling: true,
+    watchMode: false,
     autoUpdate: "unset",
 };
 let loaded = false;
@@ -57,6 +59,7 @@ function load(): void {
                     ? !legacySoundsMuted
                     : parsed.playImportCompletionSound !== false,
             smoothScrolling: parsed.smoothScrolling !== false,
+            watchMode: parsed.watchMode === true,
             autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
         };
     } catch (_e) {
@@ -124,6 +127,17 @@ export function getSmoothScrolling(): boolean {
 export function setSmoothScrolling(value: boolean): void {
     load();
     state.smoothScrolling = value;
+    persist();
+}
+
+export function getWatchMode(): boolean {
+    load();
+    return state.watchMode;
+}
+
+export function setWatchMode(value: boolean): void {
+    load();
+    state.watchMode = value;
     persist();
 }
 

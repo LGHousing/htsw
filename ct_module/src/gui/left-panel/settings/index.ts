@@ -23,11 +23,13 @@ import {
     getShowChatPanel,
     getShowInventoryButtons,
     getSmoothScrolling,
+    getWatchMode,
     setShowChatPanel,
     setShowInventoryButtons,
     setSmoothScrolling,
 } from "../../../settings";
 import { commandUpdate } from "../../../autoUpdate";
+import { setWatchModeEnabled } from "../../watchMode";
 
 type ToggleRow = {
     icon: () => IconName;
@@ -113,6 +115,12 @@ export function SettingsView(): Element {
                 isOn: () => isImportCompletionSoundEnabled(),
                 onToggle: () =>
                     setImportCompletionSoundEnabled(!isImportCompletionSoundEnabled()),
+            }),
+            toggleRow({
+                icon: () => Icons.eye,
+                label: "Watch mode (auto-import tracked files)",
+                isOn: () => getWatchMode(),
+                onToggle: () => setWatchModeEnabled(!getWatchMode()),
             }),
             toggleRow({
                 icon: () => Icons.refreshCw,

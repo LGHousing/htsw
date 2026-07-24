@@ -61,7 +61,7 @@ function propagate(path: string, cached: CachedParse): void {
     lastParsedRef = cached.parsed;
     if (cached.parsed === null) return;
     addRecent(path);
-    autoTrackRefresh();
+    autoTrackRefresh("reparse");
 }
 
 export function handleCompletedParse(cached: CachedParse): void {
@@ -74,7 +74,7 @@ export function handleCompletedParse(cached: CachedParse): void {
         propagate(path, cached);
         return;
     }
-    autoTrackRefresh();
+    autoTrackRefresh("reparse");
 }
 
 /**
