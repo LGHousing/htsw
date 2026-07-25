@@ -28,6 +28,15 @@ type AliasMap = Partial<Record<string, string>>;
 let cachedMap: AliasMap | null = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 2000;
+let revision = 0;
+
+/**
+ * Bumped whenever a stored alias changes. GUI trees that bake a house's
+ * display name into a cached row have no other way to notice the rename.
+ */
+export function getAliasRevision(): number {
+    return revision;
+}
 
 function rememberMap(map: AliasMap): AliasMap {
     cachedMap = map;
@@ -66,6 +75,7 @@ function readMapFromDisk(): AliasMap | null {
 function writeMap(map: AliasMap): boolean {
     if (!writeJsonSettingsFile(ALIAS_FILE_NAME, map, true)) return false;
     rememberMap(map);
+    revision++;
     return true;
 }
 

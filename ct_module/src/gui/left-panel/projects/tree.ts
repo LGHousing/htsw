@@ -69,6 +69,7 @@ import {
 } from "./rows";
 import type { Importable } from "htsw/types";
 import { importableLinkStatusContextKey } from "../../cache-status";
+import { getAliasRevision } from "../../../importCache/aliases";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -577,6 +578,7 @@ function formatFullDir(fullPath: string): string {
 let cachedTreeRows: TreeRow[] | null = null;
 let cachedTreeRevision = -1;
 let cachedParseRevision = -1;
+let cachedAliasRevision = -1;
 let cachedStatusFingerprint = "";
 let cachedRowStarts: number[] = [];
 let cachedRowEnds: number[] = [];
@@ -616,6 +618,7 @@ function treeRows(): TreeRow[] {
         cachedTreeRows !== null &&
         cachedTreeRevision === getTreeRevision() &&
         cachedParseRevision === parseRevision &&
+        cachedAliasRevision === getAliasRevision() &&
         cachedStatusFingerprint === statusFingerprint
     ) {
         return cachedTreeRows;
@@ -624,6 +627,7 @@ function treeRows(): TreeRow[] {
     cachedTreeRows = buildTreeRows();
     cachedTreeRevision = getTreeRevision();
     cachedParseRevision = getParseCacheRevision();
+    cachedAliasRevision = getAliasRevision();
     cachedStatusFingerprint = statusFingerprint;
     indexTreeRows(cachedTreeRows);
     lastBuildMs = Date.now() - buildStart;
