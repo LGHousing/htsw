@@ -636,6 +636,35 @@ export class DiagnosticsAdapter {
             dir = parent;
         }
 
+        // The text-reference walk only sees import.jsons in ancestor
+        // directories, but a file can be declared by an import.json in a
+        // sibling branch (menus/import.json referencing ../testing/x.htsl).
+        // Fall back to asking each ancestor import.json's cached root parse
+        // whether it actually loads this file.
+        if (contexts.length === 0) {
+            const fileKey = absolutePathKey(filePath);
+            let searchDir = path.dirname(filePath);
+            while (true) {
+                for (const candidate of this.listImportJsonFiles(searchDir)) {
+                    let parse: ContextParse;
+                    try {
+                        parse = getCachedRootParse(candidate);
+                    } catch {
+                        continue;
+                    }
+                    const loadsFile = parse.sourceMap.sourceFiles.some(
+                        (file) => absolutePathKey(file.path) === fileKey
+                    );
+                    if (loadsFile) contexts.push(candidate);
+                }
+                if (contexts.length > 0) break;
+                const normalizedDir = absolutePathKey(searchDir);
+                const parent = path.dirname(searchDir);
+                if (normalizedDir === stopAt || parent === searchDir) break;
+                searchDir = parent;
+            }
+        }
+
         return contexts;
     }
 
