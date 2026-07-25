@@ -67,16 +67,6 @@ function stripItemModel(tag: TagLike): TagLike {
     return withoutTagAtPath(tag, ["tag", "ItemModel"]);
 }
 
-// A blank lore separator line is authored either as "" or as "§7", and the
-// server PRESERVES whichever was written — both forms coexist in a live house
-// and Housing's Metadata check treats them as distinct items. We used to map
-// "" -> "§7" on the assumption Housing rendered every blank line as "§7", but
-// item capture reads raw NBT (ItemStack.writeToNBT), never rendered text, so
-// there is no rendering artifact to paper over. Folding the two together made
-// genuinely different items compare equal AND exported them to byte-identical
-// snbt, so a referencing action could silently bind the wrong variant. Blank
-// separators are therefore left exactly as authored.
-
 // The server re-types integral tags when an item round-trips through it — a
 // custom int comes back as a byte (verified with a saved echo of an injected
 // skull: `hypixelPopulated: 1` returned as `1b`). Integral width therefore
