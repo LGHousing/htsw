@@ -94,12 +94,12 @@ function confirmAcceptProjectLock(importJsonPath: string): void {
         return;
     }
     openConfirmPopover({
-        title: "Use this project lock as current?",
+        title: "Sync cache from this project lock?",
         lines: [
             `Rebuilds local Knowledge for ${houseDisplayName(lock.houseUuid)}.`,
             "Housing and project files will not be changed.",
         ],
-        confirmLabel: "Use project lock",
+        confirmLabel: "Sync cache",
         danger: true,
         onConfirm: () => acceptProjectLock(importJsonPath),
     });
@@ -107,7 +107,7 @@ function confirmAcceptProjectLock(importJsonPath: string): void {
 
 export function acceptHouseLockMenuAction(importJsonPath: string): MenuAction {
     return {
-        label: "Use project lock as current",
+        label: "Sync cache from lock",
         icon: Icons.databaseBackup,
         onClick: () => confirmAcceptProjectLock(importJsonPath),
     };
