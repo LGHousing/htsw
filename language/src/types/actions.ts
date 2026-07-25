@@ -219,7 +219,7 @@ export type ActionUseHeldItem = {
 export type ActionDropItem = {
     type: "DROP_ITEM";
     itemName: string;
-    location?: Location;
+    location: Location;
     dropNaturally?: boolean;
     disableMerging?: boolean;
     despawnDurationTicks?: Value;

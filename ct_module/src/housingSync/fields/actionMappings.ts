@@ -570,17 +570,16 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
     return action;
 }
 
-// The GUI shows an unset location as the literal "Not Set". For actions
-// whose location is optional in the AST, the htsl grammar omits the field;
+// The GUI shows an unset location as the literal "Not Set". PLAY_SOUND's
+// location is optional in the AST, so the htsl grammar omits the field;
 // keeping the literal would print as a bare `Not_Set` ident — unparseable
-// htsl. Actions that require a location keep it, so a half-configured
-// action stays visible in the exported file instead of silently changing
-// meaning.
+// htsl. Actions that require a location keep it, so a half-configured action
+// stays visible in the exported file instead of silently changing meaning.
 export function dropNotSetLocationIfOptional(action: {
     type: Action["type"];
     location?: unknown;
 }): void {
-    if (action.type !== "PLAY_SOUND" && action.type !== "DROP_ITEM") return;
+    if (action.type !== "PLAY_SOUND") return;
     const location = action.location as { type?: string } | undefined;
     if (location !== undefined && location.type === "Not Set") {
         delete action.location;

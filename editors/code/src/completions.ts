@@ -870,56 +870,78 @@ function actionFieldCompletionsFromSpec(
     quoteMode: QuoteMode,
     context: CompletionContext = {},
 ): CompletionSpec[] {
-    const fieldIndex = currentFieldIndex(spec, args, hasTrailingWhitespace);
-    const field = spec.fields[fieldIndex];
+    const fieldPosition = currentFieldIndex(spec, args, hasTrailingWhitespace);
+    const field = spec.fields[fieldPosition.index];
     if (!field) return [];
+    if (fieldPosition.awaitingCoordinates) {
+        return [coordinatesCompletion(quoteMode, field.name)];
+    }
     return completionsForFieldKind(field.kind, field.name, quoteMode, context);
 }
+
+type FieldPosition = {
+    index: number;
+    awaitingCoordinates: boolean;
+};
 
 function currentFieldIndex(
     spec: htsw.types.ActionSpec,
     args: TokenInfo[],
     hasTrailingWhitespace: boolean,
-): number {
+): FieldPosition {
     let fieldIndex = 0;
     let argIndex = 0;
 
     while (fieldIndex < spec.fields.length) {
         const field = spec.fields[fieldIndex];
         const arg = args[argIndex];
-        if (!arg) return fieldIndex;
+        if (!arg) return { index: fieldIndex, awaitingCoordinates: false };
 
         const isLastArg = argIndex === args.length - 1;
         if (field.kind === "location") {
             const location = normalizeOptionToken(arg.text);
             if (location === "customcoordinates") {
                 const coordinates = args[argIndex + 1];
-                if (!coordinates) return fieldIndex;
+                if (!coordinates) return { index: fieldIndex, awaitingCoordinates: true };
                 const coordinatesAreLast = argIndex + 1 === args.length - 1;
                 if (!hasTrailingWhitespace && coordinatesAreLast && !coordinates.text.endsWith("\"")) {
-                    return fieldIndex;
+                    return { index: fieldIndex, awaitingCoordinates: true };
                 }
                 argIndex += 2;
                 fieldIndex++;
                 continue;
             }
 
-            if (!hasTrailingWhitespace && isLastArg) return fieldIndex;
+            if (!hasTrailingWhitespace && isLastArg) {
+                return { index: fieldIndex, awaitingCoordinates: false };
+            }
             argIndex++;
             fieldIndex++;
             continue;
         }
 
-        if (!hasTrailingWhitespace && isLastArg) return fieldIndex;
+        if (!hasTrailingWhitespace && isLastArg) {
+            return { index: fieldIndex, awaitingCoordinates: false };
+        }
         argIndex++;
         fieldIndex++;
     }
 
-    return fieldIndex;
+    return { index: fieldIndex, awaitingCoordinates: false };
 }
 
 function normalizeOptionToken(value: string): string {
     return unquote(value).replace(/[\s_]/g, "").toLowerCase();
+}
+
+function coordinatesCompletion(quoteMode: QuoteMode, detail: string): CompletionSpec {
+    return {
+        label: "~ ~ ~",
+        insertText: formatQuotedCompletion("${1:~} ${2:~} ${3:~}", quoteMode),
+        kind: "snippet",
+        detail,
+        snippet: true,
+    };
 }
 
 function completionsForFieldKind(

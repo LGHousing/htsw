@@ -400,9 +400,12 @@ function printActionDropItem(
                 "DROP_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
         });
     }
-    const parts: string[] = ["dropItem", quoteName(action.itemName || ITEM_PLACEHOLDER)];
+    const parts: string[] = [
+        "dropItem",
+        quoteName(action.itemName || ITEM_PLACEHOLDER),
+        printLocation(action.location),
+    ];
     const tail: Array<string | undefined> = [
-        action.location !== undefined ? printLocation(action.location) : undefined,
         action.dropNaturally !== undefined ? printBoolean(action.dropNaturally) : undefined,
         action.disableMerging !== undefined ? printBoolean(action.disableMerging) : undefined,
         action.prioritizePlayer !== undefined ? printBoolean(action.prioritizePlayer) : undefined,
@@ -416,16 +419,15 @@ function printActionDropItem(
             parts.push(tail[i] as string);
         } else {
             // Defaults for missing positional fields. The parser order is:
-            // location, dropNaturally, disableMerging, prioritizePlayer,
-            // inventoryFallback, despawnDurationTicks, pickupDelayTicks.
+            // dropNaturally, disableMerging, prioritizePlayer, inventoryFallback,
+            // despawnDurationTicks, pickupDelayTicks.
             switch (i) {
-                case 0: parts.push("null"); break;
-                case 1: parts.push(printBoolean(true)); break;
+                case 0: parts.push(printBoolean(true)); break;
+                case 1: parts.push(printBoolean(false)); break;
                 case 2: parts.push(printBoolean(false)); break;
                 case 3: parts.push(printBoolean(false)); break;
-                case 4: parts.push(printBoolean(false)); break;
+                case 4: parts.push("0"); break;
                 case 5: parts.push("0"); break;
-                case 6: parts.push("0"); break;
             }
         }
     }

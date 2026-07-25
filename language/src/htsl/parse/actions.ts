@@ -349,7 +349,6 @@ function parseActionDisplayMenu(p: Parser, note: Note): Action {
 function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
-        if (p.checkEol()) return;
         setField(p, action, "location", parseLocation);
         if (p.checkEol()) return;
         setField(p, action, "dropNaturally", p.parseBoolean);

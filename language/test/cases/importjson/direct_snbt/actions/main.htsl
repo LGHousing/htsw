@@ -1,4 +1,4 @@
 giveItem items/stone.snbt
 if and (hasItem items/stone.snbt) {
-    dropItem items/stone.snbt
+    dropItem items/stone.snbt "Current Location"
 }

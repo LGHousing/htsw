@@ -112,7 +112,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
         kw: "dropItem",
         fields: [
             f("itemName", "item"),
-            f("location", "location", true),
+            f("location", "location"),
             f("dropNaturally", "boolean", true),
             f("disableMerging", "boolean", true),
             f("prioritizePlayer", "boolean", true),

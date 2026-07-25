@@ -660,10 +660,8 @@ export async function writeDropItem(
         await options.resolveItem(action, action.itemName, "action")
     );
 
-    if (action.location !== undefined) {
-        const locationLabel = getActionFieldLabel("DROP_ITEM", "location");
-        await setLocationValue(ctx, locationLabel, action.location);
-    }
+    const locationLabel = getActionFieldLabel("DROP_ITEM", "location");
+    await setLocationValue(ctx, locationLabel, action.location);
 
     await setBooleanValue(
         ctx,

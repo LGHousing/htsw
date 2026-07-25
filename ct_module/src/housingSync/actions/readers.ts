@@ -291,7 +291,11 @@ export async function readOpenDropItem({
     ctx,
     current,
 }: ActionReadArgs<ActionDropItem>): Promise<Observed<ActionDropItem>> {
-    const base: Observed<ActionDropItem> = current ?? { type: "DROP_ITEM", itemName: "" };
+    const base: Observed<ActionDropItem> = current ?? {
+        type: "DROP_ITEM",
+        itemName: "",
+        location: { type: "Current Location" },
+    };
     refreshLocationFromEditor(ctx, base, getActionFieldLabel("DROP_ITEM", "location"));
     return base;
 }
