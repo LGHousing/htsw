@@ -106,7 +106,7 @@ export function parseImportableMenu(p: Parser): ImportableMenu {
             field.setField(im, "name", (p) => p.parseString())
         ),
         size: optionalRawField((field) =>
-            field.setField(im, "size", (p) => p.parseBoundedNumber(1, 54))
+            field.setField(im, "size", (p) => p.parseBoundedNumber(1, 6))
         ),
         slots: requiredRawField((field) =>
             field.setField(im, "slots", parseMenuSlots)

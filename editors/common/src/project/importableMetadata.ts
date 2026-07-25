@@ -72,7 +72,7 @@ export function importableMetadataEntries(
         return [{
             key: "size",
             label: "Size",
-            value: importable.size === undefined ? "default" : `${importable.size} lines`,
+            value: importable.size === undefined ? "default (6 rows)" : `${importable.size} rows`,
             jsonPath: ["size"],
         }];
     }

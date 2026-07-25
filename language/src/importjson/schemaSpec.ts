@@ -365,7 +365,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     }),
     menuImportable: object<RawMenuImportable>({
         name: required(string()),
-        size: optional(integer({ minimum: 1, maximum: 54 })),
+        size: optional(integer({ minimum: 1, maximum: 6 })),
         slots: required(array(ref("menuSlot"))),
     }),
     menuSlot: object<RawMenuSlot>({
