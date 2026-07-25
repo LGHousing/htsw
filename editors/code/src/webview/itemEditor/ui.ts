@@ -819,8 +819,22 @@ function customTagInputsFromTag(tag: unknown): CustomTagInput[] {
 function parseCustomTags(customTags: readonly CustomTagInput[]): ItemEditorForm["customTags"] {
     return customTags.map((customTag) => ({
         name: customTag.name.trim(),
-        value: htsw.nbt.parseSnbtText(customTag.value.trim()),
+        value: parseCustomTagValue(customTag.value.trim()),
     }));
+}
+
+// Unquoted values like minecraft:amethyst_shard aren't valid SNBT (the `:`
+// ends the bare token), but users type them constantly; fall back to a plain
+// string when the value contains no SNBT structure characters.
+const BARE_STRING_VALUE = /^[^"'{}[\]]+$/;
+
+function parseCustomTagValue(value: string): ReturnType<typeof htsw.nbt.parseSnbtText> {
+    try {
+        return htsw.nbt.parseSnbtText(value);
+    } catch (err) {
+        if (BARE_STRING_VALUE.test(value)) return { type: "string", value };
+        throw err;
+    }
 }
 
 function customTagsAreValid(customTags: readonly CustomTagInput[]): boolean {
@@ -840,7 +854,7 @@ function customTagErrors(customTags: readonly CustomTagInput[]): string[] {
         }
         if (!customTag.value.trim()) return "Enter an SNBT value.";
         try {
-            htsw.nbt.parseSnbtText(customTag.value.trim());
+            parseCustomTagValue(customTag.value.trim());
             return "";
         } catch (err) {
             return `Invalid SNBT: ${errorMessage(err)}`;
