@@ -30,7 +30,7 @@ export function setWatchDetectionLive(live: boolean): void {
     if (live === watchDetectionLive) return;
     const wasLive = watchDetectionLive;
     watchDetectionLive = live;
-    if (wasLive && !live && getWatchMode()) {
+    if (wasLive && !live && getWatchMode() && onMultiplayerServer()) {
         showToast(
             "Watch paused — open a menu so saves keep auto-importing",
             WATCH_PAUSED_COLOR,
@@ -41,8 +41,15 @@ export function setWatchDetectionLive(live: boolean): void {
     if (live) dismissToast("watch-paused");
 }
 
+// Server.getIP() is "" with no world and "localhost" in singleplayer.
+function onMultiplayerServer(): boolean {
+    const ip = Server.getIP();
+    return ip !== "" && ip !== "localhost";
+}
+
 registerBadge(() => {
     if (!getWatchMode()) return null;
+    if (!onMultiplayerServer()) return null;
     if (!watchDetectionLive && !watchImportRunning) {
         return {
             text: "WATCH: paused — open a menu",
