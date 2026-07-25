@@ -72,6 +72,9 @@ export type SourceDiffGhost = {
     action: Action;
     depth: number;
     headOnly: boolean;
+    /** "edit" ghosts show the cached old text of an edited action and render
+     * as a pair with the source line below them; "delete" ghosts stand alone. */
+    role: "edit" | "delete";
 };
 
 export type SourceDiffEntry = {
@@ -406,6 +409,7 @@ function walk(
                     action: cachedAction,
                     depth: ActionPath.depth(sourcePath),
                     headOnly: action.type === "CONDITIONAL",
+                    role: "edit",
                 },
                 sourceFile
             );
@@ -516,6 +520,7 @@ function addDeletedGhosts(
             action: cachedItems[j],
             depth: ActionPath.depth(ActionPath.at(sourceListPath, 0)),
             headOnly: false,
+            role: "delete",
         };
         let nextSource = -1;
         for (let i = 0; i < matched.length; i++) {

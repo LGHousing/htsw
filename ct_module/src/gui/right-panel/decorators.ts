@@ -22,6 +22,7 @@ import {
     getCurrentPath,
     getLiveSummary,
     previewLineIdForPath,
+    previewLinesForFile,
     previewRevision,
     type PreviewLine,
 } from "./import-tab/livePreview";
@@ -59,7 +60,13 @@ export function diffDecorator(
                     },
                     decorations: {
                         state: "delete",
-                        background: ROW_BG_BY_STATE["delete"],
+                        // An edit ghost shares the amber band with the source
+                        // line below it, so the old/new pair reads as one
+                        // edited unit rather than a delete next to an add.
+                        background:
+                            ROW_BG_BY_STATE[
+                                ghosts[i].role === "edit" ? "edit" : "delete"
+                            ],
                         foregroundColor: COLOR_GHOST_GRAY,
                         hideLineNum: true,
                     },
@@ -100,6 +107,7 @@ export function diffDecorator(
                 if (line.id !== `htsl:${actionPathKeyValue}`) return { extraLinesBefore };
                 return {
                     state: "add",
+                    background: ROW_BG_BY_STATE["edit"],
                     extraLinesBefore,
                     ...itemHint,
                 };
@@ -139,6 +147,22 @@ export function progressDecorator(path: string | null): LineDecorator {
         path === null || rawCurrentPath === null
             ? null
             : effectiveFocusActionPath(path, rawCurrentPath);
+    let hasPendingFocusLine = false;
+    if (path !== null && focusPath !== null) {
+        const lines = previewLinesForFile(path);
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (
+                line.variant === "body" &&
+                line.actionPath?.kind === "action" &&
+                ActionPath.equals(line.actionPath, focusPath) &&
+                line.pending === true
+            ) {
+                hasPendingFocusLine = true;
+                break;
+            }
+        }
+    }
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             const preview = line as PreviewLine;
@@ -167,7 +191,10 @@ export function progressDecorator(path: string | null): LineDecorator {
                 focusPath !== null &&
                 line.actionPath?.kind === "action" &&
                 ActionPath.equals(focusPath, line.actionPath) &&
-                isCursorTarget;
+                isCursorTarget &&
+                (hasPendingFocusLine
+                    ? preview.pending === true
+                    : preview.pending !== true);
 
             const focusRowBg =
                 inFocusRange && !isApplyPhase ? COLOR_READ_FOCUS_ROW_BG : undefined;
