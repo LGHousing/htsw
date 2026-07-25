@@ -393,8 +393,8 @@ function houseSelector(viewed: string | null): Element {
     });
 }
 
-// Compact square icon button for the house's secondary actions (rename,
-// detect). Each carries a tooltip — a bare icon here reads as a mystery glyph.
+// Compact square icon button for the house's secondary actions (rename).
+// Each carries a tooltip — a bare icon here reads as a mystery glyph.
 function houseActionButton(
     icon: IconName,
     tooltip: string,
@@ -422,7 +422,7 @@ function houseActionButton(
     });
 }
 
-// Single title row: house selector, trust/alias controls, and re-detect.
+// Single title row: house selector and trust/alias controls.
 function housePickerRow(): Element {
     return Container({
         style: {
@@ -443,11 +443,6 @@ function housePickerRow(): Element {
                     if (viewed === null) return;
                     openAliasPopover(rect, viewed);
                 }),
-                houseActionButton(
-                    Icons.locateFixed,
-                    "Detect the house you're standing in",
-                    () => detectHousing()
-                ),
             ];
         },
     });
