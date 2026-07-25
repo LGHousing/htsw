@@ -2,7 +2,7 @@
     "name": "htsw-plus-plus",
     "displayName": "HTSW++",
     "description": "HTSW completions, diagnostics, hints, and more.",
-    "version": "1.4.0",
+    "version": "2.0.0",
     "publisher": "LGHousing",
     "license": "MIT",
     "type": "module",
