@@ -599,7 +599,6 @@ export function startImportIfIdle(
         return false;
     }
     importPreparationRunning = true;
-    showToast("Checking project files before import…", 0xff5c9ded, 5000);
     void prepareAndStartImport(explicit, options).then(
         () => {
             importPreparationRunning = false;
