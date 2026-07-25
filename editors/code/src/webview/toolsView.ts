@@ -3,14 +3,18 @@ import { handleItemEditorMessage } from "./itemEditorView";
 import { renderWebviewHtml } from "./html";
 import {
     copyImportablePathFromContext,
+    addMenuSlotFromContext,
     deleteImportJsonFromContext,
     deleteImportableFromContext,
     handleProjectMessage,
     moveImportableFromContext,
+    removeMenuSlotFromContext,
+    setMenuSizeFromContext,
     renameImportableFromContext,
     revealImportableFromContext,
     type ImportJsonContext,
     type ImportableContext,
+    type MenuSlotContext,
 } from "./projectView";
 import type { ItemEditorToHostMessage, ProjectToHostMessage, SoundPreviewToHostMessage } from "./protocol";
 import { SoundPreviewController } from "./soundPreviewView";
@@ -74,7 +78,37 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
                 if (!this.webview) return;
                 await deleteImportJsonFromContext(this.webview, context);
             }),
+            vscode.commands.registerCommand("htsw.menu.addSlot", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await addMenuSlotFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.menuSlot.remove", async (context?: MenuSlotContext) => {
+                if (!this.webview) return;
+                await removeMenuSlotFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.menu.setSize", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await setMenuSizeFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.item.editInItemEditor", async (resource?: vscode.Uri) => {
+                const uri = resource ?? vscode.window.activeTextEditor?.document.uri;
+                if (!uri || !uri.fsPath.endsWith(".snbt")) {
+                    void vscode.window.showWarningMessage("Open or select a .snbt file to edit it in the Item editor.");
+                    return;
+                }
+                await vscode.commands.executeCommand("htsw.tools.focus");
+                const webview = await this.webviewWhenReady();
+                if (!webview) return;
+                await handleProjectMessage(webview, { type: "openItemInEditor", snbtPath: uri.fsPath });
+            }),
         ];
+    }
+
+    private async webviewWhenReady(): Promise<vscode.Webview | undefined> {
+        for (let waited = 0; this.webview === undefined && waited < 3000; waited += 100) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return this.webview;
     }
 
     public async resolveWebviewView(view: vscode.WebviewView): Promise<void> {

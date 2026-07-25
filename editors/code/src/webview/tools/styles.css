@@ -21,6 +21,7 @@ body {
 
 .tools-tabs {
     flex: none;
+    min-width: 0;
     z-index: 20;
     display: flex;
     gap: 0;

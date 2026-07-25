@@ -118,6 +118,11 @@ export function mountItemEditor(
             render();
             return;
         }
+        if (message.type === "presetImportTarget") {
+            state.importJsonPath = message.importJsonPath;
+            render();
+            return;
+        }
         if (message.type === "itemImportJsonCreated") {
             if (message.createdPath) state.importJsonPath = message.createdPath;
             render();
@@ -590,7 +595,7 @@ function projectSection(state: State): string {
         return `
             <div class="section">
                 <h2>Save</h2>
-                <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>. Unmanaged top-level NBT is kept.</p>
+                <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>.</p>
                 <button id="save" type="button" ${customTagsAreValid(state.customTags) ? "" : "disabled"}>Save</button>
                 <div id="status" class="status"></div>
             </div>

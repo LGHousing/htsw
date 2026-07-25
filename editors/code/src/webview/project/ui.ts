@@ -147,7 +147,7 @@ function validImportableReveal(value: unknown): value is ProjectImportableReveal
 export function mountProjectExplorer(
     app: HTMLElement,
     vscode: VsCodeApi,
-    onOpenItemEditor?: () => void,
+    onOpenItemEditor?: (importJsonPath?: string) => void,
     initialScrollTop = 0,
 ): () => void {
     ensureMinecraftFont();
@@ -389,7 +389,7 @@ export function mountProjectExplorer(
             if (state.addKind === "item") {
                 state.showAdd = false;
                 persistProjectState();
-                onOpenItemEditor?.();
+                onOpenItemEditor?.(state.selectedParent || undefined);
                 render();
                 return;
             }
@@ -1005,7 +1005,7 @@ function renderImportable(
     `;
     if (!expanded) return row;
     return row +
-        subs.map((sub) => renderSubEntry(sub, depth + 1)).join("") +
+        subs.map((sub) => renderSubEntry(sub, depth + 1, entry, declaringPath)).join("") +
         metadata.map((field) => renderMetadataEntry(field, entry, declaringPath, depth + 1)).join("");
 }
 
@@ -1037,13 +1037,25 @@ function importableContext(entry: ProjectImportableSummary, importJsonPath: stri
     return JSON.stringify(context);
 }
 
-function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
+function renderSubEntry(
+    sub: ProjectImportableSub,
+    depth: number,
+    entry: ProjectImportableSummary,
+    declaringPath: string,
+): string {
     const item = sub.kind === "item" ? sub.item : undefined;
     const icon = item ? itemRowIcon(item) : `<span class="row-icon sub ${sub.kind}">${SUB_GLYPH[sub.kind]}</span>`;
     // Item subs open the visual editor on click (data-item-path).
     const itemAttrs = item ? ` data-item-path="${escapeAttr(sub.fsPath)}"` : "";
+    const context = sub.menuSlot === undefined ? "" : ` data-vscode-context="${escapeAttr(JSON.stringify({
+        webviewSection: "menuSlot",
+        preventDefaultContextMenuItems: true,
+        importJsonPath: declaringPath,
+        menuIdentity: entry.identity,
+        menuSlot: sub.menuSlot,
+    }))}"`;
     return `
-        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}"${itemAttrs}
+        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}"${itemAttrs}${context}
             title="${escapeAttr(`${sub.label}\n${baseName(sub.fsPath)}`)}">
             ${indentGuides(depth)}
             <span class="twisty empty"></span>

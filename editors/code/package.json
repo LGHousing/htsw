@@ -87,6 +87,26 @@
                 "command": "htsw.importJson.delete",
                 "title": "Delete...",
                 "category": "HTSW"
+            },
+            {
+                "command": "htsw.menu.addSlot",
+                "title": "Add slot...",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.menuSlot.remove",
+                "title": "Remove slot",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.menu.setSize",
+                "title": "Set size...",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.item.editInItemEditor",
+                "title": "Edit in Item Editor",
+                "category": "HTSW"
             }
         ],
         "menus": {
@@ -100,6 +120,18 @@
             "explorer/context": [
                 {
                     "command": "htsw.project.createIncludedImportJson",
+                    "group": "htsw@1"
+                },
+                {
+                    "command": "htsw.item.editInItemEditor",
+                    "when": "resourceExtname == .snbt",
+                    "group": "htsw@2"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "htsw.item.editInItemEditor",
+                    "when": "resourceExtname == .snbt",
                     "group": "htsw@1"
                 }
             ],
@@ -132,6 +164,21 @@
                 {
                     "command": "htsw.importJson.delete",
                     "when": "webviewId == 'htsw.tools' && webviewSection == 'importJson'",
+                    "group": "navigation@0"
+                },
+                {
+                    "command": "htsw.menu.addSlot",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable' && importableKind == 'menu'",
+                    "group": "navigation@0"
+                },
+                {
+                    "command": "htsw.menu.setSize",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable' && importableKind == 'menu'",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "htsw.menuSlot.remove",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'menuSlot'",
                     "group": "navigation@0"
                 }
             ]

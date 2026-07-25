@@ -113,7 +113,14 @@ function showActiveTool(): void {
     }
     let dispose: () => void;
     if (activeTool === "project") {
-        dispose = mountProjectExplorer(host, vscode, () => selectTool("item"), savedScroll("project").tree);
+        dispose = mountProjectExplorer(host, vscode, (importJsonPath) => {
+            selectTool("item");
+            if (importJsonPath !== undefined) {
+                window.dispatchEvent(new MessageEvent("message", {
+                    data: { type: "presetImportTarget", importJsonPath },
+                }));
+            }
+        }, savedScroll("project").tree);
     } else if (activeTool === "item") {
         dispose = mountItemEditor(host, vscode, pendingItemLoad ?? undefined, savedScroll("item"));
         pendingItemLoad = null;

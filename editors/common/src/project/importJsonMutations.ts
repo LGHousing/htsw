@@ -201,6 +201,93 @@ export function removeImportableEntry(
     return true;
 }
 
+export type MenuSlotEntry = {
+    slot: number;
+    nbt: string;
+    actions?: string;
+};
+
+export function addMenuSlot(
+    fs: ProjectFs,
+    entryJsonPath: string,
+    menuName: string,
+    slot: MenuSlotEntry
+): boolean {
+    const importJsonPath = resolveImportableFile(fs, entryJsonPath, "menus", menuName);
+    const match = findEntry(fs, importJsonPath, "menus", menuName);
+    if (match === null) return false;
+
+    const tree = json.parseTree(match.text);
+    if (!tree) return false;
+    const slotsNode = json.findNodeAtLocation(tree, ["menus", match.index, "slots"]);
+    let edits: json.Edit[];
+    if (slotsNode?.type === "array") {
+        const slots = slotsNode.children ?? [];
+        let insertAt = slots.length;
+        for (let i = 0; i < slots.length; i++) {
+            const numberNode = json.findNodeAtLocation(slots[i], ["slot"]);
+            if (numberNode?.type !== "number") continue;
+            const existingSlot = Number(numberNode.value);
+            if (existingSlot === slot.slot) return false;
+            if (existingSlot > slot.slot) {
+                insertAt = i;
+                break;
+            }
+        }
+        edits = json.modify(match.text, ["menus", match.index, "slots", insertAt], slot, {
+            formattingOptions: FORMATTING,
+            isArrayInsertion: true,
+        });
+    } else {
+        edits = json.modify(match.text, ["menus", match.index, "slots"], [slot], {
+            formattingOptions: FORMATTING,
+        });
+    }
+    const next = json.applyEdits(match.text, edits);
+    fs.writeFile(importJsonPath, ensureTrailingNewline(next));
+    return true;
+}
+
+export function removeMenuSlot(
+    fs: ProjectFs,
+    entryJsonPath: string,
+    menuName: string,
+    slotNumber: number
+): boolean {
+    const importJsonPath = resolveImportableFile(fs, entryJsonPath, "menus", menuName);
+    const match = findEntry(fs, importJsonPath, "menus", menuName);
+    if (match === null) return false;
+
+    const tree = json.parseTree(match.text);
+    if (!tree) return false;
+    const slotsNode = json.findNodeAtLocation(tree, ["menus", match.index, "slots"]);
+    if (!slotsNode || slotsNode.type !== "array") return false;
+    const slots = slotsNode.children ?? [];
+    const slotIndex = slots.findIndex((slot) => {
+        const numberNode = json.findNodeAtLocation(slot, ["slot"]);
+        return numberNode?.type === "number" && Number(numberNode.value) === slotNumber;
+    });
+    if (slotIndex < 0) return false;
+
+    const next = json.applyEdits(match.text, json.modify(
+        match.text,
+        ["menus", match.index, "slots", slotIndex],
+        undefined,
+        { formattingOptions: FORMATTING }
+    ));
+    fs.writeFile(importJsonPath, ensureTrailingNewline(next));
+    return true;
+}
+
+export function setMenuSize(
+    fs: ProjectFs,
+    entryJsonPath: string,
+    menuName: string,
+    size: number | undefined
+): boolean {
+    return updateImportableField(fs, entryJsonPath, "menus", menuName, "size", size);
+}
+
 export function renameImportableEntry(
     fs: ProjectFs,
     entryJsonPath: string,

@@ -69,6 +69,7 @@ export type ProjectImportableSub = {
     errors?: number;
     warnings?: number;
     git?: GitDecoration;
+    menuSlot?: number;
 };
 
 export type ProjectImportableMetadata = {
@@ -192,7 +193,10 @@ export type ItemEditorFromHostMessage =
     /** Host parsed an existing `.snbt`; the shell switches to the Item tab and
      * loads it for editing. `tag` is the original parsed NBT, kept so a save
      * preserves keys the editor doesn't manage. */
-    | { type: "loadItem"; snbtPath: string; label: string; item: ItemPreviewData; tag: unknown };
+    | { type: "loadItem"; snbtPath: string; label: string; item: ItemPreviewData; tag: unknown }
+    /** Shell-local: the project explorer's add-importable form redirects item
+     * creation here and carries the import.json the user already picked. */
+    | { type: "presetImportTarget"; importJsonPath: string };
 
 export type SoundPreviewToHostMessage =
     | { type: "ready" }
