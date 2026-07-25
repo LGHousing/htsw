@@ -85,6 +85,14 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
         document: vscode.TextDocument,
         position: vscode.Position
     ): vscode.Range | undefined {
+        const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
+        const contentStart = openQuoteContentStart(linePrefix);
+        if (contentStart !== undefined && contentStart < position.character) {
+            return new vscode.Range(
+                new vscode.Position(position.line, contentStart),
+                position
+            );
+        }
         return document.getWordRangeAtPosition(position, /[%\w./-]+/);
     }
 
@@ -355,12 +363,13 @@ class HtslCompletionProvider {
                 completion.label,
                 completion.insertText,
                 completion.filterText ?? "",
-            ].flatMap((value) =>
-                value.toLowerCase()
-                    .split(/\s+/)
-                    .map((candidate) => candidate.replace(/^%/, ""))
-                    .filter(Boolean)
-            );
+            ].flatMap((value) => {
+                const normalizedValue = value.toLowerCase().replace(/^%/, "");
+                return [
+                    normalizedValue,
+                    ...normalizedValue.split(/\s+/).filter(Boolean),
+                ];
+            });
             const bestCandidate = candidates
                 .filter((candidate) => candidate.startsWith(normalized))
                 .sort((left, right) => {
@@ -1082,6 +1091,16 @@ function ifModeCompletions(detail?: string): CompletionSpec[] {
         kind: "constant",
         detail: detail ?? "Conditional match mode",
     }));
+}
+
+function openQuoteContentStart(linePrefix: string): number | undefined {
+    let start: number | undefined;
+    for (let i = 0; i < linePrefix.length; i++) {
+        if (linePrefix[i] === "\"" && linePrefix[i - 1] !== "\\") {
+            start = start === undefined ? i + 1 : undefined;
+        }
+    }
+    return start;
 }
 
 function quoteIfNeeded(value: string): string {
