@@ -46,7 +46,7 @@ function canonicalSnbtKey(snbt: string, live: boolean): string {
 export function prettySnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(tag as Tag, { pretty: true });
+        return htsw.nbt.printSnbt(tag, { pretty: true });
     } catch (_error) {
         return snbt;
     }
@@ -55,7 +55,7 @@ export function prettySnbt(snbt: string): string {
 export function portableItemSnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(stripInteractData(tag as TagLike) as Tag, {
+        return htsw.nbt.printSnbt(stripInteractData(tag) as Tag, {
             pretty: true,
         });
     } catch (_error) {
@@ -66,7 +66,7 @@ export function portableItemSnbt(snbt: string): string {
 export function normalizeItemSnbtForExport(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(tag as Tag, { pretty: false });
+        return htsw.nbt.printSnbt(tag, { pretty: false });
     } catch (_error) {
         return snbt;
     }
@@ -74,5 +74,5 @@ export function normalizeItemSnbtForExport(snbt: string): string {
 
 export function snbtFromItem(item: Item, opts: { pretty: boolean }): string {
     const tag = itemToHtswTag(item);
-    return htsw.nbt.printSnbt(tag as Tag, { pretty: opts.pretty });
+    return htsw.nbt.printSnbt(tag, { pretty: opts.pretty });
 }
