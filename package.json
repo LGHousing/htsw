@@ -21,6 +21,9 @@
         "package:vscode": "npm run package --workspace editors/code",
         "release:stage": "python publish.py stage"
     },
+    "overrides": {
+        "dompurify": "3.4.12"
+    },
     "devDependencies": {
         "esbuild": "^0.28.1",
         "knip": "^6.27.0"
