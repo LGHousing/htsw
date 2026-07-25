@@ -874,7 +874,16 @@ function actionFieldCompletionsFromSpec(
     const field = spec.fields[fieldPosition.index];
     if (!field) return [];
     if (fieldPosition.awaitingCoordinates) {
-        return [coordinatesCompletion(quoteMode, field.name)];
+        // The passed quoteMode reflects the last token on the line. When the
+        // coordinates string hasn't been started, that token is the closed
+        // "Custom Coordinates" option, so re-derive it from the token being
+        // typed (none, if there isn't one yet).
+        const lastArg = args[args.length - 1];
+        const coordinatesQuoteMode =
+            normalizeOptionToken(lastArg?.text ?? "") === "customcoordinates"
+                ? "none"
+                : quoteMode;
+        return [coordinatesCompletion(coordinatesQuoteMode, field.name)];
     }
     return completionsForFieldKind(field.kind, field.name, quoteMode, context);
 }
