@@ -1,6 +1,9 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { ProjectFs } from "htsw-editor-common/project";
+import {
+    createIncludedImportJsonFiles,
+    type ProjectFs,
+} from "htsw-editor-common/project";
 import { nodeProjectFs } from "./nodeProjectFs";
 import { absolutePathKey } from "./pathIdentity";
 
@@ -28,6 +31,64 @@ export async function runProjectMutation<T>(run: (fs: ProjectFs) => T): Promise<
 
 export function planProjectMutation<T>(run: (fs: ProjectFs) => T): T {
     return run(new ProjectMutation().fs);
+}
+
+export async function promptCreateImportJson(rootImportJsonPath: string): Promise<string | undefined> {
+    if (path.basename(rootImportJsonPath) !== "import.json" || !nodeProjectFs.exists(rootImportJsonPath)) {
+        throw new Error("The project root import.json could not be found.");
+    }
+
+    const projectRoot = path.dirname(rootImportJsonPath);
+    const relativePath = await vscode.window.showInputBox({
+        title: "Create import.json",
+        prompt: "Path relative to the project root",
+        placeHolder: "teams/import.json",
+        validateInput: (value) => validateNewImportJsonPath(projectRoot, value),
+    });
+    if (relativePath === undefined) return undefined;
+
+    const normalized = normalizeNewImportJsonPath(relativePath);
+    const result = await runProjectMutation((fs) => createIncludedImportJsonFiles(
+        fs,
+        projectRoot,
+        path.posix.dirname(normalized),
+        rootImportJsonPath,
+    ));
+    return result.importJsonPath;
+}
+
+function validateNewImportJsonPath(projectRoot: string, value: string): string | undefined {
+    let relativePath: string;
+    try {
+        relativePath = normalizeNewImportJsonPath(value);
+    } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+    }
+
+    const targetPath = path.resolve(projectRoot, relativePath);
+    const fromRoot = path.relative(projectRoot, targetPath);
+    if (fromRoot.startsWith(`..${path.sep}`) || fromRoot === ".." || path.isAbsolute(fromRoot)) {
+        return "Choose a path inside the project root.";
+    }
+    if (nodeProjectFs.exists(targetPath)) return `${relativePath} already exists.`;
+    return undefined;
+}
+
+function normalizeNewImportJsonPath(value: string): string {
+    const normalized = value.trim().replace(/\\/g, "/");
+    if (!normalized) throw new Error("Enter a path such as teams/import.json.");
+    if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) {
+        throw new Error("Enter a path relative to the project root.");
+    }
+
+    const parts = normalized.split("/").filter((part) => part !== "" && part !== ".");
+    if (parts.includes("..")) throw new Error("The path cannot contain '..'.");
+    const filename = parts.at(-1);
+    if (filename !== "import.json") {
+        if (filename?.includes(".")) throw new Error("The filename must be exactly import.json.");
+        parts.push("import.json");
+    }
+    return parts.join("/");
 }
 
 class ProjectMutation {

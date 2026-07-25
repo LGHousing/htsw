@@ -30,6 +30,7 @@ import { nodeProjectFs } from "../nodeProjectFs";
 import { absolutePathKey } from "../pathIdentity";
 import {
     planProjectMutation,
+    promptCreateImportJson,
     projectFsWithOpenDocuments,
     runProjectMutation,
 } from "../projectMutation";
@@ -89,6 +90,9 @@ export async function handleProjectMessage(
             return;
         case "createIncludedImportJson":
             await createIncludedImportJson(webview, message.parentImportJsonPath, message.folderPath);
+            return;
+        case "createProjectImportJson":
+            await createProjectImportJson(webview, message.rootImportJsonPath);
             return;
         case "addImportable":
             await addImportable(webview, message.importJsonPath, message.kind, message.identity);
@@ -1354,6 +1358,24 @@ async function createIncludedImportJson(
             error,
         } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not create included import.json: ${error}`);
+    }
+}
+
+async function createProjectImportJson(
+    webview: vscode.Webview,
+    rootImportJsonPath: string,
+): Promise<void> {
+    try {
+        const createdPath = await promptCreateImportJson(rootImportJsonPath);
+        if (createdPath !== undefined) await postFreshProjectTree(webview);
+        await webview.postMessage({
+            type: "importJsonCreated",
+            createdPath,
+        } satisfies ProjectFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "importJsonCreated" } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not create import.json: ${error}`);
     }
 }
 

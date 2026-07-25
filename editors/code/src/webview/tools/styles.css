@@ -30,8 +30,13 @@ body {
 }
 
 .tools-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     min-height: 34px;
-    padding: 6px 12px;
+    padding: 6px 8px;
     color: var(--vscode-tab-inactiveForeground);
     background: transparent;
     border: 0;

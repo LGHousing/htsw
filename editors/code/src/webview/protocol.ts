@@ -10,6 +10,7 @@ export type GitDecoration = {
 export type ImportTarget = {
     fsPath: string;
     label: string;
+    rootImportJsonPath: string;
 };
 
 export type ItemEditorForm = {
@@ -153,6 +154,7 @@ export type ProjectToHostMessage =
           preview: boolean;
       }
     | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string }
+    | { type: "createProjectImportJson"; rootImportJsonPath: string }
     | {
           type: "addImportable";
           importJsonPath: string;
@@ -171,15 +173,18 @@ export type ProjectFromHostMessage =
     | { type: "projectTree"; roots: ProjectImportJsonNode[]; workspaceName?: string }
     | { type: "projectResult"; ok: true; message: string; createdPath?: string }
     | { type: "projectResult"; ok: false; error: string }
+    | { type: "importJsonCreated"; createdPath?: string }
     | ({ type: "revealProjectImportable" } & ProjectImportableReveal);
 
 export type ItemEditorToHostMessage =
     | { type: "requestImportTargets" }
+    | { type: "createItemImportJson"; rootImportJsonPath: string }
     | { type: "submitItem"; form: ItemEditorForm }
     | { type: "saveItem"; snbtPath: string; tag: unknown };
 
 export type ItemEditorFromHostMessage =
     | { type: "importTargets"; targets: ImportTarget[] }
+    | { type: "importJsonCreated"; createdPath?: string }
     | { type: "submitResult"; ok: true; files: string[] }
     | { type: "submitResult"; ok: false; error: string }
     | { type: "saveResult"; ok: true; snbtPath: string }

@@ -23,11 +23,17 @@ const PROJECT_MESSAGE_TYPES = new Set([
     "openProjectFile",
     "openImportableDeclaration",
     "createIncludedImportJson",
+    "createProjectImportJson",
     "addImportable",
     "moveImportable",
     "openItemInEditor",
 ]);
-const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem", "saveItem"]);
+const ITEM_MESSAGE_TYPES = new Set([
+    "requestImportTargets",
+    "createItemImportJson",
+    "submitItem",
+    "saveItem",
+]);
 
 export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "htsw.tools";
