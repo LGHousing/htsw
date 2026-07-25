@@ -29,6 +29,7 @@ import type {
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { getViewSelection, publishCodeView } from "./selection";
 import { recordPhase } from "../lib/framePerf";
+import { markGuiDirty } from "../lib/dirty";
 
 export type CodeViewProps = {
     source?: Extractable<string | null>;
@@ -650,7 +651,9 @@ function applyAutoFollow(
     if (viewportH <= 0) return;
     const focusedY = idx * LINE_H;
     const target = Math.max(0, focusedY - Math.floor(viewportH / 2));
+    const previousOffset = state.offset;
     setScrollOffset(scrollId, target);
+    if (state.offset !== previousOffset) markGuiDirty();
     meta.lastFollowAt = now;
 }
 
@@ -660,9 +663,12 @@ function applyAutoFollow(
  */
 export function jumpToFocusedLine(scrollId: string): void {
     const meta = getFollowMeta(scrollId);
+    const state = getScrollState(scrollId);
+    const wasUserOverridden = state.userOverridden;
     clearUserScrollOverride(scrollId);
     // Force a re-resolve next frame so the next applyAutoFollow scrolls
     // immediately rather than skipping due to lastResolvedIdx match.
     meta.lastResolvedIdx = -1;
     meta.lastFollowAt = 0;
+    if (wasUserOverridden) markGuiDirty();
 }

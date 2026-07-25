@@ -161,6 +161,34 @@ export const ActionTreePath = {
         if (path.kind === "conditionList") parts.push(path.prop);
         return hasPartsPrefix(parts, ancestor.parts);
     },
+
+    indexAtList(
+        path: ActionTreePath,
+        listPath: ActionListPath | undefined
+    ): number | null {
+        const parts = path.kind === "conditionList" ? path.parent.parts : path.parts;
+        const listParts = listPath === undefined ? [] : listPath.parts;
+        if (!hasPartsPrefix(parts, listParts)) return null;
+        const index = parts[listParts.length];
+        return typeof index === "number" ? index : null;
+    },
+
+    replaceIndexAtList(
+        path: ActionTreePath,
+        listPath: ActionListPath | undefined,
+        index: number
+    ): ActionTreePath | null {
+        if (ActionTreePath.indexAtList(path, listPath) === null) return null;
+        const parts =
+            path.kind === "conditionList"
+                ? path.parent.parts.slice()
+                : path.parts.slice();
+        const listDepth = listPath === undefined ? 0 : listPath.parts.length;
+        parts[listDepth] = index;
+        if (path.kind === "action") return ActionPath.fromParts(parts);
+        if (path.kind === "actionList") return { kind: "actionList", parts };
+        return ConditionListPath.of(ActionPath.fromParts(parts), path.prop);
+    },
 };
 
 function partsEqual(a: readonly ActionPathPart[], b: readonly ActionPathPart[]): boolean {

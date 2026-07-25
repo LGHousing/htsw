@@ -2,7 +2,11 @@
 
 import type { Element } from "../lib/layout";
 import { Button, Col, Container } from "../lib/components";
-import { isScrollUserOverridden } from "../lib/layout";
+import {
+    clearUserScrollOverride,
+    isScrollUserOverridden,
+    setScrollOffset,
+} from "../lib/layout";
 import { Icons } from "../lib/icons.generated";
 import { COLOR_BUTTON, COLOR_BUTTON_HOVER, COLOR_TEXT } from "../lib/theme";
 import {
@@ -23,6 +27,12 @@ import { previewLinesForFile } from "./import-tab/livePreview";
 import type { RenderableLine } from "../code-view/lineTypes";
 
 const LIVE_PREVIEW_SCROLL_ID = "right-live-preview-scroll";
+
+export function resetLivePreviewScroll(): void {
+    setScrollOffset(LIVE_PREVIEW_SCROLL_ID, 0);
+    clearUserScrollOverride(LIVE_PREVIEW_SCROLL_ID);
+    jumpToFocusedLine(LIVE_PREVIEW_SCROLL_ID);
+}
 
 export function viewBody(): Element {
     return Col({

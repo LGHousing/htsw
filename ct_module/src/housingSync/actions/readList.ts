@@ -222,9 +222,6 @@ export async function scanActionList(
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isRootList = read.listPath === undefined;
-    if (isRootList) {
-        emitObservedSnapshot(observed, read.events);
-    }
     let plan: ActionHydrationPlan;
     let trustApplication:
         | {
@@ -256,6 +253,9 @@ export async function scanActionList(
     }
     if (trustApplication !== undefined) {
         applyActionListTrust(trustApplication.matches, plan, trustApplication.trust);
+    }
+    if (isRootList) {
+        emitObservedSnapshot(observed, read.events);
     }
     if (phaseUnits !== undefined && read.exactHydrationEstimate === true) {
         phaseUnits.reading = readCompletedUnits;

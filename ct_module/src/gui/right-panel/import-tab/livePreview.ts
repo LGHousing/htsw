@@ -9,6 +9,7 @@ import type {
     DiffFinalState,
     DiffOpKind,
     DiffSummary,
+    PlannedOp,
 } from "../../../housingSync/syncEvents";
 import {
     ActionListPath,
@@ -40,6 +41,7 @@ export type PreviewLine = {
     italic?: boolean;
     diffState?: DiffState;
     completed?: boolean;
+    deleted?: boolean;
 };
 
 type FileState = {
@@ -52,6 +54,8 @@ type FileState = {
     /** Set once the diff plan is known; its presence means we're in the apply phase. */
     summary: DiffSummary | null;
     lastObservedAt: number;
+    pendingNodes: readonly ObservedNode[] | undefined;
+    rebasedListKeys: Set<string>;
 };
 
 /**
@@ -84,6 +88,8 @@ function ensure(path: string): FileState {
             currentPath: null,
             summary: null,
             lastObservedAt: 0,
+            pendingNodes: undefined,
+            rebasedListKeys: new Set(),
         };
         states[k] = s;
     }
@@ -115,14 +121,19 @@ function markLinesPending(lines: PreviewLine[]): void {
     for (let i = 0; i < lines.length; i++) setPending(lines[i], true);
 }
 
-function findActionStartIndex(lines: PreviewLine[], actionPath: ActionPath): number {
+function findActionStartIndex(
+    lines: PreviewLine[],
+    actionPath: ActionPath,
+    deleted: boolean = false
+): number {
     for (let i = 0; i < lines.length; i++) {
         const linePath = lines[i].actionPath;
         if (
             linePath?.kind === "action" &&
             ActionPath.equals(linePath, actionPath) &&
             lines[i].variant === "body" &&
-            lines[i].pending !== true
+            lines[i].pending !== true &&
+            (lines[i].deleted === true) === deleted
         )
             return i;
     }
@@ -147,6 +158,50 @@ function findActionEndIndex(
     return endIdx;
 }
 
+function findDeletedActionEndIndex(
+    lines: PreviewLine[],
+    actionPath: ActionPath,
+    startIdx: number
+): number {
+    let endIdx = startIdx;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.deleted !== true) break;
+        const linePath = line.actionPath;
+        if (
+            linePath === undefined ||
+            !ActionTreePath.isWithinAction(linePath, actionPath)
+        ) {
+            break;
+        }
+        endIdx = i;
+    }
+    return endIdx;
+}
+
+function actionListPathsEqual(
+    a: ActionListPath | undefined,
+    b: ActionListPath | undefined
+): boolean {
+    if (a === undefined || b === undefined) return a === b;
+    return ActionTreePath.equals(a, b);
+}
+
+function observedIndicesForList(
+    lines: readonly PreviewLine[],
+    listPath: ActionListPath | undefined
+): number[] {
+    const indices = new Set<number>();
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.pending === true || line.actionPath?.kind !== "action") continue;
+        if (actionListPathsEqual(ActionPath.containingList(line.actionPath), listPath)) {
+            indices.add(ActionPath.index(line.actionPath));
+        }
+    }
+    return Array.from(indices).sort((a, b) => a - b);
+}
+
 function findIndexByPathVariant(
     lines: PreviewLine[],
     actionPath: ActionTreePath,
@@ -157,7 +212,8 @@ function findIndexByPathVariant(
         if (
             linePath !== undefined &&
             ActionTreePath.equals(linePath, actionPath) &&
-            lines[i].variant === variant
+            lines[i].variant === variant &&
+            lines[i].deleted !== true
         ) {
             return i;
         }
@@ -647,11 +703,33 @@ function applyReadCompletions(
     return changed;
 }
 
+function rebuildObserved(s: FileState, nodes: readonly ObservedNode[]): void {
+    s.lastObservedAt = Date.now();
+    s.rebasedListKeys.clear();
+    s.lines = buildLines(nodes, undefined, 0);
+    applyReadCompletions(s.lines, s.readCompletedPaths);
+    s.hasContent = true;
+    bump(s);
+}
+
+function flushPendingObserved(s: FileState): void {
+    if (
+        s.pendingNodes === undefined ||
+        Date.now() - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS
+    ) {
+        return;
+    }
+    const nodes = s.pendingNodes;
+    s.pendingNodes = undefined;
+    rebuildObserved(s, nodes);
+}
+
 // ── Exported query / mutation API ───────────────────────────────────
 
 export function previewLinesForFile(path: string): readonly PreviewLine[] {
     const k = keyForFile(path);
     const s = states[k];
+    if (s !== undefined) flushPendingObserved(s);
     return s ? s.lines : [];
 }
 
@@ -661,7 +739,10 @@ export function previewLinesForFile(path: string): readonly PreviewLine[] {
  * objects are mutated in place, so array identity alone can't.
  */
 export function previewRevision(path: string): number {
-    return states[keyForFile(path)]?.revision ?? -1;
+    const s = states[keyForFile(path)];
+    if (s === undefined) return -1;
+    flushPendingObserved(s);
+    return s.revision;
 }
 
 export function resetPreview(path: string): void {
@@ -679,6 +760,7 @@ export function primeWithCache(
 ): void {
     const s = ensure(path);
     const shellOnly = options?.shellOnly === true;
+    s.rebasedListKeys.clear();
     s.lines = importable === null ? [] : linesForImportable(importable, shellOnly);
     s.hasContent = importable !== null;
     bump(s);
@@ -691,17 +773,122 @@ export function setObservedTopLevel(
 ): void {
     const s = ensure(path);
     const now = Date.now();
-    if (
-        options?.force !== true &&
-        s.hasContent &&
-        now - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS
-    ) {
+    if (options?.force === true) {
+        s.pendingNodes = undefined;
+        rebuildObserved(s, nodes);
         return;
     }
-    s.lastObservedAt = now;
-    s.lines = buildLines(nodes, undefined, 0);
-    applyReadCompletions(s.lines, s.readCompletedPaths);
-    s.hasContent = true;
+    if (s.hasContent && now - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS) {
+        s.pendingNodes = nodes;
+        return;
+    }
+    s.pendingNodes = undefined;
+    rebuildObserved(s, nodes);
+}
+
+export function buildObservedToDesiredIndexMap(
+    observedIndices: readonly number[],
+    listPath: ActionListPath | undefined,
+    operations: readonly PlannedOp[],
+    matches: readonly ActionPath[]
+): Map<number, number> | null {
+    const observed = new Set(observedIndices);
+    const consumed = new Set<number>();
+    const indexMap = new Map<number, number>();
+
+    for (let i = 0; i < operations.length; i++) {
+        const op = operations[i];
+        if (
+            !actionListPathsEqual(ActionPath.containingList(op.path), listPath) ||
+            op.op === "add"
+        ) {
+            continue;
+        }
+        if (!observed.has(op.fromIndex)) return null;
+        consumed.add(op.fromIndex);
+        if (op.op === "edit" || op.op === "move") {
+            indexMap.set(op.fromIndex, op.toIndex);
+        }
+    }
+
+    const desiredMatches: number[] = [];
+    const seenDesiredMatches = new Set<number>();
+    for (let i = 0; i < matches.length; i++) {
+        const match = matches[i];
+        if (!actionListPathsEqual(ActionPath.containingList(match), listPath)) {
+            continue;
+        }
+        const desiredIndex = ActionPath.index(match);
+        if (seenDesiredMatches.has(desiredIndex)) return null;
+        seenDesiredMatches.add(desiredIndex);
+        desiredMatches.push(desiredIndex);
+    }
+    desiredMatches.sort((a, b) => a - b);
+
+    const unmatchedObserved = Array.from(observed)
+        .filter((index) => !consumed.has(index))
+        .sort((a, b) => a - b);
+    if (unmatchedObserved.length !== desiredMatches.length) return null;
+
+    for (let i = 0; i < unmatchedObserved.length; i++) {
+        indexMap.set(unmatchedObserved[i], desiredMatches[i]);
+    }
+    return indexMap;
+}
+
+export function rebaseToDesired(
+    path: string,
+    listPath: ActionListPath | undefined,
+    operations: readonly PlannedOp[],
+    matches: readonly ActionPath[]
+): void {
+    const s = ensure(path);
+    const listKey = listPath === undefined ? "root" : ActionTreePath.key(listPath);
+    if (s.rebasedListKeys.has(listKey)) return;
+
+    const indexMap = buildObservedToDesiredIndexMap(
+        observedIndicesForList(s.lines, listPath),
+        listPath,
+        operations,
+        matches
+    );
+    if (indexMap === null) return;
+
+    for (let i = 0; i < operations.length; i++) {
+        const op = operations[i];
+        if (
+            op.op !== "delete" ||
+            !actionListPathsEqual(ActionPath.containingList(op.path), listPath)
+        ) {
+            continue;
+        }
+        const startIdx = findActionStartIndex(s.lines, op.path);
+        if (startIdx < 0) continue;
+        const endIdx = findActionEndIndex(s.lines, op.path, startIdx);
+        for (let lineIndex = startIdx; lineIndex <= endIdx; lineIndex++) {
+            s.lines[lineIndex].deleted = true;
+        }
+    }
+
+    for (let i = 0; i < s.lines.length; i++) {
+        const line = s.lines[i];
+        if (line.deleted === true || line.actionPath === undefined) continue;
+        const observedIndex = ActionTreePath.indexAtList(line.actionPath, listPath);
+        if (observedIndex === null) continue;
+        const desiredIndex = indexMap.get(observedIndex);
+        if (desiredIndex === undefined) continue;
+        const rebased = ActionTreePath.replaceIndexAtList(
+            line.actionPath,
+            listPath,
+            desiredIndex
+        );
+        if (rebased !== null) line.actionPath = rebased;
+    }
+    for (let i = 0; i < s.lines.length; i++) {
+        s.lines[i].id = computeLineId(s.lines[i]);
+    }
+    renumberLines(s.lines);
+    s.rebasedListKeys.add(listKey);
     bump(s);
 }
 
@@ -778,11 +965,16 @@ export function markPlannedEdit(
 
 export function markPlannedDelete(path: string, actionPath: ActionPath): void {
     const s = ensure(path);
-    const startIdx = findActionStartIndex(s.lines, actionPath);
+    let startIdx = findActionStartIndex(s.lines, actionPath, true);
+    const alreadyDeleted = startIdx >= 0;
+    if (startIdx < 0) startIdx = findActionStartIndex(s.lines, actionPath);
     if (startIdx < 0) return;
-    const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
+    const endIdx = alreadyDeleted
+        ? findDeletedActionEndIndex(s.lines, actionPath, startIdx)
+        : findActionEndIndex(s.lines, actionPath, startIdx);
     for (let i = startIdx; i <= endIdx; i++) {
         s.lines[i].diffState = "delete";
+        s.lines[i].deleted = true;
     }
     bump(s);
 }
@@ -808,9 +1000,9 @@ export function applyComplete(
 ): void {
     const s = ensure(path);
     if (kind === "delete") {
-        const startIdx = findActionStartIndex(s.lines, actionPath);
+        const startIdx = findActionStartIndex(s.lines, actionPath, true);
         if (startIdx < 0) return;
-        const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
+        const endIdx = findDeletedActionEndIndex(s.lines, actionPath, startIdx);
         s.lines.splice(startIdx, endIdx - startIdx + 1);
         renumberLines(s.lines);
         bump(s);
@@ -849,7 +1041,7 @@ export function applyComplete(
         let lastAdded = -1;
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
-            if (line.actionPath === undefined) continue;
+            if (line.deleted === true || line.actionPath === undefined) continue;
             if (!ActionTreePath.isWithinAction(line.actionPath, actionPath)) continue;
             if (line.pending !== true) continue;
             if (firstAdded < 0) firstAdded = i;
@@ -860,6 +1052,7 @@ export function applyComplete(
             if (startIdx < 0) return;
             const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
             for (let i = startIdx; i <= endIdx; i++) {
+                if (s.lines[i].deleted === true) continue;
                 s.lines[i].diffState = undefined;
                 s.lines[i].completed = true;
             }
@@ -891,7 +1084,8 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
         if (
             line.actionPath?.kind === "action" &&
             ActionPath.equals(line.actionPath, actionPath) &&
-            line.variant === "body"
+            line.variant === "body" &&
+            line.deleted !== true
         ) {
             bodyIdx = i;
             break;
@@ -905,7 +1099,8 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
         if (
             line.actionPath?.kind === "action" &&
             ActionPath.equals(line.actionPath, actionPath) &&
-            line.variant === "ghost"
+            line.variant === "ghost" &&
+            line.deleted !== true
         ) {
             ghostIdx = i;
             break;
@@ -931,7 +1126,8 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
         const line = s.lines[i];
         if (
             line.actionPath?.kind !== "action" ||
-            !ActionPath.equals(line.actionPath, actionPath)
+            !ActionPath.equals(line.actionPath, actionPath) ||
+            line.deleted === true
         )
             continue;
         if (line.variant !== "else" && line.variant !== "close") continue;
@@ -957,7 +1153,8 @@ export function effectiveFocusActionPath(
             if (
                 line.actionPath?.kind === "action" &&
                 ActionPath.equals(line.actionPath, probe) &&
-                line.variant === "body"
+                line.variant === "body" &&
+                line.deleted !== true
             ) {
                 return probe;
             }
@@ -981,7 +1178,8 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
                 line.actionPath?.kind === "action" &&
                 ActionPath.equals(line.actionPath, effective) &&
                 line.variant === "body" &&
-                line.pending === true
+                line.pending === true &&
+                line.deleted !== true
             ) {
                 return line.id;
             }
@@ -991,7 +1189,8 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
             if (
                 line.actionPath?.kind === "action" &&
                 ActionPath.equals(line.actionPath, effective) &&
-                line.variant === "body"
+                line.variant === "body" &&
+                line.deleted !== true
             ) {
                 return line.id;
             }
@@ -1043,6 +1242,11 @@ export function setCurrent(path: string, actionPath: ActionTreePath | null): voi
 
 export function setLiveSummary(path: string, summary: DiffSummary): void {
     const s = ensure(path);
+    if (s.pendingNodes !== undefined) {
+        const nodes = s.pendingNodes;
+        s.pendingNodes = undefined;
+        rebuildObserved(s, nodes);
+    }
     if (s.summary === summary) return;
     s.summary = summary;
     markGuiDirty();
@@ -1058,7 +1262,11 @@ export function markMatch(path: string, actionPath: ActionPath): void {
     let changed = false;
     for (let i = 0; i < s.lines.length; i++) {
         const linePath = s.lines[i].actionPath;
-        if (linePath?.kind === "action" && ActionPath.equals(linePath, actionPath)) {
+        if (
+            s.lines[i].deleted !== true &&
+            linePath?.kind === "action" &&
+            ActionPath.equals(linePath, actionPath)
+        ) {
             s.lines[i].completed = true;
             s.lines[i].diffState = undefined;
             changed = true;

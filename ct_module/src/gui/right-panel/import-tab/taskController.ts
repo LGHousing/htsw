@@ -65,20 +65,22 @@ import {
     markPlannedDelete,
     markPlannedEdit,
     markPlannedMove,
-    previewLineIdForPath,
     primeWithCache,
+    rebaseToDesired,
     resetPreview,
     setCurrent,
     setLiveSummary,
     setObservedTopLevel,
 } from "./livePreview";
-import { setFocusLineId } from "./focusedLine";
+import { ActionPath } from "../../../housingSync/actionPath";
+import { setFocusPath } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
 import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
 import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
+import { resetLivePreviewScroll } from "../view-body";
 
 function errorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
@@ -261,6 +263,7 @@ function createSyncEventHandler(args: {
             if (activeViewPath !== null) {
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
+                resetLivePreviewScroll();
             }
         },
         importableFinished: (e) => {
@@ -291,11 +294,26 @@ function createSyncEventHandler(args: {
         childListReadStarted: (e) => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, e.path);
-            setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
+            setFocusPath(activeViewPath, e.path);
         },
         diffPlanned: (e) => {
             if (activeViewPath === null) return;
             setLiveSummary(activeViewPath, e.summary);
+            if (e.operations.length > 0) {
+                rebaseToDesired(
+                    activeViewPath,
+                    ActionPath.containingList(e.operations[0].path),
+                    e.operations,
+                    e.matches
+                );
+            } else if (e.matches.length > 0) {
+                rebaseToDesired(
+                    activeViewPath,
+                    ActionPath.containingList(e.matches[0]),
+                    e.operations,
+                    e.matches
+                );
+            }
             for (const op of e.operations) {
                 if (op.op === "delete") {
                     if (op.observed !== null) {
@@ -323,7 +341,7 @@ function createSyncEventHandler(args: {
             if (e.op === "edit" && !editAffectsHeadLine(e.fieldsChanged)) {
                 markMatch(activeViewPath, e.path);
             }
-            setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
+            setFocusPath(activeViewPath, e.path);
         },
         operationCompleted: (e) => {
             if (activeViewPath === null) return;
@@ -333,7 +351,7 @@ function createSyncEventHandler(args: {
         listSyncCompleted: () => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, null);
-            setFocusLineId(activeViewPath, null);
+            setFocusPath(activeViewPath, null);
         },
         observedSnapshot: (e) => {
             if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.nodes);

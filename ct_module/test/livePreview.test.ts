@@ -3,6 +3,7 @@ import type { Action, Importable } from "htsw/types";
 
 import {
     applyComplete,
+    buildObservedToDesiredIndexMap,
     finalizeFromSource,
     getCurrentPath,
     markHeadApplied,
@@ -15,14 +16,20 @@ import {
     previewLinesForFile,
     previewRevision,
     primeWithCache,
+    rebaseToDesired,
     resetPreview,
     setObservedTopLevel,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
 import { createExportLivePreview } from "../src/gui/export/livePreview";
-import { type ActionPathPart, ActionPath } from "../src/housingSync/actionPath";
+import {
+    ActionListPath,
+    type ActionPathPart,
+    ActionPath,
+} from "../src/housingSync/actionPath";
 import type { ObservedNode } from "../src/housingSync/observedActions";
+import type { PlannedOp } from "../src/housingSync/syncEvents";
 
 import { conditional, message } from "./utils";
 
@@ -331,6 +338,141 @@ describe("markPlannedMove", () => {
     });
 });
 
+describe("rebaseToDesired", () => {
+    test("builds the index map from consumed observed actions and ordered matches", () => {
+        const operations: PlannedOp[] = [
+            {
+                op: "delete",
+                path: p(0),
+                actionType: "MESSAGE",
+                observed: message("removed"),
+                observedEntryId: 0,
+                fromIndex: 0,
+            },
+            {
+                op: "move",
+                path: p(0),
+                actionType: "MESSAGE",
+                fromIndex: 2,
+                toIndex: 0,
+            },
+            {
+                op: "edit",
+                path: p(2),
+                actionType: "MESSAGE",
+                observed: message("old"),
+                desired: message("new"),
+                fromIndex: 3,
+                toIndex: 2,
+                fieldsChanged: ["message"],
+            },
+        ];
+
+        const indexMap = buildObservedToDesiredIndexMap(
+            [0, 1, 2, 3],
+            undefined,
+            operations,
+            [p(1)]
+        );
+
+        expect(Array.from(indexMap?.entries() ?? []).sort((a, b) => a[0] - b[0])).toEqual(
+            [
+                [1, 1],
+                [2, 0],
+                [3, 2],
+            ]
+        );
+        expect(
+            buildObservedToDesiredIndexMap(
+                [0, 1, 2, 3],
+                undefined,
+                operations,
+                []
+            )
+        ).toBeNull();
+    });
+
+    test("rebases a move once so its desired path can be highlighted", () => {
+        setObservedTopLevel(PATH, nodes(message("a"), message("b")), {
+            force: true,
+        });
+        const operations: PlannedOp[] = [
+            {
+                op: "move",
+                path: p(0),
+                actionType: "MESSAGE",
+                fromIndex: 1,
+                toIndex: 0,
+            },
+        ];
+
+        rebaseToDesired(PATH, undefined, operations, [p(1)]);
+        const rebasedRevision = previewRevision(PATH);
+        rebaseToDesired(PATH, undefined, operations, [p(1)]);
+        markPlannedMove(PATH, p(0), 1, 0);
+
+        expect(ids()).toEqual(["1:body", "0:body"]);
+        expect(previewRevision(PATH)).toBe(rebasedRevision + 1);
+        expect(bodyAt(0)?.diffState).toBe("edit");
+    });
+
+    test("keeps delete paths observed and removes only the flagged collision", () => {
+        setObservedTopLevel(PATH, nodes(message("removed"), message("kept")), {
+            force: true,
+        });
+        const operations: PlannedOp[] = [
+            {
+                op: "delete",
+                path: p(0),
+                actionType: "MESSAGE",
+                observed: message("removed"),
+                observedEntryId: 0,
+                fromIndex: 0,
+            },
+        ];
+
+        rebaseToDesired(PATH, undefined, operations, [p(0)]);
+        markPlannedDelete(PATH, p(0));
+        applyComplete(PATH, p(0), "delete", "delete");
+
+        expect(ids()).toEqual(["0:body"]);
+        expect(previewLinesForFile(PATH)[0].deleted).not.toBe(true);
+    });
+
+    test("rebases indices within a nested list without changing deeper components", () => {
+        setObservedTopLevel(
+            PATH,
+            nodes(
+                conditional({
+                    ifActions: [message("a"), message("b")],
+                })
+            ),
+            { force: true }
+        );
+        const listPath = ActionListPath.childOf(p(0), "ifActions");
+        const operations: PlannedOp[] = [
+            {
+                op: "move",
+                path: p(0, "ifActions", 0),
+                actionType: "MESSAGE",
+                fromIndex: 1,
+                toIndex: 0,
+            },
+        ];
+
+        rebaseToDesired(PATH, listPath, operations, [p(0, "ifActions", 1)]);
+        markPlannedMove(PATH, p(0, "ifActions", 0), 1, 0);
+
+        expect(ids()).toEqual([
+            "0:body",
+            "0.ifActions.1:body",
+            "0.ifActions.0:body",
+            "0:close",
+        ]);
+        expect(bodyAt(0, "ifActions", 0)?.diffState).toBe("edit");
+    });
+});
+
 describe("applyComplete(add)", () => {
     test("strips the pending: prefix and marks completed", () => {
         primeWithCache(PATH, func([]));
@@ -361,12 +503,14 @@ describe("applyComplete(add)", () => {
 describe("applyComplete(delete)", () => {
     test("removes the line and its subtree", () => {
         primeWithCache(PATH, func([conditional({ ifActions: [message("child")] })]));
+        markPlannedDelete(PATH, p(0));
         applyComplete(PATH, p(0), "delete", "delete");
         expect(previewLinesForFile(PATH)).toEqual([]);
     });
 
     test("leaves siblings alone", () => {
         primeWithCache(PATH, func([message("a"), message("b"), message("c")]));
+        markPlannedDelete(PATH, p(1));
         applyComplete(PATH, p(1), "delete", "delete");
         expect(ids()).toEqual(["0:body", "2:body"]);
     });
