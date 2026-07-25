@@ -50,10 +50,12 @@ export function scanHouseRegions(): void {
 }
 
 // Liveness: regions announce create/delete/rename in chat, all carrying names.
-register("chat", (...args: (string | ForgeClientChatReceivedEvent)[]) => {
-    if (args.length === 0) return;
-    const event = args[args.length - 1];
-    if (typeof event === "string") return;
+// Read the event through a declared parameter only: on this Rhino build,
+// pulling a ClientChatReceivedEvent out of `arguments` (which is what a
+// `...args` rest parameter compiles to) throws
+// "InternalError: Invalid JavaScript value" and silently kills the handler.
+register("chat", (event) => {
+    // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
     const msg = ChatLib.getChatMessage(event, false);
     if (typeof msg !== "string") return;
     const uuid = getHousingUuid();
