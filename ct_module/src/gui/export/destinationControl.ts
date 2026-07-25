@@ -15,6 +15,23 @@ import { getEffectiveNewExportTarget } from "../state";
 import { exportDestinationPicker } from "./destinationPicker";
 import { getExportDestinationStatus } from "./destinationStatus";
 
+/**
+ * Label the new-entry target relative to the export project, since the row
+ * above already names the project. The base file reads as `import.json`; a
+ * sub-target reads as its folder path within the project.
+ */
+function newTargetLabel(projectImportJson: string): string {
+    const target = shortPath(getEffectiveNewExportTarget());
+    const projectDir = shortPath(projectImportJson);
+    const targetKey = target.toLowerCase();
+    const projectKey = projectDir.toLowerCase();
+    if (targetKey === projectKey) return "import.json";
+    if (targetKey.indexOf(`${projectKey}/`) === 0) {
+        return target.substring(projectDir.length + 1);
+    }
+    return target;
+}
+
 export function exportDestinationControl(): Element {
     return Container({
         anchorKey: "tour:export-destination",
@@ -96,8 +113,10 @@ export function exportDestinationControl(): Element {
                                     truncate: true,
                                 }),
                                 Text({
-                                    text: `New entries go in: ${shortPath(getEffectiveNewExportTarget())}`,
+                                    text: `New entries go in: ${newTargetLabel(status.path)}`,
                                     color: COLOR_TEXT_DIM,
+                                    tooltip: getEffectiveNewExportTarget(),
+                                    tooltipColor: COLOR_TEXT_DIM,
                                     truncate: true,
                                 }),
                             ],

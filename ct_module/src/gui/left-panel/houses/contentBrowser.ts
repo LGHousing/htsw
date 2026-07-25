@@ -674,9 +674,11 @@ function exportActionBar(
                                 Text({
                                     text:
                                         selectedCount > 0
-                                            ? `Read Selected (${selectedCount})`
+                                            ? `Read (${selectedCount})`
                                             : `Read All (${shownCount})`,
                                     color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
+                                    truncate: true,
+                                    style: { width: { kind: "grow" } },
                                 }),
                             ],
                             style: {
@@ -693,7 +695,9 @@ function exportActionBar(
                                     : "Choose an export project first"
                                 : selectedCount === 0 && shownCount === 0
                                   ? noShownItemsTooltip
-                                  : "Read into knowledge",
+                                  : selectedCount > 0
+                                    ? "Read the selected entries into knowledge"
+                                    : "Read into knowledge",
                             tooltipColor: canReadPrimary
                                 ? COLOR_TEXT_DIM
                                 : COLOR_TEXT_FAINT,
@@ -716,9 +720,11 @@ function exportActionBar(
                             Text({
                                 text:
                                     selectedCount > 0
-                                        ? `Export Selected (${selectedCount})`
+                                        ? `Export (${selectedCount})`
                                         : `Export All (${shownCount})`,
                                 color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
+                                truncate: true,
+                                style: { width: { kind: "grow" } },
                             }),
                         ],
                         style: {
@@ -737,7 +743,9 @@ function exportActionBar(
                                 : "Choose an export project first"
                             : selectedCount === 0 && shownCount === 0
                               ? noShownItemsTooltip
-                              : undefined,
+                              : selectedCount > 0
+                                ? "Export the selected entries"
+                                : undefined,
                         tooltipColor: COLOR_TEXT_FAINT,
                         disabled: !canExportPrimary,
                         onClick: () => {
