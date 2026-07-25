@@ -104,6 +104,14 @@
       },
       "required": [
         "name"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\" }",
+          "body": {
+            "name": "$1"
+          }
+        }
       ]
     },
     "functionIcon": {
@@ -124,6 +132,14 @@
       },
       "required": [
         "item"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"item\" }",
+          "body": {
+            "item": "$1"
+          }
+        }
       ]
     },
     "eventImportable": {
@@ -160,6 +176,15 @@
       "required": [
         "event",
         "actions"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"event\", \"actions\" }",
+          "body": {
+            "event": "$1",
+            "actions": "$2"
+          }
+        }
       ]
     },
     "pos": {
@@ -180,6 +205,16 @@
         "x",
         "y",
         "z"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"x\", \"y\", \"z\" }",
+          "body": {
+            "x": "^$1",
+            "y": "^$2",
+            "z": "^$3"
+          }
+        }
       ]
     },
     "bounds": {
@@ -196,6 +231,23 @@
       "required": [
         "from",
         "to"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"from\", \"to\" }",
+          "body": {
+            "from": {
+              "x": "^$1",
+              "y": "^$2",
+              "z": "^$3"
+            },
+            "to": {
+              "x": "^$4",
+              "y": "^$5",
+              "z": "^$6"
+            }
+          }
+        }
       ]
     },
     "regionImportable": {
@@ -217,6 +269,14 @@
       },
       "required": [
         "name"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\" }",
+          "body": {
+            "name": "$1"
+          }
+        }
       ]
     },
     "itemImportable": {
@@ -239,6 +299,15 @@
       "required": [
         "name",
         "nbt"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\", \"nbt\" }",
+          "body": {
+            "name": "$1",
+            "nbt": "$2"
+          }
+        }
       ]
     },
     "menuImportable": {
@@ -263,6 +332,15 @@
       "required": [
         "name",
         "slots"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\", \"slots\" }",
+          "body": {
+            "name": "$1",
+            "slots": []
+          }
+        }
       ]
     },
     "menuSlot": {
@@ -284,6 +362,15 @@
       "required": [
         "slot",
         "nbt"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"slot\", \"nbt\" }",
+          "body": {
+            "slot": "^$1",
+            "nbt": "$2"
+          }
+        }
       ]
     },
     "npcSkin": {
@@ -350,6 +437,19 @@
       "required": [
         "name",
         "pos"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\", \"pos\" }",
+          "body": {
+            "name": "$1",
+            "pos": {
+              "x": "^$2",
+              "y": "^$3",
+              "z": "^$4"
+            }
+          }
+        }
       ]
     },
     "color": {
@@ -391,6 +491,14 @@
       },
       "required": [
         "name"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\" }",
+          "body": {
+            "name": "$1"
+          }
+        }
       ]
     },
     "permissions": {
@@ -610,6 +718,14 @@
       },
       "required": [
         "name"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\" }",
+          "body": {
+            "name": "$1"
+          }
+        }
       ]
     },
     "commandMode": {
@@ -643,6 +759,14 @@
       },
       "required": [
         "name"
+      ],
+      "defaultSnippets": [
+        {
+          "label": "{ \"name\" }",
+          "body": {
+            "name": "$1"
+          }
+        }
       ]
     }
   }

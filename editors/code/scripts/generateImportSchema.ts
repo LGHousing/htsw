@@ -81,12 +81,65 @@ function toJsonSchema(spec: SchemaSpec): JsonSchema {
             };
             if (required.length > 0) schema.required = required;
             copyDescription(schema, spec);
+            const snippet = objectSnippet(spec);
+            if (snippet) schema.defaultSnippets = [snippet];
             return schema;
         }
         case "ref": {
             const schema: JsonSchema = { $ref: `#/definitions/${spec.ref}` };
             copyDescription(schema, spec);
             return schema;
+        }
+    }
+}
+
+function objectSnippet(
+    spec: Extract<SchemaSpec, { kind: "object" }>
+): JsonSchema | undefined {
+    const requiredKeys = Object.entries(spec.properties)
+        .filter(([, property]) => property.required)
+        .map(([key]) => key);
+    if (requiredKeys.length === 0) return undefined;
+    const counter = { next: 1 };
+    const body: Record<string, unknown> = {};
+    for (const key of requiredKeys) {
+        body[key] = snippetValue(spec.properties[key], counter, 0);
+    }
+    return {
+        label: `{ ${requiredKeys.map((key) => `"${key}"`).join(", ")} }`,
+        body,
+    };
+}
+
+function snippetValue(
+    spec: SchemaSpec,
+    counter: { next: number },
+    depth: number
+): unknown {
+    switch (spec.kind) {
+        case "string":
+            return `$${counter.next++}`;
+        case "number":
+            return `^$${counter.next++}`;
+        case "boolean":
+            return `^\${${counter.next++}:false}`;
+        case "array":
+            return [];
+        case "object": {
+            if (depth >= 2) return {};
+            const body: Record<string, unknown> = {};
+            for (const [key, property] of Object.entries(spec.properties)) {
+                if (!property.required) continue;
+                body[key] = snippetValue(property, counter, depth + 1);
+            }
+            return body;
+        }
+        case "ref": {
+            const target = IMPORT_JSON_SCHEMA_DEFINITIONS[
+                spec.ref as keyof typeof IMPORT_JSON_SCHEMA_DEFINITIONS
+            ];
+            if (target === undefined || depth >= 2) return `$${counter.next++}`;
+            return snippetValue(target, counter, depth + 1);
         }
     }
 }
