@@ -3,11 +3,8 @@
 import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import {
-    getAutoTrackSources,
-    isAnyAutoTrackEnabled,
-    getHousingUuid,
-} from "./state";
+import { isAnyAutoTrackEnabled, getHousingUuid } from "./state";
+import { getActiveAutoTrackSources } from "./autoTrackScope";
 import {
     canonicalPath,
     forEachCachedParse,
@@ -109,7 +106,7 @@ export function autoTrackRefresh(
     if (!isAnyAutoTrackEnabled()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
-    const tracked = getAutoTrackSources();
+    const tracked = getActiveAutoTrackSources();
     let changed = 0;
     let required = 0;
     let newlyQueuedChanged = 0;

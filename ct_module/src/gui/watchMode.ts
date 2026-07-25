@@ -14,6 +14,7 @@ import {
     type ImportQueueItem,
 } from "./right-panel/import-tab/queue";
 import { getAutoTrackSources } from "./state";
+import { getActiveAutoTrackSources } from "./autoTrackScope";
 import { dismissToast, showToast } from "./toast";
 import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
@@ -150,7 +151,7 @@ function runWatchImport(): void {
     if (!getWatchMode()) return;
     if (blockedUntilNextParse) return;
     if (TaskManager.isBusy() || isImportPreparationRunning()) return;
-    const trackedItems = trackedImportQueue(getAutoTrackSources());
+    const trackedItems = trackedImportQueue(getActiveAutoTrackSources());
     if (trackedItems.length === 0) return;
     const runItems = getQueue().filter(isImportQueueItem);
     const runKeys = sortedUnique(
@@ -243,11 +244,15 @@ export function setWatchModeEnabled(enabled: boolean): void {
     ChatLib.chat(
         "&c&l[htsw] WATCH MODE ON &c— tracked files will auto-import. &f/htsw watch off &cto disable."
     );
+    const tracked = getActiveAutoTrackSources();
     if (getAutoTrackSources().size === 0) {
         ChatLib.chat(
             "&e[htsw] No files are tracked yet. Toggle Auto-Track in the Projects tab."
         );
+    } else if (tracked.size === 0) {
+        ChatLib.chat(
+            "&e[htsw] Every tracked project is bound to a different house — nothing will auto-import until you're standing in one of them."
+        );
     }
-    const tracked = getAutoTrackSources();
     watchModeRefresh("cacheWarm", 0, 0, [], tracked);
 }

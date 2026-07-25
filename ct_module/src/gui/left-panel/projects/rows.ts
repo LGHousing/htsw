@@ -73,6 +73,7 @@ import {
     needsModifiedQueue,
     queueModifiedImportables,
 } from "../../autoTrack";
+import { autoTrackBlock, autoTrackBoundHouse } from "../../autoTrackScope";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import {
     type IncludeNode,
@@ -1277,15 +1278,67 @@ function parsePendingIndicator(r: Result): Element | false {
     });
 }
 
+function autoTrackPausedTooltip(fullPath: string): string {
+    if (autoTrackBlock(fullPath) === "unbound") {
+        return "Auto-Track paused — this project isn't bound to a house";
+    }
+    const bound = autoTrackBoundHouse(fullPath);
+    return bound === null
+        ? "Auto-Track paused — you're not in the bound house"
+        : `Auto-Track paused — you're not in ${houseDisplayName(bound)}`;
+}
+
 function autoTrackIndicator(fullPath: string): Element | false {
     if (!isAutoTrackSource(fullPath)) return false;
+    const active = (): boolean => autoTrackBlock(fullPath) === null;
     return Icon({
         name: Icons.radar,
-        color: ACCENT_INFO,
-        tooltip: "Auto-Track enabled",
-        tooltipColor: ACCENT_INFO,
+        color: () => (active() ? ACCENT_INFO : COLOR_TEXT_FAINT),
+        tooltip: () =>
+            active() ? "Auto-Track enabled" : autoTrackPausedTooltip(fullPath),
+        tooltipColor: () => (active() ? ACCENT_INFO : COLOR_TEXT_DIM),
         style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
     });
+}
+
+function autoTrackMenuAction(fullPath: string): MenuAction {
+    if (isAutoTrackSource(fullPath)) {
+        return {
+            label:
+                autoTrackBlock(fullPath) === null
+                    ? "Auto-Track: ON"
+                    : "Auto-Track: ON (paused)",
+            icon: Icons.radar,
+            onClick: () => {
+                if (toggleAutoTrackSource(fullPath) === null) {
+                    ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
+                }
+            },
+        };
+    }
+    const block = autoTrackBlock(fullPath);
+    if (block !== null) {
+        return {
+            label:
+                block === "unbound"
+                    ? "Auto-Track: bind to a house first"
+                    : "Auto-Track: enter the bound house first",
+            icon: Icons.radar,
+            disabled: true,
+            onClick: () => {},
+        };
+    }
+    return {
+        label: "Auto-Track: OFF",
+        icon: Icons.radar,
+        onClick: () => {
+            if (toggleAutoTrackSource(fullPath) === null) {
+                ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
+                return;
+            }
+            autoTrackRefresh();
+        },
+    };
 }
 
 export function resultRow(
@@ -1342,20 +1395,7 @@ export function resultRow(
               { kind: "separator" },
               openInViewAction(r.fullPath, importJsonPath),
               { kind: "separator" },
-              {
-                  label: isAutoTrackSource(r.fullPath)
-                      ? "Auto-Track: ON"
-                      : "Auto-Track: OFF",
-                  icon: Icons.radar,
-                  onClick: () => {
-                      const nowOn = toggleAutoTrackSource(r.fullPath);
-                      if (nowOn === null) {
-                          ChatLib.chat("&c[htsw] Couldn't save the Auto-Track setting.");
-                          return;
-                      }
-                      if (nowOn) autoTrackRefresh();
-                  },
-              },
+              autoTrackMenuAction(r.fullPath),
               acceptHouseLockMenuAction(r.fullPath),
               {
                   label: "Open project in VSCode",
