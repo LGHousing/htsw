@@ -85,7 +85,7 @@ import { TaskManager } from "../tasks/manager";
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
-import { setWatchDetectionLive } from "./watchMode";
+import { isWatchImportRunning, setWatchDetectionLive } from "./watchMode";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
@@ -773,14 +773,17 @@ export function initHtswGui(): void {
         applyFocus(getFocusedInput());
         setWatchDetectionLive(frameVisible());
         // Reparse polling stats the import.json every tick and (throttled)
-        // every referenced file. During import/export those parses compete
-        // with the task on the game thread; the next idle tick catches up.
-        if (frameVisible() && !isTaskRunning()) {
+        // every referenced file; the parse itself runs off-thread. It stays
+        // paused during tasks — except watch imports, which need save
+        // detection live so a mid-run save can cancel the stale run.
+        if (frameVisible() && (!isTaskRunning() || isWatchImportRunning())) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Projects tree, queue rows) so a cold parse never blocks render.
             processPendingParses(handleCompletedParse);
-            processImportableCacheWarm();
+            // Cache warming stays off during tasks so it never interleaves
+            // with the session's own cache writes.
+            if (!isTaskRunning()) processImportableCacheWarm();
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.

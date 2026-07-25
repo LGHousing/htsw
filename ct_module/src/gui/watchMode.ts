@@ -163,6 +163,10 @@ function runWatchImport(): void {
     if (!started) lastSuccessfulRunKeys = null;
 }
 
+export function isWatchImportRunning(): boolean {
+    return watchImportRunning;
+}
+
 export function watchModeRefresh(
     trigger: AutoTrackRefreshTrigger,
     changed: number,
