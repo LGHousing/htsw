@@ -21,6 +21,8 @@ export type ActionFieldKind =
     | "team"
     | "function"
     | "group"
+    | "menu"
+    | "region"
     | "weather"
     | "time"
     | "ifMode"
@@ -87,7 +89,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
     {
         kw: "changePlayerGroup",
         fields: [
-            f("group", "string"),
+            f("group", "group"),
             f("demotionProtection", "boolean", true),
         ],
     },
@@ -103,7 +105,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
     { kw: "closeMenu", fields: [] },
     { kw: "compassTarget", fields: [f("location", "location")] },
     { kw: "consumeItem", fields: [] },
-    { kw: "displayMenu", fields: [f("menu", "string")] },
+    { kw: "displayMenu", fields: [f("menu", "menu")] },
     {
         kw: "displayNametag",
         fields: [f("displayNametag", "boolean")],
@@ -275,7 +277,7 @@ export const CONDITION_SPECS: readonly ConditionSpec[] = [
     { kw: "hasTeam", fields: [f("team", "team")] },
     { kw: "health", fields: COMPARE_HEALTH_FIELDS },
     { kw: "hunger", fields: COMPARE_HEALTH_FIELDS },
-    { kw: "inRegion", fields: [f("region", "string")] },
+    { kw: "inRegion", fields: [f("region", "region")] },
     { kw: "isFlying", fields: [] },
     { kw: "isItem", fields: [f("itemName", "item")] },
     { kw: "isSneaking", fields: [] },

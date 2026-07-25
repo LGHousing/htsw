@@ -11,17 +11,25 @@ type CompletionKind =
     | "item"
     | "function"
     | "menu"
+    | "region"
     | "team"
     | "group"
     | "sound"
     | "snippet";
 
-type ImportableCompletionKind = "item" | "function" | "menu" | "team" | "group";
+type ImportableCompletionKind =
+    | "item"
+    | "function"
+    | "menu"
+    | "region"
+    | "team"
+    | "group";
 
 const IMPORTABLE_SECTIONS: Record<ImportableCompletionKind, string> = {
     item: "items",
     function: "functions",
     menu: "menus",
+    region: "regions",
     team: "teams",
     group: "groups",
 };
@@ -150,6 +158,8 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
                 return vscode.CompletionItemKind.Function;
             case "menu":
                 return vscode.CompletionItemKind.Module;
+            case "region":
+                return vscode.CompletionItemKind.EnumMember;
             case "team":
             case "group":
                 return vscode.CompletionItemKind.EnumMember;
@@ -1006,7 +1016,7 @@ function completionsForFieldKind(
     context: CompletionContext = {},
 ): CompletionSpec[] {
     const d = fieldName; // shown as `detail` on every item
-    const importableKind = importableKindForField(kind, fieldName);
+    const importableKind = importableKindForField(kind);
     if (importableKind !== undefined) {
         const completions = context[importableKind] ?? [];
         const quotedCompletions = completions.map((completion) => ({
@@ -1075,6 +1085,8 @@ function completionsForFieldKind(
         case "team":
         case "function":
         case "group":
+        case "menu":
+        case "region":
         case "weather":
         case "time":
         case "block":
@@ -1085,14 +1097,18 @@ function completionsForFieldKind(
 }
 
 function importableKindForField(
-    kind: htsw.types.ActionFieldKind,
-    fieldName: string
+    kind: htsw.types.ActionFieldKind
 ): ImportableCompletionKind | undefined {
-    if (kind === "item" || kind === "function" || kind === "team" || kind === "group") {
+    if (
+        kind === "item" ||
+        kind === "function" ||
+        kind === "menu" ||
+        kind === "region" ||
+        kind === "team" ||
+        kind === "group"
+    ) {
         return kind;
     }
-    if (kind === "string" && fieldName === "menu") return "menu";
-    if (kind === "string" && fieldName === "group") return "group";
     return undefined;
 }
 
