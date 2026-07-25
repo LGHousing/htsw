@@ -14,7 +14,7 @@ import {
     type ImportQueueItem,
 } from "./right-panel/import-tab/queue";
 import { getAutoTrackSources } from "./state";
-import { showToast } from "./toast";
+import { dismissToast, showToast } from "./toast";
 import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
 
@@ -34,9 +34,11 @@ export function setWatchDetectionLive(live: boolean): void {
         showToast(
             "Watch paused — open a menu so saves keep auto-importing",
             WATCH_PAUSED_COLOR,
-            6000
+            6000,
+            "watch-paused"
         );
     }
+    if (live) dismissToast("watch-paused");
 }
 
 registerBadge(() => {

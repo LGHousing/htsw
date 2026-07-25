@@ -5,6 +5,7 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { getMinecraft } from "./lib/java";
 
 type Toast = {
+    key: string | null;
     message: string;
     color: number;
     shownAt: number;
@@ -23,8 +24,14 @@ const PADDING_Y = 6;
 const TOAST_H = 14;
 const SCREEN_MARGIN = 10;
 
-export function showToast(message: string, color: number, durationMs: number = 4000): void {
+export function showToast(
+    message: string,
+    color: number,
+    durationMs: number = 4000,
+    key: string | null = null
+): void {
     active = {
+        key,
         message: message.replace(/\s+/g, " ").trim(),
         color,
         shownAt: Date.now(),
@@ -33,6 +40,10 @@ export function showToast(message: string, color: number, durationMs: number = 4
         fitWidth: 0,
         fitScreenW: -1,
     };
+}
+
+export function dismissToast(key: string): void {
+    if (active !== null && active.key === key) active = null;
 }
 
 function fitToScreen(toast: Toast, screenW: number): void {
