@@ -226,9 +226,15 @@ const HOUSE_CONTENT_BY_TYPE: {
         rowActions: [
             { label: "Run", icon: Icons.play, run: (name) => ChatLib.command(name) },
             {
-                label: "Edit",
+                label: "Edit settings",
                 icon: Icons.pencil,
                 run: (name) => ChatLib.command(`command edit ${name}`),
+                opensEditor: true,
+            },
+            {
+                label: "Edit actions",
+                icon: Icons.listChecks,
+                run: (name) => ChatLib.command(`command actions ${name}`),
                 opensEditor: true,
             },
         ],
