@@ -5,7 +5,10 @@ import {
     canonicalLiveItemTag,
     type TagLike,
 } from "../src/housingSync/items/itemTag";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import {
+    canonicalItemShellTagKey,
+    normalizeItemSnbtForExport,
+} from "../src/housingSync/items/itemNbt";
 
 const str = (value: string): TagLike => ({ type: "string", value });
 const byte = (value: number): TagLike => ({ type: "byte", value });
@@ -130,7 +133,11 @@ describe("canonicalItemShellTag", () => {
         expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(retyped));
     });
 
-    test("blank lore separators equal Housing's §7 form, without mutating input", () => {
+    test('blank lore separators "" and "§7" are DISTINCT identities', () => {
+        // Housing preserves whichever blank-separator form was authored, and
+        // its Metadata check distinguishes them, so two items differing only
+        // here are different items. Folding them together made a referencing
+        // action silently bind the wrong variant.
         const withBlank = compound({
             id: str("minecraft:stone"),
             tag: compound({
@@ -150,10 +157,22 @@ describe("canonicalItemShellTag", () => {
             }),
         });
         const snapshot = JSON.parse(JSON.stringify(withBlank)) as TagLike;
-        expect(canonicalItemShellTag(withBlank)).toEqual(
+        expect(canonicalItemShellTag(withBlank)).not.toEqual(
             canonicalItemShellTag(houseForm)
         );
+        expect(canonicalItemShellTagKey(withBlank)).not.toEqual(
+            canonicalItemShellTagKey(houseForm)
+        );
         expect(withBlank).toEqual(snapshot);
+    });
+
+    test("a blank lore separator survives export verbatim", () => {
+        // The exported snbt is ground truth: rewriting "" to "§7" on the way
+        // out made the two variants byte-identical on disk, so you could not
+        // tell which one a project had captured.
+        expect(normalizeItemSnbtForExport('{id:"minecraft:stone",tag:{display:{Lore:["a","","b"]}}}')).toContain(
+            '""'
+        );
     });
 
     test("Drop Item's empty ExtraAttributes remains part of exact metadata identity", () => {

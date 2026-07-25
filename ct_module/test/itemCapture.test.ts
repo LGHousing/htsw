@@ -8,13 +8,16 @@ import {
 import { itemInteractDataMatches } from "../src/importables/items/interactDataCache";
 
 describe("item SNBT export normalization", () => {
-    test("uses one representation for blank lore separators", () => {
+    test("preserves blank lore separators exactly as authored", () => {
+        // "" and "\u00a77" are distinct blank-separator forms that Housing both
+        // stores verbatim, so export must not rewrite one into the other --
+        // doing so made two different items byte-identical on disk.
         const out = normalizeItemSnbtForExport(
             '{id:"minecraft:leather_boots",Count:1b,tag:{display:{Lore:["\u00a78Armour","","\u00a7a\u00a7lON ARMOUR","\u00a77","\u00a7f\u00a7lCOMMON"],Name:"\u00a77[\u00a7aI\u00a77] \u00a7fStarter Boots"}},Damage:0s}'
         );
 
         expect(out).toContain(
-            'Lore:["\u00a78Armour","\u00a77","\u00a7a\u00a7lON ARMOUR","\u00a77","\u00a7f\u00a7lCOMMON"]'
+            'Lore:["\u00a78Armour","","\u00a7a\u00a7lON ARMOUR","\u00a77","\u00a7f\u00a7lCOMMON"]'
         );
     });
 
@@ -22,13 +25,13 @@ describe("item SNBT export normalization", () => {
         expect(normalizeItemSnbtForExport("{not valid")).toBe("{not valid");
     });
 
-    test("pretty printing uses the same lore separator representation", () => {
+    test("pretty printing keeps both lore separator forms distinct", () => {
         const out = prettySnbt(
             '{id:"minecraft:stone",Count:1b,tag:{display:{Lore:["","\u00a77"]}}}'
         );
 
         expect(out).toContain('"\u00a77"');
-        expect(out).not.toContain('""');
+        expect(out).toContain('""');
     });
 
     test("portable item SNBT removes Housing interact_data", () => {
