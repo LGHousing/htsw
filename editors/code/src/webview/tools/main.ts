@@ -59,7 +59,7 @@ function onShellMessage(event: MessageEvent): void {
             ...state.project,
             pendingReveal: {
                 importJsonPath: message.importJsonPath,
-                kind: message.kind as ProjectImportableReveal["kind"],
+                kind: message.kind,
                 identity: message.identity,
             },
         },

@@ -61,8 +61,8 @@ function tagsEqual(a: Tag, b: Tag): boolean {
     }
     if (a.type === "byte_array" || a.type === "short_array" || a.type === "int_array") {
         if (b.type !== a.type) return false;
-        const av = a.value as number[];
-        const bv = b.value as number[];
+        const av = a.value;
+        const bv = b.value;
         if (av.length !== bv.length) return false;
         for (let i = 0; i < av.length; i++) if (av[i] !== bv[i]) return false;
         return true;

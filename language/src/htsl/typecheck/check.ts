@@ -63,7 +63,7 @@ const DISALLOWED_DOUBLE_OPERATIONS: VarOperation[] = [
 function update(tcx: TyCtxt, action: ActionChangeVar) {
     if (!action.holder || !action.key || !action.op) return;
 
-    const key = { holder: action.holder, key: action.key } as VarKey;
+    const key = { holder: action.holder, key: action.key };
 
     // Check for unset before we actually require the RHS value
     if (action.op === "Unset") {

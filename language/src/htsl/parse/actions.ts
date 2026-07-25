@@ -27,7 +27,7 @@ function setField<T extends object, K extends keyof T>(
     key: K,
     parser: ((p: Parser) => T[K]) | (() => T[K]),
 ): T[K] {
-    const { value, span } = p.spanned(parser as any) as { value: T[K]; span: Span };
+    const { value, span } = p.spanned(parser);
     node[key] = value;
     p.gcx.spans.setField(node, key, span);
     return value;

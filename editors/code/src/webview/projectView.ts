@@ -855,7 +855,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
         const result = await runProjectMutation((fs) => {
             const destJsonPath = selectedDestination ?? createIncludedFolderInTree(
                 fs,
-                anchorRoot!,
+                anchorRoot,
                 newFolderPath!,
             ).importJsonPath;
             const destKey = absolutePathKey(destJsonPath);

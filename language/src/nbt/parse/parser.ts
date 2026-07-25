@@ -162,7 +162,7 @@ export class Parser {
         const span = new Span(lo, this.prev.span.end);
         const value = {
             type: elementType,
-            value: values as Tag["value"][],
+            value: values,
         };
         this.gcx.spans.set(value, span);
         this.gcx.spans.setField(value, "value", span);

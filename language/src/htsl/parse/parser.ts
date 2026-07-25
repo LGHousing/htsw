@@ -312,7 +312,7 @@ export class Parser {
             return parser.call(this, this);
         } catch (e) {
             if (e instanceof Diagnostic) {
-                this.gcx.addDiagnostic(e as Diagnostic);
+                this.gcx.addDiagnostic(e);
                 this.recover(recoveryTokens);
             } else throw e;
         }

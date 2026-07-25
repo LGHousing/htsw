@@ -355,7 +355,7 @@ describe("Main API", () => {
         // and assert the canonical output is unchanged.
         const originalToString = Number.prototype.toString;
         try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
             (Number.prototype as any).toString = function (this: number) {
                 // Pass through 0 and non-finite values so unrelated code
                 // (e.g. error formatting) doesn't break under the mock.

@@ -103,7 +103,7 @@ function provideInlayHintsForActions(
             const value = (action as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = getOptionalFieldSpan(spans, action as object, key);
+            const span = getOptionalFieldSpan(spans, action, key);
             if (!span) continue;
 
             hints.push(hint(key, span, category));
@@ -135,7 +135,7 @@ function provideInlayHintsForConditions(
             const value = (condition as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = getOptionalFieldSpan(spans, condition as object, key);
+            const span = getOptionalFieldSpan(spans, condition, key);
             if (!span) continue;
 
             hints.push(hint(key, span, category));
