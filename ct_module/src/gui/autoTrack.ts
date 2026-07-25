@@ -33,7 +33,12 @@ type ModifiedQueueResult = {
 };
 
 export function needsModifiedQueue(imp: Importable): boolean {
-    return cachedStatusForImportable(imp) === "modified";
+    // "unknown" means no cache entry exists — a never-imported importable.
+    // New importables must queue too, or auto-track never picks up newly
+    // created functions/menus. (A cache that merely isn't loaded yet
+    // returns null, not "unknown", and re-queues via the cache-warm event.)
+    const status = cachedStatusForImportable(imp);
+    return status === "modified" || status === "unknown";
 }
 
 export function queueModifiedImportables(
