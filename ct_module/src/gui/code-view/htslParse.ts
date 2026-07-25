@@ -71,7 +71,10 @@ const MAX_PARSE_CACHE_ENTRIES = 64;
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
     const cached = parseCache.get(path);
-    if (cached !== undefined && cached.mtime === mtime) return cached;
+    // mtime 0 means the stat failed (file missing or mid-creation) — never
+    // serve or store a cache entry for it, or a failed first read wedges
+    // the tab until an unrelated invalidation.
+    if (cached !== undefined && cached.mtime === mtime && mtime !== 0) return cached;
     let actions: Action[] = [];
     let parseError: string | null = null;
     let spans: SpanTable | null = null;
@@ -81,6 +84,17 @@ export function parseHtslFile(path: string): ParsedFile {
         const r = parseActionsResult(sm, path);
         actions = r.value;
         spans = r.spans;
+        // A failed read or parse comes back as a diagnostic, not a throw.
+        // Only flag it when nothing parsed — a broken file used to render as
+        // "(empty function)"; partial parses still render their actions.
+        if (actions.length === 0) {
+            for (const d of r.diagnostics) {
+                if (d.level === "error" || d.level === "bug") {
+                    parseError = d.message;
+                    break;
+                }
+            }
+        }
         try {
             file = sm.getFile(path);
         } catch (_e) {

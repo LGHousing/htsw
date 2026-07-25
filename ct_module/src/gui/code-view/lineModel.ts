@@ -281,6 +281,7 @@ function htslRenderableLines(
     if (
         cached !== undefined &&
         cached.mtime === mtime &&
+        mtime !== 0 &&
         cached.parsedRef === parsedRef
     ) {
         return cached.lines;
@@ -345,7 +346,9 @@ function htslRenderableLines(
 function readPlainLines(path: string): string[] {
     const mtime = getMtimeMs(path);
     const cached = plainCache.get(path);
-    if (cached !== undefined && cached.mtime === mtime) return cached.lines;
+    if (cached !== undefined && cached.mtime === mtime && mtime !== 0) {
+        return cached.lines;
+    }
     let lines: string[] = [];
     try {
         const src = fileLoader.readFile(path);
@@ -435,6 +438,7 @@ function jsonRenderableLines(
     if (
         cached !== undefined &&
         cached.mtime === mtime &&
+        mtime !== 0 &&
         cached.parsedRef === parsedRef
     ) {
         return cached.lines;
@@ -478,6 +482,7 @@ function snbtRenderableLines(
     if (
         cached !== undefined &&
         cached.mtime === mtime &&
+        mtime !== 0 &&
         cached.parsedRef === parsedRef
     ) {
         return cached.lines;
@@ -633,6 +638,7 @@ function htslRawRenderableLines(
     if (
         cached !== undefined &&
         cached.mtime === mtime &&
+        mtime !== 0 &&
         cached.parsedRef === parsedRef
     ) {
         return cached.lines;
