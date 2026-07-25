@@ -1369,12 +1369,12 @@ async function createProjectImportJson(
         const createdPath = await promptCreateImportJson(rootImportJsonPath);
         if (createdPath !== undefined) await postFreshProjectTree(webview);
         await webview.postMessage({
-            type: "importJsonCreated",
+            type: "projectImportJsonCreated",
             createdPath,
         } satisfies ProjectFromHostMessage);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
-        await webview.postMessage({ type: "importJsonCreated" } satisfies ProjectFromHostMessage);
+        await webview.postMessage({ type: "projectImportJsonCreated" } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not create import.json: ${error}`);
     }
 }

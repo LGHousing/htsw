@@ -173,7 +173,7 @@ export type ProjectFromHostMessage =
     | { type: "projectTree"; roots: ProjectImportJsonNode[]; workspaceName?: string }
     | { type: "projectResult"; ok: true; message: string; createdPath?: string }
     | { type: "projectResult"; ok: false; error: string }
-    | { type: "importJsonCreated"; createdPath?: string }
+    | { type: "projectImportJsonCreated"; createdPath?: string }
     | ({ type: "revealProjectImportable" } & ProjectImportableReveal);
 
 export type ItemEditorToHostMessage =
@@ -184,7 +184,7 @@ export type ItemEditorToHostMessage =
 
 export type ItemEditorFromHostMessage =
     | { type: "importTargets"; targets: ImportTarget[] }
-    | { type: "importJsonCreated"; createdPath?: string }
+    | { type: "itemImportJsonCreated"; createdPath?: string }
     | { type: "submitResult"; ok: true; files: string[] }
     | { type: "submitResult"; ok: false; error: string }
     | { type: "saveResult"; ok: true; snbtPath: string }

@@ -13,6 +13,7 @@ import {
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "../nodeProjectFs";
 import { absolutePathKey } from "../pathIdentity";
+import { promptCreateImportJson } from "../projectMutation";
 import type {
     ImportTarget,
     ItemEditorForm,
@@ -38,12 +39,38 @@ export async function handleItemEditorMessage(
                 targets: await discoverImportTargets(),
             } satisfies ItemEditorFromHostMessage);
             return;
+        case "createItemImportJson":
+            await createItemImportJson(webview, message.rootImportJsonPath);
+            return;
         case "submitItem":
             await submitItem(webview, message.form);
             return;
         case "saveItem":
             await saveItem(webview, message.snbtPath, message.tag);
             return;
+    }
+}
+
+async function createItemImportJson(
+    webview: vscode.Webview,
+    rootImportJsonPath: string,
+): Promise<void> {
+    try {
+        const createdPath = await promptCreateImportJson(rootImportJsonPath);
+        if (createdPath !== undefined) {
+            await webview.postMessage({
+                type: "importTargets",
+                targets: await discoverImportTargets(),
+            } satisfies ItemEditorFromHostMessage);
+        }
+        await webview.postMessage({
+            type: "itemImportJsonCreated",
+            createdPath,
+        } satisfies ItemEditorFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "itemImportJsonCreated" } satisfies ItemEditorFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not create import.json: ${error}`);
     }
 }
 
@@ -108,15 +135,27 @@ async function discoverImportTargets(): Promise<ImportTarget[]> {
         "**/{import.json,*.import.json}",
         "**/{node_modules,.git}/**",
     );
-    const found = new Map<string, ImportTarget>();
-
+    const included = new Set<string>();
     for (const uri of importJsons) {
+        const rootKey = absolutePathKey(uri.fsPath);
+        walkImportJsonTree(nodeProjectFs, uri.fsPath, (filePath) => {
+            const key = absolutePathKey(filePath);
+            if (key !== rootKey) included.add(key);
+            return undefined;
+        });
+    }
+
+    const roots = importJsons.filter((uri) => !included.has(absolutePathKey(uri.fsPath)));
+    const entryPoints = roots.length > 0 ? roots : importJsons;
+    const found = new Map<string, ImportTarget>();
+    for (const uri of entryPoints) {
         walkImportJsonTree(nodeProjectFs, uri.fsPath, (filePath) => {
             const key = absolutePathKey(filePath);
             if (!found.has(key)) {
                 found.set(key, {
                     fsPath: filePath,
                     label: vscode.workspace.asRelativePath(filePath, false),
+                    rootImportJsonPath: uri.fsPath,
                 });
             }
             return undefined;

@@ -64,6 +64,8 @@ type State = {
     originalTag?: unknown;
 };
 
+const NEW_IMPORT_JSON = "__new__";
+
 const ITEMS = htsw.types.MINECRAFT_ITEMS as readonly MinecraftItem[];
 const ENCHANTMENTS = htsw.types.ENCHANTMENTS;
 
@@ -113,6 +115,11 @@ export function mountItemEditor(
             if (!state.importJsonPath && message.targets.length > 0) {
                 state.importJsonPath = message.targets[0].fsPath;
             }
+            render();
+            return;
+        }
+        if (message.type === "itemImportJsonCreated") {
+            if (message.createdPath) state.importJsonPath = message.createdPath;
             render();
             return;
         }
@@ -275,6 +282,19 @@ export function mountItemEditor(
             updateActionState();
         });
         bindSelect("importJsonPath", (value) => {
+            if (value === NEW_IMPORT_JSON) {
+                const target = state.targets.find((candidate) =>
+                    candidate.fsPath === state.importJsonPath);
+                if (target) {
+                    post(vscode, {
+                        type: "createItemImportJson",
+                        rootImportJsonPath: target.rootImportJsonPath,
+                    });
+                } else {
+                    render();
+                }
+                return;
+            }
             state.importJsonPath = value;
             updateActionState();
         });
@@ -587,6 +607,7 @@ function projectSection(state: State): string {
                 <span class="label-text">Add to import.json</span>
                 <select id="importJsonPath">
                     ${state.targets.map((target) => option(target.fsPath, target.label, target.fsPath === state.importJsonPath)).join("")}
+                    ${option(NEW_IMPORT_JSON, "New import.json…", false)}
                 </select>
             </label>
             <div class="checks">

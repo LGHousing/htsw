@@ -61,6 +61,8 @@ type State = {
     loading: boolean;
 };
 
+const NEW_IMPORT_JSON = "__new__";
+
 const ADD_KINDS: { value: ImportableKind; label: string }[] = [
     { value: "function", label: "Function" },
     { value: "event", label: "Event" },
@@ -220,6 +222,16 @@ export function mountProjectExplorer(
                 return;
             }
             renderStatus();
+            return;
+        }
+
+        if (message.type === "projectImportJsonCreated") {
+            if (message.createdPath) {
+                state.selectedParent = message.createdPath;
+                state.expanded.add(message.createdPath);
+                persistProjectState();
+            }
+            render();
         }
     };
 
@@ -361,7 +373,16 @@ export function mountProjectExplorer(
         });
 
         const addParent = document.getElementById("addParent") as HTMLSelectElement | null;
-        addParent?.addEventListener("change", () => updateSelectedParent(addParent.value));
+        addParent?.addEventListener("change", () => {
+            if (addParent.value === NEW_IMPORT_JSON) {
+                post(vscode, {
+                    type: "createProjectImportJson",
+                    rootImportJsonPath: selectedRootImportJsonPath(state),
+                });
+                return;
+            }
+            updateSelectedParent(addParent.value);
+        });
 
         document.getElementById("addImportableForm")?.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -809,7 +830,7 @@ function renderAddPanel(state: State): string {
             <p class="create-hint">Adds the entry to the chosen <code>import.json</code> — plus a starter <code>.htsl</code> for functions and events.</p>
             <label class="create-field">
                 <span>In file</span>
-                <select id="addParent">${parentOptions(state).join("")}</select>
+                <select id="addParent">${parentOptions(state, true).join("")}</select>
             </label>
             <label class="create-field">
                 <span>Type</span>
@@ -1135,14 +1156,23 @@ function sortImportables(entries: ProjectImportableSummary[], sort: SortMode): P
         a.typeLabel.localeCompare(b.typeLabel) || a.label.localeCompare(b.label));
 }
 
-function parentOptions(state: State): string[] {
+function parentOptions(state: State, includeNew = false): string[] {
     const nodes = flattenNodes(state.roots);
     if (!state.selectedParent && nodes[0]) state.selectedParent = nodes[0].fsPath;
-    return nodes.map((node) => `
+    const options = nodes.map((node) => `
         <option value="${escapeAttr(node.fsPath)}" ${node.fsPath === state.selectedParent ? "selected" : ""}>
             ${escapeHtml(node.label)}
         </option>
     `);
+    if (includeNew) options.push(`<option value="${NEW_IMPORT_JSON}">New import.json…</option>`);
+    return options;
+}
+
+function selectedRootImportJsonPath(state: State): string {
+    const selectedKey = normalizedFsPath(state.selectedParent);
+    const containsSelected = (node: ProjectImportJsonNode): boolean =>
+        normalizedFsPath(node.fsPath) === selectedKey || node.children.some(containsSelected);
+    return state.roots.find(containsSelected)?.fsPath ?? state.selectedParent;
 }
 
 function flattenNodes(nodes: ProjectImportJsonNode[]): ProjectImportJsonNode[] {
