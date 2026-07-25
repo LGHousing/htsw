@@ -443,7 +443,8 @@ displayMenu "My Menu"
 ### Drop Item
 
 ```htsl
-dropItem "Item Name" Invokers_Location true true true true
+// dropItem <item> <location> [dropNaturally] [disableMerging] [prioritizePlayer] [inventoryFallback] [despawnDurationTicks] [pickupDelayTicks]
+dropItem "Item Name" Invokers_Location true true true true 6000 10
 ```
 
 ---
