@@ -64,8 +64,8 @@ function printUsage(): void {
     console.log("Usage: htsw <command> [args]");
     console.log("");
     console.log("Commands:");
-    console.log("  check [path]     Parse a file and print diagnostics.");
-    console.log("  run [path]       Parse and run htsw:main.");
+    console.log("  check [path]     Parse a project's import.json and print diagnostics.");
+    console.log("  run [path]       Parse a project's import.json and run htsw:main.");
     console.log("  upgrade          Update the htsw CLI in place.");
     console.log("");
     console.log("Run 'htsw <command> --help' for details.");
@@ -78,6 +78,7 @@ function runCheck(args: string[]): void {
     }
 
     const filePath = args[0] ?? path.resolve("import.json");
+    rejectNonImportJson(filePath);
     const sm = new htsw.SourceMap(new NodeFileLoader());
     const result = parseAndPrintDiagnostics(sm, filePath);
 
@@ -109,6 +110,7 @@ function runRun(args: string[]): void {
     }
 
     const resolvedPath = filePath ?? path.resolve("import.json");
+    rejectNonImportJson(resolvedPath);
     const sm = new htsw.SourceMap(new NodeFileLoader());
     const result = parseAndPrintDiagnostics(sm, resolvedPath);
 
@@ -130,6 +132,37 @@ function parseAndPrintDiagnostics(sm: htsw.SourceMap, filePath: string): htsw.Pa
     }
 
     return parsed;
+}
+
+function isImportJsonPath(filePath: string): boolean {
+    const name = path.basename(filePath);
+    return name === "import.json" || name.endsWith(".import.json");
+}
+
+function rejectNonImportJson(filePath: string): void {
+    if (isImportJsonPath(filePath)) return;
+
+    console.error(`'${filePath}' is not an import.json.`);
+    console.error("Check the whole project through its base import.json; individual .htsl files");
+    console.error("only parse correctly in the context of the import.json that includes them.");
+
+    const nearest = findNearestImportJson(path.dirname(path.resolve(filePath)));
+    if (nearest) {
+        console.error("");
+        console.error(`Try: htsw check ${path.relative(process.cwd(), nearest) || "import.json"}`);
+    }
+    process.exit(2);
+}
+
+function findNearestImportJson(startDir: string): string | undefined {
+    let dir = startDir;
+    for (;;) {
+        const candidate = path.join(dir, "import.json");
+        if (fs.existsSync(candidate)) return candidate;
+        const parent = path.dirname(dir);
+        if (parent === dir) return undefined;
+        dir = parent;
+    }
 }
 
 function hasErrors(diagnostics: htsw.Diagnostic[]): boolean {
