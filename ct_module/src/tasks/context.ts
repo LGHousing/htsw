@@ -21,6 +21,9 @@ import { createTaskCancelledError } from "./cancellation";
  * rather than rejected.
  */
 const MAX_CHAT_MESSAGE_LENGTH = 256;
+const ALL_CHAT_PREFIX = "/ac ";
+const MAX_CHAT_VALUE_LENGTH =
+    MAX_CHAT_MESSAGE_LENGTH - ALL_CHAT_PREFIX.length;
 
 /**
  * Hypixel's chat anti-spam works as a heat budget: every chat sent to
@@ -162,23 +165,24 @@ export default class TaskContext {
 
     public async sendMessage(message: string): Promise<void> {
         if (message.startsWith("/")) {
-            throw new Error(`Invalid message: ${message}`);
+            throw new Error(`Invalid chat prompt value: ${message}`);
         }
         await this.awaitChatBudget();
-        const capped =
-            message.length > MAX_CHAT_MESSAGE_LENGTH
-                ? message.substring(0, MAX_CHAT_MESSAGE_LENGTH)
+        const cappedValue =
+            message.length > MAX_CHAT_VALUE_LENGTH
+                ? message.substring(0, MAX_CHAT_VALUE_LENGTH)
                 : message;
+        const outgoingMessage = ALL_CHAT_PREFIX + cappedValue;
         // ChatLib.say builds a C01PacketChatMessage whose constructor cuts
         // the string to 100 chars. Build the packet with a dummy value and
-        // overwrite the message field by reflection so the full (≤256) value
+        // overwrite the message field by reflection so the full (≤256) message
         // reaches the server.
         const packet = new C01PacketChatMessage("");
         const messageField = packet.class.getDeclaredField("field_149440_a");
         messageField.setAccessible(true);
-        messageField.set(packet, capped);
+        messageField.set(packet, outgoingMessage);
         sendPacket(packet);
-        recordRuntimeDebug("chatInput", { length: capped.length });
+        recordRuntimeDebug("chatInput", { length: outgoingMessage.length });
     }
 
     public displayMessage(message: string) {
