@@ -15,6 +15,7 @@ type Settings = {
     playImportCompletionSound: boolean;
     smoothScrolling: boolean;
     watchMode: boolean;
+    uploadSlowParseDiagnostics: boolean;
     autoUpdate: AutoUpdatePreference;
 };
 
@@ -25,6 +26,7 @@ let state: Settings = {
     playImportCompletionSound: true,
     smoothScrolling: true,
     watchMode: false,
+    uploadSlowParseDiagnostics: true,
     autoUpdate: "unset",
 };
 let loaded = false;
@@ -60,6 +62,8 @@ function load(): void {
                     : parsed.playImportCompletionSound !== false,
             smoothScrolling: parsed.smoothScrolling !== false,
             watchMode: parsed.watchMode === true,
+            uploadSlowParseDiagnostics:
+                parsed.uploadSlowParseDiagnostics !== false,
             autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
         };
     } catch (_e) {
@@ -139,6 +143,11 @@ export function setWatchMode(value: boolean): void {
     load();
     state.watchMode = value;
     persist();
+}
+
+export function getUploadSlowParseDiagnostics(): boolean {
+    load();
+    return state.uploadSlowParseDiagnostics;
 }
 
 export function getAutoUpdatePreference(): AutoUpdatePreference {

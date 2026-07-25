@@ -12,7 +12,7 @@ function readFile(path: string): string | null {
     }
 }
 
-function upload(path: string): void {
+function upload(path: string, chatUploadedId: boolean): void {
     const body = readFile(path);
     if (body === null || body.length === 0) return;
 
@@ -56,6 +56,7 @@ function upload(path: string): void {
     try {
         const parsed: unknown = JSON.parse(response);
         if (
+            chatUploadedId &&
             parsed !== null &&
             typeof parsed === "object" &&
             "id" in parsed &&
@@ -66,18 +67,28 @@ function upload(path: string): void {
     } catch (_e) {}
 }
 
+export function uploadDiagnosticsFile(
+    path: string,
+    options: { chatUploadedId?: boolean } = {}
+): void {
+    try {
+        const Thread = javaType("java.lang.Thread");
+        const Runnable = javaType("java.lang.Runnable");
+        const chatUploadedId = options.chatUploadedId === true;
+        const t = new Thread(
+            new Runnable({
+                run: function () {
+                    try {
+                        upload(path, chatUploadedId);
+                    } catch (_e) {}
+                },
+            })
+        );
+        t.setDaemon(true);
+        t.start();
+    } catch (_e) {}
+}
+
 export function uploadImportFailureLog(path: string): void {
-    const Thread = javaType("java.lang.Thread");
-    const Runnable = javaType("java.lang.Runnable");
-    const t = new Thread(
-        new Runnable({
-            run: function () {
-                try {
-                    upload(path);
-                } catch (_e) {}
-            },
-        })
-    );
-    t.setDaemon(true);
-    t.start();
+    uploadDiagnosticsFile(path, { chatUploadedId: true });
 }

@@ -33,6 +33,7 @@ import {
     parseImportJsonOffThread,
     type OffThreadParseResult,
 } from "./offThreadParse";
+import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -162,6 +163,11 @@ type ParsePerfEntry = {
 };
 
 const parsePerf: ParsePerfEntry[] = [];
+type FullParseReason = {
+    reason: string;
+    paths: readonly string[];
+};
+const pendingFullParseReasons = new Map<string, FullParseReason>();
 
 function recordParsePerf(
     path: string,
@@ -216,7 +222,30 @@ function commitParseEntry(
         recordHouseBinding(parsed.importJson.houseUuid, canon);
     }
     notifyParseCacheEntryChanged(entry);
-    recordParsePerf(canon, Date.now() - startedAt, source);
+    const durationMs = Date.now() - startedAt;
+    recordParsePerf(canon, durationMs, source);
+    if (source === "full" || source === "error") {
+        const pendingReason = pendingFullParseReasons.get(canon) ?? {
+            reason: "no reusable parse",
+            paths: [canon],
+        };
+        pendingFullParseReasons.delete(canon);
+        if (durationMs >= 1000) {
+            ChatLib.chat(
+                `&7[htsw] Full project parse took ${durationMs}ms: ${pendingReason.reason}: ${changedPathListSummary(pendingReason.paths)}`
+            );
+        }
+        if (durationMs >= 5000) {
+            uploadSlowParseDiagnostics({
+                canon,
+                durationMs,
+                source,
+                reason: pendingReason.reason,
+                changedPaths: pendingReason.paths,
+                parsePerf: getParsePerfStats(),
+            });
+        }
+    }
     return entry;
 }
 
@@ -250,10 +279,12 @@ function changedPathListSummary(paths: readonly string[]): string {
     return `${paths.length} changed — ${shown}${paths.length > 3 ? ", …" : ""}`;
 }
 
-function logFullParseReason(reason: string, paths: readonly string[]): void {
-    ChatLib.chat(
-        `&7[htsw] Full project parse: ${reason}: ${changedPathListSummary(paths)}`
-    );
+function logFullParseReason(
+    canon: string,
+    reason: string,
+    paths: readonly string[]
+): void {
+    pendingFullParseReasons.set(canon, { reason, paths: paths.slice() });
     if (typeof console !== "undefined") {
         console.log(`[htsw] Full project parse: ${reason}:\n${paths.join("\n")}`);
     }
@@ -372,7 +403,7 @@ export async function parseImportJsonCurrent(
         }
     }
     if (changedPaths.length !== 0) {
-        logFullParseReason("source files changed", changedPaths);
+        logFullParseReason(canon, "source files changed", changedPaths);
         return await queueOffThreadParse(canon, rawPath);
     }
     existing.mtime = mtime;
@@ -553,6 +584,7 @@ function pumpPendingParses(): void {
                     return;
                 }
                 logFullParseReason(
+                    parseCanon,
                     "saved parse is stale",
                     snapshotChanges.map((change) => change.path)
                 );
@@ -575,7 +607,11 @@ function pumpPendingParses(): void {
                 }
             }
             if (changedPaths.length !== 0) {
-                logFullParseReason("source files changed", changedPaths);
+                logFullParseReason(
+                    parseCanon,
+                    "source files changed",
+                    changedPaths
+                );
             }
         }
         getMtimeMs(parseCanon);
