@@ -7,6 +7,8 @@ import {
     createIncludedFolderInTree,
     createIncludedImportJsonFiles,
     collectFileRefs,
+    addMenuSlot,
+    canonicalSlug,
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
@@ -16,10 +18,15 @@ import {
     normalizeRelativeProjectPath,
     planDeleteImportableEntry,
     readEntryValue,
+    refsOfOtherEntries,
     removeIncludeFromImportJson,
     removeImportableEntryForDelete,
+    removeMenuSlot,
     renameImportableEntry,
     resolveImportableFile,
+    sectionFolderImportJson,
+    setMenuSize,
+    snbtFilenameForItemExport,
     upsertImportableEntry,
     type ProjectFs,
     type RefSlot,
@@ -62,6 +69,12 @@ export type ImportableContext = {
 export type ImportJsonContext = {
     importJsonPath?: unknown;
     parentImportJsonPath?: unknown;
+};
+
+export type MenuSlotContext = {
+    importJsonPath?: unknown;
+    menuIdentity?: unknown;
+    menuSlot?: unknown;
 };
 
 type SelectedImportable = {
@@ -277,6 +290,36 @@ export async function deleteImportJsonFromContext(
     await deleteImportJsonProject(webview, parsed.importJsonPath, parsed.parentImportJsonPath);
 }
 
+export async function addMenuSlotFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const parsed = parseImportableContext(context);
+    if (!parsed || parsed.kind !== "menu") return;
+    await addSlotToMenu(webview, parsed.importJsonPath, parsed.identity);
+}
+
+export async function removeMenuSlotFromContext(
+    webview: vscode.Webview,
+    context: MenuSlotContext | undefined,
+): Promise<void> {
+    if (
+        typeof context?.importJsonPath !== "string" ||
+        typeof context.menuIdentity !== "string" ||
+        typeof context.menuSlot !== "number"
+    ) return;
+    await removeSlotFromMenu(webview, context.importJsonPath, context.menuIdentity, context.menuSlot);
+}
+
+export async function setMenuSizeFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const parsed = parseImportableContext(context);
+    if (!parsed || parsed.kind !== "menu") return;
+    await setSizeForMenu(webview, parsed.importJsonPath, parsed.identity);
+}
+
 export async function renameImportableFromContext(
     webview: vscode.Webview,
     context: ImportableContext | undefined,
@@ -454,6 +497,257 @@ async function deleteImportable(
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete importable: ${error}`);
     }
+}
+
+const DEFAULT_MENU_ROWS = 6;
+
+const MENU_SLOT_ITEM = (name: string) => `{
+    id: "minecraft:stone",
+    Count: 1b,
+    tag: {
+        display: {
+            Name: ${JSON.stringify(`§f${name}`)}
+        }
+    }
+}
+`;
+
+async function addSlotToMenu(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    menuName: string,
+): Promise<void> {
+    try {
+        const entryJsonPath = await treeRootForImportJson(importJsonPath);
+        const readFs = projectFsWithOpenDocuments();
+        const declaringPath = resolveImportableFile(readFs, entryJsonPath, "menus", menuName);
+        const entry = readEntryValue(readFs, declaringPath, "menus", menuName);
+        if (entry === null) throw new Error(`Couldn't find menu "${menuName}".`);
+        const usedSlots = new Set(
+            (Array.isArray(entry.slots) ? entry.slots : [])
+                .map((slot) => typeof slot === "object" && slot !== null
+                    ? (slot as Record<string, unknown>).slot
+                    : undefined)
+                .filter((slot): slot is number => typeof slot === "number"),
+        );
+        const menuRows = typeof entry.size === "number" ? entry.size : DEFAULT_MENU_ROWS;
+        const maxSlot = menuRows * 9 - 1;
+        const value = await vscode.window.showInputBox({
+            title: `Add slot to "${menuName}"`,
+            prompt: `Slot number (0–${maxSlot})`,
+            validateInput: (input) => {
+                if (!/^\d+$/.test(input.trim())) return `Enter an integer from 0 to ${maxSlot}.`;
+                const slot = Number(input);
+                if (slot > maxSlot) {
+                    return `Slot ${slot} is outside this menu's size (${menuRows} rows = slots 0–${maxSlot}).`;
+                }
+                if (usedSlots.has(slot)) return `Slot ${slot} is already used by this menu.`;
+                return undefined;
+            },
+        });
+        if (value === undefined) return;
+        const slotNumber = Number(value.trim());
+        const choice = await vscode.window.showQuickPick(
+            [
+                { label: "Item only", withActions: false },
+                { label: "Item + actions", withActions: true },
+            ],
+            { placeHolder: `What should slot ${slotNumber} contain?` },
+        );
+        if (!choice) return;
+
+        const rootDir = path.dirname(entryJsonPath);
+        const itemName = `${menuName} Slot ${slotNumber}`;
+        const itemDir = path.join(rootDir, "items");
+        const itemFilename = snbtFilenameForItemExport(readFs, itemDir, itemName);
+        const itemPath = path.join(itemDir, itemFilename);
+        const itemReference = path.relative(path.dirname(declaringPath), itemPath).replace(/\\/g, "/");
+        const sectionJson = sectionFolderImportJson(readFs, entryJsonPath, "menus");
+        const inSectionFolder = sectionJson !== null &&
+            absolutePathKey(sectionJson) === absolutePathKey(declaringPath);
+        const actionsBaseDir = inSectionFolder ? path.dirname(declaringPath) : rootDir;
+        const menuRelative = inSectionFolder
+            ? canonicalSlug(menuName)
+            : `menus/${canonicalSlug(menuName)}`;
+        const actionsPath = path.join(actionsBaseDir, menuRelative, `slot-${slotNumber}.htsl`);
+        const actionsReference = path.relative(path.dirname(declaringPath), actionsPath).replace(/\\/g, "/");
+
+        await runProjectMutation((fs) => {
+            fs.ensureDir(path.dirname(itemPath));
+            fs.writeFile(itemPath, MENU_SLOT_ITEM(itemName));
+            if (choice.withActions) {
+                fs.ensureDir(path.dirname(actionsPath));
+                fs.writeFile(actionsPath, "\n");
+            }
+            const added = addMenuSlot(fs, declaringPath, menuName, {
+                slot: slotNumber,
+                nbt: itemReference,
+                ...(choice.withActions ? { actions: actionsReference } : {}),
+            });
+            if (!added) throw new Error(`Couldn't add slot ${slotNumber} to menu "${menuName}".`);
+        });
+
+        await postFreshProjectTree(webview);
+        if (choice.withActions) {
+            await vscode.window.showTextDocument(vscode.Uri.file(actionsPath), { preview: false });
+        }
+        await openItemInEditor(webview, itemPath);
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Added slot ${slotNumber} to menu "${menuName}".`,
+        } satisfies ProjectFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not add menu slot: ${error}`);
+    }
+}
+
+async function setSizeForMenu(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    menuName: string,
+): Promise<void> {
+    try {
+        const entryJsonPath = await treeRootForImportJson(importJsonPath);
+        const readFs = projectFsWithOpenDocuments();
+        const declaringPath = resolveImportableFile(readFs, entryJsonPath, "menus", menuName);
+        const entry = readEntryValue(readFs, declaringPath, "menus", menuName);
+        if (entry === null) throw new Error(`Couldn't find menu "${menuName}".`);
+        const slots = (Array.isArray(entry.slots) ? entry.slots : [])
+            .map((slot) => typeof slot === "object" && slot !== null
+                ? (slot as Record<string, unknown>).slot
+                : undefined)
+            .filter((slot): slot is number => typeof slot === "number")
+            .sort((left, right) => left - right);
+        const currentSize = typeof entry.size === "number" ? String(entry.size) : "";
+        const value = await vscode.window.showInputBox({
+            title: `Set size for "${menuName}"`,
+            prompt: `Menu size in rows (1–6), or clear for the default (${DEFAULT_MENU_ROWS} rows)`,
+            value: currentSize,
+            validateInput: (input) => {
+                const trimmed = input.trim();
+                if (trimmed === "") return undefined;
+                if (!/^\d+$/.test(trimmed)) return "Enter a row count from 1 to 6, or clear the field.";
+                const rows = Number(trimmed);
+                if (rows < 1 || rows > 6) return "Enter a row count from 1 to 6, or clear the field.";
+                const offending = slots.filter((slot) => slot >= rows * 9);
+                if (offending.length > 0) {
+                    return `${rows} rows (slots 0–${rows * 9 - 1}) would exclude slot${offending.length === 1 ? "" : "s"} ${offending.join(", ")}.`;
+                }
+                return undefined;
+            },
+        });
+        if (value === undefined) return;
+        const size = value.trim() === "" ? undefined : Number(value.trim());
+        const changed = await runProjectMutation((fs) =>
+            setMenuSize(fs, declaringPath, menuName, size)
+        );
+        if (!changed) throw new Error(`Couldn't update menu "${menuName}".`);
+        await postFreshProjectTree(webview);
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: size === undefined
+                ? `Cleared the size for menu "${menuName}".`
+                : `Set menu "${menuName}" to ${size} rows.`,
+        } satisfies ProjectFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not set menu size: ${error}`);
+    }
+}
+
+async function removeSlotFromMenu(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    menuName: string,
+    slotNumber: number,
+): Promise<void> {
+    try {
+        const entryJsonPath = await treeRootForImportJson(importJsonPath);
+        const plan = planRemoveMenuSlot(projectFsWithOpenDocuments(), entryJsonPath, menuName, slotNumber);
+        const deleteFilesLabel = "Remove slot and files";
+        const removeOnlyLabel = "Remove slot only";
+        const relativeFiles = plan.ownedFiles.map((filePath) => vscode.workspace.asRelativePath(filePath, false));
+        const message = `Remove slot ${slotNumber} from menu "${menuName}"?\n\n` +
+            `This will remove the slot from ${vscode.workspace.asRelativePath(plan.importJsonPath, false)}.` +
+            (relativeFiles.length > 0
+                ? `\n\nFiles to delete:\n${relativeFiles.map((filePath) => `- ${filePath}`).join("\n")}`
+                : "\n\nNo files will be deleted.");
+        const buttons = relativeFiles.length > 0
+            ? [deleteFilesLabel, removeOnlyLabel]
+            : [removeOnlyLabel];
+        const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
+        if (!choice) return;
+
+        const result = await runProjectMutation((fs) => planRemoveMenuSlot(fs, entryJsonPath, menuName, slotNumber, true));
+        let filesDeleted = 0;
+        const failures: string[] = [];
+        if (choice === deleteFilesLabel) {
+            for (const filePath of result.ownedFiles) {
+                try {
+                    if (await deletePathToTrashIfPresent(filePath)) filesDeleted++;
+                } catch (err) {
+                    failures.push(`${vscode.workspace.asRelativePath(filePath, false)}: ${
+                        err instanceof Error ? err.message : String(err)
+                    }`);
+                }
+            }
+        }
+        await postFreshProjectTree(webview);
+        const suffix = filesDeleted > 0 ? ` and ${filesDeleted} file${filesDeleted === 1 ? "" : "s"}` : "";
+        await webview.postMessage((failures.length === 0
+            ? { type: "projectResult", ok: true, message: `Removed slot ${slotNumber} from menu "${menuName}"${suffix}.` }
+            : { type: "projectResult", ok: false, error: `Removed the slot, but could not delete: ${failures.join("; ")}` }
+        ) satisfies ProjectFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not remove menu slot: ${error}`);
+    }
+}
+
+function planRemoveMenuSlot(
+    fs: ProjectFs,
+    entryJsonPath: string,
+    menuName: string,
+    slotNumber: number,
+    mutate = false,
+): { importJsonPath: string; ownedFiles: string[] } {
+    const importJsonPath = resolveImportableFile(fs, entryJsonPath, "menus", menuName);
+    const entry = readEntryValue(fs, importJsonPath, "menus", menuName);
+    if (entry === null || !Array.isArray(entry.slots)) {
+        throw new Error(`Couldn't find menu "${menuName}".`);
+    }
+    const slotIndex = entry.slots.findIndex((slot) =>
+        typeof slot === "object" && slot !== null &&
+        (slot as Record<string, unknown>).slot === slotNumber
+    );
+    if (slotIndex < 0) throw new Error(`Couldn't find slot ${slotNumber} in menu "${menuName}".`);
+    const removed = entry.slots[slotIndex];
+    const remaining = { ...entry, slots: entry.slots.filter((_, index) => index !== slotIndex) };
+    const protectedRefs = refsOfOtherEntries(fs, entryJsonPath, "menus", menuName);
+    const remainingRefs: RefSlot[] = [];
+    collectFileRefs(remaining, remainingRefs);
+    for (const ref of remainingRefs) {
+        protectedRefs.add(fs.pathKey(fs.resolvePath(fs.parentDir(importJsonPath), ref.ref)));
+    }
+    const removedRefs: RefSlot[] = [];
+    collectFileRefs(removed, removedRefs);
+    const ownedFiles = removedRefs
+        .map((ref) => fs.resolvePath(fs.parentDir(importJsonPath), ref.ref))
+        .filter((filePath, index, files) =>
+            fs.exists(filePath) &&
+            !protectedRefs.has(fs.pathKey(filePath)) &&
+            files.findIndex((candidate) => fs.pathKey(candidate) === fs.pathKey(filePath)) === index
+        );
+    if (mutate && !removeMenuSlot(fs, importJsonPath, menuName, slotNumber)) {
+        throw new Error(`Couldn't remove slot ${slotNumber} from menu "${menuName}".`);
+    }
+    return { importJsonPath, ownedFiles };
 }
 
 async function deleteImportJsonProject(
@@ -1191,10 +1485,12 @@ function mapSubEntries(
         for (const slot of imp.slots) {
             const tag = `Slot ${slot.slot}`;
             if (slot.nbtPath !== undefined && absolutePathKey(slot.nbtPath) !== declaringKey) {
-                out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", parse, slot.nbt));
+                out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", parse, slot.nbt, slot.slot));
             }
             if (slot.actions !== undefined) {
-                pushActions(`${tag} actions`, slot.actionsPath);
+                if (slot.actionsPath !== undefined && absolutePathKey(slot.actionsPath) !== declaringKey) {
+                    out.push(subEntryFor(`${tag} actions`, slot.actionsPath, "actions", parse, undefined, slot.slot));
+                }
             }
         }
     }
@@ -1223,6 +1519,7 @@ function subEntryFor(
     kind: "actions" | "item",
     parse: ContextParse,
     nbt?: ItemTag,
+    menuSlot?: number,
 ): ProjectImportableSub {
     const diag = countsForFile(parse, fsPath);
     return {
@@ -1232,6 +1529,7 @@ function subEntryFor(
         item: kind === "item" ? itemPreviewForSub(nbt, fsPath) : undefined,
         errors: diag?.errors || undefined,
         warnings: diag?.warnings || undefined,
+        menuSlot,
     };
 }
 
