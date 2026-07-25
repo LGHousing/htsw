@@ -72,7 +72,7 @@ export async function setMenuSize(ctx: TaskContext, rows: number): Promise<void>
 export async function ensureMenuNamesExist(
     ctx: TaskContext,
     menuNames: readonly string[],
-    onEach?: (name: string) => void
+    onCreated?: (name: string) => void | Promise<void>
 ): Promise<void> {
     const names = unique(menuNames);
     if (names.length === 0) return;
@@ -87,7 +87,7 @@ export async function ensureMenuNamesExist(
             );
             await clickGoBack(ctx);
             noteMenuCreated(name);
+            await onCreated?.(name);
         }
-        onEach?.(name);
     }
 }

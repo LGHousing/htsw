@@ -11,7 +11,10 @@ import { listAllRegionNames } from "../regions/listRegions";
 
 type RefShellKind = "function" | "menu" | "region";
 
-export type OnRefShellCreated = (kind: RefShellKind, name: string) => void;
+export type OnRefShellCreated = (
+    kind: RefShellKind,
+    name: string
+) => void | Promise<void>;
 
 export type ReferencedShellPlan = {
     functions: string[];

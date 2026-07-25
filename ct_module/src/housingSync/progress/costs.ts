@@ -29,6 +29,10 @@ import {
 } from "../actions/comparison";
 import { readCachedActionList } from "../../importCache/actionLists";
 import type { ImportableCacheEntry } from "../../importCache/cache";
+import { actionHash } from "../../importCache/hash";
+import { matchByHash } from "../../importCache/actionMatch";
+import { cacheEntryListHashes } from "../../importCache/status";
+import { trustedChildListPathsForImportable } from "../../importCache/trust";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
@@ -634,12 +638,80 @@ function childActionDesired(
 function actionListCost(
     desired: readonly Action[],
     baselineCurrent: readonly Action[] | undefined,
-    trustedBaseline: boolean = false
+    trustedBaseline: boolean = false,
+    basePath?: string,
+    trustedChildListPaths?: ReadonlySet<string>
 ): number {
     if (trustedBaseline) {
-        return baselineAwareApplyUnits(desired, baselineCurrent ?? []);
+        const baseline = baselineCurrent ?? [];
+        if (
+            basePath !== undefined &&
+            trustedChildListPaths?.has(basePath) === true
+        ) {
+            return baselineAwareApplyUnits(desired, baseline);
+        }
+        return (
+            pageTurnUnitsForListItemCount(baseline.length) +
+            estimateTrustedActionListHydrateUnits(
+                desired,
+                baseline,
+                basePath ?? "",
+                trustedChildListPaths
+            ) +
+            baselineAwareApplyUnits(desired, baseline)
+        );
     }
     return phaseUnitsTotal(estimateActionListPhaseUnits(desired, baselineCurrent));
+}
+
+export function estimateTrustedActionListHydrateUnits(
+    desired: readonly Action[],
+    baseline: readonly Action[],
+    basePath: string,
+    trustedChildListPaths: ReadonlySet<string> | undefined
+): number {
+    if (trustedChildListPaths?.has(basePath) === true) return 0;
+
+    const matched = matchByHash(
+        desired.map(actionHash),
+        baseline.map(actionHash)
+    );
+    let total = 0;
+    for (let desiredIndex = 0; desiredIndex < desired.length; desiredIndex++) {
+        const baselineIndex = matched[desiredIndex];
+        if (baselineIndex === null) continue;
+        const action = baseline[baselineIndex];
+        const desiredPath = `${basePath}[${desiredIndex}]`;
+        let lists = 0;
+        if (action.type === "CONDITIONAL") {
+            if (
+                action.conditions.length > 0 &&
+                trustedChildListPaths?.has(`${desiredPath}.conditions`) !== true
+            ) {
+                lists += childListUnits(action.conditions.length);
+            }
+            if (
+                action.ifActions.length > 0 &&
+                trustedChildListPaths?.has(`${desiredPath}.ifActions`) !== true
+            ) {
+                lists += knownChildListUnits(action.ifActions);
+            }
+            if (
+                action.elseActions.length > 0 &&
+                trustedChildListPaths?.has(`${desiredPath}.elseActions`) !== true
+            ) {
+                lists += knownChildListUnits(action.elseActions);
+            }
+        } else if (
+            action.type === "RANDOM" &&
+            action.actions.length > 0 &&
+            trustedChildListPaths?.has(`${desiredPath}.actions`) !== true
+        ) {
+            lists += knownChildListUnits(action.actions);
+        }
+        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
+    }
+    return total;
 }
 
 function actionListReadCost(actions: readonly Action[]): number {
@@ -762,7 +834,8 @@ export function estimateImportableReadUnits(importable: Importable): number {
 export function estimateImportableCost(
     importable: Importable,
     getCached?: (basePath: string) => readonly Action[] | undefined,
-    trustMode: boolean = false
+    trustMode: boolean = false,
+    trustedChildListPaths?: ReadonlySet<string>
 ): number {
     const get = (path: string): readonly Action[] | undefined =>
         getCached === undefined ? undefined : getCached(path);
@@ -771,7 +844,13 @@ export function estimateImportableCost(
     if (importable.type === "FUNCTION") {
         return (
             COST.commandMenuWait +
-            actionListCost(importable.actions ?? [], get("actions"), trustedBaseline) +
+            actionListCost(
+                importable.actions ?? [],
+                get("actions"),
+                trustedBaseline,
+                "actions",
+                trustedChildListPaths
+            ) +
             COST.cacheWrite
         );
     }
@@ -780,7 +859,13 @@ export function estimateImportableCost(
             fieldKindEditUnits("cycle") + COST.signInput + fieldKindEditUnits("boolean");
         return (
             COST.commandMenuWait +
-            actionListCost(importable.actions ?? [], get("actions"), trustedBaseline) +
+            actionListCost(
+                importable.actions ?? [],
+                get("actions"),
+                trustedBaseline,
+                "actions",
+                trustedChildListPaths
+            ) +
             settingsUnits +
             COST.cacheWrite
         );
@@ -789,7 +874,13 @@ export function estimateImportableCost(
         return (
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListCost(importable.actions, get("actions"), trustedBaseline) +
+            actionListCost(
+                importable.actions,
+                get("actions"),
+                trustedBaseline,
+                "actions",
+                trustedChildListPaths
+            ) +
             COST.cacheWrite
         );
     }
@@ -800,12 +891,16 @@ export function estimateImportableCost(
             actionListCost(
                 importable.onEnterActions ?? [],
                 get("onEnterActions"),
-                trustedBaseline
+                trustedBaseline,
+                "onEnterActions",
+                trustedChildListPaths
             ) +
             actionListCost(
                 importable.onExitActions ?? [],
                 get("onExitActions"),
-                trustedBaseline
+                trustedBaseline,
+                "onExitActions",
+                trustedChildListPaths
             ) +
             COST.cacheWrite
         );
@@ -822,8 +917,20 @@ export function estimateImportableCost(
             COST.itemInject +
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListCost(left, get("leftClickActions"), trustedBaseline) +
-            actionListCost(right, get("rightClickActions"), trustedBaseline) +
+            actionListCost(
+                left,
+                get("leftClickActions"),
+                trustedBaseline,
+                "leftClickActions",
+                trustedChildListPaths
+            ) +
+            actionListCost(
+                right,
+                get("rightClickActions"),
+                trustedBaseline,
+                "rightClickActions",
+                trustedChildListPaths
+            ) +
             COST.guaranteedSleep1000 +
             COST.nbtCapture +
             COST.cacheWrite
@@ -858,8 +965,20 @@ export function estimateImportableCost(
             COST.menuClickWait * 3 +
             renameUnits +
             redirectUnits +
-            actionListCost(left, get("leftClickActions"), trustedBaseline) +
-            actionListCost(right, get("rightClickActions"), trustedBaseline) +
+            actionListCost(
+                left,
+                get("leftClickActions"),
+                trustedBaseline,
+                "leftClickActions",
+                trustedChildListPaths
+            ) +
+            actionListCost(
+                right,
+                get("rightClickActions"),
+                trustedBaseline,
+                "rightClickActions",
+                trustedChildListPaths
+            ) +
             COST.cacheWrite
         );
     }
@@ -882,5 +1001,19 @@ export function estimateImportableUnits(
     }
     const getCached = (basePath: string) =>
         readCachedActionList(cacheEntry.importable, basePath);
-    return Math.max(1, estimateImportableCost(importable, getCached, trustMode));
+    const trustedChildListPaths = trustMode
+        ? trustedChildListPathsForImportable(
+              importable,
+              cacheEntryListHashes(cacheEntry)
+          )
+        : undefined;
+    return Math.max(
+        1,
+        estimateImportableCost(
+            importable,
+            getCached,
+            trustMode,
+            trustedChildListPaths
+        )
+    );
 }

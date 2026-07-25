@@ -76,7 +76,7 @@ export async function ensureFunctionExists(
 export async function ensureFunctionNamesExist(
     ctx: TaskContext,
     functionNames: readonly string[],
-    onEach?: (name: string) => void
+    onCreated?: (name: string) => void | Promise<void>
 ): Promise<void> {
     const names = unique(functionNames);
     if (names.length === 0) return;
@@ -100,10 +100,7 @@ export async function ensureFunctionNamesExist(
         );
         await clickGoBack(ctx);
         noteFunctionCreated(name);
-    }
-
-    for (let i = 0; i < names.length; i++) {
-        onEach?.(names[i]);
+        await onCreated?.(name);
     }
 }
 

@@ -18,6 +18,7 @@ import {
     actionListDiffApplyUnits,
     editUnitsWithChildLists,
     estimateActionListPhaseUnits,
+    estimateTrustedActionListHydrateUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
@@ -74,6 +75,14 @@ export async function scanActionListForPlan(
     options: ActionListPrereadOptions
 ): Promise<ActionListPlanScan> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
+    if (options.trust !== undefined && options.baselineCurrent !== undefined) {
+        phaseUnits.hydrating = estimateTrustedActionListHydrateUnits(
+            desired,
+            options.baselineCurrent,
+            options.trust.basePath,
+            options.trust.trustedChildListPaths
+        );
+    }
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
         options.progress ??

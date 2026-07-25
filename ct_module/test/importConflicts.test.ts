@@ -8,7 +8,7 @@ import { createItemDependencyIndex } from "../src/importables/items/dependencyIn
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
-import { changeVar, message, observedSlot, playSound } from "./utils";
+import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
 
 const mocks = vi.hoisted(() => ({
     scanActionList: vi.fn(),
@@ -27,7 +27,10 @@ vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
     hydrateActionListScan: mocks.hydrateActionListScan,
 }));
 
-import { readActionListPlan } from "../src/housingSync/actions/plan";
+import {
+    readActionListPlan,
+    scanActionListForPlan,
+} from "../src/housingSync/actions/plan";
 
 function sessionWithLock(
     importable: ImportableFunction,
@@ -116,6 +119,56 @@ describe("readActionListPlan conflict detection", () => {
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
+
+    it("excludes trusted child lists from the initial hydration payload", async () => {
+        const baseline = [
+            conditional({
+                ifActions: [message("same")],
+            }),
+        ];
+        const desired = [
+            conditional({
+                matchAny: true,
+                ifActions: [message("same")],
+            }),
+        ];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: desired,
+        };
+        let initialHydratingUnits: number | undefined;
+        mocks.scanActionList.mockImplementation(
+            async (
+                _ctx: unknown,
+                _mode: unknown,
+                read: { phaseUnits?: { hydrating: number } }
+            ) => {
+                initialHydratingUnits = read.phaseUnits?.hydrating;
+                return { slots: [observedSlot(0, baseline[0])] };
+            }
+        );
+
+        await scanActionListForPlan(
+            null as unknown as TaskContext,
+            desired,
+            {
+                sync: sessionWithLock(importable, baseline),
+                baselineCurrent: baseline,
+                trust: {
+                    basePath: "actions",
+                    trustedChildListPaths: new Set([
+                        "actions[0].conditions",
+                        "actions[0].ifActions",
+                        "actions[0].elseActions",
+                    ]),
+                    trustedChildLists: new Map(),
+                },
+            }
+        );
+
+        expect(initialHydratingUnits).toBe(0);
     });
 
     it("reuses the trusted baseline when the live scan still matches the lock", async () => {

@@ -58,6 +58,7 @@ import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer"
 import type { ImportConflict } from "./conflicts";
 import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
+import { recordEmptyFunctionShell } from "./emptyShells";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -488,8 +489,11 @@ async function runImportSessionInner(
     let activePlanIndex: number | null = null;
     try {
         events?.emit({ kind: "sessionTotalsLocked" });
-        await applyReferencedShellPlan(ctx, referencedShellPlan, (kind, name) => {
+        await applyReferencedShellPlan(ctx, referencedShellPlan, async (kind, name) => {
             ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
+            if (kind === "function") {
+                await recordEmptyFunctionShell(ctx, session, name);
+            }
         });
         for (const name of referencedShellPlan.functions) {
             session.ensuredReferencedShells.functions.add(name.toLowerCase());

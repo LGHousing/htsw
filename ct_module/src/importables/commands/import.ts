@@ -33,6 +33,7 @@ import {
     type CommandSettings,
 } from "./settings";
 import { getSessionCommandNamesLower } from "./listCommands";
+import { recordEmptyCommandShell } from "../import/emptyShells";
 
 export type CommandImportPlan = {
     kind: "COMMAND";
@@ -120,7 +121,10 @@ export async function applyImportableCommandPlan(
     session: ImportContext
 ): Promise<void> {
     if (!plan.exists) {
-        await ensureCommandExists(ctx, plan.importable.name);
+        const result = await ensureCommandExists(ctx, plan.importable.name);
+        if (result === "created") {
+            await recordEmptyCommandShell(ctx, session, plan.importable.name);
+        }
     }
     if (plan.actionsPlan !== null) {
         await openExistingCommandActionsEditor(ctx, plan.importable.name);

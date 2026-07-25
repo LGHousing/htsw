@@ -22,7 +22,7 @@ export async function openRegionEditor(
 export async function ensureRegionNamesExist(
     ctx: TaskContext,
     regionNames: readonly string[],
-    onEach?: (name: string) => void
+    onCreated?: (name: string) => void | Promise<void>
 ): Promise<void> {
     const names = unique(regionNames);
     if (names.length === 0) return;
@@ -32,7 +32,6 @@ export async function ensureRegionNamesExist(
         if (status === "opened") {
             // Region exists — nothing to do. No clickGoBack: /region edit opens a
             // parent-less "Close" menu; the next iteration/command replaces it.
-            onEach?.(name);
             continue;
         }
         await ctx.runCommand(`/pos1`);
@@ -42,6 +41,6 @@ export async function ensureRegionNamesExist(
             () => ctx.runCommand(`/region create ${name}`),
             regionCreated(name)
         );
-        onEach?.(name);
+        await onCreated?.(name);
     }
 }

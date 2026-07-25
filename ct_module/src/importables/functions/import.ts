@@ -38,6 +38,7 @@ import {
     type FunctionSettingChange,
     type ObservedFunctionSettings,
 } from "./settings";
+import { recordEmptyFunctionShell } from "../import/emptyShells";
 
 export type FunctionImportPlan = {
     kind: "FUNCTION";
@@ -133,6 +134,7 @@ export async function applyImportableFunctionPlan(
         )
     ) {
         await ensureFunctionExists(ctx, plan.importable.name);
+        await recordEmptyFunctionShell(ctx, session, plan.importable.name);
         await clickGoBack(ctx);
     }
     if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {

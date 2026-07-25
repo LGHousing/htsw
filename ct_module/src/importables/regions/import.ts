@@ -25,6 +25,7 @@ import {
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./housing";
 import { regionBoundsEqual } from "./bounds";
+import { recordEmptyRegionShell } from "../import/emptyShells";
 
 export type RegionImportPlan = {
     kind: "REGION";
@@ -163,6 +164,7 @@ async function ensureRegionEditorForApply(
             await moveExistingRegionToBounds(ctx, plan.importable);
         } else {
             await createRegionWithBounds(ctx, plan.importable);
+            await recordEmptyRegionShell(ctx, session, plan.importable);
         }
         return;
     }
@@ -185,7 +187,8 @@ export async function scanImportableRegion(
     const setup = createSetupStepEmitter(session.actions.events, 2);
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
-    const current = liveRegion === null ? { kind: "known-empty" as const } : undefined;
+    const current =
+        liveRegion === null ? { kind: "known-empty" as const } : undefined;
     const progress = createProgressGroup(session.actions.events, 2);
 
     const enter = await scanActionListSync(ctx, {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
     Action,
+    Condition,
     ImportableCommand,
     ImportableFunction,
     ImportableItem,
@@ -14,7 +15,7 @@ import {
     trustedChildListPathsForImportable,
     trustedChildListSnapshotsForImportable,
 } from "../src/importCache/trust";
-import { estimateImportableUnits } from "../src/housingSync/progress/costs";
+import { COST, estimateImportableUnits } from "../src/housingSync/progress/costs";
 import { readActionListSync } from "../src/housingSync/actions/prepareSync";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
@@ -32,11 +33,14 @@ function chat(message: string): Action {
     return { type: "MESSAGE", message };
 }
 
-function conditional(ifActions: Action[]): Action {
+function conditional(
+    ifActions: Action[],
+    conditions: Condition[] = []
+): Extract<Action, { type: "CONDITIONAL" }> {
     return {
         type: "CONDITIONAL",
         matchAny: false,
-        conditions: [],
+        conditions,
         ifActions,
         elseActions: [],
     };
@@ -184,15 +188,52 @@ describe("trustedChildListPathsForImportable", () => {
         });
     });
 
-    it("does not estimate top-level hydration work for trusted cached baselines", () => {
+    it("omits hydration when every child list remains trusted", () => {
         const cached = fn([conditional([chat("inside")])]);
-        const desired = fn([conditional([chat("inside"), chat("debug")])]);
+        const desired = fn([
+            { ...conditional([chat("inside")]), matchAny: true },
+        ]);
+        const entry = cacheEntry(cached);
+        const emptyCached = fn([conditional([])]);
+        const emptyDesired = fn([{ ...conditional([]), matchAny: true }]);
+
+        expect(estimateImportableUnits(desired, entry, true)).toBeCloseTo(
+            estimateImportableUnits(emptyDesired, cacheEntry(emptyCached), true)
+        );
+    });
+
+    it("includes hydration when a conditional child list changed", () => {
+        const cached = fn([
+            conditional([], [{ type: "IS_SNEAKING", inverted: false }]),
+        ]);
+        const desired = fn([
+            conditional([], [{ type: "IS_SNEAKING", inverted: true }]),
+        ]);
         const entry = cacheEntry(cached);
 
-        const trustOff = estimateImportableUnits(desired, entry, false);
-        const trustOn = estimateImportableUnits(desired, entry, true);
+        expect(estimateImportableUnits(desired, entry, true)).toBeCloseTo(
+            estimateImportableUnits(desired, entry, false)
+        );
+    });
 
-        expect(trustOn).toBeLessThan(trustOff);
+    it("includes top-level page turns for trusted baselines over 21 actions", () => {
+        const actions21 = Array.from({ length: 21 }, (_, i) => chat(`old ${i}`));
+        const cached21 = fn(actions21);
+        const desired21 = fn([
+            chat("new"),
+            ...actions21.slice(1),
+        ]);
+        const actions22 = [...actions21, chat("old 21")];
+        const cached22 = fn(actions22);
+        const desired22 = fn([
+            chat("new"),
+            ...actions22.slice(1),
+        ]);
+
+        expect(
+            estimateImportableUnits(desired22, cacheEntry(cached22), true) -
+                estimateImportableUnits(desired21, cacheEntry(cached21), true)
+        ).toBeCloseTo(COST.pageTurnWait);
     });
 
     it("does not trust a changed top-level list", () => {

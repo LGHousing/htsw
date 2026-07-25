@@ -93,6 +93,7 @@ export function traceProgressEvent(
         op: ev.op,
         actionType: ev.actionType,
         fieldsChanged: ev.fieldsChanged,
+        activeKey: after.active?.key ?? null,
         phase: after.active?.phase ?? null,
         beforeCompleted: round(before.completedUnits),
         beforeTotal: round(before.totalUnits),
@@ -105,6 +106,9 @@ export function traceProgressEvent(
         etaSec: round((remaining * msPerUnit) / 1000),
         activeCompleted: round(after.active?.completedUnits ?? 0),
         activeTotal: round(after.active?.totalUnits ?? 0),
+        activeSetup: round(after.active?.phaseUnits.setup ?? 0),
+        activeReading: round(after.active?.phaseUnits.reading ?? 0),
+        activeHydrating: round(after.active?.phaseUnits.hydrating ?? 0),
         activeApplying: round(after.active?.phaseUnits.applying ?? 0),
     });
 }
