@@ -19,9 +19,34 @@ import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
 
 const WATCH_COLOR = 0xffe85c5c;
+const WATCH_PAUSED_COLOR = 0xffe8b45c;
+
+let watchDetectionLive = false;
+
+// Reparse (and therefore save detection) only ticks while the HTSW overlay
+// is visible, so watch mode silently stops reacting to saves the moment the
+// GUI closes. Surface that instead of letting it look armed.
+export function setWatchDetectionLive(live: boolean): void {
+    if (live === watchDetectionLive) return;
+    const wasLive = watchDetectionLive;
+    watchDetectionLive = live;
+    if (wasLive && !live && getWatchMode()) {
+        showToast(
+            "Watch paused — open a menu so saves keep auto-importing",
+            WATCH_PAUSED_COLOR,
+            6000
+        );
+    }
+}
 
 registerBadge(() => {
     if (!getWatchMode()) return null;
+    if (!watchDetectionLive && !watchImportRunning) {
+        return {
+            text: "WATCH: paused — open a menu",
+            color: WATCH_PAUSED_COLOR,
+        };
+    }
     return {
         text: watchImportRunning ? "WATCH: importing…" : "WATCH",
         color: WATCH_COLOR,

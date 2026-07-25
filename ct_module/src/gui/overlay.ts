@@ -85,6 +85,7 @@ import { TaskManager } from "../tasks/manager";
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
+import { setWatchDetectionLive } from "./watchMode";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
@@ -770,6 +771,7 @@ export function initHtswGui(): void {
     register("tick", () => {
         tickAllFields();
         applyFocus(getFocusedInput());
+        setWatchDetectionLive(frameVisible());
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file. During import/export those parses compete
         // with the task on the game thread; the next idle tick catches up.
