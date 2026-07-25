@@ -1,0 +1,8 @@
+{
+    "functions": [
+        {
+            "name": "GiveVanillaItem",
+            "actions": "vanilla_item_reference.htsl"
+        }
+    ]
+}

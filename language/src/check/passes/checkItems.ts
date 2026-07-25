@@ -80,12 +80,25 @@ function checkItemReference(
         return;
     }
 
+    if (itemName.startsWith("minecraft:")) {
+        gcx.addDiagnostic(
+            Diagnostic.error(`Unknown vanilla item '${itemName}'`)
+                .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
+                .addSubDiagnostic(
+                    Diagnostic.help(
+                        "Vanilla item ids must match a known minecraft: item id."
+                    )
+                )
+        );
+        return;
+    }
+
     gcx.addDiagnostic(
         Diagnostic.error(`Unknown item '${itemName}'`)
             .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
             .addSubDiagnostic(
                 Diagnostic.help(
-                    "Item fields must match a top-level items[].name or a direct .snbt path."
+                    "Item fields must match a top-level items[].name, a known minecraft: item id, or a direct .snbt path."
                 )
             )
     );

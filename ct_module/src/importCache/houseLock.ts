@@ -130,12 +130,16 @@ function parseItemDependencyTarget(value: unknown): ItemDependencyTarget | null 
         kind?: unknown;
         name?: unknown;
         path?: unknown;
+        id?: unknown;
     };
     if (target.kind === "named" && typeof target.name === "string") {
         return { kind: "named", name: target.name };
     }
     if (target.kind === "snbtPath" && typeof target.path === "string") {
         return { kind: "snbtPath", path: target.path };
+    }
+    if (target.kind === "vanilla" && typeof target.id === "string") {
+        return { kind: "vanilla", id: target.id };
     }
     return null;
 }

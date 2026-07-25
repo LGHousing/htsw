@@ -1,0 +1,8 @@
+{
+    "functions": [
+        {
+            "name": "GiveUnknownVanillaItem",
+            "actions": "unknown_vanilla_item_reference.htsl"
+        }
+    ]
+}

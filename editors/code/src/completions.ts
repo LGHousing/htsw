@@ -196,7 +196,8 @@ class HtslCompletionProvider {
         const lastToken = last(tokens)?.text ?? "";
         const firstToken = tokens[0]?.text ?? "";
         const quoteMode = getQuoteMode(last(tokens));
-        const hasTrailingWhitespace = /\s$/.test(linePrefix);
+        const hasTrailingWhitespace =
+            quoteMode !== "open" && /\s$/.test(linePrefix);
 
         if (this.isPlaceholderContext(linePrefix, lastToken)) {
             return placeholderCompletions();
@@ -211,7 +212,11 @@ class HtslCompletionProvider {
                 return this.conditionCompletions();
             }
 
-            return this.conditionValueCompletions(tokens, quoteMode, /\s$/.test(conditionPrefix));
+            return this.conditionValueCompletions(
+                tokens,
+                quoteMode,
+                quoteMode !== "open" && /\s$/.test(conditionPrefix)
+            );
         }
 
         if (trimmed.length === 0) {
@@ -967,13 +972,23 @@ function completionsForFieldKind(
         case "block":
             return [];
         case "item":
-            return (context.items ?? []).map((completion) => ({
-                ...completion,
-                insertText: formatQuotedCompletion(
-                    unquote(completion.insertText),
-                    quoteMode
-                ),
-            }));
+            return (context.items ?? [])
+                .map((completion) => ({
+                    ...completion,
+                    insertText: formatQuotedCompletion(
+                        unquote(completion.insertText),
+                        quoteMode
+                    ),
+                }))
+                .concat(
+                    minecraftItemIdCompletions().map((completion) => ({
+                        ...completion,
+                        insertText: formatQuotedCompletion(
+                            completion.insertText,
+                            quoteMode
+                        ),
+                    }))
+                );
     }
 }
 
@@ -1087,4 +1102,3 @@ function getQuoteMode(token: TokenInfo | undefined): QuoteMode {
 function unquote(value: string): string {
     return value.replace(/^"|"$/g, "");
 }
-

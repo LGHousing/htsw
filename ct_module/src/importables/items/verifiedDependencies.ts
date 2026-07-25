@@ -69,7 +69,9 @@ export function verifiedItemDependencies(
         const target: ItemDependencyTarget =
             entry.source === "named"
                 ? { kind: "named", name: entry.name }
-                : { kind: "snbtPath", path: entry.path as string };
+                : entry.source === "vanilla"
+                  ? { kind: "vanilla", id: entry.name }
+                  : { kind: "snbtPath", path: entry.path as string };
         const dependency = currentByTarget.get(itemDependencyTargetKey(target));
         if (dependency === undefined) return;
         const key = itemDependencyTargetKey(dependency.target);

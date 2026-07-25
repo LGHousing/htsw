@@ -1,7 +1,7 @@
 import type { GlobalCtxt } from "../context";
 import { Diagnostic } from "../diagnostic";
-import { parseSnbt, type Tag } from "../nbt";
-import type { ImportableItem } from "../types";
+import { parseSnbt, parseSnbtText, type Tag } from "../nbt";
+import { MINECRAFT_ITEMS, type ImportableItem } from "../types";
 
 export type ResolvedItemReference =
     | {
@@ -16,7 +16,15 @@ export type ResolvedItemReference =
           key: string;
           path: string;
           nbt: Tag;
+      }
+    | {
+          kind: "vanilla";
+          key: string;
+          id: string;
+          nbt: Tag;
       };
+
+const VANILLA_ITEM_NAMES = new Set(MINECRAFT_ITEMS.map((item) => item.name));
 
 export function isDirectSnbtItemReference(value: string): boolean {
     return value.toLowerCase().endsWith(".snbt");
@@ -37,6 +45,11 @@ export function resolveItemReference(
             importable: named,
             nbt: named.nbt,
         };
+    }
+
+    const vanilla = resolveVanillaItemReference(itemName);
+    if (vanilla !== undefined) {
+        return vanilla;
     }
 
     if (!isDirectSnbtItemReference(itemName)) {
@@ -64,12 +77,37 @@ export function resolveItemReferenceFromSourcePath(
         };
     }
 
+    const vanilla = resolveVanillaItemReference(itemName);
+    if (vanilla !== undefined) {
+        return vanilla;
+    }
+
     if (!isDirectSnbtItemReference(itemName)) {
         return undefined;
     }
 
     const resolvedPath = resolveItemPathFromSourcePath(gcx, sourcePath, itemName);
     return resolveDirectSnbtItemReference(gcx, itemName, resolvedPath);
+}
+
+export function resolveVanillaItemReference(
+    itemName: string
+): ResolvedItemReference | undefined {
+    if (!itemName.startsWith("minecraft:")) {
+        return undefined;
+    }
+
+    const name = itemName.slice("minecraft:".length);
+    if (!VANILLA_ITEM_NAMES.has(name)) {
+        return undefined;
+    }
+
+    return {
+        kind: "vanilla",
+        key: itemName,
+        id: itemName,
+        nbt: parseSnbtText(`{id:"${itemName}",Count:1b,Damage:0s}`),
+    };
 }
 
 function resolveDirectSnbtItemReference(

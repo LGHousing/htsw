@@ -8,7 +8,9 @@ import { type ItemReferenceUse, visitItemReferences } from "./dependencies";
 import type { ProjectItemIndex, ProjectItem } from "./projectItems";
 
 export type ItemDependencyTarget =
-    { kind: "named"; name: string } | { kind: "snbtPath"; path: string };
+    | { kind: "named"; name: string }
+    | { kind: "snbtPath"; path: string }
+    | { kind: "vanilla"; id: string };
 
 type CachedItemDependency = {
     target: ItemDependencyTarget;
@@ -50,15 +52,27 @@ export function sameItemDependencySnapshot(
         if (
             a.fingerprint !== b.fingerprint ||
             a.target.kind !== b.target.kind ||
-            (a.target.kind === "named"
-                ? a.target.name !== (b.target as { kind: "named"; name: string }).name
-                : a.target.path !==
-                  (b.target as { kind: "snbtPath"; path: string }).path)
+            !sameItemDependencyTarget(a.target, b.target)
         ) {
             return false;
         }
     }
     return true;
+}
+
+function sameItemDependencyTarget(
+    left: ItemDependencyTarget,
+    right: ItemDependencyTarget
+): boolean {
+    if (left.kind === "named" && right.kind === "named") {
+        return left.name === right.name;
+    }
+    if (left.kind === "snbtPath" && right.kind === "snbtPath") {
+        return left.path === right.path;
+    }
+    return left.kind === "vanilla" &&
+        right.kind === "vanilla" &&
+        left.id === right.id;
 }
 
 type ItemDependencyCycle = {
@@ -342,15 +356,19 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
 }
 
 function targetOfEntry(entry: ProjectItem): ItemDependencyTarget {
-    return entry.source === "named"
-        ? { kind: "named", name: entry.name }
-        : { kind: "snbtPath", path: entry.path as string };
+    if (entry.source === "named") {
+        return { kind: "named", name: entry.name };
+    }
+    if (entry.source === "vanilla") {
+        return { kind: "vanilla", id: entry.name };
+    }
+    return { kind: "snbtPath", path: entry.path as string };
 }
 
 export function itemDependencyTargetKey(target: ItemDependencyTarget): string {
-    return target.kind === "named"
-        ? `named:${target.name}`
-        : `snbtPath:${target.path}`;
+    if (target.kind === "named") return `named:${target.name}`;
+    if (target.kind === "vanilla") return `vanilla:${target.id}`;
+    return `snbtPath:${target.path}`;
 }
 
 const dependencyIndexByImportables = new WeakMap<object, ItemDependencyIndex>();

@@ -608,6 +608,52 @@ describe("import.json diagnostics readability", () => {
         ).toBe(true);
     });
 
+    it("accepts known vanilla item ids", () => {
+        const result = parseImportables(caseFilePath("vanilla_item_reference"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+
+        const resolved = htsw.items.resolveItemReference(
+            result.gcx,
+            new Map(),
+            result.value[0],
+            "minecraft:iron_block"
+        );
+        expect(resolved).toEqual({
+            kind: "vanilla",
+            key: "minecraft:iron_block",
+            id: "minecraft:iron_block",
+            nbt: {
+                type: "compound",
+                value: {
+                    id: { type: "string", value: "minecraft:iron_block" },
+                    Count: { type: "byte", value: 1 },
+                    Damage: { type: "short", value: 0 },
+                },
+            },
+        });
+    });
+
+    it("reports unknown vanilla item ids distinctly", () => {
+        const result = parseImportables(
+            caseFilePath("unknown_vanilla_item_reference")
+        );
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some(
+                (diagnostic) =>
+                    diagnostic.message ===
+                    "Unknown vanilla item 'minecraft:not_a_real_item'"
+            )
+        ).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Unknown item")
+            )
+        ).toBe(false);
+    });
+
     it("supports direct SNBT item paths relative to the containing HTSL file", () => {
         const result = parseImportables(caseDirPath("direct_snbt"));
 

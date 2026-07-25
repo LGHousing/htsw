@@ -1,6 +1,10 @@
 import { items as itemReferences, type GlobalCtxt } from "htsw";
 import type { Tag } from "htsw/nbt";
-import type { Importable, ImportableItem } from "htsw/types";
+import {
+    MINECRAFT_ITEMS,
+    type Importable,
+    type ImportableItem,
+} from "htsw/types";
 
 import { removedFormatting, unique } from "../../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../../utils/nbt";
@@ -10,7 +14,7 @@ export interface ProjectItem {
     readonly item: Item;
     nbt: Tag;
     aliases: string[];
-    source: "named" | "snbtPath";
+    source: "named" | "snbtPath" | "vanilla";
     importable?: ImportableItem;
     path?: string;
 }
@@ -30,6 +34,7 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
     private readonly byName: Partial<Record<string, ProjectItem>> = {};
     private readonly aliases: Partial<Record<string, ProjectItem | "ambiguous">> = {};
     private readonly directByOwnerPath: Partial<Record<string, ProjectItem>> = {};
+    private readonly vanillaById: Partial<Record<string, ProjectItem>> = {};
     private readonly directByOwner = new WeakMap<object, Map<string, ProjectItem>>();
     private readonly itemNames = new Map<string, ImportableItem>();
     private readonly gcx?: GlobalCtxt;
@@ -84,6 +89,9 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
             if (bound !== undefined) return bound;
         }
 
+        const vanilla = this.resolveVanilla(name);
+        if (vanilla !== undefined) return vanilla;
+
         if (
             this.gcx === undefined ||
             ownerNode === undefined ||
@@ -130,6 +138,11 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
     ): ProjectItem | undefined {
         const named = this.get(name);
         if (named !== undefined) return named;
+        const vanilla = this.resolveVanilla(name);
+        if (vanilla !== undefined) {
+            this.bindDirectOwner(ownerNode, name, vanilla);
+            return vanilla;
+        }
         if (
             this.gcx === undefined ||
             sourcePath === undefined ||
@@ -169,6 +182,34 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         return entry;
     }
 
+    private resolveVanilla(name: string): ProjectItem | undefined {
+        const existing = this.vanillaById[name];
+        if (existing !== undefined) return existing;
+        const resolved = itemReferences.resolveVanillaItemReference(name);
+        if (resolved === undefined) {
+            return undefined;
+        }
+
+        const vanilla = htswVanillaItem(name);
+        const aliases = uniqueAliases([
+            ...(vanilla === undefined ? [] : [vanilla.displayName]),
+            ...readItemDisplayAliases(resolved.nbt),
+        ]);
+        const entry = projectItem({
+            name,
+            nbt: resolved.nbt,
+            aliases,
+            source: "vanilla",
+        });
+        this.vanillaById[name] = entry;
+        for (const alias of aliases) {
+            const current = this.aliases[alias];
+            this.aliases[alias] =
+                current === undefined || current === entry ? entry : "ambiguous";
+        }
+        return entry;
+    }
+
     private bindDirectOwner(
         ownerNode: object | undefined,
         name: string,
@@ -193,6 +234,13 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         const alias = this.aliases[normalized] ?? this.aliases[name];
         return alias === undefined || alias === "ambiguous" ? name : alias.name;
     }
+}
+
+function htswVanillaItem(
+    id: string
+): (typeof MINECRAFT_ITEMS)[number] | undefined {
+    const name = id.slice("minecraft:".length);
+    return MINECRAFT_ITEMS.find((item) => item.name === name);
 }
 
 function projectItem(fields: Omit<ProjectItem, "item">): ProjectItem {
