@@ -67,41 +67,6 @@ function stripItemModel(tag: TagLike): TagLike {
     return withoutTagAtPath(tag, ["tag", "ItemModel"]);
 }
 
-// Housing renders a blank lore separator line as "§7"; a source snbt writes
-// it as "". Map both to "§7" — copy-on-write, unlike the old in-place version.
-export function normalizeBlankLoreSeparators(tag: TagLike): TagLike {
-    const lore = tagChild(tagChild(tagChild(tag, "tag"), "display"), "Lore");
-    if (lore === undefined || lore.type !== "list") return tag;
-    const listValue = lore.value as { type: string; value: unknown[] };
-    if (listValue.type !== "string") return tag;
-
-    let needsRewrite = false;
-    for (let i = 0; i < listValue.value.length; i++) {
-        if (listValue.value[i] === "") needsRewrite = true;
-    }
-    if (!needsRewrite) return tag;
-
-    const newLines: unknown[] = [];
-    for (let i = 0; i < listValue.value.length; i++) {
-        newLines.push(listValue.value[i] === "" ? "§7" : listValue.value[i]);
-    }
-    const newLore: TagLike = { type: "list", value: { type: "string", value: newLines } };
-    const display = tagChild(tagChild(tag, "tag"), "display") as TagLike;
-    const newDisplay: Record<string, TagLike> = {
-        ...compoundEntries(display),
-        Lore: newLore,
-    };
-    const inner = tagChild(tag, "tag") as TagLike;
-    const newInner: Record<string, TagLike> = {
-        ...compoundEntries(inner),
-        display: { type: "compound", value: newDisplay },
-    };
-    return {
-        type: "compound",
-        value: { ...compoundEntries(tag), tag: { type: "compound", value: newInner } },
-    };
-}
-
 // The server re-types integral tags when an item round-trips through it — a
 // custom int comes back as a byte (verified with a saved echo of an injected
 // skull: `hypixelPopulated: 1` returned as `1b`). Integral width therefore
@@ -180,8 +145,6 @@ function canonicalizeItemTag(tag: TagLike, preserveInteractData: boolean): TagLi
         preserveInteractData ? tag : stripInteractData(tag)
     );
     return stripEmptyServerShells(
-        normalizeBlankLoreSeparators(
-            normalizeItemDefaults(normalizeIntegralTypes(withoutServerFields))
-        )
+        normalizeItemDefaults(normalizeIntegralTypes(withoutServerFields))
     );
 }
