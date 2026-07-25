@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
-import { getLocation } from "jsonc-parser";
+import { getLocation, parse as parseJsonc } from "jsonc-parser";
 
 type CompletionKind =
     | "action"
@@ -9,13 +9,29 @@ type CompletionKind =
     | "operator"
     | "placeholder"
     | "item"
+    | "function"
+    | "menu"
+    | "team"
+    | "group"
     | "sound"
     | "snippet";
 
-const ITEM_COMPLETION_PROBE = "__htsw_item_completion_probe__";
-const ITEM_COMPLETION_CACHE_TTL_MS = 10000;
+type ImportableCompletionKind = "item" | "function" | "menu" | "team" | "group";
 
-const itemCompletionCache = new Map<
+const IMPORTABLE_SECTIONS: Record<ImportableCompletionKind, string> = {
+    item: "items",
+    function: "functions",
+    menu: "menus",
+    team: "teams",
+    group: "groups",
+};
+const IMPORTABLE_COMPLETION_KINDS = Object.keys(
+    IMPORTABLE_SECTIONS
+) as ImportableCompletionKind[];
+const IMPORTABLE_COMPLETION_PROBE_PREFIX = "__htsw_importable_completion_probe__";
+const IMPORTABLE_COMPLETION_CACHE_TTL_MS = 10000;
+
+const importableCompletionCache = new Map<
     string,
     { expiresAt: number; completions: CompletionSpec[] }
 >();
@@ -38,18 +54,29 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
             new vscode.Range(new vscode.Position(0, 0), position)
         );
         const typedPrefix = this.getTypedPrefix(document, range, position);
+        const probeContext = Object.fromEntries(
+            IMPORTABLE_COMPLETION_KINDS.map((kind) => [
+                kind,
+                [importableCompletionProbe(kind)],
+            ])
+        ) as CompletionContext;
         const probeCompletions = provideHtslCompletions(
             linePrefix,
             documentPrefix,
             "",
-            { items: [itemCompletionProbe()] }
+            probeContext
         );
-        const needsItems = probeCompletions.some(
-            (completion) => completion.label === ITEM_COMPLETION_PROBE
+        const neededImportableKind = IMPORTABLE_COMPLETION_KINDS.find((kind) =>
+            probeCompletions.some(
+                (completion) => completion.label === importableCompletionProbeLabel(kind)
+            )
         );
-        const completions = needsItems
+        const completions = neededImportableKind
             ? provideHtslCompletions(linePrefix, documentPrefix, typedPrefix, {
-                  items: await collectItemCompletions(document),
+                  [neededImportableKind]: await collectImportableCompletions(
+                      document,
+                      neededImportableKind
+                  ),
               })
             : probeCompletions;
 
@@ -119,6 +146,13 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
                 return vscode.CompletionItemKind.Variable;
             case "item":
                 return vscode.CompletionItemKind.File;
+            case "function":
+                return vscode.CompletionItemKind.Function;
+            case "menu":
+                return vscode.CompletionItemKind.Module;
+            case "team":
+            case "group":
+                return vscode.CompletionItemKind.EnumMember;
             case "sound":
                 return vscode.CompletionItemKind.Value;
             case "snippet":
@@ -453,7 +487,7 @@ type CompletionSpec = {
 };
 
 type CompletionContext = {
-    items?: CompletionSpec[];
+    [K in ImportableCompletionKind]?: CompletionSpec[];
 };
 
 type TokenInfo = {
@@ -590,11 +624,12 @@ function getCurrentConditionTokens(tokens: TokenInfo[]): TokenInfo[] {
     }).filter((token) => token.text.length > 0);
 }
 
-async function collectItemCompletions(
-    document: vscode.TextDocument
+async function collectImportableCompletions(
+    document: vscode.TextDocument,
+    kind: ImportableCompletionKind
 ): Promise<CompletionSpec[]> {
-    const cacheKey = document.uri.fsPath;
-    const cached = itemCompletionCache.get(cacheKey);
+    const cacheKey = `${document.uri.fsPath}:${kind}`;
+    const cached = importableCompletionCache.get(cacheKey);
     if (cached !== undefined && cached.expiresAt > Date.now()) {
         return cached.completions;
     }
@@ -602,58 +637,69 @@ async function collectItemCompletions(
     const completions: CompletionSpec[] = [];
     const seen = new Set<string>();
 
-    for (const name of await collectTopLevelItemNames()) {
+    for (const name of await collectTopLevelImportableNames(kind)) {
         if (seen.has(`name:${name}`)) continue;
         seen.add(`name:${name}`);
         completions.push({
             label: name,
             insertText: quoteIfNeeded(name),
             filterText: `${name} ${name.split(" ").join("_")}`,
-            kind: "item",
-            detail: "import.json item",
+            kind,
+            detail: `import.json ${kind}`,
             sortText: `0_${name}`,
         });
     }
 
-    itemCompletionCache.set(cacheKey, {
-        expiresAt: Date.now() + ITEM_COMPLETION_CACHE_TTL_MS,
+    importableCompletionCache.set(cacheKey, {
+        expiresAt: Date.now() + IMPORTABLE_COMPLETION_CACHE_TTL_MS,
         completions,
     });
     return completions;
 }
 
-function itemCompletionProbe(): CompletionSpec {
+function importableCompletionProbe(kind: ImportableCompletionKind): CompletionSpec {
+    const label = importableCompletionProbeLabel(kind);
     return {
-        label: ITEM_COMPLETION_PROBE,
-        insertText: ITEM_COMPLETION_PROBE,
-        kind: "item",
+        label,
+        insertText: label,
+        kind,
     };
 }
 
-async function collectTopLevelItemNames(): Promise<string[]> {
+function importableCompletionProbeLabel(kind: ImportableCompletionKind): string {
+    return `${IMPORTABLE_COMPLETION_PROBE_PREFIX}${kind}__`;
+}
+
+async function collectTopLevelImportableNames(
+    kind: ImportableCompletionKind
+): Promise<string[]> {
     const names: string[] = [];
     const files = await vscode.workspace.findFiles("**/{import.json,*.import.json}");
     for (const file of files) {
         const text = await readWorkspaceText(file);
         if (text === undefined) continue;
-        for (const name of parseTopLevelItemNames(text)) {
+        for (const name of parseTopLevelImportableNames(text, kind)) {
             if (names.indexOf(name) === -1) names.push(name);
         }
     }
     return names;
 }
 
-function parseTopLevelItemNames(text: string): string[] {
-    const names: string[] = [];
-    const itemsMatch = /"items"\s*:\s*\[([\s\S]*?)\]\s*(?:,|\})/.exec(text);
-    if (!itemsMatch) return names;
+function parseTopLevelImportableNames(
+    text: string,
+    kind: ImportableCompletionKind
+): string[] {
+    const root: unknown = parseJsonc(text);
+    if (typeof root !== "object" || root === null || Array.isArray(root)) return [];
+    const entries = (root as Record<string, unknown>)[IMPORTABLE_SECTIONS[kind]];
+    if (!Array.isArray(entries)) return [];
 
-    const itemObjectRegex = /\{[\s\S]*?\}/g;
-    for (const match of itemsMatch[1].matchAll(itemObjectRegex)) {
-        const nameMatch = /"name"\s*:\s*"((?:\\"|[^"])*)"/.exec(match[0]);
-        if (nameMatch) names.push(nameMatch[1].replace(/\\"/g, "\""));
-    }
-    return names;
+    return entries.flatMap((entry) => {
+        if (typeof entry === "string") return [entry];
+        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
+        const name = (entry as Record<string, unknown>).name;
+        return typeof name === "string" ? [name] : [];
+    });
 }
 
 async function readWorkspaceText(file: vscode.Uri): Promise<string | undefined> {
@@ -960,6 +1006,28 @@ function completionsForFieldKind(
     context: CompletionContext = {},
 ): CompletionSpec[] {
     const d = fieldName; // shown as `detail` on every item
+    const importableKind = importableKindForField(kind, fieldName);
+    if (importableKind !== undefined) {
+        const completions = context[importableKind] ?? [];
+        const quotedCompletions = completions.map((completion) => ({
+            ...completion,
+            insertText: formatQuotedCompletion(
+                unquote(completion.insertText),
+                quoteMode
+            ),
+        }));
+        if (importableKind !== "item") return quotedCompletions;
+        return quotedCompletions.concat(
+            minecraftItemIdCompletions().map((completion) => ({
+                ...completion,
+                insertText: formatQuotedCompletion(
+                    completion.insertText,
+                    quoteMode
+                ),
+            }))
+        );
+    }
+
     switch (kind) {
         case "boolean":
             return booleanCompletions(d);
@@ -1012,24 +1080,20 @@ function completionsForFieldKind(
         case "block":
             return [];
         case "item":
-            return (context.items ?? [])
-                .map((completion) => ({
-                    ...completion,
-                    insertText: formatQuotedCompletion(
-                        unquote(completion.insertText),
-                        quoteMode
-                    ),
-                }))
-                .concat(
-                    minecraftItemIdCompletions().map((completion) => ({
-                        ...completion,
-                        insertText: formatQuotedCompletion(
-                            completion.insertText,
-                            quoteMode
-                        ),
-                    }))
-                );
+            return [];
     }
+}
+
+function importableKindForField(
+    kind: htsw.types.ActionFieldKind,
+    fieldName: string
+): ImportableCompletionKind | undefined {
+    if (kind === "item" || kind === "function" || kind === "team" || kind === "group") {
+        return kind;
+    }
+    if (kind === "string" && fieldName === "menu") return "menu";
+    if (kind === "string" && fieldName === "group") return "group";
+    return undefined;
 }
 
 // Field positions:
