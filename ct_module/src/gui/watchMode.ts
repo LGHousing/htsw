@@ -134,8 +134,14 @@ function disableForLoop(keys: readonly string[]): void {
     );
 }
 
+// After an import aborts on parse errors, hold off until the next
+// save-driven reparse — otherwise cache-warm refreshes retry the same
+// broken state every few seconds and spam the abort diagnostics.
+let blockedUntilNextParse = false;
+
 function runWatchImport(): void {
     if (!getWatchMode()) return;
+    if (blockedUntilNextParse) return;
     if (TaskManager.isBusy() || isImportPreparationRunning()) return;
     const trackedItems = trackedImportQueue(getAutoTrackSources());
     if (trackedItems.length === 0) return;
@@ -161,6 +167,9 @@ function runWatchImport(): void {
             awaitingSuccessRefresh = successful;
             if (!successful) lastSuccessfulRunKeys = null;
         },
+        onAbortedForErrors: () => {
+            blockedUntilNextParse = true;
+        },
     });
     if (!started) lastSuccessfulRunKeys = null;
 }
@@ -177,6 +186,7 @@ export function watchModeRefresh(
     trackedSources: ReadonlySet<string>
 ): void {
     if (!getWatchMode()) return;
+    if (trigger === "reparse") blockedUntilNextParse = false;
     const detected = sortedUnique(detectedWorkKeys);
     if (awaitingSuccessRefresh) {
         awaitingSuccessRefresh = false;

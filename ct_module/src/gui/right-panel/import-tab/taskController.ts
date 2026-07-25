@@ -565,6 +565,7 @@ type ImportStartOptions = {
     silentBusy?: boolean;
     onStarted?: () => void;
     onComplete?: (successful: boolean) => void;
+    onAbortedForErrors?: () => void;
 };
 
 export function startImportIfIdle(
@@ -634,6 +635,7 @@ async function prepareAndStartImport(
             ChatLib.chat(`&7  in ${batch.sourcePath}:`);
             printDiagnostics(batch.parsed.gcx.sourceMap, errors);
         }
+        options.onAbortedForErrors?.();
         return;
     }
     const trustMode = isCurrentHouseTrusted();
