@@ -28,6 +28,7 @@ export type ProgressPayload = {
     phaseUnits: PhaseUnits;
     sync: ListSyncProgress;
     preserveApplyingEstimate?: boolean;
+    measuredTotalUnits?: true;
 };
 
 export type TaskProgressEntry = {

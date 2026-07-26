@@ -12,7 +12,10 @@ import {
 } from "../../menus/paginatedList";
 import type { DiffFinalState, SyncEventHandler, ProgressScope } from "../../syncEvents";
 import { ActionPath } from "../../actionPath";
-import { actionListDiffApplyUnits, editUnitsWithChildLists } from "../../progress/costs";
+import {
+    actionListOperationApplyUnits,
+    editUnitsWithChildLists,
+} from "../../progress/costs";
 import type { PhaseUnits } from "../../progress/types";
 import type { Observed } from "../../observedActions";
 import type { ActionListOperation } from "../diff/types";
@@ -97,6 +100,7 @@ export class ActionListApplyRun {
     private readonly isTopLevel: boolean;
     private readonly baselineUnits: number;
     private readonly totalOps: number;
+    private readonly operationUnits: ReadonlyMap<ActionListOperation, number>;
     private nextEntryId: number;
     private appliedUnits = 0;
     private completedOps = 0;
@@ -115,18 +119,18 @@ export class ActionListApplyRun {
                 action: plan.observed[i].action,
             });
         }
+        this.operationUnits = actionListOperationApplyUnits(
+            plan.diff,
+            editUnitsWithChildLists,
+            plan.desired.length
+        );
+        let applying = 0;
+        this.operationUnits.forEach((units) => (applying += units));
         this.phaseUnits = {
             setup: plan.phaseUnits.setup,
             reading: plan.phaseUnits.reading,
             hydrating: plan.phaseUnits.hydrating,
-            applying: Math.max(
-                actionListDiffApplyUnits(
-                    plan.diff,
-                    editUnitsWithChildLists,
-                    plan.desired.length
-                ),
-                1
-            ),
+            applying,
         };
         this.events = options.sync.events;
         this.isTopLevel = options.listPath === undefined;
@@ -520,12 +524,13 @@ export class ActionListApplyRun {
     }
 
     private completeUnits(op: ActionListOperation, mode: "add" | "fromStart"): void {
-        const units = operationApplyUnits(op, this.plan.desired.length);
+        const units = operationApplyUnits(
+            op,
+            this.plan.desired.length,
+            this.operationUnits
+        );
         if (mode === "fromStart") {
-            this.appliedUnits = Math.max(
-                this.appliedUnits,
-                this.operationStartUnits + units
-            );
+            this.appliedUnits = this.operationStartUnits + units;
         } else {
             this.appliedUnits += units;
         }
@@ -549,7 +554,7 @@ export class ActionListApplyRun {
             this.events,
             this.progressScope,
             this.phaseUnits,
-            this.baselineUnits + Math.min(this.appliedUnits, this.phaseUnits.applying),
+            this.baselineUnits + this.appliedUnits,
             this.completedOps,
             this.totalOps
         );

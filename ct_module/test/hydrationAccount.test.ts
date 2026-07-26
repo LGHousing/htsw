@@ -22,7 +22,8 @@ function workFor(childLists: ChildListsToRead): ActionHydrationWork {
 function payload(
     completedUnits: number,
     totalUnits: number,
-    phase: ProgressPayload["phase"] = "reading"
+    phase: ProgressPayload["phase"] = "reading",
+    measuredTotalUnits?: true
 ): ProgressPayload {
     return {
         phase,
@@ -30,6 +31,7 @@ function payload(
         totalUnits,
         phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
         sync: { completedUnits: 0, totalUnits: 1, parent: null },
+        ...(measuredTotalUnits === true ? { measuredTotalUnits } : {}),
     };
 }
 
@@ -52,7 +54,7 @@ describe("hydration entry account", () => {
         expect(account.bookedUnits()).toBeCloseTo(hydrationEntryUnits(entry, work));
     });
 
-    test("child payloads only raise booked units above the estimate floor", () => {
+    test("discovery payloads ratchet above the estimate", () => {
         const entry = conditionalEntry();
         const work = workFor(new Set(["ifActions"]));
         let changes = 0;
@@ -67,6 +69,23 @@ describe("hydration entry account", () => {
         account.onChildPayload("ifActions", payload(3, estimate + 20, "hydrating"));
         expect(account.bookedUnits()).toBeGreaterThan(estimate);
         expect(changes).toBe(2);
+    });
+
+    test("a measured child total replaces the speculative booking once", () => {
+        const entry = conditionalEntry();
+        const work = workFor(new Set(["ifActions"]));
+        const account = createHydrationEntryAccount(entry, work, () => {});
+        const estimate = account.bookedUnits();
+
+        account.onChildPayload("ifActions", payload(0, 0));
+        expect(account.bookedUnits()).toBe(estimate);
+
+        account.onChildPayload("ifActions", payload(0, 1, "reading", true));
+        const measured = account.bookedUnits();
+        expect(measured).toBeLessThan(estimate);
+
+        account.onChildPayload("ifActions", payload(0, 0, "reading", true));
+        expect(account.bookedUnits()).toBe(measured);
     });
 
     test("completed units credit incrementally and settle to booked on finish", () => {

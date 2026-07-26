@@ -257,10 +257,9 @@ export async function scanActionList(
     if (isRootList) {
         emitObservedSnapshot(observed, read.events);
     }
-    if (phaseUnits !== undefined && read.exactHydrationEstimate === true) {
+    if (phaseUnits !== undefined) {
         phaseUnits.reading = readCompletedUnits;
         phaseUnits.hydrating = exactHydrationPlanUnits(plan);
-        phaseUnits.applying = 0;
         progress?.({
             phase: "reading",
             completedUnits: phaseUnits.reading,
@@ -271,6 +270,7 @@ export async function scanActionList(
                 totalUnits: Math.max(desiredTotal, observed.length),
                 parent: null,
             },
+            measuredTotalUnits: true,
         });
     }
     if (isRootList) {

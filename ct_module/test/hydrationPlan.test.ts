@@ -6,7 +6,10 @@ import { matchObservedToDesired } from "../src/housingSync/actions/diff/childLis
 import {
     createActionHydrationPlan,
     fullyHydratedActionsFromSlots,
+    type ActionHydrationPlan,
 } from "../src/housingSync/actions/hydration/plan";
+import { hydrationEntriesInVisitOrder } from "../src/housingSync/actions/hydration/run";
+import { getPaginatedListPageForIndex } from "../src/housingSync/menus/paginatedList";
 import type {
     ChildListSummaries,
     ChildListsToRead,
@@ -78,6 +81,36 @@ function plannedIndexes(p: ReturnType<typeof plan>): number[] {
 }
 
 describe("createActionHydrationPlan", () => {
+    test("visits a multi-page hydration plan from the last entry to the first", () => {
+        const first = observed(0, { conditions: ["REQUIRE_ITEM"] });
+        const last = observed(89, { conditions: ["REQUIRE_ITEM"] });
+        const hydrationPlan: ActionHydrationPlan = new Map([
+            [
+                first,
+                {
+                    childListsToRead: new Set(),
+                    scalarFieldsToRead: [],
+                    itemFieldsToCapture: [],
+                },
+            ],
+            [
+                last,
+                {
+                    childListsToRead: new Set(),
+                    scalarFieldsToRead: [],
+                    itemFieldsToCapture: [],
+                },
+            ],
+        ]);
+        const visits = hydrationEntriesInVisitOrder(hydrationPlan);
+
+        expect(visits.map(([entry]) => entry.index)).toEqual([89, 0]);
+        expect(visits.map(([entry]) => getPaginatedListPageForIndex(entry.index))).toEqual(
+            [5, 1]
+        );
+        expect(new Set(visits.map(([entry]) => entry))).toEqual(new Set([first, last]));
+    });
+
     test("no matchable desired => empty plan", () => {
         const result = plan(
             [

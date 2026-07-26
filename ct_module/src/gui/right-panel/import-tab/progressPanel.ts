@@ -487,15 +487,19 @@ function knowledgeSourceText(): string {
         source = "Reading changes, rest from cache";
     } else if (knowledge.usedCache) {
         source = "Trusted cache";
-    } else if (knowledge.usedHouse) {
-        source =
-            knowledge.currentReason === "shell-read"
-                ? "Reading house shell"
-                : trustOff
-                  ? "Full read"
-                  : "Full house read";
-    } else {
+    } else if (!knowledge.usedHouse) {
         source = "Known empty house state";
+    } else if (knowledge.currentReason === "shell-read") {
+        source = "Reading house shell";
+    } else if (trustOff) {
+        source = "Full read";
+    } else if (knowledge.lockStatus === null) {
+        // Trust is on but this house has nothing cached, so there was no
+        // faster path to take. Without this the bare "Full house read" next
+        // to a lit Trusted badge reads as trust having been ignored.
+        source = "No cache · full read";
+    } else {
+        source = "Full house read";
     }
 
     const lock = trustOff

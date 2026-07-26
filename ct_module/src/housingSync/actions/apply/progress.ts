@@ -155,9 +155,15 @@ export function fieldsChangedForEdit(
 
 export function operationApplyUnits(
     op: ActionListOperation,
-    desiredLength: number
+    desiredLength: number,
+    plannedUnits?: ReadonlyMap<ActionListOperation, number>
 ): number {
-    return actionOperationApplyUnits(op, editUnitsWithChildLists, desiredLength);
+    return actionOperationApplyUnits(
+        op,
+        editUnitsWithChildLists,
+        desiredLength,
+        plannedUnits
+    );
 }
 
 function summarizeDiff(diff: ActionListDiff, desiredLength: number): DiffSummary {

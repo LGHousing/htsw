@@ -75,7 +75,6 @@ export async function hydrateActionListScan(
 ): Promise<void> {
     const { slots, plan, isRootList } = scan;
     await hydrateActionDetails(ctx, plan, slots, isRootList, read);
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     if (read.canonicalizeItemName !== undefined) {
         for (const entry of slots) {
             if (entry.action !== null) {
@@ -138,7 +137,7 @@ async function hydrateActionDetails(
         isRootList && events !== undefined
             ? () => emitObservedSnapshot(observed, events)
             : undefined;
-    for (const [entry, work] of plan) {
+    for (const [entry, work] of hydrationEntriesInVisitOrder(plan)) {
         const entryPath = ActionPath.at(listPath, entry.index);
         currentEntryEstimate = hydrationEntryUnits(
             entry,
@@ -182,6 +181,12 @@ async function hydrateActionDetails(
             });
         }
     }
+}
+
+export function hydrationEntriesInVisitOrder(
+    plan: ActionHydrationPlan
+): Array<[ObservedActionSlot, ActionHydrationWork]> {
+    return Array.from(plan).sort(([left], [right]) => right.index - left.index);
 }
 
 async function hydrateActionDetail(

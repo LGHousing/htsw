@@ -10,12 +10,8 @@ import { childListReadUnits, COST, ITEM_CAPTURE_FIELD_UNITS } from "./costs";
  * The entry starts booked at the same upfront estimate
  * `hydrationEntryUnits` charges: an editor round trip, `childListReadUnits`
  * per child list, and the item captures. As each child list's read actually
- * runs, its progress payloads replace that list's estimate with the total
- * the read itself has established — pages it has turned plus the hydration
- * plan it builds from what it observed (truncated scalars, condition
- * scalar hydrates). The estimate is a floor, never a ceiling: booked units
- * only move above it when the child read proves more work exists, so the
- * totals a caller derives from this account never dip mid-entry.
+ * runs, discovery payloads can raise that estimate. The payload emitted
+ * when the child has built its exact hydration plan replaces the estimate.
  *
  * Completed units credit as child payloads arrive instead of in one lump
  * when the whole entry finishes; the entry's own go-back and item captures
@@ -59,6 +55,7 @@ export function createHydrationEntryAccount(
 
     const booked = new Map<ChildListName, number>();
     const completed = new Map<ChildListName, number>();
+    const measured = new Set<ChildListName>();
     work.childListsToRead.forEach((prop) => {
         booked.set(
             prop,
@@ -87,16 +84,17 @@ export function createHydrationEntryAccount(
             if (finished) return;
             if (activeProp !== prop) settleActiveProp();
             activeProp = prop;
-            const floor = booked.get(prop) ?? 0;
-            const observed = CHILD_LIST_SURCHARGE + Math.max(0, payload.totalUnits);
-            const nowBooked = Math.max(floor, observed);
+            const previous = booked.get(prop) ?? 0;
+            const observed = CHILD_LIST_SURCHARGE + payload.totalUnits;
+            const nowBooked =
+                payload.measuredTotalUnits === true && !measured.has(prop)
+                    ? observed
+                    : Math.max(previous, observed);
+            if (payload.measuredTotalUnits === true) measured.add(prop);
             booked.set(prop, nowBooked);
             completed.set(
                 prop,
-                Math.min(
-                    nowBooked,
-                    COST.menuClickWait + Math.max(0, payload.completedUnits)
-                )
+                Math.min(nowBooked, COST.menuClickWait + payload.completedUnits)
             );
             onChange();
         },

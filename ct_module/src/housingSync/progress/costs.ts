@@ -5,6 +5,7 @@ import type {
     ActionListDiff,
     ActionListOperation,
     ConditionListDiff,
+    ConditionListOperation,
 } from "../actions/diff/types";
 import type { ChildListName } from "../actionPath";
 import type { ObservedActionSlot } from "../observedActions";
@@ -17,10 +18,15 @@ import {
     diffConditionList,
 } from "../actions/conditions/diff";
 import {
+    ACTION_MAPPINGS,
+    getActionLoreFields,
     getActionScalarLoreFields,
     getChildListFields,
 } from "../fields/actionMappings";
-import { getConditionScalarLoreFields } from "../fields/conditionMappings";
+import {
+    CONDITION_MAPPINGS,
+    getConditionScalarLoreFields,
+} from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";
 import {
     scalarFieldDiffers,
@@ -98,13 +104,65 @@ function pageTurnUnitsForListItemCount(count: number): number {
     return Math.max(0, pagesForListItemCount(count) - 1) * COST.pageTurnWait;
 }
 
-function fieldKindEditUnits(kind: UiFieldKind): number {
+function cycleEditUnits(
+    options: readonly string[],
+    current: unknown,
+    desired: unknown
+): number {
+    if (typeof current !== "string") {
+        return Math.floor(options.length / 2) * COST.menuClickWait;
+    }
+    const currentIndex = options.indexOf(current);
+    const desiredIndex = options.indexOf(desired as string);
+    const left = (desiredIndex - currentIndex + options.length) % options.length;
+    const right = (currentIndex - desiredIndex + options.length) % options.length;
+    return Math.min(left, right) * COST.menuClickWait;
+}
+
+function actionFieldOptions(
+    type: Action["type"],
+    prop: string
+): readonly string[] | undefined {
+    const fields = ACTION_MAPPINGS[type].loreFields as Record<
+        string,
+        { prop: string; options?: readonly string[] }
+    >;
+    for (const label in fields) {
+        if (fields[label].prop === prop) return fields[label].options;
+    }
+    return undefined;
+}
+
+function conditionFieldOptions(
+    type: Condition["type"],
+    prop: string
+): readonly string[] | undefined {
+    const fields = CONDITION_MAPPINGS[type].loreFields as Record<
+        string,
+        { prop: string; options?: readonly string[] }
+    >;
+    for (const label in fields) {
+        if (fields[label].prop === prop) return fields[label].options;
+    }
+    return undefined;
+}
+
+function fieldKindEditUnits(
+    kind: UiFieldKind,
+    options?: readonly string[],
+    current?: unknown,
+    desired?: unknown
+): number {
     if (kind === "boolean") return COST.menuClickWait;
-    if (kind === "cycle") return COST.menuClickWait * 2;
+    if (kind === "cycle") {
+        return cycleEditUnits(options as readonly string[], current, desired);
+    }
     if (kind === "select" || kind === "location") {
         return COST.menuClickWait + COST.menuClickWait;
     }
-    if (kind === "item") return COST.itemSelect;
+    if (kind === "item") {
+        return COST.menuClickWait + COST.itemSelect + COST.itemInject;
+    }
     if (kind === "value") return COST.chatInput;
     if (kind === "actionList") {
         return COST.menuClickWait;
@@ -123,7 +181,12 @@ function scalarFieldEditUnitsForOp(
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
         if (scalarFieldDiffers(action, op.desired, action.type, field.prop)) {
-            total += fieldKindEditUnits(field.kind);
+            total += fieldKindEditUnits(
+                field.kind,
+                actionFieldOptions(action.type, field.prop),
+                (action as unknown as Record<string, unknown>)[field.prop],
+                (op.desired as unknown as Record<string, unknown>)[field.prop]
+            );
         }
     }
     return total;
@@ -138,27 +201,90 @@ function moveUnits(fromIndex: number, toIndex: number, listLength: number): numb
     return Math.min(leftDistance, rightDistance) * COST.reorderStep;
 }
 
-function conditionListReadUnits(conditionCount: number): number {
-    return pageTurnUnitsForListItemCount(conditionCount);
+function pageForIndex(index: number): number {
+    return Math.floor(index / LIST_ITEMS_PER_PAGE) + 1;
+}
+
+function visitIndexUnits(currentPage: { value: number }, index: number): number {
+    const targetPage = pageForIndex(index);
+    const units = Math.abs(targetPage - currentPage.value) * COST.pageTurnWait;
+    currentPage.value = targetPage;
+    return units;
+}
+
+function itemFieldCount(fields: Record<string, { kind: UiFieldKind }>): number {
+    let count = 0;
+    for (const label in fields) {
+        if (fields[label].kind === "item") count++;
+    }
+    return count;
+}
+
+function actionItemFieldCount(type: Action["type"]): number {
+    return itemFieldCount(getActionLoreFields(type));
+}
+
+function conditionItemFieldCount(type: Condition["type"]): number {
+    return itemFieldCount(CONDITION_MAPPINGS[type].loreFields);
+}
+
+function conditionItemHydrationUnits(
+    conditions: ReadonlyArray<Condition | null>
+): number {
+    let total = 0;
+    for (let i = 0; i < conditions.length; i++) {
+        const condition = conditions[i];
+        if (condition === null) continue;
+        const fields = conditionItemFieldCount(condition.type);
+        if (fields > 0) {
+            total +=
+                COST.menuClickWait +
+                COST.goBackWait +
+                fields * ITEM_CAPTURE_FIELD_UNITS;
+        }
+    }
+    return total;
+}
+
+function conditionListReadUnits(conditions: ReadonlyArray<Condition | null>): number {
+    return (
+        pageTurnUnitsForListItemCount(conditions.length) +
+        conditionItemHydrationUnits(conditions)
+    );
+}
+
+function conditionChildListUnits(conditions: readonly Condition[]): number {
+    return (
+        childListUnits(conditions.length) + conditionItemHydrationUnits(conditions)
+    );
 }
 
 /**
  * Cost to read one child list: open the field, page through it, go back —
- * plus, when the rows' types are known, one editor round trip for every row
- * whose type carries a truncatable field. Neither content nor a lore summary
- * can tell which values will actually render truncated (only the read can),
- * so the per-type charge is a deliberate over-estimate that live discovery
- * trues up. Both the content-based estimates and the observed-plan pricing
- * go through here — keep them agreeing by construction.
+ * plus known item-field capture work. When requested, it also includes one
+ * editor round trip for every row whose type carries a truncatable field.
+ * Neither content nor a lore summary can tell which values will actually
+ * render truncated (only the read can), so the per-type charge is a deliberate
+ * over-estimate that live discovery trues up.
  */
-function childListUnits(count: number, rowTypes?: readonly string[]): number {
+function childListUnits(
+    count: number,
+    rowTypes?: readonly string[],
+    includeSpeculativeScalarHydrate: boolean = true
+): number {
     let total =
         COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
     if (rowTypes !== undefined) {
         for (let i = 0; i < rowTypes.length; i++) {
-            if (typeMaybeNeedsScalarHydrate(rowTypes[i])) {
+            const itemFields = actionItemFieldCount(rowTypes[i] as Action["type"]);
+            if (
+                itemFields > 0 ||
+                (includeSpeculativeScalarHydrate &&
+                    typeMaybeNeedsScalarHydrate(rowTypes[i]))
+            ) {
                 total += COST.menuClickWait + COST.goBackWait;
             }
+            total += itemFields * ITEM_CAPTURE_FIELD_UNITS;
         }
     }
     return total;
@@ -213,8 +339,11 @@ function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
     return false;
 }
 
-function noteEditUnits(): number {
-    return COST.chatInput;
+function noteEditUnits(note: string | undefined): number {
+    return (
+        (note === undefined ? COST.chatInput : COST.anvilInput) +
+        COST.menuClickWait
+    );
 }
 
 /**
@@ -241,7 +370,12 @@ function conditionScalarFieldWriteUnits(condition: Condition): number {
                 field.prop
             )
         ) {
-            total += fieldKindEditUnits(field.kind);
+            total += fieldKindEditUnits(
+                field.kind,
+                conditionFieldOptions(condition.type, field.prop),
+                undefined,
+                (condition as unknown as Record<string, unknown>)[field.prop]
+            );
         }
     }
     return total;
@@ -260,7 +394,12 @@ function conditionEditUnits(baseline: Condition, desired: Condition): number {
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
         if (scalarFieldDiffers(baseline, desired, desired.type, field.prop)) {
-            total += fieldKindEditUnits(field.kind);
+            total += fieldKindEditUnits(
+                field.kind,
+                conditionFieldOptions(desired.type, field.prop),
+                (baseline as unknown as Record<string, unknown>)[field.prop],
+                (desired as unknown as Record<string, unknown>)[field.prop]
+            );
         }
     }
     if ((baseline.inverted === true) !== (desired.inverted === true)) {
@@ -269,62 +408,91 @@ function conditionEditUnits(baseline: Condition, desired: Condition): number {
     return total;
 }
 
-function conditionListRoughUnits(conditions: readonly Condition[]): number {
-    let total = 0;
-    for (let i = 0; i < conditions.length; i++) {
-        total += conditionAddUnits(conditions[i]);
-        if (conditions[i].note !== undefined) total += noteEditUnits();
-    }
-    return total;
-}
-
-export function conditionOperationUnits(
+function conditionOperationBaseUnits(
     op: ConditionListDiff["operations"][number]
 ): number {
     if (op.kind === "delete") return COST.menuClickWait;
     if (op.kind === "add") {
         let total = conditionAddUnits(op.desired);
-        if (op.desired.note !== undefined) total += noteEditUnits();
+        if (op.desired.note !== undefined) total += noteEditUnits(op.desired.note);
         return total;
     }
     let total = op.noteOnly
-        ? noteEditUnits()
+        ? noteEditUnits(op.desired.note)
         : conditionEditUnits(op.baselineCondition, op.desired);
     if (!op.noteOnly && !notesEqual(op.desired.note, op.baselineCondition.note)) {
-        total += noteEditUnits();
+        total += noteEditUnits(op.desired.note);
     }
     return total;
 }
 
+export function conditionOperationUnits(
+    op: ConditionListDiff["operations"][number],
+    plannedUnits?: ReadonlyMap<ConditionListDiff["operations"][number], number>
+): number {
+    return plannedUnits?.get(op) ?? conditionOperationBaseUnits(op);
+}
+
 export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
+    const units = conditionListOperationApplyUnits(diff);
     let total = 0;
-    for (let i = 0; i < diff.operations.length; i++) {
-        total += conditionOperationUnits(diff.operations[i]);
-    }
+    units.forEach((value) => (total += value));
     return total;
+}
+
+export function conditionListOperationApplyUnits(
+    diff: ConditionListDiff
+): Map<ConditionListOperation, number> {
+    const result = new Map<ConditionListOperation, number>();
+    let observedCount = 0;
+    for (const op of diff.operations) {
+        if (op.kind !== "add") observedCount = Math.max(observedCount, op.entryId + 1);
+    }
+    const current: number[] = [];
+    for (let i = 0; i < observedCount; i++) current.push(i);
+    const currentPage = { value: 1 };
+    const edits = diff.operations.filter(
+        (op): op is Extract<ConditionListOperation, { kind: "edit" }> =>
+            op.kind === "edit"
+    );
+    const deletes = diff.operations
+        .filter(
+            (op): op is Extract<ConditionListOperation, { kind: "delete" }> =>
+                op.kind === "delete"
+        )
+        .sort((a, b) => current.indexOf(b.entryId) - current.indexOf(a.entryId));
+    const adds = diff.operations.filter(
+        (op): op is Extract<ConditionListOperation, { kind: "add" }> =>
+            op.kind === "add"
+    );
+
+    for (const op of [...edits, ...deletes, ...adds]) {
+        let units = conditionOperationBaseUnits(op);
+        if (op.kind !== "add") {
+            const index = current.indexOf(op.entryId);
+            units += visitIndexUnits(currentPage, index);
+            if (op.kind === "delete") current.splice(index, 1);
+        }
+        result.set(op, units);
+    }
+    return result;
 }
 
 /**
  * Cost of writing one action's payload (scalar fields + any child-list
  * action/condition lists) once its shell has been added. Scalar fields
- * each cost a `chatInput`; array fields recurse — `conditions` via
- * `conditionListRoughUnits`, action-list arrays (e.g. `ifActions`,
- * `elseActions`, `actions` for RANDOM) via `actionListRoughApplyUnits`.
+ * each use their mapped editor cost; array fields recurse through the same
+ * empty-to-desired diff pricing used by their nested apply runs.
  *
  * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
  * nest — the child action lists only contain non-CONDITIONAL,
  * non-RANDOM actions, none of which carry action-list arrays.
  *
- * When the action has any writable fields, also includes the
- * `goBackWait` for the `clickGoBack` that `addAction` issues to exit
- * the action editor. Fieldless actions (e.g. Kill Player) take the
- * `Math.max(menuClickWait, total)` floor because `addAction` skips
- * the editor entirely (`if (spec.write)` is false) — they only pay the
- * shell cost.
+ * When the action has a writer, also includes the `goBackWait` for the
+ * `clickGoBack` that `addAction` issues to exit the action editor.
  */
 function actionWriteRoughUnits(action: Action): number {
     let total = 0;
-    let hasFields = false;
     const scalars = getActionScalarLoreFields(action.type);
     for (let i = 0; i < scalars.length; i++) {
         const field = scalars[i];
@@ -337,8 +505,12 @@ function actionWriteRoughUnits(action: Action): number {
         ) {
             continue;
         }
-        hasFields = true;
-        total += fieldKindEditUnits(field.kind);
+        total += fieldKindEditUnits(
+                field.kind,
+                actionFieldOptions(action.type, field.prop),
+                undefined,
+                (action as unknown as Record<string, unknown>)[field.prop]
+            );
     }
 
     const childLists = getChildListFields(action.type);
@@ -346,23 +518,27 @@ function actionWriteRoughUnits(action: Action): number {
         const childList = childLists[i];
         const value = (action as unknown as Record<string, unknown>)[childList.prop];
         if (!Array.isArray(value) || value.length === 0) continue;
-        hasFields = true;
         if (childList.kind === "conditionList") {
-            total += conditionListRoughUnits(value as Condition[]);
+            const conditions = value as Condition[];
+            total +=
+                COST.menuClickWait +
+                conditionListDiffApplyUnits(
+                    diffConditionList([], conditions)
+                ) +
+                COST.goBackWait;
         } else {
-            total += actionListRoughApplyUnits(value as Action[]);
+            const actions = value as Action[];
+            total +=
+                COST.menuClickWait +
+                actionListDiffApplyUnits(
+                    diffActionList(baselineActionListFromActions([]), actions),
+                    editUnitsWithChildLists,
+                    actions.length
+                ) +
+                COST.goBackWait;
         }
     }
-    if (hasFields) total += COST.goBackWait;
-    return Math.max(COST.menuClickWait, total);
-}
-
-function actionListRoughApplyUnits(actions: readonly Action[]): number {
-    let total = 0;
-    for (let i = 0; i < actions.length; i++) {
-        total += actionAddShellUnits() + actionWriteRoughUnits(actions[i]);
-        if (actions[i].note !== undefined) total += noteEditUnits();
-    }
+    if (scalars.length > 0 || childLists.length > 0) total += COST.goBackWait;
     return total;
 }
 
@@ -371,22 +547,129 @@ export function actionListDiffApplyUnits(
     editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
     desiredLength: number
 ): number {
+    const units = actionListOperationApplyUnits(
+        diff,
+        editUnitsForFields,
+        desiredLength
+    );
     let total = 0;
-    for (let i = 0; i < diff.operations.length; i++) {
-        total += actionOperationApplyUnits(
-            diff.operations[i],
-            editUnitsForFields,
-            desiredLength
+    units.forEach((value) => (total += value));
+    return total;
+}
+
+export function actionListOperationApplyUnits(
+    diff: ActionListDiff,
+    editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
+    desiredLength: number
+): Map<ActionListOperation, number> {
+    const result = new Map<ActionListOperation, number>();
+    const addCount = diff.operations.filter((op) => op.kind === "add").length;
+    const deleteCount = diff.operations.filter((op) => op.kind === "delete").length;
+    const observedLength = desiredLength - addCount + deleteCount;
+    const current: number[] = [];
+    for (let i = 0; i < observedLength; i++) current.push(i);
+    let nextEntryId = observedLength;
+    const currentPage = { value: 1 };
+    const deletes = diff.operations
+        .filter(
+            (op): op is Extract<ActionListOperation, { kind: "delete" }> =>
+                op.kind === "delete"
+        )
+        .sort((a, b) => b.fromIndex - a.fromIndex);
+    const edits = diff.operations.filter(
+        (op): op is Extract<ActionListOperation, { kind: "edit" }> =>
+            op.kind === "edit"
+    );
+    const moves = diff.operations
+        .filter(
+            (op): op is Extract<ActionListOperation, { kind: "move" }> =>
+                op.kind === "move"
+        )
+        .sort((a, b) => a.toIndex - b.toIndex);
+    const adds = diff.operations
+        .filter(
+            (op): op is Extract<ActionListOperation, { kind: "add" }> =>
+                op.kind === "add"
+        )
+        .sort((a, b) => a.toIndex - b.toIndex);
+    const ordered: ActionListOperation[] = [...deletes, ...edits, ...moves, ...adds];
+
+    for (const op of ordered) {
+        let units = 0;
+        if (op.kind === "delete") {
+            const index = current.indexOf(op.entryId);
+            units += visitIndexUnits(currentPage, index) + COST.menuClickWait;
+            current.splice(index, 1);
+        } else if (op.kind === "edit") {
+            const index = current.indexOf(op.entryId);
+            units += visitIndexUnits(currentPage, index);
+            units += op.noteOnly
+                ? noteEditUnits(op.desired.note)
+                : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
+            if (!op.noteOnly && op.noteDiffers) {
+                units += noteEditUnits(op.desired.note);
+            }
+        } else if (op.kind === "move") {
+            let index = current.indexOf(op.entryId);
+            units += moveUnits(index, op.toIndex, current.length);
+            while (index !== op.toIndex) {
+                units += visitIndexUnits(currentPage, index);
+                const right =
+                    (op.toIndex - index + current.length) % current.length;
+                const left =
+                    (index - op.toIndex + current.length) % current.length;
+                index =
+                    left <= right
+                        ? (index - 1 + current.length) % current.length
+                        : (index + 1) % current.length;
+            }
+            const entry = current.splice(current.indexOf(op.entryId), 1)[0];
+            current.splice(op.toIndex, 0, entry);
+        } else {
+            const appendedIndex = current.length;
+            units += actionAddShellUnits() + actionWriteRoughUnits(op.desired);
+            units += moveUnits(appendedIndex, op.toIndex, appendedIndex + 1);
+            let index = appendedIndex;
+            while (index !== op.toIndex) {
+                units += visitIndexUnits(currentPage, index);
+                const right =
+                    (op.toIndex - index + appendedIndex + 1) % (appendedIndex + 1);
+                const left =
+                    (index - op.toIndex + appendedIndex + 1) % (appendedIndex + 1);
+                index =
+                    left <= right
+                        ? (index - 1 + appendedIndex + 1) % (appendedIndex + 1)
+                        : (index + 1) % (appendedIndex + 1);
+            }
+            current.push(nextEntryId++);
+            const entry = current.pop() as number;
+            current.splice(op.toIndex, 0, entry);
+            if (op.desired.note !== undefined) {
+                units += visitIndexUnits(currentPage, op.toIndex);
+                units += noteEditUnits(op.desired.note);
+            }
+        }
+        result.set(op, units);
+    }
+    if (ordered.length > 0) {
+        const last = ordered[ordered.length - 1];
+        result.set(
+            last,
+            (result.get(last) as number) +
+                Math.abs(currentPage.value - 1) * COST.pageTurnWait
         );
     }
-    return total;
+    return result;
 }
 
 export function actionOperationApplyUnits(
     op: ActionListOperation,
     editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
-    desiredLength: number
+    desiredLength: number,
+    plannedUnits?: ReadonlyMap<ActionListOperation, number>
 ): number {
+    const planned = plannedUnits?.get(op);
+    if (planned !== undefined) return planned;
     if (op.kind === "delete") return COST.menuClickWait;
     if (op.kind === "move") {
         return moveUnits(op.fromIndex, op.toIndex, desiredLength);
@@ -394,15 +677,15 @@ export function actionOperationApplyUnits(
     if (op.kind === "add") {
         let total = actionAddShellUnits() + actionWriteRoughUnits(op.desired);
         total += moveUnits(desiredLength, op.toIndex, desiredLength + 1);
-        if (op.desired.note !== undefined) total += noteEditUnits();
+        if (op.desired.note !== undefined) total += noteEditUnits(op.desired.note);
         return total;
     }
 
     let total = op.noteOnly
-        ? noteEditUnits()
+        ? noteEditUnits(op.desired.note)
         : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
     if (!op.noteOnly && op.noteDiffers) {
-        total += noteEditUnits();
+        total += noteEditUnits(op.desired.note);
     }
     return total;
 }
@@ -461,9 +744,9 @@ function ownSetupUnits(importable: Importable): number {
 /**
  * Hydrate-phase estimate for a list whose full content is known (cached
  * baseline, menu slot): the same shape the live plan prices — one editor
- * round trip per CONDITIONAL/RANDOM entry plus `childListUnits` per
- * non-empty child list. The reader never enters an empty child list (its
- * lore summary reads "None"), so empty branches cost nothing here either.
+ * round trip per hydrated entry, child-list reads, and item-field captures.
+ * The reader never enters an empty child list (its lore summary reads "None"),
+ * so empty branches cost nothing here either.
  * A conditional parsed from .htsl may omit a branch entirely, leaving the
  * field undefined — guard every length read.
  */
@@ -475,19 +758,27 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
         if (a.type === "CONDITIONAL") {
             lists += knownChildListUnits(a.ifActions);
             lists += knownChildListUnits(a.elseActions);
-            const conditionCount = a.conditions.length;
-            if (conditionCount > 0) lists += childListUnits(conditionCount);
+            if (a.conditions.length > 0) {
+                lists += conditionChildListUnits(a.conditions);
+            }
         } else if (a.type === "RANDOM") {
             lists += knownChildListUnits(a.actions);
         }
-        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
+        const itemFields = actionItemFieldCount(a.type);
+        if (lists > 0 || itemFields > 0) {
+            total +=
+                COST.menuClickWait +
+                COST.goBackWait +
+                lists +
+                itemFields * ITEM_CAPTURE_FIELD_UNITS;
+        }
     }
     return total;
 }
 
 function knownChildListUnits(actions: readonly Action[] | undefined): number {
     if (actions === undefined || actions.length === 0) return 0;
-    const types: string[] = [];
+    const types: Action["type"][] = [];
     for (let i = 0; i < actions.length; i++) types.push(actions[i].type);
     return childListUnits(actions.length, types);
 }
@@ -527,7 +818,11 @@ export function estimateActionListPhaseUnits(
             setup: 0,
             reading: 0,
             hydrating: 0,
-            applying: actionListRoughApplyUnits(desired),
+            applying: actionListDiffApplyUnits(
+                diffActionList(baselineActionListFromActions([]), desired as Action[]),
+                editUnitsWithChildLists,
+                desired.length
+            ),
         };
     }
     return {
@@ -547,14 +842,19 @@ export function estimateConditionListPhaseUnits(
             setup: 0,
             reading: 0,
             hydrating: 0,
-            applying: conditionListRoughUnits(desired),
+            applying: conditionListDiffApplyUnits(
+                diffConditionList(
+                    baselineConditionListFromConditions([]),
+                    desired as Condition[]
+                )
+            ),
         };
     }
     const current = baselineConditionListFromConditions(baselineCurrent);
     const diff = diffConditionList(current, desired as Condition[]);
     return {
         setup: 0,
-        reading: conditionListReadUnits(baselineCurrent.length),
+        reading: conditionListReadUnits(baselineCurrent),
         hydrating: 0,
         applying: conditionListDiffApplyUnits(diff),
     };
@@ -709,7 +1009,14 @@ export function estimateTrustedActionListHydrateUnits(
         ) {
             lists += knownChildListUnits(action.actions);
         }
-        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
+        const itemFields = actionItemFieldCount(action.type);
+        if (lists > 0 || itemFields > 0) {
+            total +=
+                COST.menuClickWait +
+                COST.goBackWait +
+                lists +
+                itemFields * ITEM_CAPTURE_FIELD_UNITS;
+        }
     }
     return total;
 }
@@ -731,20 +1038,29 @@ function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
         if (action.type === "CONDITIONAL") {
             lists += exactKnownChildListUnits(action.ifActions);
             lists += exactKnownChildListUnits(action.elseActions);
-            if (action.conditions.length > 0)
-                lists += childListUnits(action.conditions.length);
+            if (action.conditions.length > 0) {
+                lists += conditionChildListUnits(action.conditions);
+            }
         } else if (action.type === "RANDOM") {
             lists += exactKnownChildListUnits(action.actions);
         }
-        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
+        const itemFields = actionItemFieldCount(action.type);
+        if (lists > 0 || itemFields > 0) {
+            total +=
+                COST.menuClickWait +
+                COST.goBackWait +
+                lists +
+                itemFields * ITEM_CAPTURE_FIELD_UNITS;
+        }
     }
     return total;
 }
 
 function exactKnownChildListUnits(actions: readonly Action[] | undefined): number {
-    return actions === undefined || actions.length === 0
-        ? 0
-        : childListUnits(actions.length);
+    if (actions === undefined || actions.length === 0) return 0;
+    const types: Action["type"][] = [];
+    for (let i = 0; i < actions.length; i++) types.push(actions[i].type);
+    return childListUnits(actions.length, types, false);
 }
 
 export function estimateImportableReadUnits(importable: Importable): number {

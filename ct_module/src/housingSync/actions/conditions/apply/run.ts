@@ -5,7 +5,7 @@ import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
 import type { ConditionListDiff, ConditionListOperation } from "../../diff/types";
 import {
-    conditionListDiffApplyUnits,
+    conditionListOperationApplyUnits,
     conditionOperationUnits,
     phaseUnitsTotal,
 } from "../../../progress/costs";
@@ -34,6 +34,7 @@ export class ConditionListApplyRun {
     private readonly plannedApplyUnits: number;
     private readonly baselineUnits: number;
     private readonly totalOps: number;
+    private readonly operationUnits: ReadonlyMap<ConditionListOperation, number>;
     private nextEntryId: number;
     private completedUnits = 0;
     private completedOps = 0;
@@ -52,7 +53,10 @@ export class ConditionListApplyRun {
             });
         }
 
-        this.plannedApplyUnits = conditionListDiffApplyUnits(diff);
+        this.operationUnits = conditionListOperationApplyUnits(diff);
+        let plannedApplyUnits = 0;
+        this.operationUnits.forEach((units) => (plannedApplyUnits += units));
+        this.plannedApplyUnits = plannedApplyUnits;
         this.phaseUnits.applying = this.plannedApplyUnits;
         this.baselineUnits = this.phaseUnits.reading + this.phaseUnits.hydrating;
         this.totalOps = diff.operations.length;
@@ -105,7 +109,7 @@ export class ConditionListApplyRun {
             traceConditionOp({
                 opKind: op.noteOnly ? "noteOnly" : "edit",
                 conditionType: op.desired.type,
-                units: conditionOperationUnits(op),
+                units: conditionOperationUnits(op, this.operationUnits),
                 invertChanged:
                     (op.baselineCondition.inverted === true) !==
                     (op.desired.inverted === true),
@@ -162,7 +166,7 @@ export class ConditionListApplyRun {
             traceConditionOp({
                 opKind: "delete",
                 conditionType: op.baselineCondition?.type ?? "unknown",
-                units: conditionOperationUnits(op),
+                units: conditionOperationUnits(op, this.operationUnits),
             });
 
             await deleteObservedCondition(this.ctx, index, this.current.length);
@@ -179,7 +183,7 @@ export class ConditionListApplyRun {
             traceConditionOp({
                 opKind: "add",
                 conditionType: op.desired.type,
-                units: conditionOperationUnits(op),
+                units: conditionOperationUnits(op, this.operationUnits),
             });
             await addConditionToOpenConditionList(
                 this.ctx,
@@ -203,7 +207,7 @@ export class ConditionListApplyRun {
     }
 
     private completeOperation(op: ConditionListOperation): void {
-        this.completedUnits += conditionOperationUnits(op);
+        this.completedUnits += conditionOperationUnits(op, this.operationUnits);
         this.completedOps++;
     }
 
