@@ -274,6 +274,7 @@ function createSyncEventHandler(args: {
                 invalidateSourceDiffForImportable(imp);
             }
         },
+        importableApplyUnitsRefined: () => {},
         importableReactivated: (e) => {
             // Pass-2 (apply) re-activates an importable previously parked
             // after the Reader pass. Re-bind the preview to this row's

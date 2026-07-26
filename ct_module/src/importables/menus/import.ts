@@ -152,6 +152,13 @@ export type MenuImportPlan = {
     diff: MenuDiff;
 };
 
+export function menuPlanApplyingUnits(plan: MenuImportPlan): number {
+    return menuApplyTotals(plan.diff.ops, {
+        exists: plan.exists,
+        setSize: plan.diff.setSize,
+    }).units;
+}
+
 type MenuSlotRead = {
     desiredIndex: number;
     slot: number;

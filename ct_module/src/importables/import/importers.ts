@@ -55,6 +55,7 @@ import {
 import {
     applyImportableMenuPlan,
     hydrateImportableMenu,
+    menuPlanApplyingUnits,
     menuPlanIsNoOp,
     planImportableMenu,
     scanImportableMenu,
@@ -136,6 +137,7 @@ type ImporterRecipe<
     plan(read: R, context: ImportContext): P;
     apply(ctx: TaskContext, plan: P, context: ImportContext): Promise<void>;
     isNoOp(plan: P): boolean;
+    applyingUnits?(plan: P): number;
     reconstructObserved?(plan: P): Importable | null;
     reconstructPartial?(
         plan: P,
@@ -148,6 +150,7 @@ type WrappedImportablePlan<P extends ImportablePlanDetails> = {
     readonly importable: Importable;
     readonly details: P;
     isNoOp(): boolean;
+    applyingUnits?(): number | undefined;
     apply(ctx: TaskContext, context: ImportContext): Promise<void>;
     reconstructObserved(): Importable | null;
     reconstructPartial(result: ActionListApplyResult | null): Importable | null;
@@ -211,6 +214,7 @@ function defineImporter<
                         importable: typedImportable,
                         details: plan,
                         isNoOp: () => recipe.isNoOp(plan),
+                        applyingUnits: () => recipe.applyingUnits?.(plan),
                         apply: (applyCtx, applyContext) =>
                             recipe.apply(applyCtx, plan, applyContext),
                         reconstructObserved: () =>
@@ -285,6 +289,7 @@ const IMPORTERS = {
         plan: planImportableMenu,
         apply: applyImportableMenuPlan,
         isNoOp: menuPlanIsNoOp,
+        applyingUnits: menuPlanApplyingUnits,
     }),
     ITEM: defineImporter<"ITEM", ItemRead, ItemImportPlan>({
         type: "ITEM",

@@ -124,6 +124,11 @@ export type SyncEvent =
           error?: string;
       }
     | {
+          kind: "importableApplyUnitsRefined";
+          key: string;
+          applyingUnits: number;
+      }
+    | {
           /**
            * Re-activates an already-started importable as the current
            * focus without resetting its progress. Used when a later pass

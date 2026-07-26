@@ -76,6 +76,8 @@ export function reduce(
             return startImportable(state, event);
         case "importableReactivated":
             return reactivateImportable(state, event.key, event.rowIndex, event.phase);
+        case "importableApplyUnitsRefined":
+            return refineImportableApplyUnits(state, event.key, event.applyingUnits);
         case "sessionTotalsLocked":
             return {
                 ...state,
@@ -111,6 +113,52 @@ export function reduce(
         case "finalizeSource":
             return state;
     }
+}
+
+function refineImportableApplyUnits(
+    state: ProgressReducerState,
+    key: string,
+    applyingUnits: number
+): ProgressReducerState {
+    if (state.active?.key === key) {
+        return rebuildSnapshot(
+            state,
+            withRefinedApplyUnits(state.active, applyingUnits)
+        );
+    }
+    const parked = state.parkedRows[key];
+    if (parked === undefined) return state;
+    const next = {
+        ...state,
+        progress: {
+            ...state.progress,
+            rows: replaceRow(
+                state.progress.rows,
+                parked.rowIndex,
+                "current",
+                parked.currentCompletedUnits + applyingUnits
+            ),
+        },
+        parkedRows: {
+            ...state.parkedRows,
+            [key]: withRefinedApplyUnits(parked, applyingUnits),
+        },
+    };
+    return next.active === null ? next : rebuildSnapshot(next, next.active);
+}
+
+function withRefinedApplyUnits(
+    active: ActiveBookkeeping,
+    applyingUnits: number
+): ActiveBookkeeping {
+    return {
+        ...active,
+        currentTotalUnits: active.currentCompletedUnits + applyingUnits,
+        currentPhaseUnits: {
+            ...active.currentPhaseUnits,
+            applying: applyingUnits,
+        },
+    };
 }
 
 function startSession(
