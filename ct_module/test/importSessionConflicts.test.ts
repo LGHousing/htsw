@@ -34,6 +34,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
                     cacheHash: null,
                     lockHash: null,
                     lockListScanHashes: { actions: "baseline" },
+                    lockListContentHashes: { actions: "baseline-content" },
                     cacheMatchesLock: true,
                     trustMode: false,
                     wholeImportableTrusted: false,

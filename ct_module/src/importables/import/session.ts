@@ -60,6 +60,10 @@ import { applyReferencedShellPlan, planMissingReferencedShells } from "./referen
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
 import { readInteractDataCache } from "../items/interactDataCache";
+import {
+    getOverwriteWarningMode,
+    type OverwriteWarningMode,
+} from "../overwriteWarning";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -68,6 +72,7 @@ export type ImportSessionRequest = {
     trustMode: boolean;
     housingUuid: string;
     sourcePath: string;
+    overwriteWarningMode?: OverwriteWarningMode;
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
     confirmConflicts?: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
@@ -232,6 +237,8 @@ async function runImportSessionInner(
                 selection.housingUuid
             ),
             trust: trustPlan,
+            overwriteWarningMode:
+                selection.overwriteWarningMode ?? getOverwriteWarningMode(),
             conflicts: [],
             events,
             itemRead: { mode: "sync" },

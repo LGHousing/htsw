@@ -1,13 +1,20 @@
-import type { Action } from "htsw/types";
+import type { Action, Condition } from "htsw/types";
 
 import { hashHex } from "../../utils/hash";
 import type { ChildListName } from "../actionPath";
 import type { ObservedActionSlot } from "../observedActions";
-import { getChildListFields } from "../fields/actionMappings";
+import {
+    getActionScalarLoreFields,
+    getChildListFields,
+} from "../fields/actionMappings";
+import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { desiredChildListTypes } from "./diff/childListMatching";
+import { fullyHydratedActionsFromSlots } from "./hydration/plan";
+import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
 
 // V1 covers only action-type sequences and child-list type sequences; scalar fields and notes are excluded.
 export const ACTION_LIST_SCAN_HASH_VERSION = 1;
+export const ACTION_LIST_CONTENT_HASH_VERSION = 1;
 
 type CanonicalChildList = {
     prop: ChildListName;
@@ -55,4 +62,92 @@ export function actionListScanHashFromActions(actions: readonly Action[]): strin
             canonicalKnownSlot(action.type, (prop) => desiredChildListTypes(action, prop))
         )
     );
+}
+
+function stableJson(value: unknown): string {
+    return JSON.stringify(value, (_key, entry: unknown) => {
+        if (
+            entry === null ||
+            typeof entry !== "object" ||
+            Array.isArray(entry)
+        ) {
+            return entry;
+        }
+        const sorted: Record<string, unknown> = {};
+        const keys = Object.keys(entry).sort();
+        for (const key of keys) {
+            sorted[key] = (entry as Record<string, unknown>)[key];
+        }
+        return sorted;
+    });
+}
+
+function canonicalScalarContent(
+    value: Record<string, unknown>,
+    type: string,
+    fields: readonly { prop: string }[]
+): Record<string, unknown> {
+    const canonical: Record<string, unknown> = { type };
+    for (const field of fields) {
+        const key = scalarFieldCompareKey(type, field.prop, value[field.prop]);
+        if (key !== undefined) canonical[field.prop] = key;
+    }
+    const note = noteCompareKey(
+        typeof value.note === "string" ? value.note : undefined
+    );
+    if (note !== undefined) canonical.note = note;
+    return canonical;
+}
+
+function canonicalConditionContent(condition: Condition): Record<string, unknown> {
+    const value = condition as unknown as Record<string, unknown>;
+    const canonical = canonicalScalarContent(
+        value,
+        condition.type,
+        getConditionScalarLoreFields(condition.type)
+    );
+    if (condition.inverted !== undefined) {
+        canonical.inverted = condition.inverted;
+    }
+    return canonical;
+}
+
+function canonicalActionContent(
+    action: Action,
+    includeChildLists: boolean
+): Record<string, unknown> {
+    const value = action as unknown as Record<string, unknown>;
+    const canonical = canonicalScalarContent(
+        value,
+        action.type,
+        getActionScalarLoreFields(action.type)
+    );
+    if (!includeChildLists) return canonical;
+
+    for (const field of getChildListFields(action.type)) {
+        const childList = value[field.prop];
+        if (!Array.isArray(childList) || childList.length === 0) continue;
+        canonical[field.prop] =
+            field.kind === "conditionList"
+                ? (childList as Condition[]).map(canonicalConditionContent)
+                : (childList as Action[]).map((child) =>
+                      canonicalActionContent(child, false)
+                  );
+    }
+    return canonical;
+}
+
+export function actionListContentHashFromActions(
+    actions: readonly Action[]
+): string {
+    return hashHex(
+        stableJson(actions.map((action) => canonicalActionContent(action, true)))
+    );
+}
+
+export function actionListContentHashFromSlots(
+    slots: readonly ObservedActionSlot[]
+): string | undefined {
+    const actions = fullyHydratedActionsFromSlots(slots);
+    return actions === null ? undefined : actionListContentHashFromActions(actions);
 }

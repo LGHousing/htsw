@@ -25,7 +25,13 @@ import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
 import { scanConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
-import { actionListScanHashFromActions, actionListScanHashFromSlots } from "./scanHash";
+import {
+    actionListContentHashFromActions,
+    actionListContentHashFromSlots,
+    actionListScanHashFromActions,
+    actionListScanHashFromSlots,
+} from "./scanHash";
+import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -122,11 +128,9 @@ export async function scanActionListForPlan(
         },
         readOptions
     );
-    const conflictVerdict = recordActionListConflict(
-        actionListScanHashFromSlots(scan.slots),
-        desired,
-        options
-    );
+    const conflictVerdict = options.sync.trust.trustMode
+        ? recordActionListConflict({ slots: scan.slots }, desired, options)
+        : null;
     if (
         conflictVerdict === "unchanged" &&
         options.trustedBaselineAfterUnchangedScan !== undefined
@@ -170,6 +174,9 @@ export async function hydrateActionListForPlan(
     for (const action of desired) {
         canonicalizeActionItemName(action, options.sync.canonicalizeItemName);
     }
+    if (!options.sync.trust.trustMode) {
+        recordActionListConflict({ slots: observed }, desired, options);
+    }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
         desired,
@@ -193,7 +200,6 @@ export function createKnownActionListPlan(
     current: readonly Action[],
     options: ActionListPrereadOptions
 ): ActionListPlan {
-    recordActionListConflict(actionListScanHashFromActions(current), desired, options);
     const phaseUnits = estimateActionListPhaseUnits(desired, current);
     phaseUnits.reading = 0;
     phaseUnits.hydrating = 0;
@@ -218,6 +224,13 @@ function knownActionListPlan(
     for (const action of desired) {
         canonicalizeActionItemName(action, options.sync.canonicalizeItemName);
     }
+    recordActionListConflict(
+        {
+            actions: observed.map((entry) => entry.action),
+        },
+        desired,
+        options
+    );
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
         desired,
@@ -248,21 +261,57 @@ function emitPrereadCompleted(
 }
 
 function recordActionListConflict(
-    liveHash: string,
+    live:
+        | { slots: readonly ObservedActionSlot[] }
+        | { actions: readonly Action[] },
     desired: readonly Action[],
     options: ActionListPrereadOptions
 ): ReturnType<typeof scanConflictVerdict> | null {
     const target = options.conflictTarget;
-    if (target === undefined || !options.sync.trust.trustMode) return null;
+    const trustedImport = options.sync.trust.trustMode;
+    if (
+        target === undefined ||
+        !overwriteWarningsEnabled(
+            options.sync.overwriteWarningMode,
+            trustedImport
+        )
+    ) {
+        return null;
+    }
     const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
-    const lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
-    const verdict = scanConflictVerdict(
-        liveHash,
-        lockHash,
-        actionListScanHashFromActions(desired)
-    );
+    let liveHash: string | undefined;
+    let lockHash: string | undefined;
+    let sourceHash: string;
+    if (trustedImport) {
+        liveHash =
+            "slots" in live
+                ? actionListScanHashFromSlots(live.slots)
+                : actionListScanHashFromActions(live.actions);
+        lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
+        sourceHash = actionListScanHashFromActions(desired);
+    } else {
+        liveHash =
+            "slots" in live
+                ? actionListContentHashFromSlots(live.slots)
+                : actionListContentHashFromActions(live.actions);
+        if (liveHash === undefined) return null;
+        lockHash = trustPlan?.lockListContentHashes?.[target.basePath];
+        sourceHash = actionListContentHashFromActions(desired);
+        if (
+            lockHash === undefined &&
+            trustPlan?.lockListScanHashes?.[target.basePath] !== undefined
+        ) {
+            liveHash =
+                "slots" in live
+                    ? actionListScanHashFromSlots(live.slots)
+                    : actionListScanHashFromActions(live.actions);
+            lockHash = trustPlan.lockListScanHashes[target.basePath];
+            sourceHash = actionListScanHashFromActions(desired);
+        }
+    }
+    const verdict = scanConflictVerdict(liveHash, lockHash, sourceHash);
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
     }

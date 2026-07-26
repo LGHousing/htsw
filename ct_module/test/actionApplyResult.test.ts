@@ -72,6 +72,7 @@ function syncContext(): ActionSyncContext {
             trustMode: false,
             importables: new Map(),
         },
+        overwriteWarningMode: "always",
         conflicts: [],
         events: undefined,
         itemRead: { mode: "sync" },

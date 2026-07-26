@@ -565,6 +565,7 @@ describe("trusted action-list planning", () => {
                 trustMode: true,
                 importables: new Map(),
             },
+            overwriteWarningMode: "always",
             conflicts: [],
             events: undefined,
             itemRead: { mode: "sync" },
@@ -582,6 +583,7 @@ describe("trusted action-list planning", () => {
                 cacheHash: importableHash(cached),
                 lockHash: importableHash(cached),
                 lockListScanHashes: null,
+                lockListContentHashes: null,
                 cacheMatchesLock: true,
                 breakdown: {
                     dependenciesMatch: true,
@@ -616,6 +618,7 @@ describe("trusted action-list planning", () => {
                 cacheHash: importableHash(cached),
                 lockHash: importableHash(cached),
                 lockListScanHashes: null,
+                lockListContentHashes: null,
                 cacheMatchesLock: true,
                 breakdown: {
                     dependenciesMatch: true,

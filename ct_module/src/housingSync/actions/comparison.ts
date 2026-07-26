@@ -120,8 +120,11 @@ export function conditionCompareKey(
 }
 
 export function notesEqual(left: string | undefined, right: string | undefined): boolean {
-    if (left === undefined || right === undefined) return left === right;
-    return normalizeNoteText(left) === normalizeNoteText(right);
+    return noteCompareKey(left) === noteCompareKey(right);
+}
+
+export function noteCompareKey(value: string | undefined): string | undefined {
+    return value === undefined ? undefined : JSON.stringify(normalizeNoteText(value));
 }
 
 function stripNote<T extends { note?: unknown }>(value: T): T {
@@ -405,7 +408,7 @@ export function scalarFieldHasNonDefaultValue(
     return scalarFieldCompareKey(type, prop, desired[prop]) !== undefined;
 }
 
-function scalarFieldCompareKey(
+export function scalarFieldCompareKey(
     type: string,
     prop: string,
     value: unknown

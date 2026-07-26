@@ -6,6 +6,7 @@ import type { CanonicalizeItemName, ResolveItemField } from "../items/itemRefere
 import type { ItemCaptureSink } from "../items/capture";
 import type { ItemFieldObservationRecorder } from "../items/fieldObservations";
 import type { SyncEventHandler } from "../syncEvents";
+import type { OverwriteWarningMode } from "../../importables/overwriteWarning";
 
 export type ActionSyncConflict = {
     type: Importable["type"];
@@ -17,6 +18,7 @@ export type ActionSyncContext = {
     canonicalizeItemName: CanonicalizeItemName;
     resolveItem: ResolveItemField;
     trust: TrustPlan;
+    overwriteWarningMode: OverwriteWarningMode;
     conflicts: ActionSyncConflict[];
     events?: SyncEventHandler;
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };

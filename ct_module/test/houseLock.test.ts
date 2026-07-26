@@ -7,7 +7,9 @@ import {
     type HouseLock,
 } from "../src/importCache/houseLock";
 import {
+    ACTION_LIST_CONTENT_HASH_VERSION,
     ACTION_LIST_SCAN_HASH_VERSION,
+    actionListContentHashFromActions,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { ItemDependencySnapshot } from "../src/importables/items/dependencyIndex";
@@ -91,8 +93,12 @@ describe("house lock scan hashes", () => {
         ).toBe(true);
         const written = JSON.parse(files[lockPath]!) as HouseLock;
         expect(written.scanHashVersion).toBe(ACTION_LIST_SCAN_HASH_VERSION);
+        expect(written.contentHashVersion).toBe(ACTION_LIST_CONTENT_HASH_VERSION);
         expect(written.importables["FUNCTION:Debug"].listScanHashes).toEqual({
             actions: actionListScanHashFromActions(importable.actions ?? []),
+        });
+        expect(written.importables["FUNCTION:Debug"].listContentHashes).toEqual({
+            actions: actionListContentHashFromActions(importable.actions ?? []),
         });
         expect(written.importables["FUNCTION:Debug"].itemDependencies).toEqual(
             itemDependencies
@@ -122,6 +128,38 @@ describe("house lock scan hashes", () => {
             schemaVersion: 1,
             houseUuid: "future-house",
             scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION + 1,
+            importables: {
+                "FUNCTION:Debug": {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    hash: "0xfuture",
+                },
+            },
+        });
+    });
+
+    it("hides entry content hashes from a different content-hash version", () => {
+        const files = {
+            [lockPath]: JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: "future-house",
+                contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION + 1,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: "0xfuture",
+                        listContentHashes: { actions: "0xfuture-content" },
+                    },
+                },
+            }),
+        };
+        stubFiles(files);
+
+        expect(readHouseLock(importJsonPath)).toEqual({
+            schemaVersion: 1,
+            houseUuid: "future-house",
+            contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION + 1,
             importables: {
                 "FUNCTION:Debug": {
                     type: "FUNCTION",

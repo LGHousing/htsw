@@ -18,6 +18,7 @@ import {
 } from "./plan";
 import { emitDiffPlanned } from "./apply/progress";
 import { emitKnowledgeSource } from "../progress/knowledge";
+import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 
 export type ActionListSyncResult =
     | { kind: "skipped"; reason: "undeclared" | "trusted" }
@@ -149,10 +150,23 @@ export function actionListPlanFromRead(
 }
 
 function conflictScanRequired(target: ActionListSyncTarget): boolean {
+    const trustedImport = target.sync.trust.trustMode;
+    if (
+        target.conflictTarget === undefined ||
+        !overwriteWarningsEnabled(
+            target.sync.overwriteWarningMode,
+            trustedImport
+        )
+    ) {
+        return false;
+    }
+    const lockContentHash =
+        target.trustPlan?.lockListContentHashes?.[target.basePath];
+    const lockScanHash = target.trustPlan?.lockListScanHashes?.[target.basePath];
     return (
-        target.conflictTarget !== undefined &&
-        target.sync.trust.trustMode &&
-        target.trustPlan?.lockListScanHashes?.[target.basePath] !== undefined
+        trustedImport
+            ? lockScanHash !== undefined
+            : lockContentHash !== undefined || lockScanHash !== undefined
     );
 }
 
