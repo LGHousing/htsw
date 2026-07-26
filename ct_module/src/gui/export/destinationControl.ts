@@ -16,7 +16,7 @@ import { exportDestinationPicker } from "./destinationPicker";
 import { getExportDestinationStatus } from "./destinationStatus";
 
 /**
- * Label the new-entry target relative to the export project, since the row
+ * Label the export destination relative to the project, since the row
  * above already names the project. The base file reads as `import.json`; a
  * sub-target reads as its folder path within the project.
  */
@@ -51,7 +51,7 @@ export function exportDestinationControl(): Element {
                 },
                 tooltip: () => {
                     const status = getExportDestinationStatus();
-                    if (status.kind === "ready") return "Change export destination";
+                    if (status.kind === "ready") return "Change where exports go";
                     if (status.kind === "missing") return "Choose a replacement export project";
                     return "Choose an export project";
                 },
@@ -108,12 +108,12 @@ export function exportDestinationControl(): Element {
                             style: { gap: 2, width: { kind: "grow" } },
                             children: [
                                 Text({
-                                    text: `Export project: ${basename(dirname(status.path))}`,
+                                    text: `Project: ${basename(dirname(status.path))}`,
                                     color: COLOR_TEXT,
                                     truncate: true,
                                 }),
                                 Text({
-                                    text: `New entries go in: ${newTargetLabel(status.path)}`,
+                                    text: `Export destination: ${newTargetLabel(status.path)}`,
                                     color: COLOR_TEXT_DIM,
                                     tooltip: getEffectiveNewExportTarget(),
                                     tooltipColor: COLOR_TEXT_DIM,

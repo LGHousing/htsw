@@ -459,6 +459,39 @@ function isAlreadySelectedOption(slot: ItemSlot): boolean {
         );
 }
 
+function getCycleFieldSlot(
+    ctx: TaskContext,
+    slotName: string,
+    options: readonly string[]
+): ItemSlot {
+    const exactSlot = ctx.tryGetMenuItemSlot(slotName);
+    if (exactSlot !== null) return exactSlot;
+
+    const isHolderCycle =
+        slotName === "Holder" &&
+        options.length === 3 &&
+        options.indexOf("Player") !== -1 &&
+        options.indexOf("Global") !== -1 &&
+        options.indexOf("Team") !== -1;
+    if (isHolderCycle) {
+        const malformedSlot = ctx.tryGetMenuItemSlot((slot) => {
+            const name = removedFormatting(slot.getItem().getName()).trim();
+            if (name !== "Change Variable" && name !== "Head") return false;
+
+            const foundOptions = new Set<string>();
+            const lore = slot.getItem().getLore();
+            for (let i = 0; i < lore.length; i++) {
+                const option = normalizeSelectedOption(lore[i]);
+                if (options.indexOf(option) !== -1) foundOptions.add(option);
+            }
+            return foundOptions.size === options.length;
+        });
+        if (malformedSlot !== null) return malformedSlot;
+    }
+
+    return ctx.getMenuItemSlot(slotName);
+}
+
 export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
     const newValue = value ? "Enabled" : "Disabled";
     const currentValue = readCurrentValue(slot);
@@ -507,7 +540,7 @@ export async function setCycleValue(
         throw new Error(`"${value}" is not a valid option for "${slotName}".`);
     }
 
-    const getSlot = () => ctx.getMenuItemSlot(slotName);
+    const getSlot = () => getCycleFieldSlot(ctx, slotName, options);
     const currentValue = readSelectedOption(getSlot(), options);
 
     if (currentValue === value) {

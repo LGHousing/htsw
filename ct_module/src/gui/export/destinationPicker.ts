@@ -115,11 +115,16 @@ function currentExportDestinations(): string[] {
     return out;
 }
 
-function destinationSection(label: string): Element {
+function destinationSection(label: string, spaceAbove?: number): Element {
     return Text({
         text: label,
         color: COLOR_TEXT_FAINT,
-        style: { padding: { side: "x", value: 4 } },
+        style: {
+            padding: [
+                { side: "x", value: 4 },
+                { side: "top", value: spaceAbove ?? 0 },
+            ],
+        },
     });
 }
 
@@ -280,7 +285,7 @@ function exportSubTreeRows(): Element[] {
             else exportSubExpansion.add(path);
             markGuiDirty();
         },
-        emptyLabel: "Pick a destination project first",
+        emptyLabel: "Pick a project first",
     });
 }
 
@@ -328,7 +333,7 @@ function newExportFileRow(): Element {
                         closeAllPopovers();
                         if (targetSaved) {
                             showToast(
-                                `New entries → ${shortPath(created.importJsonPath)}`,
+                                `Export destination → ${shortPath(created.importJsonPath)}`,
                                 0xff5cb85c
                             );
                         } else {
@@ -398,7 +403,7 @@ export function exportDestinationPicker(): Element {
         ...open.map(row),
         ...(recents.length === 0
             ? []
-            : [destinationSection("Recent"), ...recents.map(row)]),
+            : [destinationSection("Recent", 6), ...recents.map(row)]),
     ];
     if (projectRows.length === 0) {
         projectRows.push(destinationSection("No available projects"));
@@ -408,20 +413,8 @@ export function exportDestinationPicker(): Element {
         style: { gap: 4, padding: 4, height: { kind: "grow" } },
         children: [
             Text({
-                text: "Export destination",
+                text: "Where exports go",
                 color: COLOR_TEXT,
-                style: { padding: { side: "x", value: 4 } },
-            }),
-            Text({
-                text: "Existing entries stay in their current file.",
-                color: COLOR_TEXT_DIM,
-                truncate: true,
-                style: { padding: { side: "x", value: 4 } },
-            }),
-            Text({
-                text: "Choose where brand-new entries are created.",
-                color: COLOR_TEXT_DIM,
-                truncate: true,
                 style: { padding: { side: "x", value: 4 } },
             }),
             destinationSection("Project"),
@@ -470,7 +463,7 @@ export function exportDestinationPicker(): Element {
                 style: { gap: 4, align: "center", height: { kind: "px", value: 16 } },
                 children: () => [
                     Text({
-                        text: "New entries go in",
+                        text: "Export destination",
                         color: COLOR_TEXT_FAINT,
                         style: {
                             width: { kind: "grow" },
