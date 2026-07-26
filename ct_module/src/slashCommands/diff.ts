@@ -14,11 +14,12 @@ import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
-import { TaskManager } from "../tasks/manager";
+import { isTaskCancelled, TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
+import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { evaluateDiffReport, formatDiffReport } from "./diffReport";
 
 function diffFailure(reason: string): void {
@@ -41,7 +42,8 @@ async function readDiffImportables(
     ctx: TaskContext,
     manifest: string,
     housingUuid: string,
-    parsed: ImportablesParseResult
+    parsed: ImportablesParseResult,
+    progress: ReturnType<typeof createDiffProgressSession>
 ): Promise<Map<string, Importable>> {
     const live = new Map<string, Importable>();
     const namesByType = new Map<Importable["type"], string[]>();
@@ -64,6 +66,7 @@ async function readDiffImportables(
             projectItems: projectItemsFromParsedImportJson(parsed),
             names,
             quiet: true,
+            progress: progress.sinkFor(type),
             output: {
                 kind: "memory",
                 housingUuid,
@@ -113,9 +116,16 @@ export function commandDiff(args: string[]): void {
         return;
     }
 
+    const progress = createDiffProgressSession(parsed.value, manifest);
     void runHousingSyncTask("export", async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        const live = await readDiffImportables(ctx, manifest, housingUuid, parsed);
+        const live = await readDiffImportables(
+            ctx,
+            manifest,
+            housingUuid,
+            parsed,
+            progress
+        );
         const report = evaluateDiffReport(
             housingUuid,
             parsed.value,
@@ -125,5 +135,16 @@ export function commandDiff(args: string[]): void {
         for (const line of formatDiffReport(report, manifest)) {
             ChatLib.chat(line);
         }
-    }).catch((error: unknown) => diffFailure(errorReason(error)));
+        progress.complete(
+            `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
+        );
+    }).catch((error: unknown) => {
+        if (isTaskCancelled(error)) {
+            progress.clear();
+            return;
+        }
+        const reason = errorReason(error);
+        progress.fail(reason);
+        diffFailure(reason);
+    });
 }

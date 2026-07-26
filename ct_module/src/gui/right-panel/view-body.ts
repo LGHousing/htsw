@@ -53,6 +53,8 @@ export function viewBody(): Element {
                                       if (verb === "export") return "Exporting...";
                                       if (verb === "read")
                                           return "Reading house contents...";
+                                      if (verb === "diff")
+                                          return "Scanning Housing...";
                                       return "Importing...";
                                   }
                                   return "No live diff to show.";

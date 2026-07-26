@@ -361,7 +361,10 @@ describe("import conflict chat", () => {
                 { type: "FUNCTION", identity: "Debug", basePath: "actions" },
             ])
         ).toBe(
-            "[htsw] Import conflict: 2 importables changed in Housing — awaiting confirmation"
+            "[htsw] Import conflict: 2 importables changed in Housing — awaiting confirmation\n" +
+                '[htsw] Conflict: ITEM "Wand" · leftClickActions\n' +
+                '[htsw] Conflict: ITEM "Wand" · rightClickActions\n' +
+                '[htsw] Conflict: FUNCTION "Debug" · actions'
         );
     });
 });

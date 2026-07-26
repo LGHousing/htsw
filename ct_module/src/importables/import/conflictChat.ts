@@ -13,5 +13,13 @@ function distinctConflictImportableCount(
 export function conflictAwaitingConfirmationMessage(
     conflicts: readonly ImportConflict[]
 ): string {
-    return `[htsw] Import conflict: ${distinctConflictImportableCount(conflicts)} importables changed in Housing — awaiting confirmation`;
+    return (
+        `[htsw] Import conflict: ${distinctConflictImportableCount(conflicts)} importables changed in Housing — awaiting confirmation\n` +
+        conflicts
+            .map(
+                (conflict) =>
+                    `[htsw] Conflict: ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
+            )
+            .join("\n")
+    );
 }
