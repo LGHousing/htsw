@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseWarnModeArgument } from "../src/slashCommands/warnMode";
 
 const SETTINGS_PATH = "./htsw/.settings/overwrite-warning.json";
 
@@ -61,5 +62,12 @@ describe("overwrite warning persistence", () => {
         expect(warnings.getOverwriteWarningMode()).toBe("always");
         expect(warnings.setOverwriteWarningMode("trusted")).toBe(true);
         expect(JSON.parse(files.get(SETTINGS_PATH)!)).toBe("trusted");
+    });
+});
+
+describe("warnmode arguments", () => {
+    it("rejects unsupported modes and extra arguments", () => {
+        expect(parseWarnModeArgument(["sometimes"])).toBeNull();
+        expect(parseWarnModeArgument(["always", "off"])).toBeNull();
     });
 });

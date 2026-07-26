@@ -42,5 +42,6 @@ export const readNpcs: ReadFn = async (ctx, options) => {
         skipExisting: options.skipExisting,
         progress: options.progress,
         output: options.output,
+        quiet: options.quiet,
     });
 };

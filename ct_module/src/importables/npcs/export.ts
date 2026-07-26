@@ -23,6 +23,7 @@ import {
     type NpcListEntry,
     type NpcLookupCache,
 } from "./listNpcs";
+import type { ReadOutput } from "../export/reader";
 
 export type ExportNpcWithSharedStateOptions = {
     entry: NpcListEntry;
@@ -32,7 +33,8 @@ export type ExportNpcWithSharedStateOptions = {
     rightClickTarget: HtslExportTarget;
     rootDir: string;
     onReadProgress?: ProgressHandler;
-    output: { kind: "project" } | { kind: "cache"; housingUuid: string };
+    output: ReadOutput;
+    quiet?: boolean;
 };
 
 export type SharedNpcExportState = {
@@ -144,16 +146,16 @@ export async function exportNpcWithSharedState(
     const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
 
     if (options.output.kind === "cache") {
-        writeImportableCache(
-            ctx,
-            options.output.housingUuid,
-            importable,
-            "reader",
-            true
-        );
-        ctx.displayMessage(
-            `&aRead NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
-        );
+        writeImportableCache(ctx, options.output.housingUuid, importable, "reader", true);
+        if (options.quiet !== true) {
+            ctx.displayMessage(
+                `&aRead NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
+            );
+        }
+        return;
+    }
+    if (options.output.kind === "memory") {
+        options.output.accept(importable);
         return;
     }
 

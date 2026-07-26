@@ -47,6 +47,10 @@ import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 import { commandCacheReport } from "./cacheReport";
 import { commandQueue } from "./queue";
 import { commandWatch } from "./watch";
+import { commandTrust } from "./trust";
+import { commandWarnMode } from "./warnMode";
+import { parseImportCommandArgs } from "./importArgs";
+import { commandDiff } from "./diff";
 
 type HtswSubcommand = {
     name: string;
@@ -62,7 +66,25 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "import",
         summary: "Import an import.json or .htsl file",
         run: commandImport,
-        usage: "import <import.json|actions.htsl>",
+        usage: "import <import.json|actions.htsl> [--on-conflict=cancel]",
+    },
+    {
+        name: "trust",
+        summary: "Read or change trust for the current house",
+        run: commandTrust,
+        usage: "trust [status|on|off]",
+    },
+    {
+        name: "diff",
+        summary: "Scan a manifest for live Housing divergence",
+        run: commandDiff,
+        usage: "diff <manifest-path>",
+    },
+    {
+        name: "warnmode",
+        summary: "Read or change the overwrite warning mode",
+        run: commandWarnMode,
+        usage: "warnmode [always|trusted|off]",
     },
     {
         name: "simulator",
@@ -572,12 +594,14 @@ function commandEta(args: string[]): void {
 }
 
 function commandImport(args: string[]) {
-    if (args.length === 0) {
+    const parsedArgs = parseImportCommandArgs(args);
+    const commandArgs = parsedArgs.pathArgs;
+    if (commandArgs.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
-        ChatLib.chat("&f/htsw import <import.json|actions.htsl>");
+        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel]");
         ChatLib.chat(
             "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
         );
@@ -585,13 +609,13 @@ function commandImport(args: string[]) {
         return;
     }
 
-    const rawMode = isRawImportToken(args[0]);
-    if (rawMode && args.length === 1) {
+    const rawMode = isRawImportToken(commandArgs[0]);
+    if (rawMode && commandArgs.length === 1) {
         ChatLib.chat("&cUsage: /htsw import raw <actions.htsl>");
         return;
     }
 
-    const pathArgs = rawMode ? args.slice(1) : args;
+    const pathArgs = rawMode ? commandArgs.slice(1) : commandArgs;
     const importPath = resolveModuleRelativePath(
         stripSurroundingQuotes(pathArgs.join(" "))
     );
@@ -615,14 +639,17 @@ function commandImport(args: string[]) {
     // progress UI. buildBatches parses the file on demand via the parse
     // cache and gates on diagnostics, so no separate parse pass is needed.
     const canon = canonicalPath(importPath);
-    startImport([
-        {
-            operation: "import",
-            kind: "importJson",
-            sourcePath: canon,
-            label: compactFileLabel(canon),
-        },
-    ]);
+    startImport(
+        [
+            {
+                operation: "import",
+                kind: "importJson",
+                sourcePath: canon,
+                label: compactFileLabel(canon),
+            },
+        ],
+        { onConflict: parsedArgs.onConflict }
+    );
 }
 
 function isRawImportToken(token: string | undefined): boolean {

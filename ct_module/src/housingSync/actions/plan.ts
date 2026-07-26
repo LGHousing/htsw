@@ -23,14 +23,8 @@ import {
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
-import { scanConflictVerdict } from "./conflicts";
+import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
-import {
-    actionListContentHashFromActions,
-    actionListContentHashFromSlots,
-    actionListScanHashFromActions,
-    actionListScanHashFromSlots,
-} from "./scanHash";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 
 export type ActionListApplyOptions = {
@@ -261,57 +255,30 @@ function emitPrereadCompleted(
 }
 
 function recordActionListConflict(
-    live:
-        | { slots: readonly ObservedActionSlot[] }
-        | { actions: readonly Action[] },
+    live: { slots: readonly ObservedActionSlot[] } | { actions: readonly Action[] },
     desired: readonly Action[],
     options: ActionListPrereadOptions
-): ReturnType<typeof scanConflictVerdict> | null {
+): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
     const trustedImport = options.sync.trust.trustMode;
     if (
         target === undefined ||
-        !overwriteWarningsEnabled(
-            options.sync.overwriteWarningMode,
-            trustedImport
-        )
+        !overwriteWarningsEnabled(options.sync.overwriteWarningMode, trustedImport)
     ) {
         return null;
     }
     const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
-    let liveHash: string | undefined;
-    let lockHash: string | undefined;
-    let sourceHash: string;
-    if (trustedImport) {
-        liveHash =
-            "slots" in live
-                ? actionListScanHashFromSlots(live.slots)
-                : actionListScanHashFromActions(live.actions);
-        lockHash = trustPlan?.lockListScanHashes?.[target.basePath];
-        sourceHash = actionListScanHashFromActions(desired);
-    } else {
-        liveHash =
-            "slots" in live
-                ? actionListContentHashFromSlots(live.slots)
-                : actionListContentHashFromActions(live.actions);
-        if (liveHash === undefined) return null;
-        lockHash = trustPlan?.lockListContentHashes?.[target.basePath];
-        sourceHash = actionListContentHashFromActions(desired);
-        if (
-            lockHash === undefined &&
-            trustPlan?.lockListScanHashes?.[target.basePath] !== undefined
-        ) {
-            liveHash =
-                "slots" in live
-                    ? actionListScanHashFromSlots(live.slots)
-                    : actionListScanHashFromActions(live.actions);
-            lockHash = trustPlan.lockListScanHashes[target.basePath];
-            sourceHash = actionListScanHashFromActions(desired);
-        }
-    }
-    const verdict = scanConflictVerdict(liveHash, lockHash, sourceHash);
+    const verdict = actionListConflictVerdict(
+        live,
+        {
+            contentHash: trustPlan?.lockListContentHashes?.[target.basePath],
+            scanHash: trustPlan?.lockListScanHashes?.[target.basePath],
+        },
+        desired,
+        trustedImport ? "scan" : "content"
+    );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
     }
