@@ -59,6 +59,7 @@ import type { ImportConflict } from "./conflicts";
 import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
+import { readInteractDataCache } from "../items/interactDataCache";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -257,10 +258,16 @@ async function runImportSessionInner(
                 tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
                     ? 1
                     : estimateImportableUnits(
-                          importable,
-                          tp?.entry ?? null,
-                          tp?.trustMode === true
-                      ),
+                      importable,
+                      tp?.entry ?? null,
+                      tp?.trustMode === true,
+                      importable.type === "ITEM" &&
+                          readInteractDataCache(
+                              importable,
+                              itemDependencies,
+                              selection.housingUuid
+                          ) !== undefined
+                  ),
         };
     });
 

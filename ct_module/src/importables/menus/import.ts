@@ -93,10 +93,30 @@ export function menuApplyTotals(
         setItem?: unknown;
         syncActions?: unknown;
         actionUnits?: number;
-    }>
+    }>,
+    menu: { exists: boolean; setSize: number | null }
 ): { count: number; units: number } {
-    let count = 0;
-    let units = 0;
+    let count = 1;
+    let units =
+        COST.commandInterval +
+        (menu.exists ? COST.commandMenuWait : COST.commandMessageWait);
+    const clearBeforeResize =
+        menu.setSize !== null && ops.some((op) => op.clear === true);
+    const remainingCount = clearBeforeResize
+        ? ops.filter((op) => op.clear !== true).length
+        : ops.length;
+    if (clearBeforeResize) {
+        count += 2;
+        units += COST.menuClickWait + COST.goBackWait;
+    }
+    if (menu.setSize !== null) {
+        count++;
+        units += COST.menuClickWait * 2;
+    }
+    if (remainingCount > 0) {
+        count++;
+        units += COST.menuClickWait;
+    }
     for (const op of ops) {
         if (op.clear === true) {
             count++;
@@ -109,7 +129,10 @@ export function menuApplyTotals(
         }
         if (op.syncActions !== undefined) {
             count++;
-            units += op.actionUnits ?? 0;
+            units +=
+                COST.menuClickWait +
+                (op.actionUnits ?? 0) +
+                COST.goBackWait;
         }
     }
     return { count, units };
@@ -450,8 +473,11 @@ export async function applyImportableMenuPlan(
     // ETA/bar reflect every slot (a bare per-slot total collapses the menu total
     // to one slot's size after the first, pinning the bar near 100%).
     const events = session.actions.events;
-    const totals = menuApplyTotals(diff.ops);
-    const applyingUnits = Math.max(1, totals.units);
+    const exists =
+        plan.exists ||
+        session.ensuredReferencedShells.menus.has(importable.name.toLowerCase());
+    const totals = menuApplyTotals(diff.ops, { exists, setSize: diff.setSize });
+    const applyingUnits = totals.units;
     let completedUnits = 0;
     let workDone = 0;
 
@@ -481,9 +507,6 @@ export async function applyImportableMenuPlan(
     };
 
     emitMenuTotal();
-    const exists =
-        plan.exists ||
-        session.ensuredReferencedShells.menus.has(importable.name.toLowerCase());
     if (!exists) {
         await ctx.expectAfter(
             () => ctx.runCommand(`/menu create ${importable.name}`),
@@ -493,22 +516,32 @@ export async function applyImportableMenuPlan(
     } else {
         await openMenuEditor(ctx, importable.name);
     }
+    finishWork(
+        COST.commandInterval +
+            (exists ? COST.commandMenuWait : COST.commandMessageWait)
+    );
 
     let remainingOps = diff.ops;
     const clearOps = diff.ops.filter((op) => op.clear === true);
     if (diff.setSize !== null && clearOps.length > 0) {
         await openMenuElements(ctx);
+        finishWork(COST.menuClickWait);
         for (const op of clearOps) {
             startSlot(op.slot, null);
             await clearMenuSlot(ctx, op.slot);
             finishWork(SLOT_CLEAR_UNITS);
         }
         await clickGoBack(ctx);
+        finishWork(COST.goBackWait);
         remainingOps = diff.ops.filter((op) => op.clear !== true);
     }
-    if (diff.setSize !== null) await setMenuSize(ctx, diff.setSize);
+    if (diff.setSize !== null) {
+        await setMenuSize(ctx, diff.setSize);
+        finishWork(COST.menuClickWait * 2);
+    }
     if (remainingOps.length === 0) return;
     await openMenuElements(ctx);
+    finishWork(COST.menuClickWait);
 
     // Items first, then actions. RIGHT-click opens the "Select an Item" picker
     // for empty and populated slots alike (its "Clear Item" button lives there
@@ -548,7 +581,11 @@ export async function applyImportableMenuPlan(
             });
             await clickGoBack(ctx);
         }
-        finishWork(op.actionUnits ?? 0);
+        finishWork(
+            COST.menuClickWait +
+                (op.actionUnits ?? 0) +
+                COST.goBackWait
+        );
     }
 }
 

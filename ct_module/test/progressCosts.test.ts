@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import type { Action, Condition, ImportableFunction, ImportableMenu } from "htsw/types";
+import type {
+    Action,
+    Condition,
+    ImportableFunction,
+    ImportableItem,
+    ImportableMenu,
+    ImportableRegion,
+    ImportableCommand,
+} from "htsw/types";
 
 import {
     actionOperationApplyUnits,
@@ -10,10 +18,12 @@ import {
     estimateConditionListPhaseUnits,
     estimateImportableCost,
     estimateImportableReadUnits,
+    estimateImportableUnits,
     exactHydrationPlanUnits,
     hydrationEntryUnits,
     COST,
     ITEM_CAPTURE_FIELD_UNITS,
+    REGION_BOUNDS_CHANGE_UNITS,
     editUnitsWithChildLists,
 } from "../src/housingSync/progress/costs";
 import {
@@ -33,6 +43,7 @@ import type {
     ConditionListOperation,
 } from "../src/housingSync/actions/diff/types";
 import type { ObservedActionSlot } from "../src/housingSync/observedActions";
+import type { ImportableCacheEntry } from "../src/importCache/cache";
 
 import { conditional, message, observedSlot } from "./utils";
 
@@ -274,6 +285,155 @@ describe("progress cost estimates", () => {
         expect(withChildren).toBeGreaterThan(emptySlot);
     });
 
+    test("menu slot actions include their apply work", () => {
+        const actions = [message("a"), message("b"), message("c")];
+        const withoutActions: ImportableMenu = {
+            type: "MENU",
+            name: "m",
+            slots: [{ slot: 0, nbt: null as never, actions: [] }],
+        };
+        const withActions: ImportableMenu = {
+            ...withoutActions,
+            slots: [{ slot: 0, nbt: null as never, actions }],
+        };
+        const actionApply = actionListDiffApplyUnits(
+            diffActionList(baselineActionListFromActions([]), actions),
+            editUnitsWithChildLists,
+            actions.length
+        );
+
+        expect(
+            estimateImportableCost(withActions) -
+                estimateImportableCost(withoutActions)
+        ).toBeCloseTo(actionApply);
+    });
+
+    test("items with click actions price both guaranteed sleeps", () => {
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "wand",
+            nbt: null as never,
+            leftClickActions: [message("click")],
+        };
+        const expectedWithoutActionList =
+            COST.itemInject +
+            COST.guaranteedSleep1000 * 2 +
+            COST.commandInterval +
+            COST.commandMenuWait +
+            COST.menuClickWait +
+            COST.nbtCapture +
+            COST.cacheWrite;
+
+        expect(estimateImportableCost(item)).toBeCloseTo(
+            expectedWithoutActionList +
+                actionListDiffApplyUnits(
+                    diffActionList(
+                        baselineActionListFromActions([]),
+                        item.leftClickActions ?? []
+                    ),
+                    editUnitsWithChildLists,
+                    1
+                )
+        );
+    });
+
+    test("codeless items still price placement and its held-item wait", () => {
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "plain",
+            nbt: null as never,
+        };
+        expect(estimateImportableCost(item)).toBeCloseTo(
+            COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite
+        );
+    });
+
+    test("items with reusable interact data only price placement", () => {
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "cached wand",
+            nbt: null as never,
+            leftClickActions: [message("click")],
+        };
+        expect(estimateImportableUnits(item, null, false, true)).toBeCloseTo(
+            COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite
+        );
+    });
+
+    test("region bounds work is omitted only when a trusted baseline matches", () => {
+        const changed: ImportableRegion = {
+            type: "REGION",
+            name: "r",
+            bounds: { from: { x: 1, y: 2, z: 3 }, to: { x: 4, y: 5, z: 6 } },
+            onEnterActions: [],
+            onExitActions: [],
+        };
+        const matching = changed;
+        const old: ImportableRegion = {
+            ...changed,
+            bounds: { from: { x: 0, y: 0, z: 0 }, to: { x: 4, y: 5, z: 6 } },
+        };
+        const cache = (importable: ImportableRegion): ImportableCacheEntry =>
+            ({
+                importable,
+                lists: {},
+            }) as ImportableCacheEntry;
+
+        expect(
+            estimateImportableUnits(changed, cache(old), true) -
+                estimateImportableUnits(matching, cache(matching), true)
+        ).toBeCloseTo(REGION_BOUNDS_CHANGE_UNITS);
+    });
+
+    test("trusted command settings price only fields that differ", () => {
+        const desired: ImportableCommand = {
+            type: "COMMAND",
+            name: "test",
+            actions: [],
+            mode: "Targeted",
+            requiredPriority: 4,
+            listed: false,
+        };
+        const matching = {
+            ...desired,
+        };
+        const oneDifference = {
+            ...desired,
+            requiredPriority: 0,
+        };
+        const cache = (importable: ImportableCommand): ImportableCacheEntry =>
+            ({
+                importable,
+                lists: {},
+            }) as ImportableCacheEntry;
+
+        expect(
+            estimateImportableUnits(desired, cache(oneDifference), true) -
+                estimateImportableUnits(desired, cache(matching), true)
+        ).toBeCloseTo(COST.signInput);
+    });
+
+    test("unrelated function action pricing only gains its command interval", () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "f",
+            actions: [message("hi")],
+        };
+        expect(estimateImportableCost(importable)).toBeCloseTo(
+            COST.commandInterval +
+                COST.commandMenuWait +
+                actionListDiffApplyUnits(
+                    diffActionList(
+                        baselineActionListFromActions([]),
+                        importable.actions ?? []
+                    ),
+                    editUnitsWithChildLists,
+                    1
+                ) +
+                COST.cacheWrite
+        );
+    });
+
     test("function read estimate prices its list walk without apply work", () => {
         const importable: ImportableFunction = {
             type: "FUNCTION",
@@ -282,7 +442,8 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandMenuWait +
+            COST.commandInterval +
+                COST.commandMenuWait +
                 COST.menuClickWait +
                 (COST.menuClickWait +
                     COST.goBackWait +
@@ -382,7 +543,8 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandMenuWait +
+            COST.commandInterval +
+                COST.commandMenuWait +
                 COST.menuClickWait +
                 COST.goBackWait +
                 COST.menuClickWait +

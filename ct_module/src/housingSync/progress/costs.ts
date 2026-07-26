@@ -39,6 +39,7 @@ import { actionHash } from "../../importCache/hash";
 import { matchByHash } from "../../importCache/actionMatch";
 import { cacheEntryListHashes } from "../../importCache/status";
 import { trustedChildListPathsForImportable } from "../../importCache/trust";
+import { regionBoundsEqual } from "../../importables/regions/bounds";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
@@ -93,6 +94,11 @@ export const COST = {
  */
 export const ITEM_CAPTURE_FIELD_UNITS =
     COST.menuClickWait + COST.itemSelect + COST.goBackWait;
+
+export const REGION_BOUNDS_CHANGE_UNITS =
+    (COST.commandInterval + COST.commandMessageWait) * 4 +
+    (COST.commandInterval + COST.commandMenuWait) * 2 +
+    COST.messageClickWait;
 
 const LIST_ITEMS_PER_PAGE = 21;
 
@@ -168,6 +174,39 @@ function fieldKindEditUnits(
         return COST.menuClickWait;
     }
     return COST.menuClickWait;
+}
+
+function commandSettingsUnits(
+    desired: Extract<Importable, { type: "COMMAND" }>,
+    current?: Extract<Importable, { type: "COMMAND" }>
+): number {
+    const desiredMode = desired.mode ?? "Self";
+    const desiredPriority = desired.requiredPriority ?? 0;
+    const desiredListed = desired.listed ?? true;
+    if (current === undefined) {
+        return (
+            fieldKindEditUnits("cycle", ["Self", "Targeted"]) +
+            COST.signInput +
+            fieldKindEditUnits("boolean")
+        );
+    }
+
+    let total = 0;
+    if ((current.mode ?? "Self") !== desiredMode) {
+        total += fieldKindEditUnits(
+            "cycle",
+            ["Self", "Targeted"],
+            current.mode ?? "Self",
+            desiredMode
+        );
+    }
+    if ((current.requiredPriority ?? 0) !== desiredPriority) {
+        total += COST.signInput;
+    }
+    if ((current.listed ?? true) !== desiredListed) {
+        total += fieldKindEditUnits("boolean");
+    }
+    return total;
 }
 
 function scalarFieldEditUnitsForOp(
@@ -1066,6 +1105,7 @@ function exactKnownChildListUnits(actions: readonly Action[] | undefined): numbe
 export function estimateImportableReadUnits(importable: Importable): number {
     if (importable.type === "FUNCTION") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1075,6 +1115,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "COMMAND") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1083,6 +1124,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "EVENT") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(importable.actions) +
@@ -1091,6 +1133,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "REGION") {
         return (
+            COST.commandInterval * 4 +
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
             actionListReadCost(importable.onEnterActions ?? []) +
@@ -1104,6 +1147,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
         if (left.length === 0 && right.length === 0) return COST.cacheWrite;
         return (
             COST.itemInject +
+            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(left) +
@@ -1114,7 +1158,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
         );
     }
     if (importable.type === "MENU") {
-        let total = COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             total += actionListReadCost(slots[i].actions ?? []);
@@ -1123,6 +1167,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "NPC") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait * 3 +
             COST.chatInput +
@@ -1159,6 +1204,7 @@ export function estimateImportableCost(
 
     if (importable.type === "FUNCTION") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1171,9 +1217,8 @@ export function estimateImportableCost(
         );
     }
     if (importable.type === "COMMAND") {
-        const settingsUnits =
-            fieldKindEditUnits("cycle") + COST.signInput + fieldKindEditUnits("boolean");
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1182,12 +1227,13 @@ export function estimateImportableCost(
                 "actions",
                 trustedChildListPaths
             ) +
-            settingsUnits +
+            commandSettingsUnits(importable) +
             COST.cacheWrite
         );
     }
     if (importable.type === "EVENT") {
         return (
+            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1202,8 +1248,7 @@ export function estimateImportableCost(
     }
     if (importable.type === "REGION") {
         return (
-            COST.commandMessageWait * 3 +
-            COST.commandMenuWait +
+            REGION_BOUNDS_CHANGE_UNITS +
             actionListCost(
                 importable.onEnterActions ?? [],
                 get("onEnterActions"),
@@ -1225,12 +1270,16 @@ export function estimateImportableCost(
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            // Codeless items are skipped (issue #56), not spawned — only the
-            // cache write remains. estimateImportableUnits floors this at 1.
-            return COST.cacheWrite;
+            return (
+                COST.itemInject +
+                COST.guaranteedSleep1000 +
+                COST.cacheWrite
+            );
         }
         return (
             COST.itemInject +
+            COST.guaranteedSleep1000 +
+            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1258,14 +1307,17 @@ export function estimateImportableCost(
         // list, and go back (see readLiveMenu). Price that walk per slot;
         // pricing only the click (as this branch once did) undercounts a
         // menu's work by the entire cost of its action lists.
-        let total = COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             const actions = slots[i].actions ?? [];
             total +=
-                COST.menuClickWait +
+                COST.commandInterval +
+                COST.commandMenuWait +
+                COST.menuClickWait * 2 +
                 pageTurnUnitsForListItemCount(actions.length) +
                 topLevelHydrateUnits(actions) +
+                estimateActionListPhaseUnits(actions).applying +
                 COST.goBackWait;
         }
         return total + COST.cacheWrite;
@@ -1277,8 +1329,9 @@ export function estimateImportableCost(
             importable.leftClickRedirect === undefined ? 0 : COST.menuClickWait;
         const renameUnits = COST.chatInput;
         return (
-            COST.commandMenuWait +
-            COST.menuClickWait * 3 +
+            COST.commandInterval * 3 +
+            COST.commandMenuWait * 3 +
+            COST.menuClickWait * 9 +
             renameUnits +
             redirectUnits +
             actionListCost(
@@ -1309,11 +1362,14 @@ export function estimateImportableCost(
 export function estimateImportableUnits(
     importable: Importable,
     cacheEntry: ImportableCacheEntry | null,
-    trustMode: boolean = false
+    trustMode: boolean = false,
+    usesCachedInteractData: boolean = false
 ): number {
+    if (importable.type === "ITEM" && usesCachedInteractData) {
+        return COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite;
+    }
     if (cacheEntry === null) {
-        // Floor at 1: a 0-unit item would otherwise read as already-done.
-        return Math.max(1, estimateImportableCost(importable));
+        return estimateImportableCost(importable);
     }
     const getCached = (basePath: string) =>
         readCachedActionList(cacheEntry.importable, basePath);
@@ -1323,13 +1379,30 @@ export function estimateImportableUnits(
               cacheEntryListHashes(cacheEntry)
           )
         : undefined;
-    return Math.max(
-        1,
-        estimateImportableCost(
-            importable,
-            getCached,
-            trustMode,
-            trustedChildListPaths
-        )
+    let total = estimateImportableCost(
+        importable,
+        getCached,
+        trustMode,
+        trustedChildListPaths
     );
+    if (
+        trustMode &&
+        importable.type === "COMMAND" &&
+        cacheEntry.importable.type === "COMMAND"
+    ) {
+        total -= commandSettingsUnits(importable);
+        total += commandSettingsUnits(importable, cacheEntry.importable);
+    }
+    if (
+        trustMode &&
+        importable.type === "REGION" &&
+        cacheEntry.importable.type === "REGION" &&
+        importable.bounds !== undefined &&
+        cacheEntry.importable.bounds !== undefined &&
+        regionBoundsEqual(importable.bounds, cacheEntry.importable.bounds)
+    ) {
+        total -=
+            REGION_BOUNDS_CHANGE_UNITS;
+    }
+    return total;
 }
