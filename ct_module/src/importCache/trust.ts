@@ -38,6 +38,7 @@ export type ImportableTrustPlan = {
     cacheHash: string | null;
     lockHash: string | null;
     lockListScanHashes: Record<string, string> | null;
+    lockListContentHashes: Record<string, string> | null;
     cacheMatchesLock: boolean;
     breakdown: {
         dependenciesMatch: boolean;
@@ -155,6 +156,7 @@ export function buildTrustPlan(
             cacheHash: entry?.hash ?? null,
             lockHash: lockEntry?.hash ?? null,
             lockListScanHashes: lockEntry?.listScanHashes ?? null,
+            lockListContentHashes: lockEntry?.listContentHashes ?? null,
             cacheMatchesLock,
             breakdown: {
                 dependenciesMatch,
@@ -186,6 +188,7 @@ function lockEntryForImportable(
         return {
             hash: "",
             listScanHashes: undefined,
+            listContentHashes: undefined,
             itemDependencies: undefined,
         };
     }

@@ -34,6 +34,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
                     cacheHash: null,
                     lockHash: null,
                     lockListScanHashes: { actions: "baseline" },
+                    lockListContentHashes: { actions: "baseline-content" },
                     cacheMatchesLock: true,
                     trustMode: false,
                     wholeImportableTrusted: false,
@@ -60,6 +61,7 @@ import type { SyncEvent } from "../src/housingSync/syncEvents";
 import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
+import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
 
 describe("import conflict gate", () => {
     beforeEach(() => {
@@ -346,6 +348,23 @@ describe("import conflict gate", () => {
         );
         expect(messages).toContain(
             "&e[htsw] The current importable stopped during an unverified change, so its stale cache entry was removed."
+        );
+    });
+});
+
+describe("import conflict chat", () => {
+    it("counts distinct importables rather than conflicting action lists", () => {
+        expect(
+            conflictAwaitingConfirmationMessage([
+                { type: "ITEM", identity: "Wand", basePath: "leftClickActions" },
+                { type: "ITEM", identity: "Wand", basePath: "rightClickActions" },
+                { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+            ])
+        ).toBe(
+            "[htsw] Import conflict: 2 importables changed in Housing — awaiting confirmation\n" +
+                '[htsw] Conflict: ITEM "Wand" · leftClickActions\n' +
+                '[htsw] Conflict: ITEM "Wand" · rightClickActions\n' +
+                '[htsw] Conflict: FUNCTION "Debug" · actions'
         );
     });
 });

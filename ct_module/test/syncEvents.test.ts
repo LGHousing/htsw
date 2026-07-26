@@ -55,6 +55,7 @@ function syncContextWith(handler: SyncEventHandler): ActionSyncContext {
             trustMode: false,
             importables: new Map(),
         },
+        overwriteWarningMode: "always",
         conflicts: [],
         events: handler,
         itemRead: { mode: "sync" },

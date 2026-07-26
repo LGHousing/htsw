@@ -147,7 +147,9 @@ function tabButton(tab: Tab): Element {
             ? "§oExport"
             : getSessionVerb() === "read"
               ? "§oRead"
-              : `§o${compactFileLabel(tab.path)}`
+              : getSessionVerb() === "diff"
+                ? "§oDiff"
+                : `§o${compactFileLabel(tab.path)}`
         : tab.confirmed
           ? compactFileLabel(tab.path)
           : `§o${compactFileLabel(tab.path)}`;

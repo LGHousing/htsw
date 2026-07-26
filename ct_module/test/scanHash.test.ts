@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Action } from "htsw/types";
 
 import {
+    actionListContentHashFromActions,
+    actionListContentHashFromSlots,
     actionListScanHashFromActions,
     actionListScanHashFromSlots,
 } from "../src/housingSync/actions/scanHash";
@@ -107,5 +109,68 @@ describe("action-list scan hashes", () => {
             conditional({ ifActions: [changeVar()] }),
         ]);
         expect(conditionalVariable).not.toBe(conditionalMessage);
+    });
+});
+
+describe("action-list content hashes", () => {
+    it("includes scalar fields, notes, and child-list content", () => {
+        const base = [
+            conditional({
+                note: "note",
+                conditions: [{ type: "IS_SNEAKING" }],
+                ifActions: [message("child")],
+            }),
+        ];
+
+        expect(
+            actionListContentHashFromActions([
+                conditional({
+                    note: "changed",
+                    conditions: [{ type: "IS_SNEAKING" }],
+                    ifActions: [message("child")],
+                }),
+            ])
+        ).not.toBe(actionListContentHashFromActions(base));
+        expect(
+            actionListContentHashFromActions([
+                conditional({
+                    note: "note",
+                    conditions: [{ type: "IS_SNEAKING" }],
+                    ifActions: [message("changed")],
+                }),
+            ])
+        ).not.toBe(actionListContentHashFromActions(base));
+    });
+
+    it("sorts object keys before hashing", () => {
+        const first = {
+            type: "CHANGE_VAR",
+            holder: { type: "Player" },
+            key: "score",
+            op: "Set",
+            value: "1",
+        } as Action;
+        const second = {
+            value: "1",
+            op: "Set",
+            key: "score",
+            holder: { type: "Player" },
+            type: "CHANGE_VAR",
+        } as Action;
+
+        expect(actionListContentHashFromActions([first])).toBe(
+            actionListContentHashFromActions([second])
+        );
+    });
+
+    it("returns unknown until every slot is fully hydrated", () => {
+        const slot = observedSlot(0, message("live"));
+        slot.hydrated = false;
+
+        expect(actionListContentHashFromSlots([slot])).toBeUndefined();
+        slot.hydrated = true;
+        expect(actionListContentHashFromSlots([slot])).toBe(
+            actionListContentHashFromActions([message("live")])
+        );
     });
 });

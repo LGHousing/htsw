@@ -11,6 +11,7 @@ import { portableItemSnbt } from "../../housingSync/items/itemNbt";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { writeImportableCache } from "../../importCache/cache";
+import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { snbtTargetForItemExport } from "../../project/paths";
 import TaskContext from "../../tasks/context";
@@ -173,10 +174,17 @@ export async function exportCapturedItems(
                 }
             }
             if (!interactionCacheReady) continue;
+            const itemDependencies = dependencies.snapshotOf(importable);
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
                 quiet: true,
-                itemDependencies: dependencies.snapshotOf(importable),
+                itemDependencies,
             });
+            upsertHouseLockImportable(
+                importJsonPath,
+                housingUuid,
+                importable,
+                itemDependencies
+            );
         }
     }
 

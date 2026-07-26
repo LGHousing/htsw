@@ -69,6 +69,11 @@ let taskProgressRows = new Map<string, TaskProgressEntry>();
 let lastFinishedTaskProgress: TaskProgress | null = null;
 let lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
 let finishedTaskFailure: string | null = null;
+export type FinishedTaskSummary = {
+    title: string;
+    message: string;
+};
+let finishedTaskSummary: FinishedTaskSummary | null = null;
 /** Fresh per task session — cleared when `taskProgress` returns to null. */
 let etaCalc: EtaCalculator | null = null;
 /**
@@ -97,7 +102,7 @@ export function parkedTaskFor(
  * progress strip + queue summary share one UI; this only swaps the
  * user-facing verb so an export run doesn't read "Importable N of M".
  */
-export type SessionVerb = "import" | "export" | "read";
+export type SessionVerb = "import" | "export" | "read" | "diff";
 let sessionVerb: SessionVerb = "import";
 export function getSessionVerb(): SessionVerb {
     return sessionVerb;
@@ -243,6 +248,7 @@ function updateTaskProgress(
         resetSessionTiming();
         lastFinishedTaskProgress = null;
         finishedTaskFailure = null;
+        finishedTaskSummary = null;
         // Session defaults — reset at START, not at clear: the queue keeps
         // rendering `lastFinishedTaskProgress` for a confirmation window after a
         // run, and resetting the verb on clear would mislabel those rows.
@@ -269,12 +275,19 @@ function updateTaskProgress(
 }
 
 export function setTaskProgress(p: TaskProgress | null): void {
-    if (p === null) finishedTaskFailure = null;
+    if (p === null) {
+        finishedTaskFailure = null;
+        finishedTaskSummary = null;
+    }
     updateTaskProgress(p, false);
 }
 
-export function finishTaskProgress(failure: string | null): void {
+export function finishTaskProgress(
+    failure: string | null,
+    summary: FinishedTaskSummary | null = null
+): void {
     finishedTaskFailure = failure;
+    finishedTaskSummary = summary;
     updateTaskProgress(null, failure !== null);
 }
 
@@ -282,11 +295,22 @@ export function getFinishedTaskFailure(): string | null {
     return finishedTaskFailure;
 }
 
+export function getFinishedTaskSummary(): FinishedTaskSummary | null {
+    return finishedTaskSummary;
+}
+
 export function clearLastFinishedProgress(): void {
-    if (lastFinishedTaskProgress === null && finishedTaskFailure === null) return;
+    if (
+        lastFinishedTaskProgress === null &&
+        finishedTaskFailure === null &&
+        finishedTaskSummary === null
+    ) {
+        return;
+    }
     lastFinishedTaskProgress = null;
     lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
     finishedTaskFailure = null;
+    finishedTaskSummary = null;
     markGuiDirty();
 }
 

@@ -403,6 +403,7 @@ function fixtureImportContext(
             canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
             resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),
             trust,
+            overwriteWarningMode: "always",
             conflicts: [],
             events: undefined,
             itemRead: { mode: "verify", captures },

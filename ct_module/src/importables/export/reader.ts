@@ -1,10 +1,22 @@
-import type { ImportableItem } from "htsw/types";
+import type { Importable, ImportableItem } from "htsw/types";
 
 import type TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
-import type { ExportProgressSink, ProgressHandler } from "../../housingSync/progress/types";
+import type {
+    ExportProgressSink,
+    ProgressHandler,
+} from "../../housingSync/progress/types";
 
 export type ReadResult = { total: number; succeeded: number; failed: number };
+
+export type ReadOutput =
+    | { kind: "project" }
+    | { kind: "cache"; housingUuid: string }
+    | {
+          kind: "memory";
+          housingUuid: string;
+          accept: (importable: Importable) => void;
+      };
 
 /**
  * Options for a per-type house batch read (`readFunctions`, `readCommands`, ...). Every batch walks the house's editors and reads
@@ -22,7 +34,7 @@ export type ReadOptions = {
     // Limit the batch to these names; omitted = list and process the whole house.
     names?: readonly string[];
     progress?: ExportProgressSink;
-    output: { kind: "project" } | { kind: "cache"; housingUuid: string };
+    output: ReadOutput;
     // Items the destination project already declares; seeds the capture
     // registry so identical captures reuse project names instead of minting
     // duplicates. Callers with a warm parse should always pass this.
@@ -31,6 +43,7 @@ export type ReadOptions = {
     // supplied), so the caller can record the scan.
     onNamesListed?: (names: readonly string[]) => void;
     skipExisting?: boolean;
+    quiet?: boolean;
 };
 
 export type ReadFn = (ctx: TaskContext, options: ReadOptions) => Promise<ReadResult>;
@@ -44,11 +57,8 @@ type ReadLoopBase<Result> = {
     // How a name reads in log lines; commands render as "/name". Identity default.
     displayName?: (name: string) => string;
     progress?: ExportProgressSink;
-    accept: (
-        ctx: TaskContext,
-        name: string,
-        result: Result
-    ) => Promise<void>;
+    quiet?: boolean;
+    accept: (ctx: TaskContext, name: string, result: Result) => Promise<void>;
 };
 
 type DirectReadLoopParams<Result> = ReadLoopBase<Result> & {
@@ -80,12 +90,9 @@ type StagedReadLoopParams<Pending, Result> = ReadLoopBase<Result> & {
 };
 
 export type ReadLoopParams<Pending, Result> =
-    | DirectReadLoopParams<Result>
-    | StagedReadLoopParams<Pending, Result>;
+    DirectReadLoopParams<Result> | StagedReadLoopParams<Pending, Result>;
 
-type PendingRead<Pending> =
-    | { kind: "ready"; value: Pending }
-    | { kind: "failed" };
+type PendingRead<Pending> = { kind: "ready"; value: Pending } | { kind: "failed" };
 
 async function readAndAccept<Result>(
     ctx: TaskContext,
@@ -108,7 +115,7 @@ export async function runReadLoop<Pending, Result>(
     ctx: TaskContext,
     params: ReadLoopParams<Pending, Result>
 ): Promise<{ succeeded: number; failed: number }> {
-    const { names, verb, progress, reader, accept } = params;
+    const { names, verb, progress, reader, accept, quiet } = params;
     const shown = (name: string): string =>
         params.displayName !== undefined ? params.displayName(name) : name;
 
@@ -126,9 +133,11 @@ export async function runReadLoop<Pending, Result>(
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.item(i, name);
-                ctx.displayMessage(
-                    `&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`
-                );
+                if (quiet !== true) {
+                    ctx.displayMessage(
+                        `&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`
+                    );
+                }
                 const sink = progress;
                 const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
@@ -147,9 +156,11 @@ export async function runReadLoop<Pending, Result>(
                     pending[i] = { kind: "failed" };
                     failed++;
                     sink?.itemFailed?.(i, String(error));
-                    ctx.displayMessage(
-                        `&c[export-all] failed on '${shown(name)}': ${String(error)}`
-                    );
+                    if (quiet !== true) {
+                        ctx.displayMessage(
+                            `&c[export-all] failed on '${shown(name)}': ${String(error)}`
+                        );
+                    }
                 }
             }
             for (let i = 0; i < names.length; i++) {
@@ -158,9 +169,11 @@ export async function runReadLoop<Pending, Result>(
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.itemReactivated?.(i);
-                ctx.displayMessage(
-                    `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
-                );
+                if (quiet !== true) {
+                    ctx.displayMessage(
+                        `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
+                    );
+                }
                 const sink = progress;
                 const itemProgress = sink?.itemProgress?.bind(sink);
                 try {
@@ -180,9 +193,11 @@ export async function runReadLoop<Pending, Result>(
                     if (isTaskCancelled(error)) throw error;
                     failed++;
                     sink?.itemFailed?.(i, String(error));
-                    ctx.displayMessage(
-                        `&c[export-all] failed on '${shown(name)}': ${String(error)}`
-                    );
+                    if (quiet !== true) {
+                        ctx.displayMessage(
+                            `&c[export-all] failed on '${shown(name)}': ${String(error)}`
+                        );
+                    }
                 }
             }
             return { succeeded, failed };
@@ -192,7 +207,11 @@ export async function runReadLoop<Pending, Result>(
             const name = names[i];
 
             progress?.item(i, name);
-            ctx.displayMessage(`&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`);
+            if (quiet !== true) {
+                ctx.displayMessage(
+                    `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
+                );
+            }
 
             const sink = progress;
             const itemProgress = sink?.itemProgress?.bind(sink);
@@ -214,9 +233,11 @@ export async function runReadLoop<Pending, Result>(
                 }
                 failed++;
                 sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(
-                    `&c[export-all] failed on '${shown(name)}': ${String(error)}`
-                );
+                if (quiet !== true) {
+                    ctx.displayMessage(
+                        `&c[export-all] failed on '${shown(name)}': ${String(error)}`
+                    );
+                }
             }
         }
     } finally {

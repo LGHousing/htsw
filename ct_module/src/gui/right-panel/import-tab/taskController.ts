@@ -81,6 +81,7 @@ import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { resetLivePreviewScroll } from "../view-body";
+import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
 
 function errorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
@@ -184,6 +185,7 @@ async function confirmImportConflicts(
     };
     const currentDecision = (): boolean | null => decision;
 
+    ChatLib.chat(conflictAwaitingConfirmationMessage(conflicts));
     openConfirmPopover({
         title: "Housing changed since your last import",
         lines: conflictLines(conflicts),
@@ -575,11 +577,15 @@ export function isImportPreparationRunning(): boolean {
     return importPreparationRunning;
 }
 
-export function startImport(explicit?: readonly ImportQueueItem[]): void {
-    startImportIfIdle(explicit);
+export function startImport(
+    explicit?: readonly ImportQueueItem[],
+    options: ImportStartOptions = {}
+): void {
+    startImportIfIdle(explicit, options);
 }
 
 type ImportStartOptions = {
+    onConflict?: "prompt" | "cancel";
     silentBusy?: boolean;
     onStarted?: () => void;
     onComplete?: (successful: boolean) => void;
@@ -783,6 +789,13 @@ async function prepareAndStartImport(
                     parsed: batch.parsed,
                     events,
                     confirmConflicts: async (conflicts) => {
+                        if (options.onConflict === "cancel") {
+                            cancelled = true;
+                            ChatLib.chat(
+                                `[htsw] Import cancelled: conflicts detected · ${totalImported} imported`
+                            );
+                            return false;
+                        }
                         const proceed = await confirmImportConflicts(
                             ctx,
                             conflicts,
@@ -794,7 +807,12 @@ async function prepareAndStartImport(
                                 };
                             }
                         );
-                        if (!proceed) cancelled = true;
+                        if (!proceed) {
+                            cancelled = true;
+                            ChatLib.chat(
+                                `[htsw] Import cancelled by user · ${totalImported} imported`
+                            );
+                        }
                         return proceed;
                     },
                     onImportableAutoAdded: (importable) => {

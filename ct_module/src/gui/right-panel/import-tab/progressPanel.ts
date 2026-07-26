@@ -33,6 +33,7 @@ import { cancelActiveTask } from "../../../tasks/activeTask";
 import {
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
+    getFinishedTaskSummary,
     getTaskElapsedMs,
     getTaskEtaSeconds,
     getTaskEtcMs,
@@ -580,9 +581,22 @@ function progressHeadlineText(): string {
     const pos = progressPosition();
     if (pos === null) return "";
     const verb = getSessionVerb();
-    const noun = verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
+    const noun =
+        verb === "export"
+            ? "Export"
+            : verb === "read"
+              ? "Read"
+              : verb === "diff"
+                ? "Scan"
+                : "Importable";
     const gerund =
-        verb === "export" ? "Exporting" : verb === "read" ? "Reading" : "Importing";
+        verb === "export"
+            ? "Exporting"
+            : verb === "read"
+              ? "Reading"
+              : verb === "diff"
+                ? "Scanning"
+                : "Importing";
     return pos.current !== null
         ? `${noun} ${pos.currentNumber} of ${pos.totalImportables}  ·  §b§l${pos.current.identity}`
         : pos.allDone
@@ -718,7 +732,8 @@ export function failedTaskFooterPanel(): Element {
                 style: { gap: 3, width: { kind: "grow" } },
                 children: [
                     Text({
-                        text: "Import failed",
+                        text: () =>
+                            getSessionVerb() === "diff" ? "Diff failed" : "Import failed",
                         color: ACCENT_DANGER,
                     }),
                     Text({
@@ -726,6 +741,34 @@ export function failedTaskFooterPanel(): Element {
                         color: COLOR_TEXT,
                         truncate: true,
                         tooltip: () => getFinishedTaskFailure() ?? "",
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
+export function finishedTaskFooterPanel(): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            padding: 4,
+            background: COLOR_PANEL_RAISED,
+        },
+        children: [
+            Col({
+                style: { gap: 3, width: { kind: "grow" } },
+                children: [
+                    Text({
+                        text: () => getFinishedTaskSummary()?.title ?? "",
+                        color: ACCENT_SUCCESS,
+                    }),
+                    Text({
+                        text: () => getFinishedTaskSummary()?.message ?? "",
+                        color: COLOR_TEXT,
+                        truncate: true,
+                        tooltip: () => getFinishedTaskSummary()?.message ?? "",
                         style: { width: { kind: "grow" } },
                     }),
                 ],

@@ -25,6 +25,7 @@ import {
 import {
     getActiveTaskLabel,
     getFinishedTaskFailure,
+    getFinishedTaskSummary,
     getSessionVerb,
     getTaskProgress,
     isCurrentQueueItem,
@@ -46,6 +47,7 @@ import {
 import { importControl } from "./import-tab/importButtons";
 import {
     failedTaskFooterPanel,
+    finishedTaskFooterPanel,
     liveTaskFooterPanel,
 } from "./import-tab/progressPanel";
 
@@ -391,6 +393,8 @@ export function viewFooter(): Element {
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             else if (isLiveTabActive() && getFinishedTaskFailure() !== null) {
                 children.push(failedTaskFooterPanel());
+            } else if (isLiveTabActive() && getFinishedTaskSummary() !== null) {
+                children.push(finishedTaskFooterPanel());
             }
             children.push(importControl());
             return children;

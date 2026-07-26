@@ -189,12 +189,14 @@ export function defineHouseExporter<
 
     return async (ctx, options) => {
         const { importJsonPath } = options;
+        const readOnly = options.output.kind !== "project";
         const cacheOnly = options.output.kind === "cache";
-        const verb = cacheOnly ? "Reading" : "Exporting";
+        const quiet = options.quiet === true;
+        const verb = readOnly ? "Reading" : "Exporting";
         const lockHousingUuid =
-            options.output.kind === "cache"
-                ? options.output.housingUuid
-                : await getCurrentHousingUuid(ctx);
+            options.output.kind === "project"
+                ? await getCurrentHousingUuid(ctx)
+                : options.output.housingUuid;
 
         spec.prelude?.(ctx);
 
@@ -256,19 +258,25 @@ export function defineHouseExporter<
                       ctx,
                       spec.noun,
                       names,
-                      cacheOnly ? false : options.skipExisting,
+                      readOnly ? false : options.skipExisting,
                       (name) => referencesExist(importJsonPath, name)
                   );
 
         if (exportNames.length === 0) {
-            ctx.displayMessage(`&7No ${spec.noun}s to ${cacheOnly ? "read" : "export"}.`);
+            if (!quiet) {
+                ctx.displayMessage(
+                    `&7No ${spec.noun}s to ${readOnly ? "read" : "export"}.`
+                );
+            }
             await restoreInventory();
             return { total: 0, succeeded: 0, failed: 0 };
         }
 
-        ctx.displayMessage(
-            `&a${verb} ${exportNames.length} ${spec.noun}${plural(exportNames.length)}...`
-        );
+        if (!quiet) {
+            ctx.displayMessage(
+                `&a${verb} ${exportNames.length} ${spec.noun}${plural(exportNames.length)}...`
+            );
+        }
 
         let succeeded = 0;
         let failed = 0;
@@ -299,16 +307,14 @@ export function defineHouseExporter<
                         "reader",
                         true
                     );
+                } else if (options.output.kind === "memory") {
+                    options.output.accept(importable);
                 } else {
                     await spec.export(acceptCtx, entry, result, options, state);
                 }
                 completedNames.add(name);
-                if (!cacheOnly) {
-                    const cached = readImportableCache(
-                        lockHousingUuid,
-                        spec.type,
-                        name
-                    );
+                if (options.output.kind === "project") {
+                    const cached = readImportableCache(lockHousingUuid, spec.type, name);
                     if (cached !== null) {
                         upsertHouseLockImportable(
                             options.importJsonPath,
@@ -323,6 +329,7 @@ export function defineHouseExporter<
                 verb,
                 displayName: spec.displayName,
                 progress: options.progress,
+                quiet,
                 accept,
             };
             const reader = spec.reader;
@@ -354,12 +361,7 @@ export function defineHouseExporter<
                                       state,
                                       onReadProgress
                                   ),
-                              hydrate: (
-                                  hydrateCtx,
-                                  name,
-                                  pending,
-                                  onReadProgress
-                              ) =>
+                              hydrate: (hydrateCtx, name, pending, onReadProgress) =>
                                   reader.hydrate(
                                       hydrateCtx,
                                       entryForName(name),
@@ -374,7 +376,7 @@ export function defineHouseExporter<
             failed = result.failed;
         } finally {
             try {
-                if (!cacheOnly && spec.capturesActionItems === true) {
+                if (!readOnly && spec.capturesActionItems === true) {
                     await exportCapturedItems(
                         ctx,
                         state.itemCaptures,
@@ -384,7 +386,10 @@ export function defineHouseExporter<
                         options.newExportTargetImportJson
                     );
                 }
-                if (spec.capturesActionItems === true) {
+                if (
+                    options.output.kind !== "memory" &&
+                    spec.capturesActionItems === true
+                ) {
                     const verifiedItemNames = new Set(
                         cacheOnly
                             ? state.itemCaptures.matchedItemNames()
@@ -397,7 +402,7 @@ export function defineHouseExporter<
                         spec.type,
                         completedNames,
                         verifiedItemNames,
-                        !cacheOnly
+                        !readOnly
                     );
                 }
             } finally {
@@ -406,11 +411,13 @@ export function defineHouseExporter<
         }
 
         const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
-        spec.afterLoop?.(ctx, state);
-        if (cacheOnly) {
-            ctx.displayMessage(
-                `&aRead ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${failedNote}`
-            );
+        if (!quiet) spec.afterLoop?.(ctx, state);
+        if (readOnly) {
+            if (!quiet) {
+                ctx.displayMessage(
+                    `&aRead ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${failedNote}`
+                );
+            }
             return { total: exportNames.length, succeeded, failed };
         }
 

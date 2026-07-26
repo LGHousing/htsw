@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
 import { scanConflictVerdict } from "../src/housingSync/actions/conflicts";
-import { actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
+import {
+    actionListContentHashFromActions,
+    actionListScanHashFromActions,
+} from "../src/housingSync/actions/scanHash";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
+import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
@@ -34,7 +38,10 @@ import {
 
 function sessionWithLock(
     importable: ImportableFunction,
-    lockedActions: ImportableFunction["actions"]
+    lockedActions: ImportableFunction["actions"],
+    trustedImport = true,
+    overwriteWarningMode: OverwriteWarningMode = "always",
+    includeContentHashes = true
 ): ActionSyncContext {
     const items = createProjectItemIndex([]);
     const itemDependencies = createItemDependencyIndex([], items);
@@ -43,7 +50,7 @@ function sessionWithLock(
         resolveItem: createItemFieldResolver(items, itemDependencies, "test-house"),
         trust: {
             housingUuid: "test-house",
-            trustMode: true,
+            trustMode: trustedImport,
             importables: new Map([
                 [
                     `FUNCTION:${importable.name}`,
@@ -57,6 +64,13 @@ function sessionWithLock(
                         lockListScanHashes: {
                             actions: actionListScanHashFromActions(lockedActions ?? []),
                         },
+                        lockListContentHashes: includeContentHashes
+                            ? {
+                                  actions: actionListContentHashFromActions(
+                                      lockedActions ?? []
+                                  ),
+                              }
+                            : null,
                         cacheMatchesLock: true,
                         breakdown: {
                             dependenciesMatch: true,
@@ -72,6 +86,7 @@ function sessionWithLock(
                 ],
             ]),
         },
+        overwriteWarningMode,
         conflicts: [],
         events: undefined,
         itemRead: { mode: "sync" },
@@ -120,6 +135,169 @@ describe("readActionListPlan conflict detection", () => {
         ]);
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
     });
+
+    it("detects an untrusted content conflict without an import cache entry", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("source")],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, message("live"))],
+        });
+        const session = sessionWithLock(
+            importable,
+            [message("lock")],
+            false
+        );
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: importable.type,
+                identity: importable.name,
+                basePath: "actions",
+            },
+        });
+
+        expect(
+            session.trust.importables.get("FUNCTION:Debug")?.entry
+        ).toBeNull();
+        expect(session.conflicts).toEqual([
+            { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        ]);
+    });
+
+    it("records no untrusted verdict when a slot remains unhydrated", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("source")],
+        };
+        const live = observedSlot(0, message("live"));
+        live.hydrated = false;
+        mocks.scanActionList.mockResolvedValue({ slots: [live] });
+        const session = sessionWithLock(
+            importable,
+            [message("lock")],
+            false
+        );
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: importable.type,
+                identity: importable.name,
+                basePath: "actions",
+            },
+        });
+
+        expect(session.conflicts).toEqual([]);
+    });
+
+    it("falls back to structure comparison for a v1 scan-only lock", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, changeVar())],
+        });
+        const session = sessionWithLock(
+            importable,
+            [message("lock")],
+            false,
+            "always",
+            false
+        );
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: importable.type,
+                identity: importable.name,
+                basePath: "actions",
+            },
+        });
+
+        expect(session.conflicts).toEqual([
+            { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        ]);
+    });
+
+    it.each([true, false])(
+        "warnmode off disables the %s import check",
+        async (trustedImport) => {
+            const importable: ImportableFunction = {
+                type: "FUNCTION",
+                name: "Debug",
+                actions: [playSound()],
+            };
+            mocks.scanActionList.mockResolvedValue({
+                slots: [observedSlot(0, changeVar())],
+            });
+            const session = sessionWithLock(
+                importable,
+                [message("lock")],
+                trustedImport,
+                "off"
+            );
+
+            await readActionListPlan(
+                null as unknown as TaskContext,
+                importable.actions!,
+                {
+                    sync: session,
+                    conflictTarget: {
+                        type: importable.type,
+                        identity: importable.name,
+                        basePath: "actions",
+                    },
+                }
+            );
+
+            expect(session.conflicts).toEqual([]);
+        }
+    );
+
+    it.each([
+        [true, 1],
+        [false, 0],
+    ] as const)(
+        "warnmode trusted records %s import conflicts as expected",
+        async (trustedImport, expectedConflicts) => {
+            const importable: ImportableFunction = {
+                type: "FUNCTION",
+                name: "Debug",
+                actions: [playSound()],
+            };
+            mocks.scanActionList.mockResolvedValue({
+                slots: [observedSlot(0, changeVar())],
+            });
+            const session = sessionWithLock(
+                importable,
+                [message("lock")],
+                trustedImport,
+                "trusted"
+            );
+
+            await readActionListPlan(
+                null as unknown as TaskContext,
+                importable.actions!,
+                {
+                    sync: session,
+                    conflictTarget: {
+                        type: importable.type,
+                        identity: importable.name,
+                        basePath: "actions",
+                    },
+                }
+            );
+
+            expect(session.conflicts).toHaveLength(expectedConflicts);
+        }
+    );
 
     it("excludes trusted child lists from the initial hydration payload", async () => {
         const baseline = [
