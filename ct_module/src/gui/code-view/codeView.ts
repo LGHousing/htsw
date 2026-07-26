@@ -315,6 +315,8 @@ export function CodeView(props: CodeViewProps): Element {
 }
 
 function buildCodeViewChildren(props: CodeViewProps): Element[] {
+    recordPhase("codeview.model", 0);
+    recordPhase("codeview.modelmiss", 0);
     const lineDecorator = extract(props.lineDecorator);
     const sourcePath = props.source !== undefined ? extract(props.source) : null;
     const sourceImportJsonPath =
@@ -325,6 +327,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         sourcePath !== null && sourcePath.length > 0
             ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
             : "__live__";
+    const linesStart = Date.now();
     let lines: readonly RenderableLine[] | null = null;
     if (props.lines !== undefined) {
         const explicit = extract(props.lines);
@@ -335,13 +338,19 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     if (lines === null && sourcePath !== null) {
         lines = linesForFile(sourcePath, sourceImportJsonPath);
     }
+    recordPhase("codeview.lines", Date.now() - linesStart);
     if (lines === null || lines.length === 0) {
         delete modelCache[props.scrollId];
+        const selectStart = Date.now();
         publishCodeView(props.scrollId, viewIdentity, []);
-        return buildEmptyMessageRows(
+        recordPhase("codeview.select", Date.now() - selectStart);
+        const rowsStart = Date.now();
+        const rows = buildEmptyMessageRows(
             props.emptyMessage === undefined ? "(no file)" : extract(props.emptyMessage),
             bodyWidthForScroll(props.scrollId, 0, false, false)
         );
+        recordPhase("codeview.rows", Date.now() - rowsStart);
+        return rows;
     }
 
     // ── Whole-file model (decorations + row offsets) ─────────
@@ -361,7 +370,10 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     ) {
         model = cachedModel.model;
     } else {
+        recordPhase("codeview.modelmiss", 1);
+        const modelStart = Date.now();
         model = buildLineModel(props.scrollId, lines, lineDecorator);
+        recordPhase("codeview.model", Date.now() - modelStart);
         if (decoratorKey !== null) {
             modelCache[props.scrollId] = {
                 lines,
@@ -388,11 +400,13 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         bodyMaxWidth,
     } = model;
 
+    const selectStart = Date.now();
     publishCodeView(props.scrollId, viewIdentity, orderedLines);
     const resolvedSelection = resolveSelection(
         getViewSelection(props.scrollId, viewIdentity),
         idToOrdinal
     );
+    recordPhase("codeview.select", Date.now() - selectStart);
 
     // ── Visibility window ────────────────────────────────────
     const scrollState = getScrollState(props.scrollId);
@@ -411,6 +425,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         : totalRows;
 
     // ── Build only visible entries ───────────────────────────
+    const rowsStart = Date.now();
     const out: Element[] = [];
     const firstIdx = firstEntryIntersecting(entryRowEnd, firstVisibleRow);
     const skippedBeforeRows = firstIdx > 0 ? entryRowEnd[firstIdx - 1] : 0;
@@ -465,6 +480,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     if (skippedAfterRows > 0) {
         out.push(spacerRows(skippedAfterRows));
     }
+    recordPhase("codeview.rows", Date.now() - rowsStart);
 
     if (props.autoFollow === true) {
         applyAutoFollow(props.scrollId, lineDecorator, lineIdToIndex);

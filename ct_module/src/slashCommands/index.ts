@@ -14,6 +14,7 @@ import { resetTimingStats } from "../housingSync/progress/timing";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/projects/tree";
 import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
+import { debugLog, flushGuiDebug } from "../gui/lib/debugLog";
 import { resetOnboarding } from "../gui/persistence/onboarding";
 import { rearmTourAutoStart } from "../gui/popovers/tour";
 import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
@@ -426,28 +427,39 @@ function commandGuiPerf(args: string[]): void {
         return;
     }
     const fps = s.avgGapMs > 0 ? Math.round(1000 / s.avgGapMs) : 0;
+    const frameLine =
+        `last ${s.frames} painted frames: ` +
+        `avg gap ${s.avgGapMs.toFixed(1)}ms (~${fps}fps), ` +
+        `p95 ${s.p95GapMs}ms, max ${s.maxGapMs}ms.`;
+    const renderLine =
+        `overlay render: rebuild frames ${s.rebuiltFrames}/${s.frames} ` +
+        `avg ${s.avgRebuildMs.toFixed(1)}ms (max ${s.maxRebuildMs}ms), ` +
+        `draw-only avg ${s.avgDrawOnlyMs.toFixed(1)}ms.`;
+    ChatLib.chat(`&7[guiperf] ${frameLine}`);
     ChatLib.chat(
-        `&7[guiperf] last ${s.frames} painted frames: ` +
-            `avg gap ${s.avgGapMs.toFixed(1)}ms (~${fps}fps), ` +
-            `p95 ${s.p95GapMs}ms, max ${s.maxGapMs}ms.`
-    );
-    ChatLib.chat(
-        `&7[guiperf] overlay render: rebuild frames ${s.rebuiltFrames}/${s.frames} ` +
-            `avg ${s.avgRebuildMs.toFixed(1)}ms (max ${s.maxRebuildMs}ms), ` +
-            `draw-only avg ${s.avgDrawOnlyMs.toFixed(1)}ms. ` +
+        `&7[guiperf] ${renderLine} ` +
             `Scrolling rebuilds every frame — smooth needs rebuild avg well under the frame budget.`
     );
+    debugLog(`[guiperf] ${frameLine}`);
+    debugLog(`[guiperf] ${renderLine}`);
     if (s.phases.length > 0) {
         let parts = "";
         for (let i = 0; i < s.phases.length; i++) {
             if (i > 0) parts += ", ";
-            parts += `${s.phases[i].name} ${s.phases[i].msPerRebuild.toFixed(1)}ms`;
+            parts +=
+                `${s.phases[i].name} ${s.phases[i].msPerRebuild.toFixed(1)}ms avg / ` +
+                `${s.phases[i].maxMs.toFixed(1)}ms max`;
         }
         ChatLib.chat(
             `&7[guiperf] timed rebuild slices: ${parts}. ` +
                 `layout-total includes child builders such as tree/codeview.`
         );
+        debugLog(`[guiperf] timed rebuild slices: ${parts}`);
     }
+    // The full report wraps past the height of Minecraft's chat window, so the
+    // top lines are unreadable in-game. Mirror it into gui-debug.log, which can
+    // be read from outside the game.
+    flushGuiDebug();
 }
 
 function commandTreePerf(): void {

@@ -22,10 +22,12 @@ let lastFrameAt = 0;
 // children build, ...). Children closures only run while a rebuild lays the
 // tree out, so total-per-phase / rebuild count = avg cost per rebuild frame.
 const phaseTotals: { [name: string]: number } = {};
+const phaseMaxes: { [name: string]: number } = {};
 let rebuildsSinceClear = 0;
 
 export function recordPhase(name: string, ms: number): void {
     phaseTotals[name] = (phaseTotals[name] ?? 0) + ms;
+    phaseMaxes[name] = Math.max(phaseMaxes[name] ?? 0, ms);
 }
 
 export function recordPanelFrame(renderMs: number, rebuilt: boolean): void {
@@ -45,6 +47,7 @@ export function clearFramePerf(): void {
     lastFrameAt = 0;
     rebuildsSinceClear = 0;
     for (const k in phaseTotals) delete phaseTotals[k];
+    for (const k in phaseMaxes) delete phaseMaxes[k];
 }
 
 export type FramePerfStats = {
@@ -56,8 +59,8 @@ export type FramePerfStats = {
     avgRebuildMs: number;
     maxRebuildMs: number;
     avgDrawOnlyMs: number;
-    /** Avg ms per rebuild frame for each named rebuild slice since last clear. */
-    phases: { name: string; msPerRebuild: number }[];
+    /** Avg ms per rebuild frame and peak invocation for each named rebuild slice. */
+    phases: { name: string; msPerRebuild: number; maxMs: number }[];
 };
 
 export function getFramePerfStats(): FramePerfStats {
@@ -85,10 +88,14 @@ export function getFramePerfStats(): FramePerfStats {
     }
     gaps.sort((a, b) => a - b);
     const p95 = gaps.length === 0 ? 0 : gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * 0.95))];
-    const phases: { name: string; msPerRebuild: number }[] = [];
+    const phases: { name: string; msPerRebuild: number; maxMs: number }[] = [];
     if (rebuildsSinceClear > 0) {
         for (const name in phaseTotals) {
-            phases.push({ name, msPerRebuild: phaseTotals[name] / rebuildsSinceClear });
+            phases.push({
+                name,
+                msPerRebuild: phaseTotals[name] / rebuildsSinceClear,
+                maxMs: phaseMaxes[name] ?? 0,
+            });
         }
         phases.sort((a, b) => b.msPerRebuild - a.msPerRebuild);
     }

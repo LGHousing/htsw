@@ -646,9 +646,9 @@ function htslRawRenderableLines(
 
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null || parsed.file === null || parsed.spans === null) {
-        // Fall back to the reconstruction renderer; it has its own error
-        // path that surfaces the parse failure message.
-        return htslRenderableLines(path, importJsonPath);
+        const lines = htslRenderableLines(path, importJsonPath);
+        htslRawCache.set(path, { mtime, parsedRef, lines });
+        return lines;
     }
 
     const ranges = collectActionLineRanges(parsed.actions, parsed.spans, parsed.file);
