@@ -20,8 +20,8 @@ import {
     saveSnapshot,
 } from "./parseSnapshot";
 import {
-    FP_RECHECK_MS,
     createFreshness,
+    isFreshnessCheckDue,
     resetFreshness,
     settledChange,
     type FingerprintFreshness,
@@ -372,9 +372,7 @@ function yieldFilesystemScan(): Promise<void> {
  * scan of a large project can hit cold filesystem metadata; later scans are
  * usually served by the OS cache, but both follow the same time budget.
  */
-export async function parseImportJsonCurrent(
-    rawPath: string
-): Promise<CachedParse> {
+export async function parseImportJsonCurrent(rawPath: string): Promise<CachedParse> {
     const startedAt = Date.now();
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
@@ -431,11 +429,13 @@ type PendingParse = {
 };
 
 const pendingParsePaths = new Map<string, PendingParse>();
-let parseInFlightPath: string | null = null;
-const parseWaiters = new Map<
-    string,
-    Array<(entry: CachedParse) => void>
->();
+const pendingRevalidationPaths = new Map<string, string>();
+type ParseInFlight = {
+    path: string;
+    revalidation: boolean;
+};
+let parseInFlight: ParseInFlight | null = null;
+const parseWaiters = new Map<string, Array<(entry: CachedParse) => void>>();
 let pendingOnParsed: ((entry: CachedParse) => void) | undefined;
 
 function queueOffThreadParse(
@@ -444,6 +444,7 @@ function queueOffThreadParse(
     requireCurrent = false
 ): Promise<CachedParse> {
     const pending = pendingParsePaths.get(canon);
+    pendingRevalidationPaths.delete(canon);
     pendingParsePaths.set(canon, {
         rawPath,
         requireCurrent: requireCurrent || pending?.requireCurrent === true,
@@ -468,8 +469,8 @@ export function requestParse(rawPath: string): CachedParse | null {
     const canon = canonicalPath(rawPath);
     const existing = cache.get(canon);
     if (existing !== undefined) {
-        if (Date.now() - existing.freshness.checkedAt >= FP_RECHECK_MS) {
-            pendingParsePaths.set(canon, { rawPath, requireCurrent: false });
+        if (isFreshnessCheckDue(existing.freshness)) {
+            pendingRevalidationPaths.set(canon, rawPath);
         }
         return existing;
     }
@@ -480,7 +481,11 @@ export function requestParse(rawPath: string): CachedParse | null {
 export function isParsePending(rawPath: string): boolean {
     if (rawPath.trim() === "") return false;
     const canon = canonicalPath(rawPath);
-    return parseInFlightPath === canon || pendingParsePaths.has(canon);
+    if (cache.has(canon)) return false;
+    return (
+        (parseInFlight?.path === canon && !parseInFlight.revalidation) ||
+        pendingParsePaths.has(canon)
+    );
 }
 
 /**
@@ -499,11 +504,10 @@ function finishPendingParse(
     previousEntry: CachedParse | undefined,
     parsedEntry: CachedParse
 ): void {
-    if (
-        parsedEntry.freshness.sweep !== null ||
-        parsedEntry.freshness.pending !== null
-    ) {
-        pendingParsePaths.set(canon, { rawPath, requireCurrent: false });
+    if (parsedEntry.freshness.sweep !== null || parsedEntry.freshness.pending !== null) {
+        pendingRevalidationPaths.set(canon, rawPath);
+    } else {
+        pendingRevalidationPaths.delete(canon);
     }
     if (parsedEntry !== previousEntry && pendingOnParsed !== undefined) {
         pendingOnParsed(parsedEntry);
@@ -513,7 +517,7 @@ function finishPendingParse(
         parseWaiters.delete(canon);
         for (let i = 0; i < waiters.length; i++) waiters[i](parsedEntry);
     }
-    parseInFlightPath = null;
+    parseInFlight = null;
     pumpPendingParses();
 }
 
@@ -544,7 +548,7 @@ function commitOffThreadResult(
 }
 
 function pumpPendingParses(): void {
-    if (parseInFlightPath !== null) return;
+    if (parseInFlight !== null) return;
     let nextCanon: string | null = null;
     let nextRaw = "";
     let requireCurrent = false;
@@ -554,10 +558,26 @@ function pumpPendingParses(): void {
         requireCurrent = pending.requireCurrent;
         break;
     }
+    let revalidation = false;
+    if (nextCanon === null) {
+        for (const [canon, rawPath] of pendingRevalidationPaths) {
+            const entry = cache.get(canon);
+            if (entry === undefined) {
+                pendingRevalidationPaths.delete(canon);
+                continue;
+            }
+            if (!isFreshnessCheckDue(entry.freshness)) continue;
+            nextCanon = canon;
+            nextRaw = rawPath;
+            revalidation = true;
+            break;
+        }
+    }
     if (nextCanon === null) return;
     const parseCanon = nextCanon;
-    pendingParsePaths.delete(parseCanon);
-    parseInFlightPath = parseCanon;
+    if (revalidation) pendingRevalidationPaths.delete(parseCanon);
+    else pendingParsePaths.delete(parseCanon);
+    parseInFlight = { path: parseCanon, revalidation };
     setTimeout(() => {
         const startedAt = Date.now();
         const mtime = getMtimeMs(parseCanon);
@@ -594,12 +614,7 @@ function pumpPendingParses(): void {
                         true,
                         startedAt
                     );
-                    finishPendingParse(
-                        parseCanon,
-                        nextRaw,
-                        previousEntry,
-                        snapshotEntry
-                    );
+                    finishPendingParse(parseCanon, nextRaw, previousEntry, snapshotEntry);
                     return;
                 }
                 logFullParseReason(
@@ -609,8 +624,7 @@ function pumpPendingParses(): void {
                 );
             }
         } else {
-            const observedMtimes: { [path: string]: number } =
-                settledMtimes ?? {};
+            const observedMtimes: { [path: string]: number } = settledMtimes ?? {};
             const fingerprintPaths = Object.keys(previousEntry.fingerprint);
             if (settledMtimes === null) {
                 for (let i = 0; i < fingerprintPaths.length; i++) {
@@ -626,11 +640,7 @@ function pumpPendingParses(): void {
                 }
             }
             if (changedPaths.length !== 0) {
-                logFullParseReason(
-                    parseCanon,
-                    "source files changed",
-                    changedPaths
-                );
+                logFullParseReason(parseCanon, "source files changed", changedPaths);
             }
         }
         getMtimeMs(parseCanon);
@@ -640,7 +650,7 @@ function pumpPendingParses(): void {
                     rawPath: nextRaw,
                     requireCurrent,
                 });
-                parseInFlightPath = null;
+                parseInFlight = null;
                 pumpPendingParses();
                 return;
             }

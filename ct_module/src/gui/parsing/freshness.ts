@@ -10,15 +10,15 @@ import { getMtimeMs } from "../lib/java";
 
 export type Fingerprint = { [path: string]: number };
 
-// How often the fingerprint is re-swept on a cache hit (≈ one stat per
-// referenced file per interval); a change is acted on after it stays stable
-// for one extra interval, so edit-to-refresh latency is ~1–2× this.
+// Minimum idle time after a completed fingerprint sweep. Longer sweeps use
+// their own duration instead, keeping background checks from running
+// continuously while preserving the small-project settle window.
 export const FP_RECHECK_MS = 400;
 // Stats per settledChange call. The caller runs once per tick, so a sweep of
 // N referenced files spreads over ceil(N/BUDGET) ticks instead of landing as
 // one N-stat spike — that spike was a visible hitch mid-import on big
 // projects.
-const FP_SWEEP_BUDGET = 4;
+const FP_SWEEP_BUDGET = 16;
 
 type FingerprintSweep = {
     /** Fingerprint keys captured at sweep start. */
@@ -27,11 +27,15 @@ type FingerprintSweep = {
     index: number;
     /** Mtimes gathered so far. */
     acc: Fingerprint;
+    /** `Date.now()` when this sweep started. */
+    startedAt: number;
 };
 
 export type FingerprintFreshness = {
     /** `Date.now()` the last sweep COMPLETED (throttle). */
     checkedAt: number;
+    /** Duration of the last completed sweep. */
+    lastSweepDurationMs: number;
     /** Mtimes seen when a change was first noticed; drives the settle debounce. Null when idle. */
     pending: Fingerprint | null;
     /** In-progress sweep, statted a budget per call. Null when idle. */
@@ -39,21 +43,42 @@ export type FingerprintFreshness = {
 };
 
 export function createFreshness(): FingerprintFreshness {
-    return { checkedAt: Date.now(), pending: null, sweep: null };
+    return {
+        checkedAt: Date.now(),
+        lastSweepDurationMs: 0,
+        pending: null,
+        sweep: null,
+    };
 }
 
 /** Mark just-checked: nothing pending, next sweep after the throttle. */
 export function resetFreshness(freshness: FingerprintFreshness): void {
     freshness.checkedAt = Date.now();
+    freshness.lastSweepDurationMs = 0;
     freshness.pending = null;
     freshness.sweep = null;
 }
 
 function sameMtimes(a: Fingerprint, b: Fingerprint): boolean {
     for (const p in a) {
+        if (!Object.prototype.hasOwnProperty.call(a, p)) continue;
         if (a[p] !== b[p]) return false;
     }
+    for (const p in b) {
+        if (
+            Object.prototype.hasOwnProperty.call(b, p) &&
+            !Object.prototype.hasOwnProperty.call(a, p)
+        ) {
+            return false;
+        }
+    }
     return true;
+}
+
+export function isFreshnessCheckDue(freshness: FingerprintFreshness): boolean {
+    if (freshness.sweep !== null) return true;
+    const idleMs = Math.max(FP_RECHECK_MS, freshness.lastSweepDurationMs);
+    return Date.now() - freshness.checkedAt >= idleMs;
 }
 
 // True when a fingerprinted file changed AND its mtimes have settled — the
@@ -67,8 +92,13 @@ export function settledChange(
     freshness: FingerprintFreshness
 ): boolean {
     if (freshness.sweep === null) {
-        if (Date.now() - freshness.checkedAt < FP_RECHECK_MS) return false;
-        freshness.sweep = { paths: Object.keys(fingerprint), index: 0, acc: {} };
+        if (!isFreshnessCheckDue(freshness)) return false;
+        freshness.sweep = {
+            paths: Object.keys(fingerprint),
+            index: 0,
+            acc: {},
+            startedAt: Date.now(),
+        };
     }
     const sweep = freshness.sweep;
     const end = Math.min(sweep.index + FP_SWEEP_BUDGET, sweep.paths.length);
@@ -78,7 +108,9 @@ export function settledChange(
     }
     if (sweep.index < sweep.paths.length) return false;
     freshness.sweep = null;
-    freshness.checkedAt = Date.now();
+    const completedAt = Date.now();
+    freshness.checkedAt = completedAt;
+    freshness.lastSweepDurationMs = completedAt - sweep.startedAt;
     const cur = sweep.acc;
     if (sameMtimes(fingerprint, cur)) {
         freshness.pending = null;

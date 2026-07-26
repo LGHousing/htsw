@@ -6,7 +6,16 @@ const mtimes = new Map([
     [importJsonPath, 1],
     [htslPath, 1],
 ]);
+for (let i = 0; i < 694; i++) {
+    mtimes.set(`/project/dependency-${i}.htsl`, 1);
+}
 let version = 1;
+
+function currentFingerprint() {
+    const fingerprint: { [path: string]: number } = {};
+    for (const [path, mtime] of mtimes) fingerprint[path] = mtime;
+    return fingerprint;
+}
 
 function parsedProject() {
     const names = version === 1 ? ["pagetest"] : ["pagetest", "pagetest2"];
@@ -14,10 +23,13 @@ function parsedProject() {
         value: names.map((name) => ({
             type: "FUNCTION",
             name,
-            actions: version === 1 ? [{ type: "SEND_MESSAGE", message: "old" }] : [
-                { type: "SEND_MESSAGE", message: "new" },
-                { type: "SEND_MESSAGE", message: "added" },
-            ],
+            actions:
+                version === 1
+                    ? [{ type: "SEND_MESSAGE", message: "old" }]
+                    : [
+                          { type: "SEND_MESSAGE", message: "new" },
+                          { type: "SEND_MESSAGE", message: "added" },
+                      ],
         })),
         importJson: { houseUuid: null },
         gcx: { diagnostics: [], sourceMap: {} },
@@ -38,10 +50,7 @@ vi.mock("../src/gui/lib/java", () => ({
 }));
 
 vi.mock("../src/gui/parsing/offThreadParse", () => ({
-    buildParseFingerprint: () => ({
-        [importJsonPath]: mtimes.get(importJsonPath),
-        [htslPath]: mtimes.get(htslPath),
-    }),
+    buildParseFingerprint: () => currentFingerprint(),
     parseImportJsonOffThread: (
         _path: string,
         _mtime: number,
@@ -50,10 +59,7 @@ vi.mock("../src/gui/parsing/offThreadParse", () => ({
         onComplete({
             parsed: parsedProject(),
             error: null,
-            fingerprint: {
-                [importJsonPath]: mtimes.get(importJsonPath),
-                [htslPath]: mtimes.get(htslPath),
-            },
+            fingerprint: currentFingerprint(),
             hashes: version === 1 ? ["old"] : ["new", "new2"],
         }),
 }));
@@ -84,9 +90,13 @@ vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
 }));
 
 let parseImportJsonCurrent: typeof import("../src/gui/parsing/parses").parseImportJsonCurrent;
+let requestParse: typeof import("../src/gui/parsing/parses").requestParse;
+let isParsePending: typeof import("../src/gui/parsing/parses").isParsePending;
+let processPendingParses: typeof import("../src/gui/parsing/parses").processPendingParses;
 
 beforeAll(async () => {
-    ({ parseImportJsonCurrent } = await import("../src/gui/parsing/parses"));
+    ({ parseImportJsonCurrent, requestParse, isParsePending, processPendingParses } =
+        await import("../src/gui/parsing/parses"));
 });
 
 describe("import parse freshness", () => {
@@ -118,5 +128,20 @@ describe("import parse freshness", () => {
                     importable.type === "FUNCTION" && importable.name === "pagetest2"
             )
         ).toBe(true);
+    });
+
+    it("finishes stable background revalidation without keeping a large parse pending", async () => {
+        vi.useFakeTimers();
+        vi.advanceTimersByTime(400);
+
+        expect(Object.keys(requestParse(importJsonPath)?.fingerprint ?? {})).toHaveLength(
+            696
+        );
+        expect(isParsePending(importJsonPath)).toBe(false);
+        processPendingParses();
+        await vi.runAllTimersAsync();
+
+        expect(isParsePending(importJsonPath)).toBe(false);
+        vi.useRealTimers();
     });
 });
