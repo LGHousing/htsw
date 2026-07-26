@@ -81,6 +81,7 @@ declare const javax: { imageio: { ImageIO: { read: (f: unknown) => unknown } } }
 declare const java: { io: { File: new (path: string) => unknown } };
 
 const iconCache: { [name: string]: unknown } = {};
+let iconsPendingWarm: string[] = [];
 export function getIconImage(name: string): unknown {
     const cached = iconCache[name];
     if (cached !== undefined) return cached;
@@ -95,21 +96,23 @@ export function getIconImage(name: string): unknown {
         img = null;
     }
     iconCache[name] = img;
+    iconsPendingWarm.push(name);
     return img;
 }
 
-// The preload below DECODES the PNGs, but CT uploads an Image's GL texture
-// on its first actual draw — so an icon's first on-screen frame can render
-// as an untextured gray box. Drawing each cached icon once, far offscreen,
-// pays that upload up front. Called from the panel paint path (needs a GL
-// context) every frame, but only acts on icons it hasn't warmed yet — the
-// preload fills the cache asynchronously, so a one-shot warm would miss
-// icons that finish loading after the first paint.
-const warmedIcons = new Set<string>();
+// `getIconImage` DECODES a PNG the first time an icon is drawn, but CT only
+// uploads an Image's GL texture on its first actual draw — so an icon's first
+// on-screen frame can render as an untextured gray box. Drawing each newly
+// decoded icon once, far offscreen, pays that upload up front. Called from the
+// panel paint path every frame because it needs a GL context, and because
+// icons keep entering the cache as new parts of the UI are opened; it costs an
+// empty-list check on the frames where nothing new appeared.
 export function warmIconTextures(): void {
-    for (const name in iconCache) {
-        if (warmedIcons.has(name)) continue;
-        warmedIcons.add(name);
+    if (iconsPendingWarm.length === 0) return;
+    const pending = iconsPendingWarm;
+    iconsPendingWarm = [];
+    for (let i = 0; i < pending.length; i++) {
+        const name = pending[i];
         const img = iconCache[name];
         if (img !== null && img !== undefined) {
             try {

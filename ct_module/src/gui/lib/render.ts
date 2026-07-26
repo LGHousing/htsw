@@ -72,6 +72,13 @@ const LINE_H = 8;
 
 const ELLIPSIS = "...";
 
+// Reaching the font renderer costs two Rhino->Java crossings (the Minecraft
+// lookup, then the field read), and the text branch below needs it for every
+// label on screen. Read it once per frame in `drawLaid` instead. Re-read each
+// frame rather than cached for good: Minecraft is free to swap the font
+// renderer out between frames, and one lookup per frame is already nothing.
+let frameFontRenderer: HtswMinecraftFontRenderer;
+
 // Shortens `text` with a trailing ellipsis so it fits within `maxW` overlay
 // units. Returns the original string when it already fits. Used by `truncate`
 // text elements so a grow-shrunk label clips cleanly instead of overflowing
@@ -178,6 +185,7 @@ export function drawLaid(
     mouseY: number,
     interactive: boolean
 ): void {
+    frameFontRenderer = getMinecraft().field_71466_p;
     queuedTooltip = null;
 
     // A click here would be intercepted by the scrollbar thumb (it starts a drag) — suppress hover
@@ -354,24 +362,31 @@ function renderItem(
         mouseY <= r.y + r.h;
 
     if (e.kind === "container") {
-        const disabled =
-            e.disabled !== undefined &&
-            (typeof e.disabled === "function" ? e.disabled() : e.disabled);
-        const hoverBg =
-            e.style.hoverBackground !== undefined
-                ? typeof e.style.hoverBackground === "function"
-                    ? e.style.hoverBackground()
-                    : e.style.hoverBackground
-                : undefined;
+        const onClick = e.onClick;
+        let disabled = false;
+        let hoverBg: number | undefined;
+        if (onClick) {
+            disabled =
+                e.disabled !== undefined &&
+                (typeof e.disabled === "function" ? e.disabled() : e.disabled);
+            if (hovered && !disabled) {
+                hoverBg =
+                    e.style.hoverBackground !== undefined
+                        ? typeof e.style.hoverBackground === "function"
+                            ? e.style.hoverBackground()
+                            : e.style.hoverBackground
+                        : undefined;
+            }
+        }
         const baseBg =
             e.style.background !== undefined
                 ? typeof e.style.background === "function"
                     ? e.style.background()
                     : e.style.background
                 : undefined;
-        const bg = hovered && !disabled && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
+        const bg = hovered && onClick && !disabled && hoverBg !== undefined ? hoverBg : baseBg;
         if (bg !== undefined) fillRect(bg, r.x, r.y, r.w, r.h);
-        if (e.onClick && !disabled) {
+        if (onClick && !disabled) {
             const fa = clickFlashAlpha(r);
             if (fa > 0) {
                 const a = Math.round(fa * 255) & 0xff;
@@ -401,22 +416,10 @@ function renderItem(
                     : e.color
                 : undefined;
         if (color !== undefined) {
-            getMinecraft().field_71466_p.func_175065_a(
-                text,
-                r.x,
-                ty,
-                color,
-                false
-            );
+            frameFontRenderer.func_175065_a(text, r.x, ty, color, false);
         } else {
             if (text.indexOf("&") === -1) {
-                getMinecraft().field_71466_p.func_175065_a(
-                    text,
-                    r.x,
-                    ty,
-                    0xffffffff | 0,
-                    false
-                );
+                frameFontRenderer.func_175065_a(text, r.x, ty, 0xffffffff | 0, false);
             } else {
                 Renderer.drawString(text, r.x, ty);
             }
@@ -468,7 +471,7 @@ function renderItem(
             const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
             const placeholder = `§r§8${e.placeholder}`;
             if (e.placeholder.indexOf("&") === -1) {
-                getMinecraft().field_71466_p.func_175065_a(
+                frameFontRenderer.func_175065_a(
                     placeholder,
                     r.x + 4,
                     ty,

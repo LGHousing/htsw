@@ -11,12 +11,17 @@ export function runtimeString(value: RuntimeString | null | undefined): string {
     return typeof value === "string" ? value : String(value);
 }
 
+let minecraft: HtswMinecraft | null = null;
+
 export function getMinecraft(): HtswMinecraft {
-    return (
+    if (minecraft !== null) return minecraft;
+    const current = (
         Client as unknown as {
-            getMinecraft(): HtswMinecraft;
+            getMinecraft(): HtswMinecraft | null | undefined;
         }
     ).getMinecraft();
+    if (current !== null && current !== undefined) minecraft = current;
+    return current as HtswMinecraft;
 }
 
 export function sendPacket(packet: HtswPacketInstance): void {
