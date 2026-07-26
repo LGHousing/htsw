@@ -2,7 +2,10 @@ import type { Importable } from "htsw/types";
 
 import { queueModifiedFromPath } from "../gui/autoTrack";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
-import { parseImportJsonBlocking } from "../gui/parsing/parses";
+import {
+    parseImportJsonBlocking,
+    parseImportJsonCurrent,
+} from "../gui/parsing/parses";
 import {
     addToQueue,
     clearQueue,
@@ -32,7 +35,7 @@ const IMPORTABLE_TYPES: Importable["type"][] = [
 export function commandQueue(args: string[]): void {
     const action = args.length === 0 ? "" : args[0].toLowerCase();
     if (action === "add") {
-        commandQueueAdd(args.slice(1));
+        void commandQueueAdd(args.slice(1));
     } else if (action === "modified") {
         commandQueueModified(args.slice(1));
     } else if (action === "list") {
@@ -60,7 +63,7 @@ function printQueueUsage(): void {
     ChatLib.chat("&7[htsw] /htsw queue run");
 }
 
-function commandQueueAdd(args: string[]): void {
+async function commandQueueAdd(args: string[]): Promise<void> {
     if (args.length === 0) {
         ChatLib.chat("&c[htsw] Usage: /htsw queue add <import.json path>");
         return;
@@ -73,7 +76,7 @@ function commandQueueAdd(args: string[]): void {
     }
     const path = split.path;
     if (split.remaining.length === 0) {
-        const parsed = parseImportJsonBlocking(path);
+        const parsed = await parseImportJsonCurrent(path);
         if (parsed.parsed === null) {
             ChatLib.chat(
                 `&c[htsw] Could not parse ${compactFileLabel(path)}: ${parsed.error ?? "parse failed"}`
@@ -105,7 +108,7 @@ function commandQueueAdd(args: string[]): void {
         );
         return;
     }
-    const cached = parseImportJsonBlocking(path);
+    const cached = await parseImportJsonCurrent(path);
     if (cached.parsed === null) {
         ChatLib.chat(
             `&c[htsw] Could not parse ${compactFileLabel(path)}: ${cached.error ?? "parse failed"}`

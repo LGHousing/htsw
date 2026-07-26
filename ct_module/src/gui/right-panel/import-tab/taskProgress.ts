@@ -38,6 +38,10 @@ import {
     setLiveTaskPathProvider,
 } from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
+import {
+    getActiveTaskElapsedMs,
+    getActiveTaskStartedAt,
+} from "../../../tasks/activeTask";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -65,12 +69,6 @@ let taskProgressRows = new Map<string, TaskProgressEntry>();
 let lastFinishedTaskProgress: TaskProgress | null = null;
 let lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
 let finishedTaskFailure: string | null = null;
-/**
- * `Date.now()` of the moment the in-flight task started. Captured the
- * first time `setTaskProgress` transitions from null to non-null and
- * cleared on the inverse transition.
- */
-let taskStartedAt: number | null = null;
 /** Fresh per task session — cleared when `taskProgress` returns to null. */
 let etaCalc: EtaCalculator | null = null;
 /**
@@ -165,11 +163,15 @@ export function getTaskProgressFraction(): number {
 }
 
 export function getTaskEtaSeconds(): number | null {
-    return etaCalc === null ? null : etaCalc.getTotal(taskProgress, taskStartedAt);
+    return etaCalc === null
+        ? null
+        : etaCalc.getTotal(taskProgress, getActiveTaskStartedAt());
 }
 
 export function getCurrentPhaseEtaSeconds(): number | null {
-    return etaCalc === null ? null : etaCalc.getPhase(taskProgress, taskStartedAt);
+    return etaCalc === null
+        ? null
+        : etaCalc.getPhase(taskProgress, getActiveTaskStartedAt());
 }
 
 export function getTaskEtcMs(): number | null {
@@ -179,7 +181,7 @@ export function getTaskEtcMs(): number | null {
 }
 
 export function getTaskElapsedMs(): number | null {
-    return taskStartedAt === null ? null : Date.now() - taskStartedAt;
+    return getActiveTaskElapsedMs();
 }
 
 export function getActiveTaskPath(): string | null {
@@ -237,7 +239,6 @@ function updateTaskProgress(
     const wasNull = taskProgress === null;
     const previousRows = taskProgress?.rows ?? null;
     if (p !== null && taskProgress === null) {
-        taskStartedAt = Date.now();
         etaCalc = createEtaCalculator();
         resetSessionTiming();
         lastFinishedTaskProgress = null;
@@ -253,7 +254,6 @@ function updateTaskProgress(
         lastFinishedTaskProgress = taskProgress;
         lastFinishedTaskRows = taskProgressRows;
         taskProgressRows = new Map<string, TaskProgressEntry>();
-        taskStartedAt = null;
         etaCalc = null;
     }
     taskProgress = p === null ? null : normalizeTaskProgress(p);

@@ -382,7 +382,7 @@ export async function parseImportJsonCurrent(
     if (existing === undefined) {
         const snapshotEntry = snapshotEntryIfFresh(canon, rawPath, mtime, startedAt);
         if (snapshotEntry !== null) return snapshotEntry;
-        return await queueOffThreadParse(canon, rawPath);
+        return await queueOffThreadParse(canon, rawPath, true);
     }
 
     const paths = Object.keys(existing.fingerprint);
@@ -404,7 +404,7 @@ export async function parseImportJsonCurrent(
     }
     if (changedPaths.length !== 0) {
         logFullParseReason(canon, "source files changed", changedPaths);
-        return await queueOffThreadParse(canon, rawPath);
+        return await queueOffThreadParse(canon, rawPath, true);
     }
     existing.mtime = mtime;
     resetFreshness(existing.freshness);
@@ -425,7 +425,12 @@ export function getParseAt(path: string): CachedParse | null {
 // is cold or due for a refresh, queues it to run off-frame via
 // `processPendingParses` (pumped from the GUI tick). Callers render an
 // empty/"pending" state until the cache warms a frame or two later.
-const pendingParsePaths = new Map<string, string>();
+type PendingParse = {
+    rawPath: string;
+    requireCurrent: boolean;
+};
+
+const pendingParsePaths = new Map<string, PendingParse>();
 let parseInFlightPath: string | null = null;
 const parseWaiters = new Map<
     string,
@@ -433,8 +438,16 @@ const parseWaiters = new Map<
 >();
 let pendingOnParsed: ((entry: CachedParse) => void) | undefined;
 
-function queueOffThreadParse(canon: string, rawPath: string): Promise<CachedParse> {
-    pendingParsePaths.set(canon, rawPath);
+function queueOffThreadParse(
+    canon: string,
+    rawPath: string,
+    requireCurrent = false
+): Promise<CachedParse> {
+    const pending = pendingParsePaths.get(canon);
+    pendingParsePaths.set(canon, {
+        rawPath,
+        requireCurrent: requireCurrent || pending?.requireCurrent === true,
+    });
     const promise = new Promise<CachedParse>((resolve) => {
         const waiters = parseWaiters.get(canon);
         if (waiters === undefined) parseWaiters.set(canon, [resolve]);
@@ -456,11 +469,11 @@ export function requestParse(rawPath: string): CachedParse | null {
     const existing = cache.get(canon);
     if (existing !== undefined) {
         if (Date.now() - existing.freshness.checkedAt >= FP_RECHECK_MS) {
-            pendingParsePaths.set(canon, rawPath);
+            pendingParsePaths.set(canon, { rawPath, requireCurrent: false });
         }
         return existing;
     }
-    pendingParsePaths.set(canon, rawPath);
+    pendingParsePaths.set(canon, { rawPath, requireCurrent: false });
     return null;
 }
 
@@ -490,7 +503,7 @@ function finishPendingParse(
         parsedEntry.freshness.sweep !== null ||
         parsedEntry.freshness.pending !== null
     ) {
-        pendingParsePaths.set(canon, rawPath);
+        pendingParsePaths.set(canon, { rawPath, requireCurrent: false });
     }
     if (parsedEntry !== previousEntry && pendingOnParsed !== undefined) {
         pendingOnParsed(parsedEntry);
@@ -534,9 +547,11 @@ function pumpPendingParses(): void {
     if (parseInFlightPath !== null) return;
     let nextCanon: string | null = null;
     let nextRaw = "";
-    for (const [canon, rawPath] of pendingParsePaths) {
+    let requireCurrent = false;
+    for (const [canon, pending] of pendingParsePaths) {
         nextCanon = canon;
-        nextRaw = rawPath;
+        nextRaw = pending.rawPath;
+        requireCurrent = pending.requireCurrent;
         break;
     }
     if (nextCanon === null) return;
@@ -548,7 +563,11 @@ function pumpPendingParses(): void {
         const mtime = getMtimeMs(parseCanon);
         const previousEntry = cache.get(parseCanon);
         let settledMtimes: { [path: string]: number } | null = null;
-        if (previousEntry !== undefined && previousEntry.mtime === mtime) {
+        if (
+            !requireCurrent &&
+            previousEntry !== undefined &&
+            previousEntry.mtime === mtime
+        ) {
             const pendingBeforeSettle = previousEntry.freshness.pending;
             if (!settledChange(previousEntry.fingerprint, previousEntry.freshness)) {
                 recordParsePerf(parseCanon, Date.now() - startedAt, "memory");
@@ -617,7 +636,10 @@ function pumpPendingParses(): void {
         getMtimeMs(parseCanon);
         parseImportJsonOffThread(parseCanon, mtime, (result) => {
             if (getMtimeMs(parseCanon) !== mtime) {
-                pendingParsePaths.set(parseCanon, nextRaw);
+                pendingParsePaths.set(parseCanon, {
+                    rawPath: nextRaw,
+                    requireCurrent,
+                });
                 parseInFlightPath = null;
                 pumpPendingParses();
                 return;

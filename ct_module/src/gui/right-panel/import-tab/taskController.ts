@@ -744,7 +744,6 @@ async function prepareAndStartImport(
             8000
         );
     }
-    const startedAt = Date.now();
     let reviewRequest: ConflictReviewRequest | null = null;
     options.onStarted?.();
 
@@ -834,7 +833,7 @@ async function prepareAndStartImport(
             setActiveTaskPath(null);
             options.onComplete?.(importSucceeded);
             autoTrackRefresh();
-            const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
+            const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
             let failureMessage: string | null = null;
             if (cancelled) {
                 showToast(

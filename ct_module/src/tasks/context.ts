@@ -75,12 +75,17 @@ export type TaskWaiter<T> = {
 };
 
 export default class TaskContext {
+    public readonly startedAt: number = Date.now();
     private cancelled: boolean = false;
     private cancellationDeferrals: number = 0;
     private heatLevel: number = 0;
     private heatLastUpdate: number = 0;
     private heatLastChatAt: number = 0;
     private lastCommandAt: number = 0;
+
+    public elapsedMs(): number {
+        return Math.max(0, Date.now() - this.startedAt);
+    }
 
     public cancel() {
         this.cancelled = true;

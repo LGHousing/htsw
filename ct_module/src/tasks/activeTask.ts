@@ -24,3 +24,11 @@ export function cancelActiveTask(): boolean {
     activeTask.ctx.cancel();
     return true;
 }
+
+export function getActiveTaskStartedAt(): number | null {
+    return activeTask?.ctx.startedAt ?? null;
+}
+
+export function getActiveTaskElapsedMs(): number | null {
+    return activeTask?.ctx.elapsedMs() ?? null;
+}
