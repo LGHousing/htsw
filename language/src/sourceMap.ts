@@ -34,11 +34,29 @@ export class SourceFile {
     path: string;
     src: string;
     startPos: number;
+    private lineBreakPositions: number[];
+    private lineBreakPositionsSource: string | null;
 
     constructor(path: string, src: string) {
         this.path = path;
         this.src = src;
         this.startPos = 0;
+        this.lineBreakPositions = [];
+        this.lineBreakPositionsSource = null;
+    }
+
+    private getLineBreakPositions(): number[] {
+        if (this.lineBreakPositionsSource !== this.src) {
+            const positions: number[] = [];
+            for (let i = 0; i < this.src.length; i++) {
+                if (this.src.charAt(i) === "\n") {
+                    positions.push(i);
+                }
+            }
+            this.lineBreakPositions = positions;
+            this.lineBreakPositionsSource = this.src;
+        }
+        return this.lineBreakPositions;
     }
 
     getPosition(pos: number): { line: number; column: number } {
@@ -50,12 +68,12 @@ export class SourceFile {
 
         let line = 1;
         let lastLineBreak = -1;
-
-        for (let i = 0; i < index; i++) {
-            if (this.src.charAt(i) === "\n") {
-                line++;
-                lastLineBreak = i;
-            }
+        const lineBreakPositions = this.getLineBreakPositions();
+        for (let i = 0; i < lineBreakPositions.length; i++) {
+            const lineBreak = lineBreakPositions[i];
+            if (lineBreak >= index) break;
+            line++;
+            lastLineBreak = lineBreak;
         }
 
         const column = index - lastLineBreak;
@@ -66,24 +84,15 @@ export class SourceFile {
     getLine(lineNumber: number): string {
         if (lineNumber < 1) return "";
 
-        let currentLine = 1;
-        let start = 0;
-
-        for (let i = 0; i < this.src.length; i++) {
-            if (this.src.charAt(i) === "\n") {
-                if (currentLine === lineNumber) {
-                    return this.src.slice(start, i);
-                }
-                currentLine++;
-                start = i + 1;
-            }
-        }
-
-        if (currentLine === lineNumber) {
-            return this.src.slice(start);
-        }
-
-        return "";
+        const lineBreakPositions = this.getLineBreakPositions();
+        if (lineNumber > lineBreakPositions.length + 1) return "";
+        const lineIndex = lineNumber - 1;
+        const start = lineIndex === 0 ? 0 : lineBreakPositions[lineIndex - 1] + 1;
+        const end =
+            lineIndex < lineBreakPositions.length
+                ? lineBreakPositions[lineIndex]
+                : this.src.length;
+        return this.src.slice(start, end);
     }
 
     getLineStartPos(lineNumber: number): number {
