@@ -468,14 +468,6 @@ async function runImportSessionInner(
     // (in-memory, instant — not a pass over the house). ─────────────────
     for (const { row, read } of reads) {
         const plan = read.plan(session);
-        const applyingUnits = plan.applyingUnits?.();
-        if (applyingUnits !== undefined) {
-            events?.emit({
-                kind: "importableApplyUnitsRefined",
-                key: row.key,
-                applyingUnits,
-            });
-        }
         observedPlans.push({ plan });
         if (plan.isNoOp()) {
             noOpRows.push({ row, plan });

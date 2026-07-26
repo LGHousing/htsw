@@ -7,38 +7,6 @@ const ITEM_WRITE = COST.menuClickWait + COST.itemSelect;
 const CLEAR = COST.menuClickWait * 2;
 
 describe("menuApplyTotals", () => {
-    it("uses the planned action diff units when they are below the content estimate", () => {
-        const contentEstimate = 40;
-        const plannedDiffUnits = 6.5;
-        const estimated = menuApplyTotals(
-            [{ syncActions: [], actionUnits: contentEstimate }],
-            { exists: true, setSize: null }
-        );
-        const refined = menuApplyTotals(
-            [{ syncActions: [], actionUnits: plannedDiffUnits }],
-            { exists: true, setSize: null }
-        );
-
-        expect(refined.units).toBeCloseTo(
-            estimated.units - contentEstimate + plannedDiffUnits
-        );
-        expect(refined.units).toBeLessThan(estimated.units);
-    });
-
-    it("uses the planned action diff units when they exceed the content estimate", () => {
-        const estimated = menuApplyTotals(
-            [{ syncActions: [], actionUnits: 4 }],
-            { exists: true, setSize: null }
-        );
-        const refined = menuApplyTotals(
-            [{ syncActions: [], actionUnits: 12 }],
-            { exists: true, setSize: null }
-        );
-
-        expect(refined.units).toBeCloseTo(estimated.units + 8);
-        expect(refined.units).toBeGreaterThan(estimated.units);
-    });
-
     it("counts each item write, action sync, and clear as its own work item", () => {
         const r = menuApplyTotals([
             { setItem: {}, syncActions: [], actionUnits: 5 }, // 2 work items
