@@ -169,8 +169,11 @@ export function actionListContentHashFromActions(
 }
 
 export function actionListContentHashFromSlots(
-    slots: readonly ObservedActionSlot[]
+    slots: readonly ObservedActionSlot[],
+    itemContent?: ItemFieldContent
 ): string | undefined {
     const actions = fullyHydratedActionsFromSlots(slots);
-    return actions === null ? undefined : actionListContentHashFromActions(actions);
+    return actions === null
+        ? undefined
+        : actionListContentHashFromActions(actions, itemContent);
 }

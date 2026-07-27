@@ -48,7 +48,7 @@ export function actionListConflictVerdict(
 
     const liveContentHash =
         "slots" in live
-            ? actionListContentHashFromSlots(live.slots)
+            ? actionListContentHashFromSlots(live.slots, liveItemContent)
             : actionListContentHashFromActions(live.actions, liveItemContent);
     if (liveContentHash === undefined) return null;
     if (lock.contentHash !== undefined || lock.scanHash === undefined) {

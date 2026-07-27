@@ -45,6 +45,7 @@ describe("staged hydration cache", () => {
             scanHash: actionListScanHashFromActions(actions),
             contentHash: actionListContentHashFromActions(actions),
             actions,
+            itemFields: {},
         });
     });
 

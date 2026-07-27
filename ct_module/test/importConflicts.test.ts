@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 import { scanConflictVerdict } from "../src/housingSync/actions/conflicts";
 import {
@@ -11,6 +11,11 @@ import { createItemDependencyIndex } from "../src/importables/items/dependencyIn
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import {
+    itemFieldContentFromSnapshot,
+    type ItemFieldContent,
+} from "../src/housingSync/items/fieldContent";
+import type { TagLike } from "../src/housingSync/items/itemTag";
 import type TaskContext from "../src/tasks/context";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
 
@@ -420,6 +425,73 @@ describe("readActionListPlan conflict detection", () => {
         expect(mocks.hydrateActionListScan).not.toHaveBeenCalled();
         expect(plan.observed[0].action).toEqual(message("cached live"));
         expect(session.conflicts).toHaveLength(1);
+    });
+
+    it("uses captured canonical item content on a staged cache hit", async () => {
+        const source = {
+            type: "GIVE_ITEM",
+            itemName: "mvp_cookies.snbt",
+        } as Action;
+        const live = {
+            type: "GIVE_ITEM",
+            itemName: "mvp_002b_cookies__0028right_click_0029",
+        } as Action;
+        const cookie: TagLike = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:cookie" } },
+        };
+        const sourceItemContent: ItemFieldContent = (owner) =>
+            owner === source ? { key: "cookie", tag: cookie } : undefined;
+        const stagedItemFields = {
+            mvp_002b_cookies__0028right_click_0029: {
+                key: "cookie",
+                tag: cookie,
+            },
+        };
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [source],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, live)],
+        });
+        const session = sessionWithLock(importable, [source], false);
+        session.itemDiff = {
+            hasActionList: () => false,
+            actionsDiffer: () => false,
+            conditionsDiffer: () => false,
+            fieldContent: sourceItemContent,
+        };
+        session.trust.importables.get("FUNCTION:Debug")!.lockListContentHashes = {
+            actions: actionListContentHashFromActions([source], sourceItemContent),
+        };
+        session.trust.importables.get("FUNCTION:Debug")!.stagedActionLists = new Map([
+            [
+                "actions",
+                {
+                    scanHash: actionListScanHashFromActions([live]),
+                    contentHash: actionListContentHashFromActions(
+                        [live],
+                        itemFieldContentFromSnapshot(stagedItemFields)
+                    ),
+                    actions: [live],
+                    itemFields: stagedItemFields,
+                },
+            ],
+        ]);
+
+        await readActionListPlan(null as unknown as TaskContext, [source], {
+            sync: session,
+            conflictTarget: {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+            },
+        });
+
+        expect(mocks.hydrateActionListScan).not.toHaveBeenCalled();
+        expect(session.conflicts).toEqual([]);
     });
 
     it.each([
