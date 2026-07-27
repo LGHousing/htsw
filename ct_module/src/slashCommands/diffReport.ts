@@ -1,6 +1,10 @@
 import type { Action, Importable } from "htsw/types";
 
 import { actionListConflictVerdict } from "../housingSync/actions/conflicts";
+import {
+    actionListConflictDetails,
+    type ActionListConflictDetails,
+} from "../housingSync/actions/conflictDetails";
 import type { ActionSyncConflict } from "../housingSync/actions/syncContext";
 import {
     actionListsOfImportable,
@@ -11,7 +15,7 @@ import { importableIdentity, importableKey } from "../importables/identity";
 
 export type DiffReport = {
     clean: number;
-    conflicts: ActionSyncConflict[];
+    conflicts: Array<ActionSyncConflict & ActionListConflictDetails>;
     unknown: number;
 };
 
@@ -85,6 +89,7 @@ export function evaluateDiffReport(
                     type: source.type,
                     identity,
                     basePath: sourceList.basePath,
+                    ...actionListConflictDetails(liveActions, sourceList.actions),
                 });
             } else if (verdict === "no-baseline" || verdict === null) {
                 result.unknown++;
@@ -106,6 +111,14 @@ export function formatDiffReport(report: DiffReport, manifest: string): string[]
         lines.push(
             `[htsw] Conflict: ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
         );
+        for (const difference of conflict.differences) {
+            lines.push(
+                `[htsw]   ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
+            );
+        }
+        if (conflict.moreCount > 0) {
+            lines.push(`[htsw]   …and ${conflict.moreCount} more differences`);
+        }
     }
     if (report.conflicts.length > shown) {
         lines.push(`[htsw] …and ${report.conflicts.length - shown} more conflicts`);

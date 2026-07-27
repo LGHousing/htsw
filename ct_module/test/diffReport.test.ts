@@ -97,6 +97,14 @@ describe("diff report", () => {
                     type: "FUNCTION",
                     identity: "Debug",
                     basePath: "actions",
+                    differences: [
+                        {
+                            path: "action 1 (message) · message",
+                            live: '"live"',
+                            source: '"source"',
+                        },
+                    ],
+                    moreCount: 0,
                 },
             ],
             unknown: 0,
@@ -174,6 +182,14 @@ describe("diff report", () => {
                 type: "FUNCTION",
                 identity: "Debug",
                 basePath: "actions",
+                differences: [
+                    {
+                        path: "action 1 (change var) · type",
+                        live: "CHANGE_VAR",
+                        source: "PLAY_SOUND",
+                    },
+                ],
+                moreCount: 0,
             },
         ]);
     });
@@ -188,6 +204,14 @@ describe("diff report", () => {
                             type: "MENU",
                             identity: "Shop",
                             basePath: "slots[3].actions",
+                            differences: [
+                                {
+                                    path: "action 1 (message) · message",
+                                    live: '"live"',
+                                    source: '"source"',
+                                },
+                            ],
+                            moreCount: 2,
                         },
                     ],
                     unknown: 0,
@@ -197,6 +221,8 @@ describe("diff report", () => {
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
+            '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
+            "[htsw]   …and 2 more differences",
         ]);
     });
 });
