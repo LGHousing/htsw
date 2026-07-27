@@ -185,6 +185,16 @@ describe("action comparison — select/cycle shape coercion", () => {
         });
         expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
+
+    test("Housing's entity-prefixed Enderman sound matches the HTSL sound", () => {
+        const observed = playSound({
+            sound: "Entity Enderman Teleport" as unknown as ActionPlaySound["sound"],
+        });
+        const desired = playSound({
+            sound: "mob.endermen.portal" as unknown as ActionPlaySound["sound"],
+        });
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
 });
 
 describe("action comparison — boolean default-drop", () => {

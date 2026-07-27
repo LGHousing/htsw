@@ -6,6 +6,7 @@ export function normalizeSoundKey(value: string | null | undefined): string | nu
     // so drop it before writing or comparing.
     const trimmed = value.trim().replace(/^minecraft:/i, "");
     const lower = trimmed.toLowerCase();
+    if (lower === "entity enderman teleport") return "mob.endermen.portal";
     for (let i = 0; i < SOUNDS.length; i++) {
         const sound = SOUNDS[i];
         if (
