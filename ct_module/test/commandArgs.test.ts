@@ -57,6 +57,15 @@ describe("parseImportCommandArgs", () => {
         ).toEqual({
             pathArgs: ["projects/My", "House/import.json"],
             onConflict: "cancel",
+            fresh: false,
+        });
+    });
+
+    test("strips the fresh flag from the import path", () => {
+        expect(parseImportCommandArgs(["--fresh", "import.json"])).toEqual({
+            pathArgs: ["import.json"],
+            onConflict: "prompt",
+            fresh: true,
         });
     });
 });

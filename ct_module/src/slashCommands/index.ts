@@ -66,7 +66,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "import",
         summary: "Import an import.json or .htsl file",
         run: commandImport,
-        usage: "import <import.json|actions.htsl> [--on-conflict=cancel]",
+        usage: "import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]",
     },
     {
         name: "trust",
@@ -601,7 +601,7 @@ function commandImport(args: string[]) {
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
-        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel]");
+        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]");
         ChatLib.chat(
             "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
         );
@@ -648,7 +648,7 @@ function commandImport(args: string[]) {
                 label: compactFileLabel(canon),
             },
         ],
-        { onConflict: parsedArgs.onConflict }
+        { onConflict: parsedArgs.onConflict, fresh: parsedArgs.fresh }
     );
 }
 

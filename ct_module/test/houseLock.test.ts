@@ -3,6 +3,7 @@ import type { ImportableFunction } from "htsw/types";
 
 import {
     readHouseLock,
+    seedMissingHouseLockActionLists,
     upsertHouseLockImportable,
     type HouseLock,
 } from "../src/importCache/houseLock";
@@ -104,6 +105,77 @@ describe("house lock scan hashes", () => {
             itemDependencies
         );
         expect(readHouseLock(importJsonPath)).toEqual(written);
+    });
+
+    it("seeds a missing live baseline without replacing an existing one", () => {
+        const existing = [functionEntry().actions![0]];
+        const files: Partial<Record<string, string>> = {
+            [lockPath]: JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: "current-house",
+                scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION,
+                contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: "existing-importable",
+                        listScanHashes: {
+                            actions: actionListScanHashFromActions(existing),
+                        },
+                        listContentHashes: {
+                            actions: actionListContentHashFromActions(existing),
+                        },
+                    },
+                },
+            }),
+        };
+        stubFiles(files);
+        const live = [{ type: "MESSAGE", message: "live" }] as const;
+
+        expect(
+            seedMissingHouseLockActionLists(importJsonPath, "current-house", [
+                { importable: functionEntry(), basePath: "actions", actions: live },
+            ])
+        ).toBe(true);
+        expect(JSON.parse(files[lockPath]!)).toMatchObject({
+            importables: {
+                "FUNCTION:Debug": {
+                    hash: "existing-importable",
+                    listScanHashes: {
+                        actions: actionListScanHashFromActions(existing),
+                    },
+                    listContentHashes: {
+                        actions: actionListContentHashFromActions(existing),
+                    },
+                },
+            },
+        });
+    });
+
+    it("seeds the observed live state when no baseline exists", () => {
+        const files: Partial<Record<string, string>> = {};
+        stubFiles(files);
+        const live = functionEntry();
+
+        expect(
+            seedMissingHouseLockActionLists(importJsonPath, "current-house", [
+                { importable: live, basePath: "actions", actions: live.actions! },
+            ])
+        ).toBe(true);
+        expect(readHouseLock(importJsonPath)).toMatchObject({
+            houseUuid: "current-house",
+            importables: {
+                "FUNCTION:Debug": {
+                    listScanHashes: {
+                        actions: actionListScanHashFromActions(live.actions!),
+                    },
+                    listContentHashes: {
+                        actions: actionListContentHashFromActions(live.actions!),
+                    },
+                },
+            },
+        });
     });
 
     it("hides entry scan hashes from a different scan-hash version", () => {

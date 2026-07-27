@@ -9,7 +9,7 @@ export const IMPORT_CACHE_ROOT = "./htsw/.cache";
  * Lowercase and singular by convention (e.g. the ITEM importable cache lives
  * under `item/`).
  */
-function dirFor(type: Importable["type"]): string {
+export function cacheDirFor(type: Importable["type"]): string {
     switch (type) {
         case "FUNCTION":
             return "function";
@@ -51,13 +51,13 @@ function slug(identity: string): string {
 
 /** Full path to the cache JSON file for a (housing, importable) pair. */
 export function cachePathFor(housingUuid: string, importable: Importable): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${cacheDirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
 }
 
 /** The per-(housing, type) directory holding that type's `.knowledge.json`
  *  files. Used to enumerate every importable of a type in a house. */
 export function cacheTypeDir(housingUuid: string, type: Importable["type"]): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${cacheDirFor(type)}`;
 }
 
 export function cacheScanMarkerPath(
@@ -73,5 +73,5 @@ export function cachePathForId(
     type: Importable["type"],
     identity: string
 ): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${cacheDirFor(type)}/${slug(identity)}.knowledge.json`;
 }

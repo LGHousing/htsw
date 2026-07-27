@@ -25,6 +25,7 @@ import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
+import { actionListScanHashFromSlots } from "./scanHash";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -126,6 +127,31 @@ export async function scanActionListForPlan(
         },
         readOptions
     );
+    const staged = options.conflictTarget === undefined
+        ? undefined
+        : options.sync.trust.importables
+              .get(
+                  importableKey(
+                      options.conflictTarget.type,
+                      options.conflictTarget.identity
+                  )
+              )
+              ?.stagedActionLists?.get(options.conflictTarget.basePath);
+    if (
+        options.sync.freshHydration !== true &&
+        staged !== undefined &&
+        actionListScanHashFromSlots(scan.slots) === staged.scanHash
+    ) {
+        // Freshness is certified at scan level: action types and child-list
+        // structure, the same profile as trusted mode. Conflict comparison
+        // still uses the staged list's fully hydrated content below.
+        phaseUnits.hydrating = 0;
+        const plan = knownActionListPlan(desired, staged.actions, options, phaseUnits);
+        if (options.listPath === undefined) {
+            emitObservedSnapshot(plan.observed, options.sync.events);
+        }
+        return { kind: "planned", plan };
+    }
     const conflictVerdict = options.sync.trust.trustMode
         ? recordActionListConflict({ slots: scan.slots }, desired, options)
         : null;

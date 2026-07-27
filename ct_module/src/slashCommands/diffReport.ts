@@ -15,6 +15,7 @@ import {
 import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
+import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
 
 type DiffReportConflict = ActionSyncConflict &
     ActionListConflictDetails & {
@@ -48,6 +49,45 @@ function liveActionsFor(
         return [];
     }
     return liveListsByPath.get(sourceList.basePath);
+}
+
+export type MatchedLiveActionList = {
+    source: Importable;
+    live: Importable;
+    identity: string;
+    basePath: string;
+    actions: readonly Action[];
+};
+
+export function matchedLiveActionLists(
+    sourceImportables: readonly Importable[],
+    liveImportables: ReadonlyMap<string, Importable>
+): MatchedLiveActionList[] {
+    const matched: MatchedLiveActionList[] = [];
+    for (const source of sourceImportables) {
+        const identity = importableIdentity(source);
+        const live = liveImportables.get(importableKey(source.type, identity));
+        if (live === undefined) continue;
+        const liveListsByPath = actionListsByPath(live);
+        for (const sourceList of actionListsOfImportable(source)) {
+            const actions = liveActionsFor(
+                source,
+                live,
+                sourceList,
+                liveListsByPath
+            );
+            if (actions !== undefined) {
+                matched.push({
+                    source,
+                    live,
+                    identity,
+                    basePath: sourceList.basePath,
+                    actions,
+                });
+            }
+        }
+    }
+    return matched;
 }
 
 function actionListsByPath(importable: Importable): Map<string, readonly Action[]> {
@@ -93,7 +133,12 @@ export function evaluateDiffReport(
                 sourceList.actions,
                 "content"
             );
-            if (verdict === "conflict") {
+            if (
+                verdict === "conflict" ||
+                (verdict === "no-baseline" &&
+                    actionListContentHashFromActions(liveActions) !==
+                        actionListContentHashFromActions(sourceList.actions))
+            ) {
                 const canonicalDifferences = actionListConflictDifferences(
                     liveActions,
                     sourceList.actions
@@ -111,7 +156,7 @@ export function evaluateDiffReport(
                         ...printerDiagnosticsForDiff("live", liveActions),
                     ],
                 });
-            } else if (verdict === "no-baseline" || verdict === null) {
+            } else if (verdict === null) {
                 result.unknown++;
             } else {
                 result.clean++;
@@ -135,14 +180,6 @@ export function formatDiffReport(
         lines.push(
             `[htsw] Conflict: ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
         );
-        for (const difference of conflict.differences) {
-            lines.push(
-                `[htsw]   ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
-            );
-        }
-        if (conflict.moreCount > 0) {
-            lines.push(`[htsw]   …and ${conflict.moreCount} more differences`);
-        }
     }
     if (report.conflicts.length > shown) {
         lines.push(`[htsw] …and ${report.conflicts.length - shown} more conflicts`);
