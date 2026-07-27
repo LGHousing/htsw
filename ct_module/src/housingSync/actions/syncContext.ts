@@ -20,6 +20,9 @@ export type ActionSyncContext = {
     trust: TrustPlan;
     overwriteWarningMode: OverwriteWarningMode;
     conflicts: ActionSyncConflict[];
+    conflictTargets?: ActionSyncConflict[];
+    skippedConflicts?: ReadonlySet<string>;
+    observedConflictLists?: Map<string, readonly Action[]>;
     events?: SyncEventHandler;
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
     itemDiff?: ItemDiffContext;

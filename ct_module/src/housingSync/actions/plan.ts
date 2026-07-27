@@ -27,6 +27,7 @@ import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import { actionListScanHashFromSlots } from "./scanHash";
+import { conflictIdentifier } from "../../importables/import/conflictResolution";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -47,6 +48,7 @@ export type ActionListPlan = {
     readonly observed: ObservedActionSlot[];
     readonly diff: ActionListDiff;
     readonly phaseUnits: Readonly<PhaseUnits>;
+    readonly conflictTarget?: ActionSyncConflict;
 };
 
 export type ActionListPlanScan =
@@ -206,7 +208,7 @@ export async function hydrateActionListForPlan(
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     emitPrereadCompleted(progress, phaseUnits);
 
-    return { desired, observed, diff, phaseUnits };
+    return { desired, observed, diff, phaseUnits, conflictTarget: options.conflictTarget };
 }
 
 export function createKnownEmptyActionListPlan(
@@ -258,7 +260,7 @@ function knownActionListPlan(
         options.sync.itemDiff
     );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
-    return { desired, observed, diff, phaseUnits };
+    return { desired, observed, diff, phaseUnits, conflictTarget: options.conflictTarget };
 }
 
 function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
@@ -287,6 +289,15 @@ function recordActionListConflict(
     options: ActionListPrereadOptions
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
+    if (
+        target !== undefined &&
+        options.sync.conflictTargets !== undefined &&
+        !options.sync.conflictTargets.some(
+            (entry) => conflictIdentifier(entry) === conflictIdentifier(target)
+        )
+    ) {
+        options.sync.conflictTargets.push(target);
+    }
     const trustedImport = options.sync.trust.trustMode;
     if (
         target === undefined ||
@@ -315,6 +326,18 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
+        const actions =
+            "slots" in live
+                ? live.slots
+                      .map((entry) => entry.action)
+                      .filter((action): action is Action => action !== null)
+                : live.actions.slice();
+        if (!("slots" in live) || actions.length === live.slots.length) {
+            options.sync.observedConflictLists?.set(
+                conflictIdentifier(target),
+                actions
+            );
+        }
     }
     return verdict;
 }

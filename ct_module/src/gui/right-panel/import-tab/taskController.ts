@@ -77,6 +77,9 @@ import { setFocusPath } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
 import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
 import type { ImportConflict } from "../../../importables/import/conflicts";
+import {
+    resolveImportConflicts,
+} from "../../../importables/import/conflictResolution";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
@@ -585,7 +588,8 @@ export function startImport(
 }
 
 type ImportStartOptions = {
-    onConflict?: "prompt" | "cancel";
+    onConflict?: "prompt" | "cancel" | "skip";
+    accepts?: readonly string[];
     fresh?: boolean;
     silentBusy?: boolean;
     onStarted?: () => void;
@@ -762,6 +766,8 @@ async function prepareAndStartImport(
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
+        let totalAppliedLists = 0;
+        const skippedConflicts: ImportConflict[] = [];
         let unexpectedError: unknown = null;
         try {
             const cached = getHousingUuid();
@@ -782,7 +788,7 @@ async function prepareAndStartImport(
                     trustMode,
                     housingUuid,
                 });
-                await runImportSession(ctx, {
+                const sessionResult = await runImportSession(ctx, {
                     importables: batch.importables,
                     trustMode,
                     housingUuid,
@@ -790,21 +796,27 @@ async function prepareAndStartImport(
                     freshHydration: options.fresh,
                     parsed: batch.parsed,
                     events,
-                    confirmConflicts: async (conflicts) => {
+                    resolveConflicts: async (conflicts) => {
+                        const resolution = resolveImportConflicts(
+                            conflicts,
+                            options.accepts ?? []
+                        );
+                        if (resolution.skipped.length === 0) return resolution;
+                        if (options.onConflict === "skip") return resolution;
                         if (options.onConflict === "cancel") {
                             cancelled = true;
                             ChatLib.chat(
                                 `[htsw] Import cancelled: conflicts detected · ${totalImported} imported`
                             );
-                            return false;
+                            return { accepted: [], skipped: [] };
                         }
                         const proceed = await confirmImportConflicts(
                             ctx,
-                            conflicts,
+                            resolution.skipped,
                             () => {
                                 reviewRequest = {
                                     batch,
-                                    conflicts: conflicts.slice(),
+                                    conflicts: resolution.skipped.slice(),
                                     housingUuid,
                                 };
                             }
@@ -814,8 +826,12 @@ async function prepareAndStartImport(
                             ChatLib.chat(
                                 `[htsw] Import cancelled by user · ${totalImported} imported`
                             );
+                            return { accepted: [], skipped: [] };
                         }
-                        return proceed;
+                        return {
+                            accepted: conflicts.slice(),
+                            skipped: [],
+                        };
                     },
                     onImportableAutoAdded: (importable) => {
                         const queueItem = makeImportableQueueItem(
@@ -832,6 +848,10 @@ async function prepareAndStartImport(
                         }
                     },
                 });
+                totalAppliedLists += sessionResult.appliedLists;
+                for (const conflict of sessionResult.skippedConflicts) {
+                    skippedConflicts.push(conflict);
+                }
                 const c = events.counts();
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
@@ -866,12 +886,21 @@ async function prepareAndStartImport(
                 // at completion — so the toggle must be checked directly.
                 if (isImportCompletionSoundEnabled()) playImportSuccessSound();
                 showToast(
-                    `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
+                    `Import complete in ${elapsed} · ${totalAppliedLists} applied, ${skippedConflicts.length} conflicts skipped`,
                     0xff5cb85c
                 );
+                const manifest = batches[0].sourcePath;
                 ChatLib.chat(
                     `&a[htsw] Import complete in ${elapsed} &7· &f${totalImported}&a imported, &f${totalSkipped}&7 skipped`
                 );
+                ChatLib.chat(
+                    `&a[htsw] Import complete: &f${totalAppliedLists}&a applied, &f${skippedConflicts.length}&a skipped (conflicts) &7· &f${manifest}`
+                );
+                for (const conflict of skippedConflicts) {
+                    ChatLib.chat(
+                        `&e[htsw] Skipped (conflict): ${conflict.type} "${conflict.identity}" &7· &f${conflict.basePath}`
+                    );
+                }
             } else {
                 // Surface the failure reason (read before clearing progress
                 // below) — a failure halts the whole run, so the *why* must be

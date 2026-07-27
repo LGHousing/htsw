@@ -231,6 +231,7 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 export type HouseLockImportableUpdate = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
+    preserveListPaths?: readonly string[];
 };
 
 export type HouseLockActionListSeed = {
@@ -337,6 +338,13 @@ export function upsertHouseLockImportables(
                     actions,
                     itemContent
                 );
+        }
+        const previous = lock.importables[importableKey(importable.type, identity)];
+        for (const basePath of update.preserveListPaths ?? []) {
+            const scanHash = previous.listScanHashes?.[basePath];
+            const contentHash = previous.listContentHashes?.[basePath];
+            if (scanHash !== undefined) listScanHashes[basePath] = scanHash;
+            if (contentHash !== undefined) listContentHashes[basePath] = contentHash;
         }
         lock.importables[importableKey(importable.type, identity)] = {
             type: importable.type,
