@@ -12,6 +12,11 @@ type DiffDetailsConflict = {
     sourceText: string;
     liveText: string;
     differences: readonly { path: string; live: string; source: string }[];
+    itemDifferences?: readonly {
+        path: string;
+        liveSnbt: string;
+        sourceSnbt: string;
+    }[];
     moreCount: number;
 };
 
@@ -23,6 +28,13 @@ type DiffDetailsReport = {
 
 function withoutFinalNewline(text: string): string {
     return text.endsWith("\n") ? text.substring(0, text.length - 1) : text;
+}
+
+function boundedItemSnbt(text: string): string {
+    const lines = text.split("\n");
+    const shown = lines.slice(0, 120).join("\n");
+    const bounded = shown.length > 12000 ? shown.substring(0, 12000) : shown;
+    return bounded === text ? text : `${bounded}\n# …item diff truncated`;
 }
 
 export function renderActionsForDiff(actions: readonly Action[]): string {
@@ -68,6 +80,20 @@ export function formatDiffDetailsFile(
         lines.push(
             withoutFinalNewline(diff)
         );
+        for (const item of conflict.itemDifferences ?? []) {
+            lines.push(
+                "",
+                `# item · ${item.path}`,
+                withoutFinalNewline(
+                    unifiedDiff(
+                        boundedItemSnbt(item.sourceSnbt),
+                        boundedItemSnbt(item.liveSnbt),
+                        `source/${conflict.basePath}/${item.path}.snbt`,
+                        `live/${conflict.basePath}/${item.path}.snbt`
+                    )
+                )
+            );
+        }
     }
     return lines.join("\n") + "\n";
 }

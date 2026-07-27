@@ -6,6 +6,7 @@ import type {
     ExportProgressSink,
     ProgressHandler,
 } from "../../housingSync/progress/types";
+import type { CapturedItem } from "../items/captureRegistry";
 
 export type ReadResult = { total: number; succeeded: number; failed: number };
 
@@ -13,9 +14,10 @@ export type ReadOutput =
     | { kind: "project" }
     | { kind: "cache"; housingUuid: string }
     | {
-          kind: "memory";
-          housingUuid: string;
-          accept: (importable: Importable) => void;
+      kind: "memory";
+      housingUuid: string;
+      accept: (importable: Importable) => void;
+      acceptItemCaptures?: (items: readonly CapturedItem[]) => void;
       };
 
 /**

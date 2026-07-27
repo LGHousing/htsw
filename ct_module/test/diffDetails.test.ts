@@ -64,4 +64,47 @@ describe("diff details", () => {
                 '+chat "live"\n'
         );
     });
+
+    it("adds a unified canonical SNBT section for item differences", () => {
+        const output = formatDiffDetailsFile(
+            {
+                clean: 0,
+                conflicts: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Items",
+                        basePath: "actions",
+                        sourceText: 'giveItem "mvp_cookies.snbt"\n',
+                        liveText: 'giveItem "mvp_cookies"\n',
+                        differences: [
+                            {
+                                path: "action 1 (give item) · itemName",
+                                live: "<item>",
+                                source: "<item>",
+                            },
+                        ],
+                        itemDifferences: [
+                            {
+                                path: "action 1 (give item) · itemName",
+                                sourceSnbt: '{\n  id: "minecraft:cookie"\n}',
+                                liveSnbt: '{\n  id: "minecraft:apple"\n}',
+                            },
+                        ],
+                        moreCount: 0,
+                    },
+                ],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(output).toContain(
+            "# item · action 1 (give item) · itemName\n" +
+                "--- source/actions/action 1 (give item) · itemName.snbt\n" +
+                "+++ live/actions/action 1 (give item) · itemName.snbt\n"
+        );
+        expect(output).toContain('-  id: "minecraft:cookie"');
+        expect(output).toContain('+  id: "minecraft:apple"');
+    });
 });

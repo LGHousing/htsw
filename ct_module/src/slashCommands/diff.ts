@@ -16,6 +16,9 @@ import {
 import { writeStagedActionListHydration } from "../importCache/stagedHydration";
 import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
+import { createProjectItemIndex } from "../importables/items/projectItems";
+import type { CapturedItem } from "../importables/items/captureRegistry";
+import { capturedItemFieldContent } from "../housingSync/items/fieldContent";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
 import { isTaskCancelled, TaskManager } from "../tasks/manager";
@@ -55,6 +58,7 @@ async function readDiffImportables(
     progress: ReturnType<typeof createDiffProgressSession>
 ): Promise<Map<string, Importable>> {
     const live = new Map<string, Importable>();
+    const captures = new Map<string, CapturedItem>();
     const namesByType = new Map<Importable["type"], string[]>();
     for (const importable of parsed.value) {
         if (actionListsOfImportable(importable).length === 0) continue;
@@ -85,11 +89,20 @@ async function readDiffImportables(
                         importable
                     );
                 },
+                acceptItemCaptures: (items) => {
+                    for (const item of items) captures.set(item.name, item);
+                },
             },
         });
     }
+    diffItemCaptures.set(live, captures);
     return live;
 }
+
+const diffItemCaptures = new WeakMap<
+    Map<string, Importable>,
+    Map<string, CapturedItem>
+>();
 
 export function commandDiff(args: string[]): void {
     if (args.length === 0) {
@@ -136,6 +149,8 @@ export function commandDiff(args: string[]): void {
             progress
         );
         const matchedLists = matchedLiveActionLists(parsed.value, live);
+        const captures = diffItemCaptures.get(live) ?? new Map();
+        const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
         const existingLock = readHouseLock(manifest);
         for (const list of matchedLists) {
             writeStagedActionListHydration(
@@ -153,13 +168,15 @@ export function commandDiff(args: string[]): void {
                 importable: list.live,
                 basePath: list.basePath,
                 actions: list.actions,
+                itemContent: capturedItemFieldContent(list.live, captures),
             }))
         );
         const report = evaluateDiffReport(
             housingUuid,
             parsed.value,
             live,
-            existingLock
+            existingLock,
+            { projectItems, captures }
         );
         const detailsPath =
             report.conflicts.length === 0

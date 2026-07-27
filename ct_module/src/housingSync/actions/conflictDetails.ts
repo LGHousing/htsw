@@ -3,6 +3,8 @@ import type { Action, Condition } from "htsw/types";
 import { getActionScalarLoreFields, getChildListFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
+import type { ItemFieldContent } from "../items/fieldContent";
+import { prettyCanonicalItemTag } from "../items/itemNbt";
 
 type ActionListConflictDifference = {
     path: string;
@@ -12,6 +14,11 @@ type ActionListConflictDifference = {
 
 export type ActionListConflictDetails = {
     differences: ActionListConflictDifference[];
+    itemDifferences?: {
+        path: string;
+        liveSnbt: string;
+        sourceSnbt: string;
+    }[];
     moreCount: number;
 };
 
@@ -20,6 +27,9 @@ const MAX_VALUE_LENGTH = 48;
 
 type DifferenceCollector = {
     differences: ActionListConflictDifference[];
+    itemDifferences: NonNullable<ActionListConflictDetails["itemDifferences"]>;
+    liveItemContent?: ItemFieldContent;
+    sourceItemContent?: ItemFieldContent;
     total: number;
 };
 
@@ -58,9 +68,31 @@ function compareScalarFields(
     type: string,
     live: Record<string, unknown>,
     source: Record<string, unknown>,
-    fields: readonly { prop: string }[]
+    fields: readonly { prop: string; kind?: string }[]
 ): void {
     for (const field of fields) {
+        if (field.kind === "item") {
+            const liveItem = collector.liveItemContent?.(
+                live as unknown as Action | Condition,
+                field.prop
+            );
+            const sourceItem = collector.sourceItemContent?.(
+                source as unknown as Action | Condition,
+                field.prop
+            );
+            if (liveItem?.key !== sourceItem?.key) {
+                const itemPath = `${path} · ${field.prop}`;
+                addDifference(collector, itemPath, "<item>", "<item>");
+                if (liveItem !== undefined && sourceItem !== undefined) {
+                    collector.itemDifferences.push({
+                        path: itemPath,
+                        liveSnbt: prettyCanonicalItemTag(liveItem.tag),
+                        sourceSnbt: prettyCanonicalItemTag(sourceItem.tag),
+                    });
+                }
+            }
+            continue;
+        }
         const liveKey = scalarFieldCompareKey(type, field.prop, live[field.prop]);
         const sourceKey = scalarFieldCompareKey(type, field.prop, source[field.prop]);
         if (liveKey !== sourceKey) {
@@ -164,15 +196,6 @@ function compareEntries<T extends { type: string }>(
     }
 }
 
-function compareAction(
-    collector: DifferenceCollector,
-    path: string,
-    live: Action,
-    source: Action
-): void {
-    compareActionFields(collector, path, live, source, true);
-}
-
 function compareChildAction(
     collector: DifferenceCollector,
     path: string,
@@ -254,12 +277,37 @@ function compareCondition(
 
 export function actionListConflictDetails(
     live: readonly Action[],
-    source: readonly Action[]
+    source: readonly Action[],
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
 ): ActionListConflictDetails {
-    const collector: DifferenceCollector = { differences: [], total: 0 };
-    compareEntries(collector, "", live, source, compareAction, actionLabel);
+    const collector: DifferenceCollector = {
+        differences: [],
+        itemDifferences: [],
+        liveItemContent,
+        sourceItemContent,
+        total: 0,
+    };
+    compareEntries(
+        collector,
+        "",
+        live,
+        source,
+        (current, path, liveAction, sourceAction) =>
+            compareActionFields(
+                current,
+                path,
+                liveAction,
+                sourceAction,
+                true
+            ),
+        actionLabel
+    );
     return {
         differences: collector.differences,
+        ...(collector.itemDifferences.length > 0
+            ? { itemDifferences: collector.itemDifferences }
+            : {}),
         moreCount: collector.total - collector.differences.length,
     };
 }

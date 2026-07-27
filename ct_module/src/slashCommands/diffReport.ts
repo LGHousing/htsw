@@ -14,6 +14,12 @@ import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { renderActionsForDiff } from "./diffDetails";
 import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
+import {
+    capturedItemFieldContent,
+    sourceItemFieldContent,
+} from "../housingSync/items/fieldContent";
+import type { ProjectItemIndex } from "../importables/items/projectItems";
+import type { CapturedItem } from "../importables/items/captureRegistry";
 
 type DiffReportConflict = ActionSyncConflict &
     ActionListConflictDetails & {
@@ -100,7 +106,11 @@ export function evaluateDiffReport(
     housingUuid: string,
     sourceImportables: readonly Importable[],
     liveImportables: ReadonlyMap<string, Importable>,
-    lock: HouseLock | null
+    lock: HouseLock | null,
+    itemContent?: {
+        projectItems: ProjectItemIndex;
+        captures: ReadonlyMap<string, CapturedItem>;
+    }
 ): DiffReport {
     const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
     const matchingLock =
@@ -111,6 +121,14 @@ export function evaluateDiffReport(
     for (const source of sourceImportables) {
         const identity = importableIdentity(source);
         const live = liveImportables.get(importableKey(source.type, identity));
+        const sourceItems =
+            itemContent === undefined
+                ? undefined
+                : sourceItemFieldContent(source, itemContent.projectItems);
+        const liveItems =
+            live === undefined || itemContent === undefined
+                ? undefined
+                : capturedItemFieldContent(live, itemContent.captures);
         const lockEntry = houseLockEntryFor(matchingLock, source.type, identity);
         const liveListsByPath = live === undefined ? null : actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {
@@ -129,19 +147,29 @@ export function evaluateDiffReport(
                     scanHash: lockEntry?.listScanHashes?.[sourceList.basePath],
                 },
                 sourceList.actions,
-                "content"
+                "content",
+                liveItems,
+                sourceItems
             );
             if (
                 verdict === "conflict" ||
                 (verdict === "no-baseline" &&
-                    actionListContentHashFromActions(liveActions) !==
-                        actionListContentHashFromActions(sourceList.actions))
+                    actionListContentHashFromActions(liveActions, liveItems) !==
+                        actionListContentHashFromActions(
+                            sourceList.actions,
+                            sourceItems
+                        ))
             ) {
                 result.conflicts.push({
                     type: source.type,
                     identity,
                     basePath: sourceList.basePath,
-                    ...actionListConflictDetails(liveActions, sourceList.actions),
+                    ...actionListConflictDetails(
+                        liveActions,
+                        sourceList.actions,
+                        liveItems,
+                        sourceItems
+                    ),
                     sourceText: renderActionsForDiff(sourceList.actions),
                     liveText: renderActionsForDiff(liveActions),
                 });

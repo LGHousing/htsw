@@ -376,6 +376,11 @@ export function defineHouseExporter<
             failed = result.failed;
         } finally {
             try {
+                if (options.output.kind === "memory") {
+                    options.output.acceptItemCaptures?.(
+                        state.itemCaptures.entries()
+                    );
+                }
                 if (!readOnly && spec.capturesActionItems === true) {
                     await exportCapturedItems(
                         ctx,

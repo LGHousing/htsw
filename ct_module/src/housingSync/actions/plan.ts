@@ -297,6 +297,11 @@ function recordActionListConflict(
     const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
+    const itemContent =
+        options.sync.itemDiff?.fieldContent === undefined
+            ? undefined
+            : (owner: Action | import("htsw/types").Condition, property: string) =>
+                  options.sync.itemDiff?.fieldContent?.(owner, property);
     const verdict = actionListConflictVerdict(
         live,
         {
@@ -304,7 +309,9 @@ function recordActionListConflict(
             scanHash: trustPlan?.lockListScanHashes?.[target.basePath],
         },
         desired,
-        trustedImport ? "scan" : "content"
+        trustedImport ? "scan" : "content",
+        itemContent,
+        itemContent
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
