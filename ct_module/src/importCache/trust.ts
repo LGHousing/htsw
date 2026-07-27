@@ -24,6 +24,10 @@ import {
     hasItemClickActions,
     hasRequiredInteractDataCache,
 } from "../importables/items/interactDataCache";
+import {
+    readStagedActionListHydration,
+    type StagedActionListHydration,
+} from "./stagedHydration";
 
 export type {
     TrustedChildListPath,
@@ -49,6 +53,7 @@ export type ImportableTrustPlan = {
     wholeImportableTrusted: boolean;
     trustedChildListPaths: Set<TrustedChildListPath>;
     trustedChildLists: Map<TrustedChildListPath, TrustedChildListSnapshot>;
+    stagedActionLists?: Map<string, StagedActionListHydration>;
 };
 
 export type TrustPlan = {
@@ -86,6 +91,16 @@ export function buildTrustPlan(
             TrustedChildListPath,
             TrustedChildListSnapshot
         >();
+        const stagedActionLists = new Map<string, StagedActionListHydration>();
+        for (const { basePath } of actionListsOfImportable(importable)) {
+            const staged = readStagedActionListHydration(
+                housingUuid,
+                importable.type,
+                identity,
+                basePath
+            );
+            if (staged !== null) stagedActionLists.set(basePath, staged);
+        }
 
         let sourceHash: string | null = null;
         let wholeImportableTrusted = false;
@@ -167,6 +182,7 @@ export function buildTrustPlan(
             wholeImportableTrusted,
             trustedChildListPaths,
             trustedChildLists,
+            stagedActionLists,
         });
     }
 

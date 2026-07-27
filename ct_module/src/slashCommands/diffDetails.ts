@@ -11,6 +11,8 @@ type DiffDetailsConflict = {
     basePath: string;
     sourceText: string;
     liveText: string;
+    differences: readonly { path: string; live: string; source: string }[];
+    moreCount: number;
 };
 
 type DiffDetailsReport = {
@@ -53,7 +55,17 @@ export function formatDiffDetailsFile(
         );
         lines.push(
             "",
-            `# ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`,
+            `# ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
+        );
+        for (const difference of conflict.differences) {
+            lines.push(
+                `# ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
+            );
+        }
+        if (conflict.moreCount > 0) {
+            lines.push(`# …and ${conflict.moreCount} more differences`);
+        }
+        lines.push(
             withoutFinalNewline(diff)
         );
     }

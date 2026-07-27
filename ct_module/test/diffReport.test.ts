@@ -113,16 +113,28 @@ describe("diff report", () => {
         });
     });
 
-    it("classifies missing live reads and baselines as unknown", () => {
+    it("keeps only missing live reads unknown and compares missing baselines to source", () => {
         const source = func("Debug", [message("source")]);
 
         expect(
             evaluateDiffReport("house", [source], new Map(), lockFor("Debug", []))
         ).toEqual({ clean: 0, conflicts: [], unknown: 1 });
         expect(evaluateDiffReport("house", [source], liveMap(source), null)).toEqual({
-            clean: 0,
+            clean: 1,
             conflicts: [],
-            unknown: 1,
+            unknown: 0,
+        });
+        expect(
+            evaluateDiffReport(
+                "house",
+                [source],
+                liveMap(func("Debug", [message("live")])),
+                null
+            )
+        ).toMatchObject({
+            clean: 0,
+            conflicts: [{ type: "FUNCTION", identity: "Debug", basePath: "actions" }],
+            unknown: 0,
         });
     });
 
@@ -226,8 +238,6 @@ describe("diff report", () => {
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
-            '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
-            "[htsw]   …and 2 more differences",
             "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });

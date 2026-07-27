@@ -25,4 +25,5 @@ export type ActionSyncContext = {
     itemDiff?: ItemDiffContext;
     itemFieldObservations?: ItemFieldObservationRecorder;
     trustedItemOwners?: WeakSet<Action | Condition>;
+    freshHydration?: boolean;
 };

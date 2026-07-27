@@ -9,7 +9,11 @@ import type { Importable } from "htsw/types";
 import { canonicalPath } from "../gui/parsing/parses";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { actionListsOfImportable } from "../importCache/actionLists";
-import { readHouseLock } from "../importCache/houseLock";
+import {
+    readHouseLock,
+    seedMissingHouseLockActionLists,
+} from "../importCache/houseLock";
+import { writeStagedActionListHydration } from "../importCache/stagedHydration";
 import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { importableIdentity, importableKey } from "../importables/identity";
@@ -21,7 +25,11 @@ import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "./diffDetails";
-import { evaluateDiffReport, formatDiffReport } from "./diffReport";
+import {
+    evaluateDiffReport,
+    formatDiffReport,
+    matchedLiveActionLists,
+} from "./diffReport";
 
 function diffFailure(reason: string): void {
     ChatLib.chat(`[htsw] Diff failed: ${reason}`);
@@ -127,11 +135,31 @@ export function commandDiff(args: string[]): void {
             parsed,
             progress
         );
+        const matchedLists = matchedLiveActionLists(parsed.value, live);
+        const existingLock = readHouseLock(manifest);
+        for (const list of matchedLists) {
+            writeStagedActionListHydration(
+                housingUuid,
+                list.source.type,
+                list.identity,
+                list.basePath,
+                list.actions
+            );
+        }
+        seedMissingHouseLockActionLists(
+            manifest,
+            housingUuid,
+            matchedLists.map((list) => ({
+                importable: list.live,
+                basePath: list.basePath,
+                actions: list.actions,
+            }))
+        );
         const report = evaluateDiffReport(
             housingUuid,
             parsed.value,
             live,
-            readHouseLock(manifest)
+            existingLock
         );
         const detailsPath =
             report.conflicts.length === 0

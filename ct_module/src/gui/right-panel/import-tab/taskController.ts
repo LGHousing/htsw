@@ -586,6 +586,7 @@ export function startImport(
 
 type ImportStartOptions = {
     onConflict?: "prompt" | "cancel";
+    fresh?: boolean;
     silentBusy?: boolean;
     onStarted?: () => void;
     onComplete?: (successful: boolean) => void;
@@ -786,6 +787,7 @@ async function prepareAndStartImport(
                     trustMode,
                     housingUuid,
                     sourcePath: batch.sourcePath,
+                    freshHydration: options.fresh,
                     parsed: batch.parsed,
                     events,
                     confirmConflicts: async (conflicts) => {

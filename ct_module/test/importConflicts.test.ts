@@ -381,4 +381,83 @@ describe("readActionListPlan conflict detection", () => {
         expect(plan.phaseUnits.hydrating).toBe(0);
         expect(session.conflicts).toEqual([]);
     });
+
+    it("uses staged hydration when the cheap live scan still matches", async () => {
+        const cached = [message("cached live")];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("desired")],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, message("shallow live"))],
+        });
+        const session = sessionWithLock(importable, [message("baseline")], false);
+        session.trust.importables.get("FUNCTION:Debug")!.stagedActionLists = new Map([
+            [
+                "actions",
+                {
+                    scanHash: actionListScanHashFromActions(cached),
+                    contentHash: actionListContentHashFromActions(cached),
+                    actions: cached,
+                },
+            ],
+        ]);
+
+        const plan = await readActionListPlan(
+            null as unknown as TaskContext,
+            importable.actions!,
+            {
+                sync: session,
+                conflictTarget: {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                },
+            }
+        );
+
+        expect(mocks.hydrateActionListScan).not.toHaveBeenCalled();
+        expect(plan.observed[0].action).toEqual(message("cached live"));
+        expect(session.conflicts).toHaveLength(1);
+    });
+
+    it.each([
+        ["changed scan", false],
+        ["fresh import", true],
+    ] as const)("rehydrates staged data on %s", async (_label, freshHydration) => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("desired")],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, playSound())],
+        });
+        const session = sessionWithLock(importable, [message("baseline")], false);
+        session.freshHydration = freshHydration;
+        session.trust.importables.get("FUNCTION:Debug")!.stagedActionLists = new Map([
+            [
+                "actions",
+                {
+                    scanHash: actionListScanHashFromActions(
+                        freshHydration ? [playSound()] : [message("cached")]
+                    ),
+                    contentHash: actionListContentHashFromActions([message("cached")]),
+                    actions: [message("cached")],
+                },
+            ],
+        ]);
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+            },
+        });
+
+        expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
 });

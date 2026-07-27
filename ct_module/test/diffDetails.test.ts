@@ -31,6 +31,14 @@ describe("diff details", () => {
                             basePath: "actions",
                             sourceText,
                             liveText,
+                            differences: [
+                                {
+                                    path: "action 1 (message) · message",
+                                    live: '"live"',
+                                    source: '"source"',
+                                },
+                            ],
+                            moreCount: 2,
                         },
                     ],
                     unknown: 1,
@@ -47,6 +55,8 @@ describe("diff details", () => {
                 "# unknown: 1\n" +
                 "\n" +
                 '# FUNCTION "Debug" · actions\n' +
+                '# ≠ action 1 (message) · message: live="live" · source="source"\n' +
+                "# …and 2 more differences\n" +
                 "--- source/actions\n" +
                 "+++ live/actions\n" +
                 "@@ -1 +1 @@\n" +
