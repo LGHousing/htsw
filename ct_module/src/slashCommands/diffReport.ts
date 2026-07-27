@@ -12,10 +12,17 @@ import {
 } from "../importCache/actionLists";
 import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
+import { renderActionsForDiff } from "./diffDetails";
+
+type DiffReportConflict = ActionSyncConflict &
+    ActionListConflictDetails & {
+        sourceText: string;
+        liveText: string;
+    };
 
 export type DiffReport = {
     clean: number;
-    conflicts: Array<ActionSyncConflict & ActionListConflictDetails>;
+    conflicts: DiffReportConflict[];
     unknown: number;
 };
 
@@ -90,6 +97,8 @@ export function evaluateDiffReport(
                     identity,
                     basePath: sourceList.basePath,
                     ...actionListConflictDetails(liveActions, sourceList.actions),
+                    sourceText: renderActionsForDiff(sourceList.actions),
+                    liveText: renderActionsForDiff(liveActions),
                 });
             } else if (verdict === "no-baseline" || verdict === null) {
                 result.unknown++;
@@ -101,7 +110,11 @@ export function evaluateDiffReport(
     return result;
 }
 
-export function formatDiffReport(report: DiffReport, manifest: string): string[] {
+export function formatDiffReport(
+    report: DiffReport,
+    manifest: string,
+    detailsPath?: string
+): string[] {
     const lines = [
         `[htsw] Diff complete: ${report.clean} clean, ${report.conflicts.length} conflicts, ${report.unknown} unknown · ${manifest}`,
     ];
@@ -122,6 +135,9 @@ export function formatDiffReport(report: DiffReport, manifest: string): string[]
     }
     if (report.conflicts.length > shown) {
         lines.push(`[htsw] …and ${report.conflicts.length - shown} more conflicts`);
+    }
+    if (detailsPath !== undefined) {
+        lines.push(`[htsw] Diff details: ${detailsPath}`);
     }
     return lines;
 }

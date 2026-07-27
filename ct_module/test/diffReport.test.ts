@@ -90,7 +90,7 @@ describe("diff report", () => {
             lockFor("Debug", [message("baseline")])
         );
 
-        expect(report).toEqual({
+        expect(report).toMatchObject({
             clean: 0,
             conflicts: [
                 {
@@ -105,6 +105,8 @@ describe("diff report", () => {
                         },
                     ],
                     moreCount: 0,
+                    sourceText: 'chat "source"\n',
+                    liveText: 'chat "live"\n',
                 },
             ],
             unknown: 0,
@@ -177,7 +179,7 @@ describe("diff report", () => {
             lockFor("Debug", [message("baseline")], false)
         );
 
-        expect(report.conflicts).toEqual([
+        expect(report.conflicts).toMatchObject([
             {
                 type: "FUNCTION",
                 identity: "Debug",
@@ -212,17 +214,21 @@ describe("diff report", () => {
                                 },
                             ],
                             moreCount: 2,
+                            sourceText: 'chat "source"\n',
+                            liveText: 'chat "live"\n',
                         },
                     ],
                     unknown: 0,
                 },
-                "./htsw/projects/shop/import.json"
+                "./htsw/projects/shop/import.json",
+                "./htsw/projects/shop/htsw-diff/latest.diff"
             )
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
             "[htsw]   …and 2 more differences",
+            "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });
 });

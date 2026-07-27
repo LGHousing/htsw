@@ -20,6 +20,7 @@ import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
+import { writeDiffDetailsFile } from "./diffDetails";
 import { evaluateDiffReport, formatDiffReport } from "./diffReport";
 
 function diffFailure(reason: string): void {
@@ -132,7 +133,11 @@ export function commandDiff(args: string[]): void {
             live,
             readHouseLock(manifest)
         );
-        for (const line of formatDiffReport(report, manifest)) {
+        const detailsPath =
+            report.conflicts.length === 0
+                ? undefined
+                : writeDiffDetailsFile(report, manifest, new Date().toISOString());
+        for (const line of formatDiffReport(report, manifest, detailsPath)) {
             ChatLib.chat(line);
         }
         progress.complete(
