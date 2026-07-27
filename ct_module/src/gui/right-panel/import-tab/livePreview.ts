@@ -71,6 +71,8 @@ type FileState = {
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
 const states: { [key: string]: FileState | undefined } = {};
+const stateOrder: string[] = [];
+const MAX_PREVIEW_STATES = 8;
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
@@ -92,6 +94,15 @@ function ensure(path: string): FileState {
             rebasedListKeys: new Set(),
         };
         states[k] = s;
+        stateOrder.push(k);
+        while (stateOrder.length > MAX_PREVIEW_STATES) {
+            const oldest = stateOrder.shift();
+            if (oldest !== undefined) delete states[oldest];
+        }
+    } else {
+        const index = stateOrder.indexOf(k);
+        if (index >= 0) stateOrder.splice(index, 1);
+        stateOrder.push(k);
     }
     return s;
 }
@@ -749,8 +760,14 @@ export function resetPreview(path: string): void {
     const k = keyForFile(path);
     if (states[k] !== undefined) {
         delete states[k];
+        const index = stateOrder.indexOf(k);
+        if (index >= 0) stateOrder.splice(index, 1);
         markGuiDirty();
     }
+}
+
+export function livePreviewCacheSize(): number {
+    return stateOrder.length;
 }
 
 export function primeWithCache(

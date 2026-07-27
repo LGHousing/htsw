@@ -231,6 +231,7 @@ function editAffectsHeadLine(fieldsChanged: readonly string[]): boolean {
 
 type SessionEventHandler = SyncEventHandler & {
     counts(): { imported: number; skipped: number; failed: number };
+    disposePreviews(): void;
 };
 
 function createSyncEventHandler(args: {
@@ -241,6 +242,7 @@ function createSyncEventHandler(args: {
 }): SessionEventHandler {
     let state = initialReducerState();
     let activeViewPath: string | null = null;
+    const previewPaths: string[] = [];
 
     // Precompute key → importable so importableStarted handler is O(1).
     const importablesByKey = new Map<string, Importable>();
@@ -263,6 +265,7 @@ function createSyncEventHandler(args: {
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
             if (activeViewPath !== null) {
+                if (previewPaths.indexOf(activeViewPath) < 0) previewPaths.push(activeViewPath);
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
                 resetLivePreviewScroll();
@@ -389,6 +392,9 @@ function createSyncEventHandler(args: {
                 else if (row.status === "failed") failed++;
             }
             return { imported, skipped, failed };
+        },
+        disposePreviews: () => {
+            for (let i = 0; i < previewPaths.length; i++) resetPreview(previewPaths[i]);
         },
     };
 }
@@ -751,6 +757,7 @@ async function prepareAndStartImport(
         );
     }
     let reviewRequest: ConflictReviewRequest | null = null;
+    const sessionHandlers: SessionEventHandler[] = [];
     options.onStarted?.();
 
     runHousingSyncTask("import", async (ctx) => {
@@ -781,6 +788,7 @@ async function prepareAndStartImport(
                     trustMode,
                     housingUuid,
                 });
+                sessionHandlers.push(events);
                 await runImportSession(ctx, {
                     importables: batch.importables,
                     trustMode,
@@ -849,6 +857,9 @@ async function prepareAndStartImport(
             }
         } finally {
             setActiveTaskPath(null);
+            for (let i = 0; i < sessionHandlers.length; i++) {
+                sessionHandlers[i].disposePreviews();
+            }
             options.onComplete?.(importSucceeded);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
