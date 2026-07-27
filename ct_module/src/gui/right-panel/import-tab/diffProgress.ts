@@ -9,14 +9,16 @@ import { initialReducerState, reduce } from "../../../housingSync/progress/reduc
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import type { SyncEvent } from "../../../housingSync/syncEvents";
 import {
-    finishTaskProgress,
-    setActiveTaskPath,
-    setEtaEstimating,
-    setSessionVerb,
-    setTaskProgress,
-} from "./taskProgress";
+    clearHousingOperation,
+    finishHousingOperation,
+    setHousingOperationScanning,
+    startHousingOperation,
+    updateHousingOperation,
+} from "./housingOperation";
+import { createReadLivePreview, type ReadLivePreview } from "./readLivePreview";
 
 export type DiffProgressSession = {
+    start(): void;
     sinkFor(type: Importable["type"]): ExportProgressSink;
     complete(summary: string): void;
     fail(message: string): void;
@@ -50,34 +52,48 @@ export function createDiffProgressSession(
     });
 
     let state = initialReducerState();
+    let started = false;
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        setTaskProgress(state.progress);
+        updateHousingOperation(state.progress);
     };
-    emit({
-        kind: "sessionStarted",
-        rows,
-        initialTotalUnits: Math.max(1, totalUnits),
-    });
-    setSessionVerb("diff");
-    setActiveTaskPath(manifest);
+    const livePreviews: ReadLivePreview[] = [];
+
+    const clearLivePreviews = (): void => {
+        for (const livePreview of livePreviews) livePreview.clear();
+    };
 
     return {
+        start() {
+            if (started) return;
+            started = true;
+            state = reduce(state, {
+                kind: "sessionStarted",
+                rows,
+                initialTotalUnits: Math.max(1, totalUnits),
+            });
+            startHousingOperation({ progress: state.progress, verb: "diff", path: manifest });
+        },
         sinkFor(type) {
             let names: readonly string[] = [];
             let currentIndex: number | null = null;
             let scanPass = false;
+            const livePreview = createReadLivePreview(type, manifest);
+            livePreviews.push(livePreview);
             const rowKeyFor = (name: string): string => queueRowKey(type, name, manifest);
             return {
+                events: livePreview.events,
                 start(batchNames) {
                     names = batchNames;
+                    livePreview.start(batchNames);
                 },
                 scanStarted() {
                     scanPass = true;
-                    setEtaEstimating(true);
+                    setHousingOperationScanning(true);
                 },
                 item(index, name) {
                     currentIndex = index;
+                    livePreview.activate(index, true);
                     const key = importableKey(type, name);
                     emit({
                         kind: "importableStarted",
@@ -95,7 +111,8 @@ export function createDiffProgressSession(
                     currentIndex = index;
                     const name = names[index];
                     const key = importableKey(type, name);
-                    setEtaEstimating(false);
+                    livePreview.activate(index, false);
+                    setHousingOperationScanning(false);
                     emit({ kind: "sessionTotalsLocked" });
                     emit({
                         kind: "importableReactivated",
@@ -116,6 +133,7 @@ export function createDiffProgressSession(
                     });
                 },
                 itemFinished(index) {
+                    livePreview.finish(index);
                     emit({
                         kind: "importableFinished",
                         key: rowKeyFor(names[index]),
@@ -123,6 +141,7 @@ export function createDiffProgressSession(
                     });
                 },
                 itemFailed(index, error) {
+                    livePreview.finish(index);
                     emit({
                         kind: "importableFinished",
                         key: rowKeyFor(names[index]),
@@ -135,19 +154,19 @@ export function createDiffProgressSession(
         },
         complete(summary) {
             emit({ kind: "sessionFinished" });
-            setActiveTaskPath(null);
-            finishTaskProgress(null, {
+            clearLivePreviews();
+            finishHousingOperation(null, {
                 title: "Diff complete",
                 message: summary,
             });
         },
         fail(message) {
-            setActiveTaskPath(null);
-            finishTaskProgress(message);
+            clearLivePreviews();
+            finishHousingOperation(message);
         },
         clear() {
-            setActiveTaskPath(null);
-            setTaskProgress(null);
+            clearLivePreviews();
+            clearHousingOperation();
         },
     };
 }

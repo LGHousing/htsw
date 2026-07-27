@@ -30,11 +30,11 @@ import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
 import {
-    setEtaEstimating,
-    setEtaRough,
-    setTaskProgress,
-    setSessionVerb,
-} from "../right-panel/import-tab/taskProgress";
+    clearHousingOperation,
+    setHousingOperationScanning,
+    startHousingOperation,
+    updateHousingOperation,
+} from "../right-panel/import-tab/housingOperation";
 import {
     addToQueue,
     makeExportQueueItem,
@@ -42,7 +42,7 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "../right-panel/import-tab/queue";
-import { createExportLivePreview } from "./livePreview";
+import { createReadLivePreview } from "../right-panel/import-tab/readLivePreview";
 
 export function createExportProgressSink(
     type: Importable["type"],
@@ -61,13 +61,13 @@ export function createExportProgressSink(
     let stagedScanActive = false;
     let totalsLocked = false;
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
-    const livePreview = createExportLivePreview(type, canonicalImportJsonPath);
+    const livePreview = createReadLivePreview(type, canonicalImportJsonPath);
     const keyFor = (name: string): string =>
         queueRowKey(type, name, canonicalImportJsonPath);
 
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        setTaskProgress(state.progress);
+        updateHousingOperation(state.progress);
     };
 
     // Exports never apply changes, so per-item costs are final once hydration
@@ -139,24 +139,27 @@ export function createExportProgressSink(
         start(ns) {
             names = ns;
             if (ns.length === 0) return;
-            livePreview.start(ns);
             const resolved = resolveUnits(ns);
             units = resolved.units;
             let total = 0;
             for (const u of units) total += u;
-            emit({
+            const rows = ns.map((n, i) => ({
+                key: keyFor(n),
+                status: "queued" as const,
+                totalUnits: units[i],
+            }));
+            state = reduce(state, {
                 kind: "sessionStarted",
-                rows: ns.map((n, i) => ({
-                    key: keyFor(n),
-                    status: "queued" as const,
-                    totalUnits: units[i],
-                })),
+                rows,
                 initialTotalUnits: Math.max(1, total),
             });
-            // After the first emit: the null→non-null progress transition
-            // resets verb/rough to their import defaults, so set them last.
-            setSessionVerb(verb);
-            setEtaRough(resolved.knownCount === 0);
+            startHousingOperation({
+                progress: state.progress,
+                verb,
+                path: null,
+                etaRough: resolved.knownCount === 0,
+            });
+            livePreview.start(ns);
             for (const n of ns) {
                 const item = makeExportQueueItem(
                     verb,
@@ -173,7 +176,7 @@ export function createExportProgressSink(
         scanStarted() {
             if (names.length === 0) return;
             stagedScanActive = true;
-            setEtaEstimating(true);
+            setHousingOperationScanning(true);
         },
         item(index, name) {
             if (names.length === 0) return;
@@ -197,7 +200,7 @@ export function createExportProgressSink(
             currentIndex = index;
             currentClosed = false;
             livePreview.activate(index, false);
-            setEtaEstimating(false);
+            setHousingOperationScanning(false);
             lockTotals();
             emit({
                 kind: "importableReactivated",
@@ -237,7 +240,7 @@ export function createExportProgressSink(
                 finishCurrent("imported");
                 emit({ kind: "sessionFinished" });
             }
-            setTaskProgress(null);
+            clearHousingOperation();
             livePreview.clear();
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;

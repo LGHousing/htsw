@@ -14,7 +14,7 @@ import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
-import { isTaskCancelled, TaskManager } from "../tasks/manager";
+import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
@@ -118,7 +118,8 @@ export function commandDiff(args: string[]): void {
     }
 
     const progress = createDiffProgressSession(parsed.value, manifest);
-    void runHousingSyncTask("export", async (ctx) => {
+    void runHousingSyncTask("diff", async (ctx) => {
+        progress.start();
         const housingUuid = await getCurrentHousingUuid(ctx);
         const live = await readDiffImportables(
             ctx,
@@ -151,13 +152,14 @@ export function commandDiff(args: string[]): void {
         progress.complete(
             `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
         );
-    }).catch((error: unknown) => {
-        if (isTaskCancelled(error)) {
-            progress.clear();
-            return;
-        }
-        const reason = errorReason(error);
-        progress.fail(reason);
-        diffFailure(reason);
-    });
+        return true;
+    })
+        .then((completed) => {
+            if (completed === undefined) progress.clear();
+        })
+        .catch((error: unknown) => {
+            const reason = errorReason(error);
+            progress.fail(reason);
+            diffFailure(reason);
+        });
 }

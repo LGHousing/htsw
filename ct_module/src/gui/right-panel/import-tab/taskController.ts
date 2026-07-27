@@ -10,12 +10,14 @@ import {
     createTaskRows,
     createTaskProgress,
     clearLastFinishedProgress,
-    finishTaskProgress,
     getTaskProgress,
-    setActiveTaskPath,
-    setSessionTrustMode,
-    setTaskProgress,
 } from "./taskProgress";
+import {
+    finishHousingOperation,
+    setHousingOperationPath,
+    startHousingOperation,
+    updateHousingOperation,
+} from "./housingOperation";
 import {
     addSessionQueueItem,
     addToQueue,
@@ -380,9 +382,9 @@ function createSyncEventHandler(args: {
             traceSyncEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             if (state.progress !== before) {
-                setTaskProgress(state.progress);
+                updateHousingOperation(state.progress);
             }
-            setActiveTaskPath(activeViewPath);
+            setHousingOperationPath(activeViewPath);
         },
         counts: () => {
             let imported = 0;
@@ -702,14 +704,15 @@ async function prepareAndStartImport(
     for (let i = 1; i < batches.length; i++) {
         rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    setTaskProgress(
-        createTaskProgress({
+    startHousingOperation({
+        progress: createTaskProgress({
             totalUnits: 1,
             rows,
-        })
-    );
-    setSessionTrustMode(trustMode);
-    setActiveTaskPath(batches[0].sourcePath);
+        }),
+        verb: "import",
+        path: batches[0].sourcePath,
+        trustMode,
+    });
 
     // A command import (`explicit`) gets reflected into the visible queue so
     // it shows up + animates like a GUI run; otherwise we'd run an invisible
@@ -853,7 +856,6 @@ async function prepareAndStartImport(
                 unexpectedError = err;
             }
         } finally {
-            setActiveTaskPath(null);
             options.onComplete?.(importSucceeded);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
@@ -887,7 +889,7 @@ async function prepareAndStartImport(
                         : errorMessage(unexpectedError));
                 showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
             }
-            finishTaskProgress(failureMessage);
+            finishHousingOperation(failureMessage);
             // End the queue session after the 1.5s done-state window. A fully
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the

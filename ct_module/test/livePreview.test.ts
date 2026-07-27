@@ -25,7 +25,7 @@ import {
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
-import { createExportLivePreview } from "../src/gui/export/livePreview";
+import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
 import {
     ActionListPath,
     type ActionPathPart,
@@ -200,9 +200,9 @@ describe("setObservedTopLevel", () => {
     });
 });
 
-describe("export live preview", () => {
+describe("read live preview", () => {
     test("shows the shallow scan, follows hydration, and forces the final snapshot", () => {
-        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath();
@@ -250,7 +250,7 @@ describe("export live preview", () => {
     });
 
     test("colors shallow actions as soon as their scan completes", () => {
-        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath()!;
