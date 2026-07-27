@@ -2,17 +2,13 @@ import * as htsw from "htsw";
 
 import TaskContext from "../../tasks/context";
 import { getItemFromSnbt } from "../../utils/nbt";
-import { tagChild, type TagLike } from "./itemTag";
 import type { ItemFieldObservation } from "./fieldObservations";
 import { clickGoBack } from "../menus/menuUtils";
 import { timedWaitForMenu } from "../menus/menuWait";
-import { traceNote } from "../trace/taskTrace";
 import { canonicalItemShellKey, canonicalLiveItemKey, snbtFromItem } from "./itemNbt";
 import {
     clearInventorySlot,
     inventoryIsFull,
-    inventorySlotToOpenContainerSlot,
-    inventorySlotToPacketSlot,
     restoreInventorySlots,
     snapshotInventoryView,
     snapshotOpenContainerInventory,
@@ -52,8 +48,7 @@ export async function captureItemFromOpenEditorField(
         const actionItemCount = getStackCount(currentItemSlot.getItem());
         const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
         const targetKey = mergeKey(currentSnbt);
-        const targetMergeKey = stackMergeCandidateKey(currentSnbt);
-        if (targetKey === null) {
+        if (targetKey === null || currentSnbt === null) {
             ctx.displayMessage(
                 `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
             );
@@ -63,13 +58,6 @@ export async function captureItemFromOpenEditorField(
         const inventoryView: InventoryView = "openContainer";
         const originalInventory = snapshotOpenContainerInventory();
         try {
-            await clearMergeCandidates(
-                ctx,
-                inventoryView,
-                originalInventory,
-                targetKey,
-                targetMergeKey
-            );
             if (inventoryIsFull(inventoryView)) {
                 await clearInventorySlot(ctx, FULL_INVENTORY_CAPTURE_SLOT, inventoryView);
             }
@@ -124,8 +112,7 @@ export async function observeItemFromOpenEditorField(
         const actionItemCount = getStackCount(currentItemSlot.getItem());
         const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
         const targetKey = mergeKey(currentSnbt);
-        const targetMergeKey = stackMergeCandidateKey(currentSnbt);
-        if (targetKey === null) {
+        if (targetKey === null || currentSnbt === null) {
             ctx.displayMessage(
                 `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
             );
@@ -135,13 +122,6 @@ export async function observeItemFromOpenEditorField(
         const inventoryView: InventoryView = "openContainer";
         const originalInventory = snapshotOpenContainerInventory();
         try {
-            await clearMergeCandidates(
-                ctx,
-                inventoryView,
-                originalInventory,
-                targetKey,
-                targetMergeKey
-            );
             if (inventoryIsFull(inventoryView)) {
                 await clearInventorySlot(ctx, FULL_INVENTORY_CAPTURE_SLOT, inventoryView);
             }
@@ -164,7 +144,7 @@ export async function observeItemFromOpenEditorField(
 
             return {
                 snbt: captured.snbt,
-                canonicalKey: canonicalItemShellKey(getItemFromSnbt(captured.snbt)),
+                canonicalKey: canonicalItemShellKey(getItemFromSnbt(currentSnbt)),
             };
         } finally {
             await restoreInventorySlots(ctx, originalInventory, inventoryView);
@@ -219,56 +199,6 @@ function mergeKey(snbt: string | null): string | null {
         return canonicalLiveItemKey(getItemFromSnbt(rewriteSnbtCount(snbt, 1)));
     } catch (_error) {
         return rewriteSnbtCount(snbt, 1);
-    }
-}
-
-function stackMergeCandidateKey(snbt: string | null): string | null {
-    if (snbt === null) return null;
-    try {
-        const tag = htsw.nbt.parseSnbtText(rewriteSnbtCount(snbt, 1)) as TagLike;
-        if (tag.type !== "compound") return null;
-        const damage = primitiveTagString(tagChild(tag, "Damage")) || "0";
-        return `id=${primitiveTagString(tagChild(tag, "id"))};damage=${damage}`;
-    } catch (_error) {
-        return null;
-    }
-}
-
-async function clearMergeCandidates(
-    ctx: TaskContext,
-    view: InventoryView,
-    snapshot: readonly InventorySlotSnapshot[],
-    targetKey: string,
-    targetMergeKey: string | null
-): Promise<void> {
-    const nonEmpty: string[] = [];
-    for (let index = 0; index < snapshot.length; index++) {
-        if (snapshot[index].nbt !== null) {
-            nonEmpty.push(
-                inventoryEntrySummary(snapshot[index], targetKey, targetMergeKey, view)
-            );
-        }
-    }
-    traceNote(
-        "item-capture",
-        `clear merge candidates target=${shortHash(targetKey)} merge=${shortHash(targetMergeKey)} inventory=[${nonEmpty.join("; ")}]`
-    );
-
-    for (let index = 0; index < snapshot.length; index++) {
-        const entry = snapshot[index];
-        const entryKey = mergeKey(entry.nbt);
-        const entryMergeKey = stackMergeCandidateKey(entry.nbt);
-        if (
-            entryKey !== targetKey &&
-            (targetMergeKey === null || entryMergeKey !== targetMergeKey)
-        ) {
-            continue;
-        }
-        await clearInventorySlot(ctx, entry.slotId, view);
-        traceNote(
-            "item-capture",
-            `cleared merge candidate ${inventoryEntrySummary(entry, targetKey, targetMergeKey, view)}`
-        );
     }
 }
 
@@ -337,19 +267,6 @@ function findCapturedMatchingStack(
     return found;
 }
 
-function inventoryEntrySummary(
-    entry: InventorySlotSnapshot,
-    targetKey: string,
-    targetMergeKey: string | null,
-    view: InventoryView
-): string {
-    const key = mergeKey(entry.nbt);
-    const candidateKey = stackMergeCandidateKey(entry.nbt);
-    const containerSlot =
-        view === "openContainer" ? inventorySlotToOpenContainerSlot(entry.slotId) : null;
-    return `slot=${entry.slotId} packet=${inventorySlotToPacketSlot(entry.slotId)} container=${containerSlot === null ? "none" : containerSlot} count=${entry.count} identityMatch=${key === targetKey} mergeMatch=${targetMergeKey !== null && candidateKey === targetMergeKey} key=${shortHash(key)} merge=${shortHash(candidateKey)}`;
-}
-
 function rewriteSnbtCount(snbt: string, count: number): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
@@ -362,17 +279,4 @@ function rewriteSnbtCount(snbt: string, count: number): string {
         }
     } catch (_error) {}
     return snbt.replace(/(^|[{,])Count:-?\d+b/, `$1Count:${count}b`);
-}
-
-function primitiveTagString(tag: TagLike | undefined): string {
-    return tag === undefined ? "" : String(tag.value);
-}
-
-function shortHash(value: string | null): string {
-    if (value === null) return "null";
-    let hash = 0;
-    for (let index = 0; index < value.length; index++) {
-        hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
-    }
-    return String(hash);
 }
