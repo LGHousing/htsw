@@ -91,7 +91,7 @@ export function createItemDiffContext(
         return false;
     };
 
-    const actionSubtreeObservedItemsDiffer = (
+    const actionOwnObservedItemsDiffer = (
         observed: object,
         desired: Action
     ): boolean => {
@@ -125,17 +125,43 @@ export function createItemDiffContext(
                         return true;
                     }
                 }
-            } else if (field.kind === "actionList") {
-                for (let i = 0; i < length; i++) {
-                    if (
-                        observedList[i] !== null &&
-                        actionSubtreeObservedItemsDiffer(
-                            observedList[i] as object,
-                            desiredList[i] as Action
-                        )
-                    ) {
-                        return true;
-                    }
+            }
+        }
+        return false;
+    };
+
+    const actionTreeObservedItemsDiffer = (
+        observed: object,
+        desired: Action
+    ): boolean => {
+        if (actionOwnObservedItemsDiffer(observed, desired)) return true;
+        const fields = (
+            ACTION_MAPPINGS as unknown as Partial<
+                Record<
+                    string,
+                    { loreFields: Record<string, { prop: string; kind: string }> }
+                >
+            >
+        )[desired.type]?.loreFields;
+        if (fields === undefined) return false;
+        const observedRecord = observed as Record<string, unknown>;
+        const desiredRecord = desired as unknown as Record<string, unknown>;
+        for (const label in fields) {
+            const field = fields[label];
+            if (field.kind !== "actionList") continue;
+            const observedList = observedRecord[field.prop];
+            const desiredList = desiredRecord[field.prop];
+            if (!Array.isArray(observedList) || !Array.isArray(desiredList)) continue;
+            const length = Math.min(observedList.length, desiredList.length);
+            for (let i = 0; i < length; i++) {
+                if (
+                    observedList[i] !== null &&
+                    actionOwnObservedItemsDiffer(
+                        observedList[i] as object,
+                        desiredList[i] as Action
+                    )
+                ) {
+                    return true;
                 }
             }
         }
@@ -152,7 +178,7 @@ export function createItemDiffContext(
         actionsDiffer(observed, desired) {
             return (
                 desiredActionIsInvalidated(desired) ||
-                actionSubtreeObservedItemsDiffer(observed, desired)
+                actionTreeObservedItemsDiffer(observed, desired)
             );
         },
         conditionsDiffer(observed, desired) {

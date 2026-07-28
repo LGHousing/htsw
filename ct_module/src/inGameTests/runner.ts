@@ -399,6 +399,11 @@ function fixtureImportContext(
             menus: new Set(),
             regions: new Set(),
         },
+        plannedReferencedShells: {
+            functions: new Set(),
+            menus: new Set(),
+            regions: new Set(),
+        },
         actions: {
             canonicalizeItemName: (name) => items.canonicalizeObservedName(name),
             resolveItem: createItemFieldResolver(items, itemDependencies, housingUuid),

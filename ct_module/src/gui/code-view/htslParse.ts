@@ -10,6 +10,7 @@ import {
     type ChildActionListName,
     ActionListPath,
 } from "../../housingSync/actionPath";
+import { BoundedMap } from "../lib/boundedLruMap";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
@@ -65,8 +66,8 @@ export function actionLineRange(
     }
 }
 
-const parseCache = new Map<string, ParsedFile>();
 const MAX_PARSE_CACHE_ENTRIES = 64;
+const parseCache = new BoundedMap<string, ParsedFile>(MAX_PARSE_CACHE_ENTRIES);
 
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
@@ -104,10 +105,6 @@ export function parseHtslFile(path: string): ParsedFile {
         parseError = errorMessage(err);
     }
     const entry: ParsedFile = { mtime, actions, parseError, spans, file };
-    if (!parseCache.has(path) && parseCache.size >= MAX_PARSE_CACHE_ENTRIES) {
-        const oldest = parseCache.keys().next();
-        if (!oldest.done) parseCache.delete(oldest.value);
-    }
     parseCache.set(path, entry);
     return entry;
 }

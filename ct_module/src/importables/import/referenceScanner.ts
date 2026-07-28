@@ -1,6 +1,6 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
-import { unique } from "../../utils/helpers";
+import { getChildListFields } from "../../housingSync/fields/actionMappings";
 
 export type ReferencedImportables = {
     functions: string[];
@@ -39,10 +39,19 @@ export function collectReferencedImportables(
     }
 
     return {
-        functions: unique(refs.functions),
-        menus: unique(refs.menus),
-        regions: unique(refs.regions),
+        functions: uniqueHousingNames(refs.functions),
+        menus: uniqueHousingNames(refs.menus),
+        regions: uniqueHousingNames(refs.regions),
     };
+}
+
+function uniqueHousingNames(values: readonly string[]): string[] {
+    const names = new Map<string, string>();
+    for (const value of values) {
+        const key = value.toLowerCase();
+        if (!names.has(key)) names.set(key, value);
+    }
+    return Array.from(names.values());
 }
 
 function collectActionReferences(
@@ -52,16 +61,37 @@ function collectActionReferences(
     if (!actions) return;
 
     for (const action of actions) {
-        if (action.type === "FUNCTION") {
-            refs.functions.push(action.function);
-        } else if (action.type === "SET_MENU") {
-            refs.menus.push(action.menu);
-        } else if (action.type === "CONDITIONAL") {
-            collectConditionReferences(action.conditions, refs);
-            collectActionReferences(action.ifActions, refs);
-            collectActionReferences(action.elseActions, refs);
-        } else if (action.type === "RANDOM") {
-            collectActionReferences(action.actions, refs);
+        collectActionOwnReferences(action, refs);
+        for (const field of getChildListFields(action.type)) {
+            if (field.kind !== "actionList") continue;
+            const value = (action as unknown as Record<string, unknown>)[field.prop];
+            if (Array.isArray(value)) {
+                collectChildActionReferences(value as Action[], refs);
+            }
+        }
+    }
+}
+
+function collectChildActionReferences(
+    actions: readonly Action[],
+    refs: ReferencedImportables
+): void {
+    for (const action of actions) {
+        collectActionOwnReferences(action, refs);
+    }
+}
+
+function collectActionOwnReferences(action: Action, refs: ReferencedImportables): void {
+    if (action.type === "FUNCTION") {
+        refs.functions.push(action.function);
+    } else if (action.type === "SET_MENU") {
+        refs.menus.push(action.menu);
+    }
+    for (const field of getChildListFields(action.type)) {
+        if (field.kind !== "conditionList") continue;
+        const value = (action as unknown as Record<string, unknown>)[field.prop];
+        if (Array.isArray(value)) {
+            collectConditionReferences(value as Condition[], refs);
         }
     }
 }

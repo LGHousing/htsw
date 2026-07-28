@@ -4,9 +4,12 @@ import type { Action, Importable } from "htsw/types";
 import {
     applyComplete,
     buildObservedToDesiredIndexMap,
+    disposeLivePreviews,
     finalizeFromSource,
     getCurrentPath,
+    livePreviewCacheSize,
     markHeadApplied,
+    markPreviewCompleted,
     markReadComplete,
     markPlannedAdd,
     markPlannedDelete,
@@ -22,7 +25,7 @@ import {
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
-import { createExportLivePreview } from "../src/gui/export/livePreview";
+import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
 import {
     ActionListPath,
     type ActionPathPart,
@@ -76,7 +79,7 @@ function conditionalSummary(actionCount: number): ObservedNode {
 }
 
 beforeEach(() => {
-    resetPreview(PATH);
+    disposeLivePreviews();
 });
 
 describe("primeWithCache + previewLinesForFile", () => {
@@ -88,6 +91,33 @@ describe("primeWithCache + previewLinesForFile", () => {
     test("function with one action gets one :body line", () => {
         primeWithCache(PATH, func([message("hi")]));
         expect(ids()).toEqual(["0:body"]);
+    });
+
+    test("keeps every file in a 20-function import live", () => {
+        const paths: string[] = [];
+        for (let i = 0; i < 20; i++) {
+            const path = `./function-${i}.htsl`;
+            paths.push(path);
+            primeWithCache(path, func([message(String(i))]));
+        }
+
+        for (const path of paths) {
+            expect(previewLinesForFile(path).map((line) => line.id)).toEqual(["0:body"]);
+        }
+    });
+
+    test("evicts only completed files when a large import reaches the cap", () => {
+        for (let i = 0; i < 130; i++) {
+            const path = `./large-import-${i}.htsl`;
+            primeWithCache(path, func([message(String(i))]));
+            if (i < 129) markPreviewCompleted(path);
+        }
+
+        expect(previewLinesForFile("./large-import-0.htsl")).toEqual([]);
+        expect(livePreviewCacheSize()).toBe(128);
+        expect(
+            previewLinesForFile("./large-import-129.htsl").map((line) => line.id)
+        ).toEqual(["0:body"]);
     });
 
     test("CONDITIONAL renders head + close with stable ids", () => {
@@ -170,9 +200,23 @@ describe("setObservedTopLevel", () => {
     });
 });
 
-describe("export live preview", () => {
+describe("read live preview", () => {
+    test("keeps a large batch within the completed-preview cache bound", () => {
+        const names = Array.from({ length: 130 }, (_value, index) => String(index));
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        preview.start(names);
+
+        for (let i = 0; i < names.length; i++) {
+            preview.activate(i, true);
+            preview.finish(i);
+        }
+
+        expect(livePreviewCacheSize()).toBe(128);
+        preview.clear();
+    });
+
     test("shows the shallow scan, follows hydration, and forces the final snapshot", () => {
-        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath();
@@ -220,7 +264,7 @@ describe("export live preview", () => {
     });
 
     test("colors shallow actions as soon as their scan completes", () => {
-        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath()!;
@@ -383,12 +427,7 @@ describe("rebaseToDesired", () => {
             ]
         );
         expect(
-            buildObservedToDesiredIndexMap(
-                [0, 1, 2, 3],
-                undefined,
-                operations,
-                []
-            )
+            buildObservedToDesiredIndexMap([0, 1, 2, 3], undefined, operations, [])
         ).toBeNull();
     });
 

@@ -63,6 +63,11 @@ import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
 import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
 
+const cacheApplicationPlan = {
+    steps: [{ key: "cache", kind: "work", units: 0.25 }] as const,
+    totalUnits: 0.25,
+};
+
 describe("import conflict gate", () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -98,6 +103,8 @@ describe("import conflict gate", () => {
                     plan: () => ({
                         kind: "FUNCTION",
                         importable,
+                        applicationPlan: cacheApplicationPlan,
+                        applicationUnits: cacheApplicationPlan.totalUnits,
                         isNoOp: () => false,
                         apply: mocks.applyImportablePlan,
                         reconstructObserved: () => null,
@@ -156,6 +163,8 @@ describe("import conflict gate", () => {
                 plan: () => ({
                     kind: "FUNCTION",
                     importable,
+                    applicationPlan: cacheApplicationPlan,
+                    applicationUnits: cacheApplicationPlan.totalUnits,
                     isNoOp: () => false,
                     apply: mocks.applyImportablePlan,
                     reconstructObserved: () => importable,
@@ -213,6 +222,8 @@ describe("import conflict gate", () => {
                     plan: () => ({
                         kind: "FUNCTION",
                         importable,
+                        applicationPlan: cacheApplicationPlan,
+                        applicationUnits: cacheApplicationPlan.totalUnits,
                         isNoOp: () => false,
                         apply: mocks.applyImportablePlan,
                         reconstructObserved: () => importable,
@@ -264,6 +275,8 @@ describe("import conflict gate", () => {
                 plan: () => ({
                     kind: "FUNCTION",
                     importable,
+                    applicationPlan: cacheApplicationPlan,
+                    applicationUnits: cacheApplicationPlan.totalUnits,
                     isNoOp: () => false,
                     apply:
                         importable.name === "Second"
@@ -313,6 +326,8 @@ describe("import conflict gate", () => {
             plan: () => ({
                 kind: "FUNCTION",
                 importable,
+                applicationPlan: cacheApplicationPlan,
+                applicationUnits: cacheApplicationPlan.totalUnits,
                 isNoOp: () => false,
                 apply: async () => {
                     throw createTaskCancelledError();

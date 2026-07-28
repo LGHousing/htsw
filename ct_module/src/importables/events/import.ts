@@ -4,7 +4,10 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
-import { type ActionListPlan } from "../../housingSync/actions/plan";
+import {
+    actionListPlanNeedsApply,
+    type ActionListPlan,
+} from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
@@ -21,6 +24,14 @@ import TaskContext from "../../tasks/context";
 import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
 import { openEventEditor } from "./housing";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+} from "../import/applicationProgress";
 
 export type EventImportPlan = {
     kind: "EVENT";
@@ -82,17 +93,36 @@ export function planImportableEvent(read: EventRead): EventImportPlan {
 export async function applyImportableEventPlan(
     ctx: TaskContext,
     plan: EventImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
-    if (plan.actionsPlan === null) return;
-    await openEventEditor(ctx, plan.importable.event);
-    await applyActionListPlan(ctx, plan.actionsPlan, {
-        sync: session.actions,
-    });
+    const actionsPlan = plan.actionsPlan;
+    if (!actionListPlanNeedsApply(actionsPlan)) return;
+    await application.run("openActions", () =>
+        openEventEditor(ctx, plan.importable.event)
+    );
+    await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
+        applyActionListPlan(ctx, actionsPlan, { sync })
+    );
 }
 
 export function eventPlanIsNoOp(plan: EventImportPlan): boolean {
-    return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    return !actionListPlanNeedsApply(plan.actionsPlan);
+}
+
+export function eventApplicationPlan(plan: EventImportPlan): ApplicationPlan {
+    const actionsPlan = plan.actionsPlan;
+    if (!actionListPlanNeedsApply(actionsPlan)) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+    return defineApplicationPlan([
+        workStep(
+            "openActions",
+            COST.commandInterval + COST.commandMenuWait + COST.menuClickWait
+        ),
+        actionListStep("actions", actionsPlan),
+        workStep("cache", COST.cacheWrite),
+    ]);
 }
 
 export function reconstructObservedEvent(plan: EventImportPlan): Importable | null {

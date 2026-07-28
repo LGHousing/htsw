@@ -114,6 +114,39 @@ describe("diffActionList — adds / deletes", () => {
 
         expect(kindCounts(result)).toMatchObject({ delete: 1, edit: 0, add: 1 });
     });
+
+    test("root adds store exact immediate child-list diffs", () => {
+        const desired = conditional({
+            conditions: [{ type: "IS_SNEAKING" }],
+            ifActions: [message("if"), { type: "PAUSE", ticks: 3 }],
+            elseActions: [message("else")],
+        });
+
+        const result = ops([], [desired]);
+        const add = result[0] as Extract<ActionListOperation, { kind: "add" }>;
+
+        expect(add.kind).toBe("add");
+        expect(add.childListDiffs.map((child) => child.prop)).toEqual([
+            "conditions",
+            "ifActions",
+            "elseActions",
+        ]);
+        expect(
+            add.childListDiffs.map((child) =>
+                child.diff.operations.map((operation) => operation.kind)
+            )
+        ).toEqual([["add"], ["add", "add"], ["add"]]);
+    });
+
+    test("rejects a nested container before planning a root add", () => {
+        const desired = conditional({
+            ifActions: [random({ actions: [message("impossible")] })],
+        });
+
+        expect(() => ops([], [desired])).toThrow(
+            "RANDOM action cannot appear inside an action child list."
+        );
+    });
 });
 
 describe("diffActionList — edits", () => {
@@ -176,7 +209,7 @@ describe("diffActionList — edits", () => {
         expect(edit.childListDiffs[0].diff.operations[0].kind).toBe("edit");
     });
 
-    test("invalidated items reach conditions inside nested action lists", () => {
+    test("rejects container actions inside action child lists", () => {
         const observedCondition = {
             type: "REQUIRE_ITEM",
             itemName: "key",
@@ -195,19 +228,13 @@ describe("diffActionList — edits", () => {
             conditionsDiffer: (_observed, condition) => condition === desiredCondition,
         });
 
-        const result = diffActionList(
-            baselineActionListFromSlots([obs(0, observed)]),
-            [desired],
-            itemDiff
-        ).operations;
-        const rootEdit = result[0] as Extract<ActionListOperation, { kind: "edit" }>;
-        const nestedEdit = rootEdit.childListDiffs[0].diff.operations[0] as Extract<
-            ActionListOperation,
-            { kind: "edit" }
-        >;
-
-        expect(nestedEdit.childListDiffs[0].prop).toBe("conditions");
-        expect(nestedEdit.childListDiffs[0].diff.operations[0].kind).toBe("edit");
+        expect(() =>
+            diffActionList(
+                baselineActionListFromSlots([obs(0, observed)]),
+                [desired],
+                itemDiff
+            )
+        ).toThrow("CONDITIONAL action cannot appear inside an action child list.");
     });
 
     test("single field edit emits one edit op", () => {

@@ -2,7 +2,6 @@ import type { TaskProgress, ProgressPhase, PhaseUnits } from "./types";
 import { getTimingStats, getSessionTimingUnits } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
-const SESSION_RATE_PRIOR_UNITS = 150;
 // Strength of the lifetime-mix prior (in units) before the current import's
 // observed op-mix dominates the rate blend.
 const PRIOR_UNITS = 40;
@@ -39,8 +38,8 @@ const JUMP_GAP_SECONDS = 4;
 export type EtaSmoother = { displayed: number; target: number; at: number };
 
 export type EtaCalculator = {
-    getTotal(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
-    getPhase(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
+    getTotal(progress: TaskProgress | null): number | null;
+    getPhase(progress: TaskProgress | null): number | null;
 };
 
 export function easeEta(
@@ -88,25 +87,6 @@ export function easeEta(
     return { displayed: next, target, at: now };
 }
 
-export function sessionBlendedMsPerUnit(
-    priorRate: number,
-    sessionRate: number | undefined,
-    completedUnits: number
-): number {
-    if (
-        sessionRate === undefined ||
-        sessionRate > priorRate * 10 ||
-        sessionRate < priorRate * 0.1
-    ) {
-        return priorRate;
-    }
-    return (
-        (sessionRate * completedUnits +
-            priorRate * SESSION_RATE_PRIOR_UNITS) /
-        (completedUnits + SESSION_RATE_PRIOR_UNITS)
-    );
-}
-
 // NOTE: the getters below advance smoother state as a side effect of being
 // called (each call eases toward the candidate). This is safe under any call
 // frequency — including multiple callers per frame (render + trace sampler) —
@@ -116,56 +96,39 @@ export function sessionBlendedMsPerUnit(
 export function createEtaCalculator(): EtaCalculator {
     let totalEta: EtaSmoother | null = null;
     let phaseEta: EtaSmoother | null = null;
-    let lastCompletedUnits: number | null = null;
-    let lastBlendedRate = MS_PER_UNIT_PRIOR;
+    let totalsLocked = false;
 
-    function taskMsPerUnit(
-        progress: TaskProgress,
-        taskStartedAt: number | null,
-        now: number
-    ): number {
-        if (progress.completedUnits === lastCompletedUnits) {
-            return lastBlendedRate;
+    function resetAtTotalsLock(progress: TaskProgress): void {
+        if (!totalsLocked && progress.totalsLocked) {
+            totalEta = null;
+            phaseEta = null;
         }
-        const priorRate = currentMsPerUnit();
-        const sessionRate =
-            taskStartedAt !== null && progress.completedUnits > 0
-                ? (now - taskStartedAt) / progress.completedUnits
-                : undefined;
-        lastCompletedUnits = progress.completedUnits;
-        lastBlendedRate = sessionBlendedMsPerUnit(
-            priorRate,
-            sessionRate,
-            progress.completedUnits
-        );
-        return lastBlendedRate;
+        totalsLocked = progress.totalsLocked;
     }
 
     return {
-        getTotal(progress, taskStartedAt) {
+        getTotal(progress) {
             if (progress === null) return null;
+            resetAtTotalsLock(progress);
             const now = Date.now();
             const remainingUnits = Math.max(
                 0,
                 progress.totalUnits - progress.completedUnits
             );
-            const candidate =
-                (remainingUnits * taskMsPerUnit(progress, taskStartedAt, now)) /
-                1000;
+            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
             totalEta = easeEta(totalEta, candidate, now);
             return totalEta.displayed;
         },
-        getPhase(progress, taskStartedAt) {
+        getPhase(progress) {
             if (progress === null || progress.active === null) {
                 return null;
             }
+            resetAtTotalsLock(progress);
             const phase = progress.active.phase;
             if (phase === "done") return null;
             const now = Date.now();
             const remainingUnits = phaseRemainingUnits(progress, phase);
-            const candidate =
-                (remainingUnits * taskMsPerUnit(progress, taskStartedAt, now)) /
-                1000;
+            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
             phaseEta = easeEta(phaseEta, candidate, now);
             return phaseEta.displayed;
         },
@@ -217,12 +180,11 @@ export function currentMsPerUnit(): number {
 function phaseRemainingUnits(progress: TaskProgress, phase: ProgressPhase): number {
     const current = progress.active;
     if (current === null) return 0;
-    // The staged importer runs each pass row by row; scanned rows waiting
-    // their turn sit in `parked` with this phase's units still unspent, and a
-    // row that already ran the phase parks with those units trued to zero
-    // (`trueUpReadHydrate`). Summing them makes the countdown cover the rest
-    // of the pass instead of just the active row — with hundreds of rows the
-    // per-row remainder is seconds and reads as no ETA at all.
+    // The staged importer processes each phase row by row. Scanned rows waiting
+    // for hydration sit in `parked` with those units still unspent, and a row
+    // that completed the phase parks with those units trued to zero
+    // (`trueUpReadHydrate`). Summing them makes the countdown cover every row
+    // still waiting for the phase instead of just the active row.
     let remaining = snapshotPhaseRemaining(current, phase);
     for (const key in progress.parked) {
         if (key === current.key) continue;
@@ -251,4 +213,3 @@ function snapshotPhaseRemaining(
     if (within <= phaseStart) return phaseLength;
     return Math.max(0, phaseEnd - within);
 }
-

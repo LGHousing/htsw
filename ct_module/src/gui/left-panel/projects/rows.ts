@@ -21,6 +21,7 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
+import { BoundedMap } from "../../lib/boundedLruMap";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
     cachedImportableLinkStatus,
@@ -894,7 +895,11 @@ type CachedSubtreeAggregate = SubtreeAggregate & {
     statusKey: string;
 };
 
-const subtreeAggregateCache = new Map<string, CachedSubtreeAggregate>();
+const subtreeAggregateCache = new BoundedMap<string, CachedSubtreeAggregate>(256);
+
+export function subtreeAggregateCacheSize(): number {
+    return subtreeAggregateCache.size;
+}
 
 // Recomputed only when the parse or the warmed status context changes — the
 // per-importable sweep here is what regressed GUI performance when it ran on

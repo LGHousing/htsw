@@ -1,16 +1,9 @@
 import type { Action, Condition } from "htsw/types";
+import type { ArrayFieldNames } from "./actions/actionStructure";
 
 // Addresses nodes in an action tree. A path's parts alternate action index and
 // child-list name, so "2.ifActions.0" is the first action inside the third
 // root action's If Actions list.
-
-type ArrayFieldNames<TObject, TItem> = TObject extends unknown
-    ? {
-          [K in keyof TObject]-?: NonNullable<TObject[K]> extends readonly TItem[]
-              ? K
-              : never;
-      }[keyof TObject]
-    : never;
 
 // Derive the names for possible action & condition child lists from mappings
 export type ChildActionListName = Extract<ArrayFieldNames<Action, Action>, string>;

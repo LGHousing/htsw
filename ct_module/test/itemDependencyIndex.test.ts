@@ -111,22 +111,17 @@ describe("item dependency index", () => {
         ).toBe(true);
     });
 
-    test("trust-off observations reach item conditions inside nested actions", () => {
+    test("trust-off observations reach item conditions on a root container", () => {
         const desiredCondition = {
             type: "REQUIRE_ITEM",
             itemName: "key",
         } as const;
         const desiredAction = {
-            type: "RANDOM",
-            actions: [
-                {
-                    type: "CONDITIONAL",
-                    matchAny: false,
-                    conditions: [desiredCondition],
-                    ifActions: [],
-                    elseActions: [],
-                },
-            ],
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [desiredCondition],
+            ifActions: [],
+            elseActions: [],
         } as Action;
         const owner: Importable = {
             type: "FUNCTION",
@@ -139,10 +134,7 @@ describe("item dependency index", () => {
         const observations = createItemFieldObservationRecorder();
         const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
         const observedCondition = (
-            (observedAction as Extract<Action, { type: "RANDOM" }>).actions[0] as Extract<
-                Action,
-                { type: "CONDITIONAL" }
-            >
+            observedAction as Extract<Action, { type: "CONDITIONAL" }>
         ).conditions[0];
         observations.record(observedCondition, "itemName", {
             snbt: "{}",

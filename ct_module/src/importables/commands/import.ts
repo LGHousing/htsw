@@ -4,7 +4,10 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
-import type { ActionListPlan } from "../../housingSync/actions/plan";
+import {
+    actionListPlanNeedsApply,
+    type ActionListPlan,
+} from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
@@ -34,12 +37,22 @@ import {
 } from "./settings";
 import { getSessionCommandNamesLower } from "./listCommands";
 import { recordEmptyCommandShell } from "../import/emptyShells";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type CommandImportPlan = {
     kind: "COMMAND";
     importable: ImportableCommand;
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
+    settings: CommandSettings | null;
     settingsHandled: boolean;
     exists: boolean;
 };
@@ -105,12 +118,10 @@ export function planImportableCommand(read: CommandRead): CommandImportPlan {
         importable: read.importable,
         trustPlan: read.trustPlan,
         actionsPlan: actionListPlanFromRead(read.actions),
+        settings: read.settings,
         settingsHandled:
             read.settings === null ||
-            commandSettingsMatch(
-                read.settings,
-                desiredCommandSettings(read.importable)
-            ),
+            commandSettingsMatch(read.settings, desiredCommandSettings(read.importable)),
         exists: read.exists,
     };
 }
@@ -118,29 +129,78 @@ export function planImportableCommand(read: CommandRead): CommandImportPlan {
 export async function applyImportableCommandPlan(
     ctx: TaskContext,
     plan: CommandImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     if (!plan.exists) {
-        const result = await ensureCommandExists(ctx, plan.importable.name);
-        if (result === "created") {
-            await recordEmptyCommandShell(ctx, session, plan.importable.name);
-        }
+        await application.run("createShell", async () => {
+            const result = await ensureCommandExists(ctx, plan.importable.name);
+            if (result === "created") {
+                await recordEmptyCommandShell(ctx, session, plan.importable.name);
+            }
+        });
     }
-    if (plan.actionsPlan !== null) {
-        await openExistingCommandActionsEditor(ctx, plan.importable.name);
-        await applyActionListPlan(ctx, plan.actionsPlan, { sync: session.actions });
+    const actionsPlan = plan.actionsPlan;
+    if (actionListPlanNeedsApply(actionsPlan)) {
+        await application.run("openActions", () =>
+            openExistingCommandActionsEditor(ctx, plan.importable.name)
+        );
+        await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
+            applyActionListPlan(ctx, actionsPlan, { sync })
+        );
     }
 
     if (!plan.settingsHandled) {
-        await openCommandSettings(ctx, plan.importable.name);
-        await applyCommandSettings(ctx, plan.importable);
+        await application.run("settings", async () => {
+            await openCommandSettings(ctx, plan.importable.name);
+            await applyCommandSettings(ctx, plan.importable);
+        });
     }
 }
 
 export function commandPlanIsNoOp(plan: CommandImportPlan): boolean {
-    const actionsNoOp =
-        plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    const actionsNoOp = !actionListPlanNeedsApply(plan.actionsPlan);
     return plan.exists && actionsNoOp && plan.settingsHandled;
+}
+
+export function commandApplicationPlan(plan: CommandImportPlan): ApplicationPlan {
+    if (commandPlanIsNoOp(plan)) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+    const steps: ApplicationStep[] = [];
+    if (!plan.exists) {
+        steps.push(
+            workStep(
+                "createShell",
+                COST.commandInterval + COST.commandMenuWait + COST.cacheWrite
+            )
+        );
+    }
+    if (actionListPlanNeedsApply(plan.actionsPlan)) {
+        steps.push(
+            workStep("openActions", COST.commandInterval + COST.commandMenuWait),
+            actionListStep("actions", plan.actionsPlan)
+        );
+    }
+    if (!plan.settingsHandled) {
+        let units = COST.commandInterval + COST.commandMenuWait;
+        const desired = desiredCommandSettings(plan.importable);
+        if (plan.settings === null || plan.settings.mode !== desired.mode) {
+            units += COST.menuClickWait;
+        }
+        if (
+            plan.settings === null ||
+            plan.settings.requiredPriority !== desired.requiredPriority
+        ) {
+            units += COST.signInput;
+        }
+        if (plan.settings === null || plan.settings.listed !== desired.listed) {
+            units += COST.menuClickWait;
+        }
+        steps.push(workStep("settings", units));
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
 }
 
 export function reconstructObservedCommand(plan: CommandImportPlan): Importable | null {

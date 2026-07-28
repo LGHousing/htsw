@@ -105,6 +105,7 @@ describe("progress cost estimates", () => {
             desiredIndex: 1,
             toIndex: 1,
             desired: message("middle"),
+            childListDiffs: [],
         };
         const diff = { operations: [add], desiredLength: 3 };
         const units = actionListOperationApplyUnits(
@@ -193,6 +194,7 @@ describe("progress cost estimates", () => {
             desiredIndex: 0,
             toIndex: 0,
             desired: { type: "GIVE_ITEM", itemName: "Key" },
+            childListDiffs: [],
         };
         expect(
             actionOperationApplyUnits(add, editUnitsWithChildLists, 0)

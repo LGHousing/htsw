@@ -39,8 +39,8 @@ export type TaskProgressEntry = {
 
 /**
  * The grid slot a MENU import is writing right now, with its item's display
- * name, for the live panel. Null for non-menu importables and outside the
- * apply pass.
+ * name, for the live panel. Null for non-menu importables and while the menu
+ * is not being updated.
  */
 export type MenuSlotFocus = {
     slot: number;
@@ -98,18 +98,17 @@ export type TaskProgress = {
     failure?: { key: string; message: string } | null;
     active: TaskProgressActive | null;
     /**
-     * Per-key snapshots of importables that completed the read/hydrate
-     * pass but haven't reached the apply pass. The queue mini bar
-     * uses these to keep showing read-pass progress on rows the active
-     * cursor has moved past.
+     * Per-key snapshots of importables whose reading and hydration are
+     * complete but which have not begun applying. The queue mini bar keeps
+     * showing their observed progress after the active cursor moves on.
      */
     parked: { [key: string]: TaskProgressActive };
     rows: readonly TaskProgressEntry[];
 };
 
 /**
- * True when the session has entered its apply pass, or when the active
- * importable is already in a phase whose total cannot widen.
+ * True when the session has begun applying, or when the active importable is
+ * already in a phase whose total cannot widen.
  *
  * Setup/reading/hydrating phases can still discover work (longer lists
  * than predicted, deeper child bodies, more pages), so the total may

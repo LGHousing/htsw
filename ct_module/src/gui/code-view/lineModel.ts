@@ -32,6 +32,7 @@ import {
     type DiagnosticLineSpan,
 } from "../../diagnostics/spans";
 import { ActionListPath, ActionPath } from "../../housingSync/actionPath";
+import { BoundedMap } from "../lib/boundedLruMap";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
@@ -261,14 +262,14 @@ function syntheticLine(
 
 const fileLoader = new FileSystemFileLoader();
 type CachedFile = { mtime: number; lines: string[] };
-const plainCache = new Map<string, CachedFile>();
+const plainCache = new BoundedMap<string, CachedFile>(128);
 
 type HtslCacheEntry = {
     mtime: number;
     parsedRef: object | null;
     lines: RenderableLine[];
 };
-const htslCache = new Map<string, HtslCacheEntry>();
+const htslCache = new BoundedMap<string, HtslCacheEntry>(64);
 
 function htslRenderableLines(
     path: string,
@@ -372,7 +373,7 @@ type TextCacheEntry = {
     parsedRef: object | null;
     lines: RenderableLine[];
 };
-const jsonCache = new Map<string, TextCacheEntry>();
+const jsonCache = new BoundedMap<string, TextCacheEntry>(64);
 
 function plainTextRenderableLines(
     path: string,
@@ -469,7 +470,7 @@ function jsonRenderableLines(
     return out;
 }
 
-const snbtCache = new Map<string, TextCacheEntry>();
+const snbtCache = new BoundedMap<string, TextCacheEntry>(64);
 
 function snbtRenderableLines(
     path: string,
@@ -615,10 +616,36 @@ function depthPerLine(lineCount: number, ranges: readonly ActionLineRange[]): nu
     return depths;
 }
 
-const htslRawCache = new Map<
+const htslRawCache = new BoundedMap<
     string,
     { mtime: number; parsedRef: object | null; lines: RenderableLine[] }
->();
+>(64);
+
+export function lineModelCacheSizes(): {
+    plain: number;
+    htsl: number;
+    json: number;
+    snbt: number;
+    htslRaw: number;
+} {
+    return {
+        plain: plainCache.size,
+        htsl: htslCache.size,
+        json: jsonCache.size,
+        snbt: snbtCache.size,
+        htslRaw: htslRawCache.size,
+    };
+}
+
+export function disposeLineModelCachesUnder(root: string): void {
+    const prefix = root.endsWith("/") ? root : `${root}/`;
+    const matches = (path: string): boolean => path === root || path.startsWith(prefix);
+    plainCache.deleteWhere(matches);
+    htslCache.deleteWhere(matches);
+    jsonCache.deleteWhere(matches);
+    snbtCache.deleteWhere(matches);
+    htslRawCache.deleteWhere(matches);
+}
 
 onParseCacheEntryChanged(() => {
     htslCache.clear();

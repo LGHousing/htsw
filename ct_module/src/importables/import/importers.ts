@@ -5,6 +5,7 @@ import type { ActionListApplyResult } from "../../housingSync/actions/apply";
 import TaskContext from "../../tasks/context";
 import {
     applyImportableCommandPlan,
+    commandApplicationPlan,
     commandPlanIsNoOp,
     hydrateImportableCommand,
     planImportableCommand,
@@ -16,6 +17,7 @@ import {
 } from "../commands/import";
 import {
     applyImportableEventPlan,
+    eventApplicationPlan,
     eventPlanIsNoOp,
     hydrateImportableEvent,
     planImportableEvent,
@@ -27,6 +29,7 @@ import {
 } from "../events/import";
 import {
     applyImportableFunctionPlan,
+    functionApplicationPlan,
     functionPlanIsNoOp,
     hydrateImportableFunction,
     planImportableFunction,
@@ -38,6 +41,7 @@ import {
 } from "../functions/import";
 import {
     applyImportableGroupPlan,
+    groupApplicationPlan,
     groupPlanIsNoOp,
     planImportableGroup,
     readImportableGroup,
@@ -47,6 +51,7 @@ import {
 import { importableIdentity, importableKey } from "../identity";
 import {
     applyImportableItemPlan,
+    itemApplicationPlan,
     planImportableItem,
     readImportableItem,
     type ItemImportPlan,
@@ -55,6 +60,7 @@ import {
 import {
     applyImportableMenuPlan,
     hydrateImportableMenu,
+    menuApplicationPlan,
     menuPlanIsNoOp,
     planImportableMenu,
     scanImportableMenu,
@@ -64,6 +70,7 @@ import {
 import {
     applyImportableNpcPlan,
     hydrateImportableNpc,
+    npcApplicationPlan,
     npcPlanIsNoOp,
     planImportableNpc,
     scanImportableNpc,
@@ -74,6 +81,7 @@ import {
     applyImportableRegionPlan,
     hydrateImportableRegion,
     planImportableRegion,
+    regionApplicationPlan,
     regionPlanIsNoOp,
     scanImportableRegion,
     type RegionImportPlan,
@@ -83,11 +91,16 @@ import {
     applyImportableTeamPlan,
     planImportableTeam,
     readImportableTeam,
+    teamApplicationPlan,
     teamPlanIsNoOp,
     type TeamImportPlan,
     type TeamRead,
 } from "../teams/import";
 import type { ImportContext } from "./context";
+import type {
+    ApplicationPlan,
+    ApplicationProgress,
+} from "./applicationProgress";
 
 type ImportableOfType<K extends Importable["type"]> = Extract<
     Importable,
@@ -134,8 +147,14 @@ type ImporterRecipe<
     type: K;
     reader: ImportReader<ImportableOfType<K>, R>;
     plan(read: R, context: ImportContext): P;
-    apply(ctx: TaskContext, plan: P, context: ImportContext): Promise<void>;
+    apply(
+        ctx: TaskContext,
+        plan: P,
+        context: ImportContext,
+        application: ApplicationProgress
+    ): Promise<void>;
     isNoOp(plan: P): boolean;
+    applicationPlan(plan: P, context: ImportContext): ApplicationPlan;
     reconstructObserved?(plan: P): Importable | null;
     reconstructPartial?(
         plan: P,
@@ -147,8 +166,14 @@ type WrappedImportablePlan<P extends ImportablePlanDetails> = {
     readonly kind: P["kind"];
     readonly importable: Importable;
     readonly details: P;
+    readonly applicationPlan: ApplicationPlan;
+    readonly applicationUnits: number;
     isNoOp(): boolean;
-    apply(ctx: TaskContext, context: ImportContext): Promise<void>;
+    apply(
+        ctx: TaskContext,
+        context: ImportContext,
+        application: ApplicationProgress
+    ): Promise<void>;
     reconstructObserved(): Importable | null;
     reconstructPartial(result: ActionListApplyResult | null): Importable | null;
 };
@@ -206,13 +231,24 @@ function defineImporter<
                         : (hydrateCtx) => reader.hydrate(hydrateCtx, read),
                 plan(planContext) {
                     const plan = recipe.plan(read, planContext);
+                    const applicationPlan = recipe.applicationPlan(
+                        plan,
+                        planContext
+                    );
                     return {
                         kind: recipe.type,
                         importable: typedImportable,
                         details: plan,
+                        applicationPlan,
+                        applicationUnits: applicationPlan.totalUnits,
                         isNoOp: () => recipe.isNoOp(plan),
-                        apply: (applyCtx, applyContext) =>
-                            recipe.apply(applyCtx, plan, applyContext),
+                        apply: (applyCtx, applyContext, application) =>
+                            recipe.apply(
+                                applyCtx,
+                                plan,
+                                applyContext,
+                                application
+                            ),
                         reconstructObserved: () =>
                             recipe.reconstructObserved?.(plan) ?? null,
                         reconstructPartial: (result) =>
@@ -235,6 +271,7 @@ const IMPORTERS = {
         plan: planImportableFunction,
         apply: applyImportableFunctionPlan,
         isNoOp: functionPlanIsNoOp,
+        applicationPlan: functionApplicationPlan,
         reconstructObserved: reconstructObservedFunction,
         reconstructPartial: reconstructPartialFunction,
     }),
@@ -248,6 +285,7 @@ const IMPORTERS = {
         plan: planImportableEvent,
         apply: applyImportableEventPlan,
         isNoOp: eventPlanIsNoOp,
+        applicationPlan: eventApplicationPlan,
         reconstructObserved: reconstructObservedEvent,
         reconstructPartial: reconstructPartialEvent,
     }),
@@ -261,6 +299,7 @@ const IMPORTERS = {
         plan: planImportableCommand,
         apply: applyImportableCommandPlan,
         isNoOp: commandPlanIsNoOp,
+        applicationPlan: commandApplicationPlan,
         reconstructObserved: reconstructObservedCommand,
         reconstructPartial: reconstructPartialCommand,
     }),
@@ -274,6 +313,7 @@ const IMPORTERS = {
         plan: planImportableRegion,
         apply: applyImportableRegionPlan,
         isNoOp: regionPlanIsNoOp,
+        applicationPlan: regionApplicationPlan,
     }),
     MENU: defineImporter<"MENU", MenuRead, MenuImportPlan>({
         type: "MENU",
@@ -285,6 +325,7 @@ const IMPORTERS = {
         plan: planImportableMenu,
         apply: applyImportableMenuPlan,
         isNoOp: menuPlanIsNoOp,
+        applicationPlan: menuApplicationPlan,
     }),
     ITEM: defineImporter<"ITEM", ItemRead, ItemImportPlan>({
         type: "ITEM",
@@ -295,6 +336,7 @@ const IMPORTERS = {
         plan: planImportableItem,
         apply: applyImportableItemPlan,
         isNoOp: () => false,
+        applicationPlan: itemApplicationPlan,
     }),
     NPC: defineImporter<"NPC", NpcRead, NpcImportPlan>({
         type: "NPC",
@@ -306,6 +348,7 @@ const IMPORTERS = {
         plan: planImportableNpc,
         apply: applyImportableNpcPlan,
         isNoOp: npcPlanIsNoOp,
+        applicationPlan: npcApplicationPlan,
     }),
     TEAM: defineImporter<"TEAM", TeamRead, TeamImportPlan>({
         type: "TEAM",
@@ -317,6 +360,7 @@ const IMPORTERS = {
         plan: planImportableTeam,
         apply: applyImportableTeamPlan,
         isNoOp: teamPlanIsNoOp,
+        applicationPlan: teamApplicationPlan,
     }),
     GROUP: defineImporter<"GROUP", GroupRead, GroupImportPlan>({
         type: "GROUP",
@@ -328,6 +372,7 @@ const IMPORTERS = {
         plan: planImportableGroup,
         apply: applyImportableGroupPlan,
         isNoOp: groupPlanIsNoOp,
+        applicationPlan: groupApplicationPlan,
     }),
 } satisfies Record<Importable["type"], Importer>;
 

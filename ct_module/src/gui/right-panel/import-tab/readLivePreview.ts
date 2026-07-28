@@ -1,17 +1,18 @@
 import type { Importable } from "htsw/types";
 
-import type { SyncEventHandler } from "../../housingSync/syncEvents";
-import type { ObservedNode } from "../../housingSync/observedActions";
+import type { SyncEventHandler } from "../../../housingSync/syncEvents";
+import type { ObservedNode } from "../../../housingSync/observedActions";
 import {
     getCurrentPath,
     markReadComplete,
+    markPreviewCompleted,
     resetPreview,
     setCurrent,
     setObservedTopLevel,
-} from "../right-panel/import-tab/livePreview";
-import { setActiveTaskPath } from "../right-panel/import-tab/taskProgress";
+} from "./livePreview";
+import { setActiveTaskPath } from "./taskProgress";
 
-export type ExportLivePreview = {
+export type ReadLivePreview = {
     events: SyncEventHandler;
     start(names: readonly string[]): void;
     activate(index: number, reset: boolean): void;
@@ -23,10 +24,10 @@ function previewPath(basePath: string, type: Importable["type"], index: number):
     return `${basePath}.live-${type.toLowerCase()}-${index}.htsl`;
 }
 
-export function createExportLivePreview(
+export function createReadLivePreview(
     type: Importable["type"],
     basePath: string
-): ExportLivePreview {
+): ReadLivePreview {
     let paths: string[] = [];
     let activeIndex: number | null = null;
     const latestSnapshots: Array<readonly ObservedNode[] | null | undefined> = [];
@@ -92,6 +93,7 @@ export function createExportLivePreview(
                 setObservedTopLevel(path, snapshot, { force: true });
             }
             if (getCurrentPath(path) !== null) setCurrent(path, null);
+            markPreviewCompleted(path);
         },
         clear() {
             activeIndex = null;

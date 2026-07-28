@@ -130,6 +130,8 @@ export function traceSyncEvent(event: SyncEvent): void {
         case "sessionStarted":
         case "sessionTotalsLocked":
         case "sessionFinished":
+        case "sessionApplicationProgress":
+        case "applicationProgress":
         case "progress":
         case "knowledgeSourceUsed":
         case "menuSlotStarted":

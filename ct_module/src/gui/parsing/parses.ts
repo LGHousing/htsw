@@ -34,6 +34,7 @@ import {
     type OffThreadParseResult,
 } from "./offThreadParse";
 import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
+import { BoundedLruMap, BoundedMap } from "../lib/boundedLruMap";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -88,7 +89,7 @@ function fingerprintOf(
 // already warns is "not free". The result is a pure function of the input
 // string (the process CWD is stable for the session), so memoize by input.
 let _Paths: HtswJavaPathsClass | null = null;
-const canonicalPathCache = new Map<string, string>();
+const canonicalPathCache = new BoundedMap<string, string>(2048);
 
 export function canonicalPath(p: string): string {
     if (!p) return p;
@@ -120,7 +121,9 @@ export function canonicalPath(p: string): string {
     return result;
 }
 
-const cache = new Map<string, CachedParse>();
+const cache = new BoundedLruMap<string, CachedParse>(128, (_path, entry) => {
+    invalidateParseDerivedCaches(entry);
+});
 
 type ParseCacheListener = (entry: CachedParse) => void;
 const parseCacheListeners: ParseCacheListener[] = [];
@@ -153,6 +156,10 @@ let parseCacheRevision = 0;
 
 export function getParseCacheRevision(): number {
     return parseCacheRevision;
+}
+
+export function parseCacheSizes(): { canonicalPaths: number; parses: number } {
+    return { canonicalPaths: canonicalPathCache.size, parses: cache.size };
 }
 
 type ParsePerfEntry = {
@@ -413,7 +420,7 @@ export async function parseImportJsonCurrent(rawPath: string): Promise<CachedPar
 /** Look up a previously-parsed import.json by canonical path. */
 export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);
-    return cache.get(canon) ?? null;
+    return cache.peek(canon) ?? null;
 }
 
 // ── Deferred parse scheduler ──────────────────────────────────────────────
@@ -731,6 +738,24 @@ export function touchParseCacheFile(rawPath: string): void {
  */
 export function invalidateParseCacheEntry(rawPath: string): void {
     if (!cache.delete(canonicalPath(rawPath))) return;
+    parseCacheRevision++;
+    markGuiDirty();
+}
+
+export function disposeParseCachesUnder(rawPath: string): void {
+    const root = canonicalPath(rawPath);
+    const prefix = root.endsWith("/") ? root : `${root}/`;
+    const matches = (path: string): boolean => path === root || path.startsWith(prefix);
+    const disposed: CachedParse[] = [];
+    for (const entry of cache.values()) {
+        if (matches(entry.canonicalPath)) disposed.push(entry);
+    }
+    for (const entry of disposed) invalidateParseDerivedCaches(entry);
+    const removed = cache.deleteWhere(matches);
+    canonicalPathCache.deleteWhere(
+        (raw, canonical) => matches(raw) || matches(canonical)
+    );
+    if (removed === 0) return;
     parseCacheRevision++;
     markGuiDirty();
 }

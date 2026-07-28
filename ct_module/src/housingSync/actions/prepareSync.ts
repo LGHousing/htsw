@@ -170,11 +170,11 @@ function conflictScanRequired(target: ActionListSyncTarget): boolean {
     );
 }
 
-// The apply pass re-emits diffPlanned when it starts, but in a two-pass
-// session that can be minutes after this Reader finishes (every other
-// importable is read in between). Emit as soon as the diff exists so the live
-// preview shows the planned operations immediately; the preview's mark
-// handlers tolerate the later re-emission.
+// Application re-emits diffPlanned when it starts, but the session may not
+// apply this plan until every remaining importable has finished scanning,
+// hydration, and planning. Emit as soon as the diff exists so the live preview
+// shows the planned operations immediately; the preview's mark handlers
+// tolerate the later re-emission.
 function planned(
     plan: ActionListPlan,
     target: ActionListSyncTarget

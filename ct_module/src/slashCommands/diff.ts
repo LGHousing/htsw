@@ -14,12 +14,13 @@ import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
-import { isTaskCancelled, TaskManager } from "../tasks/manager";
+import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
+import { writeDiffDetailsFile } from "./diffDetails";
 import { evaluateDiffReport, formatDiffReport } from "./diffReport";
 
 function diffFailure(reason: string): void {
@@ -117,7 +118,8 @@ export function commandDiff(args: string[]): void {
     }
 
     const progress = createDiffProgressSession(parsed.value, manifest);
-    void runHousingSyncTask("export", async (ctx) => {
+    void runHousingSyncTask("diff", async (ctx) => {
+        progress.start();
         const housingUuid = await getCurrentHousingUuid(ctx);
         const live = await readDiffImportables(
             ctx,
@@ -135,16 +137,29 @@ export function commandDiff(args: string[]): void {
         for (const line of formatDiffReport(report, manifest)) {
             ChatLib.chat(line);
         }
+        try {
+            const detailsPath = writeDiffDetailsFile(
+                report,
+                manifest,
+                new Date().toISOString()
+            );
+            ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
+        } catch (error) {
+            ChatLib.chat(
+                `[htsw] Diff details not written: ${errorReason(error)}`
+            );
+        }
         progress.complete(
             `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
         );
-    }).catch((error: unknown) => {
-        if (isTaskCancelled(error)) {
-            progress.clear();
-            return;
-        }
-        const reason = errorReason(error);
-        progress.fail(reason);
-        diffFailure(reason);
-    });
+        return true;
+    })
+        .then((completed) => {
+            if (completed === undefined) progress.clear();
+        })
+        .catch((error: unknown) => {
+            const reason = errorReason(error);
+            progress.fail(reason);
+            diffFailure(reason);
+        });
 }

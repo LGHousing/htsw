@@ -8,6 +8,10 @@ import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import {
+    baselineActionListFromSlots,
+    diffActionList,
+} from "../src/housingSync/actions/diff";
 import { message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -110,21 +114,10 @@ function editPlan(observed: ObservedActionSlot[], desired: Action[]): ActionList
 }
 
 function addPlan(observed: ObservedActionSlot[], desired: Action[]): ActionListPlan {
-    const added = desired[desired.length - 1];
     return {
         desired,
         observed,
-        diff: {
-            desiredLength: desired.length,
-            operations: [
-                {
-                    kind: "add",
-                    desiredIndex: desired.length - 1,
-                    desired: added,
-                    toIndex: desired.length - 1,
-                },
-            ],
-        },
+        diff: diffActionList(baselineActionListFromSlots(observed), desired),
         phaseUnits: {
             setup: 0,
             reading: 0,

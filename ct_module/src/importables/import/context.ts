@@ -19,4 +19,9 @@ export type ImportContext = {
         menus: Set<string>;
         regions: Set<string>;
     };
+    plannedReferencedShells: {
+        functions: Set<string>;
+        menus: Set<string>;
+        regions: Set<string>;
+    };
 };

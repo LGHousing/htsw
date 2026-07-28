@@ -40,6 +40,7 @@ interface RhinoStackTraceElement {
 
 interface RhinoThread {
     getStackTrace(): { readonly length: unknown; [index: number]: RhinoStackTraceElement };
+    interrupt(): void;
     setDaemon(daemon: boolean): void;
     start(): void;
 }
@@ -222,6 +223,7 @@ const MAX_STACKS = 6;
 const stallStacks: string[][] = [];
 let clientThread: RhinoThread | null = null;
 let stackQueue: RhinoQueue<RhinoString> | null = null;
+let watchdogThread: RhinoThread | null = null;
 
 function startWatchdog(): void {
     if (!watchdogRunning.compareAndSet(false, true)) return;
@@ -263,14 +265,27 @@ function startWatchdog(): void {
                     }
                 }
             } finally {
+                watchdogThread = null;
                 watchdogRunning.set(false);
             }
         }, "htsw-lagprobe-watchdog");
+        watchdogThread = t;
         t.setDaemon(true);
         t.start();
     } catch (e) {
+        watchdogThread = null;
         watchdogRunning.set(false);
         debugLogError("lagProbe.startWatchdog", e);
+    }
+}
+
+function stopWatchdog(): void {
+    probeEnabled.set(false);
+    const thread = watchdogThread;
+    if (thread !== null) {
+        try {
+            thread.interrupt();
+        } catch (_e) {}
     }
 }
 
@@ -314,6 +329,11 @@ const probeStepTrigger = register("step", () => {
 }).setFps(10);
 probeStepTrigger.unregister();
 
+register("gameUnload", () => {
+    stopWatchdog();
+    probeStepTrigger.unregister();
+});
+
 export function isLagProbeEnabled(): boolean {
     return Boolean(probeEnabled.get());
 }
@@ -331,6 +351,7 @@ export function setLagProbeEnabled(enabled: boolean): void {
         lastHeapUsedMB = heapUsedMB();
         probeStepTrigger.register();
     } else {
+        stopWatchdog();
         probeStepTrigger.unregister();
     }
 }

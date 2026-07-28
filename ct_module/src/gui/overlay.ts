@@ -117,6 +117,7 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
 import { processImportableCacheWarm } from "./cache-status/cacheWarm";
+import { logGuiCacheSizes } from "./cacheTelemetry";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -181,6 +182,8 @@ function anyHtswPanelVisible(): boolean {
 // Probe once per server while presence is unknown. Server transport resets the
 // verdict and cooldown so the next container open checks the new server.
 let lastDebugSampleAt = 0;
+let lastCacheTelemetryAt = 0;
+const CACHE_TELEMETRY_INTERVAL_MS = 5 * 60_000;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -802,6 +805,11 @@ export function initHtswGui(): void {
                     `uuid=${getHousingUuid()}`
                 );
             }
+        }
+        const now = Date.now();
+        if (now - lastCacheTelemetryAt >= CACHE_TELEMETRY_INTERVAL_MS) {
+            lastCacheTelemetryAt = now;
+            logGuiCacheSizes();
         }
         flushGuiDebug();
         // If the import ended while our placeholder is still up (Hypixel

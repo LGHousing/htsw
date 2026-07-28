@@ -11,6 +11,14 @@ import {
     setTeamFriendlyFire,
     setTeamTag,
 } from "./housing";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type TeamImportPlan = {
     kind: "TEAM";
@@ -51,46 +59,85 @@ export function planImportableTeam(read: TeamRead): TeamImportPlan {
         trustPlan: read.trustPlan,
         exists: settings !== null,
         tagHandled:
-            settings !== null &&
-            (importable.tag === undefined || settings.tag === importable.tag),
+            importable.tag === undefined ||
+            (settings !== null && settings.tag === importable.tag),
         colorHandled:
-            settings !== null &&
-            (importable.color === undefined || settings.color === importable.color),
+            importable.color === undefined ||
+            (settings !== null && settings.color === importable.color),
         friendlyFireHandled:
-            settings !== null &&
-            (importable.friendlyFire === undefined ||
-                settings.friendlyFire === importable.friendlyFire),
+            importable.friendlyFire === undefined ||
+            (settings !== null && settings.friendlyFire === importable.friendlyFire),
     };
 }
 
 export async function applyImportableTeamPlan(
     ctx: TaskContext,
     plan: TeamImportPlan,
-    _session: ImportContext
+    _session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     const { importable } = plan;
+    if (teamPlanIsNoOp(plan)) return;
     if (!plan.exists) {
-        await createTeam(ctx, importable.name);
+        await application.run("create", () => createTeam(ctx, importable.name));
     }
 
-    await openManageTeam(ctx, importable.name);
+    await application.run("openManage", () => openManageTeam(ctx, importable.name));
 
-    if (importable.tag !== undefined && !plan.tagHandled) {
-        await setTeamTag(ctx, importable.tag);
+    const tag = importable.tag;
+    if (tag !== undefined && !plan.tagHandled) {
+        await application.run("tag", () => setTeamTag(ctx, tag));
     }
-    if (importable.color !== undefined && !plan.colorHandled) {
-        await setTeamColor(ctx, importable.color);
+    const color = importable.color;
+    if (color !== undefined && !plan.colorHandled) {
+        await application.run("color", () => setTeamColor(ctx, color));
     }
-    if (importable.friendlyFire !== undefined && !plan.friendlyFireHandled) {
-        await setTeamFriendlyFire(ctx, importable.friendlyFire);
+    const friendlyFire = importable.friendlyFire;
+    if (friendlyFire !== undefined && !plan.friendlyFireHandled) {
+        await application.run("friendlyFire", () =>
+            setTeamFriendlyFire(ctx, friendlyFire)
+        );
     }
 }
 
 export function teamPlanIsNoOp(plan: TeamImportPlan): boolean {
     return (
-        plan.exists &&
-        plan.tagHandled &&
-        plan.colorHandled &&
-        plan.friendlyFireHandled
+        plan.exists && plan.tagHandled && plan.colorHandled && plan.friendlyFireHandled
     );
+}
+
+export function teamPlanApplicationUnits(plan: TeamImportPlan): number {
+    return teamApplicationPlan(plan).totalUnits;
+}
+
+export function teamApplicationPlan(plan: TeamImportPlan): ApplicationPlan {
+    const steps: ApplicationStep[] = [];
+    if (!teamPlanIsNoOp(plan)) {
+        if (!plan.exists) {
+            steps.push(
+                workStep(
+                    "create",
+                    COST.commandInterval +
+                        COST.commandMenuWait +
+                        COST.menuClickWait +
+                        COST.anvilInput
+                )
+            );
+        }
+        steps.push(
+            workStep(
+                "openManage",
+                COST.commandInterval + COST.commandMenuWait + COST.menuClickWait
+            )
+        );
+        if (!plan.tagHandled) steps.push(workStep("tag", COST.chatInput));
+        if (!plan.colorHandled) {
+            steps.push(workStep("color", COST.menuClickWait * 2));
+        }
+        if (!plan.friendlyFireHandled) {
+            steps.push(workStep("friendlyFire", COST.menuClickWait));
+        }
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
 }

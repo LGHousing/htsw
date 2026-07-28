@@ -36,20 +36,30 @@ export type ConditionLoreSpec<T extends Condition> = {
 
 type ActionDataKey<T extends Action> = Exclude<keyof T, "type" | "note">;
 
+type ActionFieldKind<T extends Action, K extends ActionDataKey<T>> = NonNullable<
+    T[K]
+> extends readonly Action[]
+    ? "actionList"
+    : NonNullable<T[K]> extends readonly Condition[]
+      ? "conditionList"
+      : Exclude<UiFieldKind, ChildListFieldKind>;
+
 type ActionLoreFieldSpec<T extends Action> = {
-    prop: ActionDataKey<T>;
-    kind: UiFieldKind;
-    /**
-     * Value that the Housing UI presents when the field is unset on the
-     * desired side. Action comparison treats an explicit
-     * default-valued read as equivalent to an omitted field, which prevents
-     * spurious diffs between parsed source and observed GUI state.
-     */
-    default?: unknown;
-    numeric?: boolean;
-    /** Required for `kind: "cycle"`: the ordered cycle options. */
-    options?: readonly string[];
-};
+    [K in ActionDataKey<T>]: {
+        prop: K;
+        kind: ActionFieldKind<T, K>;
+        /**
+         * Value that the Housing UI presents when the field is unset on the
+         * desired side. Action comparison treats an explicit
+         * default-valued read as equivalent to an omitted field, which prevents
+         * spurious diffs between parsed source and observed GUI state.
+         */
+        default?: unknown;
+        numeric?: boolean;
+        /** Required for `kind: "cycle"`: the ordered cycle options. */
+        options?: readonly string[];
+    };
+}[ActionDataKey<T>];
 
 export type ActionLoreSpec<T extends Action> = {
     displayName: string;

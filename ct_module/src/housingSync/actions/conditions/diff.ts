@@ -86,7 +86,7 @@ export function diffConditionList(
     const unmatchedDesired = [...desired];
     const operations: ConditionListOperation[] = [];
 
-    // Pass 1: drop exact matches before pairing the rest.
+    // Drop exact matches before pairing the rest.
     for (
         let desiredIndex = unmatchedDesired.length - 1;
         desiredIndex >= 0;
@@ -107,7 +107,7 @@ export function diffConditionList(
         unmatchedDesired.splice(desiredIndex, 1);
     }
 
-    // Pass 2: note-only pairs. Prefer these over later same-type pairings so
+    // Pair note-only edits next. Prefer these over later same-type pairings so
     // a note-only edit doesn't get burned on an arbitrary same-type slot
     // while a real note-only candidate gets deleted-then-added.
     for (
@@ -141,7 +141,7 @@ export function diffConditionList(
         });
     }
 
-    // Pass 3: same-type edits, else adds.
+    // Pair same-type edits, then add anything unmatched.
     for (const desiredCondition of unmatchedDesired) {
         const currentIndex = indexOfConditionType(unmatchedCurrent, desiredCondition);
 
@@ -164,7 +164,7 @@ export function diffConditionList(
         });
     }
 
-    // Pass 4: leftover observed entries are deletes.
+    // Delete leftover observed entries.
     for (const currentEntry of unmatchedCurrent) {
         operations.push({
             kind: "delete",

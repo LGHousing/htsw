@@ -1,6 +1,12 @@
 import type { Action, Importable } from "htsw/types";
 
 import { actionListConflictVerdict } from "../housingSync/actions/conflicts";
+import {
+    actionListConflictDifferences,
+    summarizeActionListConflictDifferences,
+    type ActionListConflictDetails,
+    type ActionListConflictDifference,
+} from "../housingSync/actions/conflictDetails";
 import type { ActionSyncConflict } from "../housingSync/actions/syncContext";
 import {
     actionListsOfImportable,
@@ -8,10 +14,17 @@ import {
 } from "../importCache/actionLists";
 import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
+import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
+
+type DiffReportConflict = ActionSyncConflict &
+    ActionListConflictDetails & {
+        canonicalDifferences: ActionListConflictDifference[];
+        printerDiagnostics: DiffPrinterDiagnostic[];
+    };
 
 export type DiffReport = {
     clean: number;
-    conflicts: ActionSyncConflict[];
+    conflicts: DiffReportConflict[];
     unknown: number;
 };
 
@@ -81,10 +94,22 @@ export function evaluateDiffReport(
                 "content"
             );
             if (verdict === "conflict") {
+                const canonicalDifferences = actionListConflictDifferences(
+                    liveActions,
+                    sourceList.actions
+                );
                 result.conflicts.push({
                     type: source.type,
                     identity,
                     basePath: sourceList.basePath,
+                    ...summarizeActionListConflictDifferences(
+                        canonicalDifferences
+                    ),
+                    canonicalDifferences,
+                    printerDiagnostics: [
+                        ...printerDiagnosticsForDiff("source", sourceList.actions),
+                        ...printerDiagnosticsForDiff("live", liveActions),
+                    ],
                 });
             } else if (verdict === "no-baseline" || verdict === null) {
                 result.unknown++;
@@ -96,7 +121,11 @@ export function evaluateDiffReport(
     return result;
 }
 
-export function formatDiffReport(report: DiffReport, manifest: string): string[] {
+export function formatDiffReport(
+    report: DiffReport,
+    manifest: string,
+    detailsPath?: string
+): string[] {
     const lines = [
         `[htsw] Diff complete: ${report.clean} clean, ${report.conflicts.length} conflicts, ${report.unknown} unknown · ${manifest}`,
     ];
@@ -106,9 +135,20 @@ export function formatDiffReport(report: DiffReport, manifest: string): string[]
         lines.push(
             `[htsw] Conflict: ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
         );
+        for (const difference of conflict.differences) {
+            lines.push(
+                `[htsw]   ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
+            );
+        }
+        if (conflict.moreCount > 0) {
+            lines.push(`[htsw]   …and ${conflict.moreCount} more differences`);
+        }
     }
     if (report.conflicts.length > shown) {
         lines.push(`[htsw] …and ${report.conflicts.length - shown} more conflicts`);
+    }
+    if (detailsPath !== undefined) {
+        lines.push(`[htsw] Diff details: ${detailsPath}`);
     }
     return lines;
 }

@@ -3,6 +3,7 @@ import type {
     KnowledgeLockStatus,
     KnowledgeSourceKind,
     KnowledgeSourceReason,
+    TaskProgressActive,
     TaskProgressEntry,
     ProgressPayload,
 } from "./progress/types";
@@ -126,16 +127,26 @@ export type SyncEvent =
     | {
           /**
            * Re-activates an already-started importable as the current
-           * focus without resetting its progress. Used when a later pass
-           * returns to a row after the first pass advanced past it.
+           * focus without resetting its progress. Used when hydration or
+           * application returns to a row after scanning moved elsewhere.
            */
           kind: "importableReactivated";
           key: string;
           rowIndex: number;
           phase?: ProgressPayload["phase"];
       }
-    | { kind: "sessionTotalsLocked" }
+    | {
+          kind: "sessionTotalsLocked";
+          plannedRows?: readonly { key: string; applicationUnits: number }[];
+          sessionApplicationUnits?: number;
+      }
     | { kind: "sessionFinished" }
+    | { kind: "sessionApplicationProgress"; completedUnits: number }
+    | {
+          kind: "applicationProgress";
+          completedUnits: number;
+          sync: TaskProgressActive["sync"];
+      }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | {
           kind: "knowledgeSourceUsed";
@@ -145,11 +156,11 @@ export type SyncEvent =
       }
     | {
           /**
-           * A MENU import's apply pass moved to a grid slot. Carries the slot's
+           * A MENU import moved to a grid slot while applying. Carries the slot's
            * identity so the panel can show "slot 13 (Diamond Sword)" instead of
            * a bare op counter. `index`/`count` are the 1-based position and
            * total across the menu's whole apply (clears + item writes + action
-           * syncs), so they climb monotonically across the two passes.
+           * syncs), so they climb monotonically across the whole menu update.
            */
           kind: "menuSlotStarted";
           slot: number;

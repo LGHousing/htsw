@@ -9,19 +9,13 @@ import { applyActionListPlan } from "../../housingSync/actions/apply";
 import type { ActionListPlan } from "../../housingSync/actions/plan";
 import { fullyHydratedActionsFromSlots } from "../../housingSync/actions/hydration/plan";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
-import { emitApplyProgress } from "../../housingSync/actions/apply/progress";
 import {
     actionListPlanFromRead,
     hydrateActionListSync,
     scanActionListSync,
     type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
-import {
-    COST,
-    estimateActionListPhaseUnits,
-    phaseUnitsTotal,
-} from "../../housingSync/progress/costs";
-import type { ProgressScope } from "../../housingSync/syncEvents";
+import { COST } from "../../housingSync/progress/costs";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
@@ -37,6 +31,14 @@ import type { ProjectItemIndex } from "../items/projectItems";
 import type { ImportContext } from "../import/context";
 import type { ItemDiffContext } from "../../housingSync/actions/diff/itemDiffContext";
 import { importableIdentity } from "../identity";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
 import { planMenuChanges, type MenuSlotSnapshot } from "./menuChanges";
@@ -60,9 +62,6 @@ type MenuSlotOp = {
     itemCompare?: { read: string; desired: string };
     /** Desired item's display name, for the live slot label; null when unknown. */
     itemLabel?: string | null;
-    /** Estimated units for this slot's action-list sync — its child-list budget
-     * against the menu-wide apply total. */
-    actionUnits?: number;
     actionsPlan?: ActionListPlan;
 };
 
@@ -81,25 +80,15 @@ function menuItemLabel(item: Item | null | undefined): string | null {
     }
 }
 
-/**
- * Work-item count + total apply units for a menu diff's ops, summed in the
- * order the apply pass visits them (clears, then item writes, then action
- * syncs). Drives the menu-wide apply total so the ETA reflects every slot
- * rather than collapsing to whichever slot's action list is open.
- */
-export function menuApplyTotals(
+export function menuApplyWorkCount(
     ops: ReadonlyArray<{
         clear?: boolean;
         setItem?: unknown;
         syncActions?: unknown;
-        actionUnits?: number;
     }>,
-    menu: { exists: boolean; setSize: number | null }
-): { count: number; units: number } {
+    menu: { setSize: number | null }
+): number {
     let count = 1;
-    let units =
-        COST.commandInterval +
-        (menu.exists ? COST.commandMenuWait : COST.commandMessageWait);
     const clearBeforeResize =
         menu.setSize !== null && ops.some((op) => op.clear === true);
     const remainingCount = clearBeforeResize
@@ -107,35 +96,26 @@ export function menuApplyTotals(
         : ops.length;
     if (clearBeforeResize) {
         count += 2;
-        units += COST.menuClickWait + COST.goBackWait;
     }
     if (menu.setSize !== null) {
         count++;
-        units += COST.menuClickWait * 2;
     }
     if (remainingCount > 0) {
         count++;
-        units += COST.menuClickWait;
     }
     for (const op of ops) {
         if (op.clear === true) {
             count++;
-            units += SLOT_CLEAR_UNITS;
             continue;
         }
         if (op.setItem !== undefined) {
             count++;
-            units += ITEM_WRITE_UNITS;
         }
         if (op.syncActions !== undefined) {
             count++;
-            units +=
-                COST.menuClickWait +
-                (op.actionUnits ?? 0) +
-                COST.goBackWait;
         }
     }
-    return { count, units };
+    return count;
 }
 
 type MenuDiff = {
@@ -150,6 +130,7 @@ export type MenuImportPlan = {
     trustPlan?: ImportableTrustPlan;
     exists: boolean;
     diff: MenuDiff;
+    applicationPlan: ApplicationPlan;
 };
 
 type MenuSlotRead = {
@@ -350,16 +331,19 @@ export function planImportableMenu(
             const actionPlan = actionListPlanFromRead(actionRead.actions);
             if (actionPlan !== null) {
                 op.actionsPlan = actionPlan;
-                op.actionUnits = actionPlan.phaseUnits.applying;
             }
         }
     }
-    return {
+    const planWithoutApplication = {
         kind: "MENU",
         importable: read.importable,
         trustPlan: read.trustPlan,
         exists: read.grid !== null,
         diff,
+    } as const;
+    return {
+        ...planWithoutApplication,
+        applicationPlan: menuApplicationPlan(planWithoutApplication, session),
     };
 }
 
@@ -413,12 +397,6 @@ function buildMenuDiff(
         if (change.setActions) {
             op.syncActions = slot.actions ?? [];
             op.actionsPath = `slots[${change.desiredIndex}].actions`;
-            op.actionUnits = phaseUnitsTotal(
-                estimateActionListPhaseUnits(
-                    op.syncActions,
-                    baselineBySlot.get(change.slot)?.actions
-                )
-            );
         }
         ops.push(op);
     }
@@ -462,135 +440,201 @@ function actionsDiffer(
 export async function applyImportableMenuPlan(
     ctx: TaskContext,
     plan: MenuImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     const { importable, diff } = plan;
     if (plan.exists && diff.setSize === null && diff.ops.length === 0) return;
 
-    // A menu applies slot by slot, but the per-slot action-list sync reuses the
-    // single-list apply machinery, which reports only that one slot's total. Own
-    // the menu-wide total here and run each slot's sync as a child of it, so the
-    // ETA/bar reflect every slot (a bare per-slot total collapses the menu total
-    // to one slot's size after the first, pinning the bar near 100%).
     const events = session.actions.events;
     const exists =
         plan.exists ||
         session.ensuredReferencedShells.menus.has(importable.name.toLowerCase());
-    const totals = menuApplyTotals(diff.ops, { exists, setSize: diff.setSize });
-    const applyingUnits = totals.units;
-    let completedUnits = 0;
+    const workCount = menuApplyWorkCount(diff.ops, { setSize: diff.setSize });
     let workDone = 0;
 
-    const emitMenuTotal = (): void => {
-        emitApplyProgress(
-            events,
-            { kind: "topLevel" },
-            { setup: 0, reading: 0, hydrating: 0, applying: applyingUnits },
-            completedUnits,
-            workDone,
-            totals.count
-        );
-    };
     const startSlot = (slot: number, label: string | null | undefined): void => {
         events?.emit({
             kind: "menuSlotStarted",
             slot,
             label: label ?? null,
-            index: Math.min(totals.count, workDone + 1),
-            count: totals.count,
+            index: Math.min(workCount, workDone + 1),
+            count: workCount,
         });
     };
-    const finishWork = (units: number): void => {
-        completedUnits += units;
-        workDone++;
-        emitMenuTotal();
-    };
 
-    emitMenuTotal();
-    if (!exists) {
-        await ctx.expectAfter(
-            () => ctx.runCommand(`/menu create ${importable.name}`),
-            menuCreated(importable.name)
-        );
-        noteMenuCreated(importable.name);
-    } else {
-        await openMenuEditor(ctx, importable.name);
-    }
-    finishWork(
-        COST.commandInterval +
-            (exists ? COST.commandMenuWait : COST.commandMessageWait)
-    );
+    await application.run("menu", async () => {
+        if (!exists) {
+            await ctx.expectAfter(
+                () => ctx.runCommand(`/menu create ${importable.name}`),
+                menuCreated(importable.name)
+            );
+            noteMenuCreated(importable.name);
+        } else {
+            await openMenuEditor(ctx, importable.name);
+        }
+    });
+    workDone++;
 
     let remainingOps = diff.ops;
     const clearOps = diff.ops.filter((op) => op.clear === true);
     if (diff.setSize !== null && clearOps.length > 0) {
-        await openMenuElements(ctx);
-        finishWork(COST.menuClickWait);
+        await application.run("clear:prepare", () => openMenuElements(ctx));
+        workDone++;
         for (const op of clearOps) {
             startSlot(op.slot, null);
-            await clearMenuSlot(ctx, op.slot);
-            finishWork(SLOT_CLEAR_UNITS);
+            await application.run(clearStepKey(op.slot), () =>
+                clearMenuSlot(ctx, op.slot)
+            );
+            workDone++;
         }
-        await clickGoBack(ctx);
-        finishWork(COST.goBackWait);
+        await application.run("clear:back", () => clickGoBack(ctx));
+        workDone++;
         remainingOps = diff.ops.filter((op) => op.clear !== true);
     }
-    if (diff.setSize !== null) {
-        await setMenuSize(ctx, diff.setSize);
-        finishWork(COST.menuClickWait * 2);
+    const desiredSize = diff.setSize;
+    if (desiredSize !== null) {
+        await application.run("resize", () => setMenuSize(ctx, desiredSize));
+        workDone++;
     }
     if (remainingOps.length === 0) return;
-    await openMenuElements(ctx);
-    finishWork(COST.menuClickWait);
+    await application.run("elements", () => openMenuElements(ctx));
+    workDone++;
 
     // Items first, then actions. RIGHT-click opens the "Select an Item" picker
     // for empty and populated slots alike (its "Clear Item" button lives there
-    // too); setting the item leaves the slot populated, so the second pass can
-    // LEFT-click straight into each slot's action list.
+    // too); setting the item leaves the slot populated, so the later
+    // action-sync loop can LEFT-click straight into each slot's action list.
     for (const op of remainingOps) {
         if (op.clear) {
             startSlot(op.slot, null);
-            await clearMenuSlot(ctx, op.slot);
-            finishWork(SLOT_CLEAR_UNITS);
+            await application.run(clearStepKey(op.slot), () =>
+                clearMenuSlot(ctx, op.slot)
+            );
+            workDone++;
         } else if (op.setItem !== undefined) {
             startSlot(op.slot, op.itemLabel);
-            menuGridClick(op.slot, "RIGHT");
-            await timedWaitForMenu(ctx, "menuClickWait");
-            await selectItemFromOpenInventory(ctx, op.setItem, `menu slot ${op.slot}`);
-            finishWork(ITEM_WRITE_UNITS);
+            const item = op.setItem;
+            await application.run(itemStepKey(op.slot), async () => {
+                menuGridClick(op.slot, "RIGHT");
+                await timedWaitForMenu(ctx, "menuClickWait");
+                await selectItemFromOpenInventory(ctx, item, `menu slot ${op.slot}`);
+            });
+            workDone++;
         }
     }
 
     for (const op of remainingOps) {
         if (op.syncActions === undefined) continue;
         startSlot(op.slot, op.itemLabel);
-        const progressScope: ProgressScope = {
-            kind: "menuSlotActions",
-            baselineApplyUnits: completedUnits,
-            parentSync: { completedUnits: workDone, totalUnits: totals.count },
-        };
-        const openActionsEditor = async (): Promise<void> => {
+        const actionsPlan = requireMenuSlotActionPlan(plan, op);
+        await application.run(actionOpenStepKey(op.slot), async () => {
             menuGridClick(op.slot, "LEFT");
             await timedWaitForMenu(ctx, "menuClickWait");
-        };
-        if (op.actionsPlan !== undefined) {
-            await openActionsEditor();
-            await applyActionListPlan(ctx, op.actionsPlan, {
-                sync: session.actions,
-                progressScope,
-            });
-            await clickGoBack(ctx);
-        }
-        finishWork(
-            COST.menuClickWait +
-                (op.actionUnits ?? 0) +
-                COST.goBackWait
+        });
+        await application.runActionList(
+            actionListStepKey(op.slot),
+            actionsPlan,
+            session.actions,
+            async (sync) => {
+                await applyActionListPlan(ctx, actionsPlan, { sync });
+            }
         );
+        await application.run(actionBackStepKey(op.slot), () => clickGoBack(ctx));
+        workDone++;
     }
 }
 
 export function menuPlanIsNoOp(plan: MenuImportPlan): boolean {
     return plan.exists && plan.diff.setSize === null && plan.diff.ops.length === 0;
+}
+
+type MenuApplicationPlanSource = Pick<MenuImportPlan, "importable" | "exists" | "diff">;
+
+export function menuApplicationPlan(
+    plan: MenuApplicationPlanSource,
+    session?: ImportContext
+): ApplicationPlan {
+    const steps: ApplicationStep[] = [];
+    if (plan.exists && plan.diff.setSize === null && plan.diff.ops.length === 0) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+
+    const exists =
+        plan.exists ||
+        (session?.plannedReferencedShells.menus.has(plan.importable.name.toLowerCase()) ??
+            false);
+    steps.push(
+        workStep(
+            "menu",
+            COST.commandInterval +
+                (exists ? COST.commandMenuWait : COST.commandMessageWait)
+        )
+    );
+
+    let remainingOps = plan.diff.ops;
+    const clearOps = plan.diff.ops.filter((op) => op.clear === true);
+    if (plan.diff.setSize !== null && clearOps.length > 0) {
+        steps.push(workStep("clear:prepare", COST.menuClickWait));
+        for (const op of clearOps) {
+            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+        }
+        steps.push(workStep("clear:back", COST.goBackWait));
+        remainingOps = plan.diff.ops.filter((op) => op.clear !== true);
+    }
+    if (plan.diff.setSize !== null) {
+        steps.push(workStep("resize", COST.menuClickWait * 2));
+    }
+    if (remainingOps.length > 0) {
+        steps.push(workStep("elements", COST.menuClickWait));
+    }
+
+    for (const op of remainingOps) {
+        if (op.clear === true) {
+            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+        } else if (op.setItem !== undefined) {
+            steps.push(workStep(itemStepKey(op.slot), ITEM_WRITE_UNITS));
+        }
+    }
+    for (const op of remainingOps) {
+        if (op.syncActions === undefined) continue;
+        const actionsPlan = requireMenuSlotActionPlan(plan, op);
+        steps.push(workStep(actionOpenStepKey(op.slot), COST.menuClickWait));
+        steps.push(actionListStep(actionListStepKey(op.slot), actionsPlan));
+        steps.push(workStep(actionBackStepKey(op.slot), COST.goBackWait));
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
+}
+
+function requireMenuSlotActionPlan(
+    plan: MenuApplicationPlanSource,
+    op: MenuSlotOp
+): ActionListPlan {
+    if (op.actionsPlan !== undefined) return op.actionsPlan;
+    throw new Error(
+        `Menu "${plan.importable.name}" has no application plan for slot ${op.slot} actions.`
+    );
+}
+
+function clearStepKey(slot: number): string {
+    return `slot:${slot}:clear`;
+}
+
+function itemStepKey(slot: number): string {
+    return `slot:${slot}:item`;
+}
+
+function actionOpenStepKey(slot: number): string {
+    return `slot:${slot}:actions:open`;
+}
+
+function actionListStepKey(slot: number): string {
+    return `slot:${slot}:actions:list`;
+}
+
+function actionBackStepKey(slot: number): string {
+    return `slot:${slot}:actions:back`;
 }
 
 function menuGridClick(slot: number, button: "LEFT" | "RIGHT"): void {
