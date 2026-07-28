@@ -10,7 +10,10 @@ import type {
 } from "./dependencyIndex";
 import { visitItemReferences } from "./dependencies";
 import type { ProjectItemIndex, ProjectItem } from "./projectItems";
-import { itemFieldObservationMatches } from "./observationMatches";
+import {
+    itemFieldInteractDataWarning,
+    itemFieldObservationMatches,
+} from "./observationMatches";
 import type { ItemVerificationTracker } from "./verifiedDependencies";
 
 type DesiredItemFields = Map<string, ProjectItem>;
@@ -26,6 +29,7 @@ export function createItemDiffContext(
 ): ItemDiffContext {
     const invalidations: ItemInvalidations[] = [];
     const desiredFields = new WeakMap<Action | Condition, DesiredItemFields>();
+    const warningDetails = new Set<string>();
 
     for (const importable of importables) {
         invalidations.push(
@@ -71,6 +75,8 @@ export function createItemDiffContext(
         desired: Action | Condition
     ): boolean => {
         verification?.recordPair(desired, observed as Action | Condition);
+        const warnings = fieldWarnings(observed as Action | Condition, desired);
+        for (const warning of warnings) warningDetails.add(warning);
         if (observations === undefined) return false;
         const fields = desiredFields.get(desired);
         if (fields === undefined) return false;
@@ -89,6 +95,28 @@ export function createItemDiffContext(
             }
         }
         return false;
+    };
+
+    const fieldWarnings = (
+        observed: Action | Condition,
+        desired: Action | Condition
+    ): string[] => {
+        if (observations === undefined) return [];
+        const fields = desiredFields.get(desired);
+        if (fields === undefined) return [];
+        const warnings: string[] = [];
+        for (const [property, entry] of fields) {
+            const warning = itemFieldInteractDataWarning(
+                observations,
+                observed,
+                property,
+                entry,
+                dependencies,
+                housingUuid
+            );
+            if (warning !== undefined) warnings.push(warning);
+        }
+        return warnings;
     };
 
     const actionSubtreeObservedItemsDiffer = (
@@ -160,6 +188,10 @@ export function createItemDiffContext(
                 desiredConditionIsInvalidated(desired) ||
                 (observed !== null && observedFieldsDiffer(observed, desired))
             );
+        },
+        fieldWarnings,
+        warningDetails() {
+            return Array.from(warningDetails);
         },
     };
 }

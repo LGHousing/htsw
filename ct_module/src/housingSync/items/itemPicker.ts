@@ -9,7 +9,10 @@ import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../menus/packets";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
-import { canonicalLiveItemKey } from "./itemNbt";
+import { itemToHtswTag } from "../../utils/nbt";
+import { stableStringify } from "../../utils/helpers";
+import { canonicalItemShellTagKey } from "./itemNbt";
+import { tagChild, type TagLike } from "./itemTag";
 import {
     inventorySlotToOpenContainerSlot,
     readInventorySlot,
@@ -156,7 +159,30 @@ export async function selectItemFromOpenInventory(
 }
 
 function canonicalStacksEqual(left: MCItemStack, right: MCItemStack): boolean {
-    return canonicalLiveItemKey(new Item(left)) === canonicalLiveItemKey(new Item(right));
+    return writeItemTagsEqual(
+        itemToHtswTag(new Item(left)),
+        itemToHtswTag(new Item(right))
+    );
+}
+
+export function writeItemTagsEqual(candidate: TagLike, desired: TagLike): boolean {
+    if (canonicalItemShellTagKey(candidate) !== canonicalItemShellTagKey(desired)) {
+        return false;
+    }
+
+    const candidateInteractData = interactDataTag(candidate);
+    const desiredInteractData = interactDataTag(desired);
+    if (desiredInteractData === undefined) {
+        return candidateInteractData === undefined;
+    }
+    return (
+        candidateInteractData !== undefined &&
+        stableStringify(candidateInteractData) === stableStringify(desiredInteractData)
+    );
+}
+
+function interactDataTag(item: TagLike): TagLike | undefined {
+    return tagChild(tagChild(tagChild(item, "tag"), "ExtraAttributes"), "interact_data");
 }
 
 function slotMatchesStack(

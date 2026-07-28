@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { Tag } from "htsw/nbt";
 import type { Action, Importable, ImportableItem } from "htsw/types";
 
@@ -187,6 +187,46 @@ describe("item dependency index", () => {
         );
 
         expect(context.actionsDiffer(observedAction, desiredAction)).toBe(true);
+        expect(context.warningDetails?.()).toEqual([
+            "⚠ field item has unexpected house interact_data — consume/Metadata checks will fail",
+        ]);
+    });
+
+    test("warns and repairs a field missing the cached house interaction blob", () => {
+        const key = item("key", 1, [give("token")]);
+        const desiredAction = give("key");
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "use key",
+            actions: [desiredAction],
+        };
+        const importables = [key, owner];
+        const registry = createProjectItemIndex(importables);
+        const index = createItemDependencyIndex(importables, registry);
+        const blobPath = `./htsw/.cache/house/interact_data/${index.clickActionsFingerprint(key)}.snbt`;
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => path === blobPath,
+            read: (path: string) => (path === blobPath ? "{version:1b}" : null),
+        });
+        const observations = createItemFieldObservationRecorder();
+        const observedAction = give("key");
+        observations.record(observedAction, "itemName", {
+            snbt: '{id:"minecraft:stone",tag:{marker:1}}',
+            canonicalKey: canonicalItemShellTagKey(key.nbt),
+        });
+        const context = createItemDiffContext(
+            [owner],
+            index,
+            registry,
+            "house",
+            () => index.snapshotOf(owner),
+            observations
+        );
+
+        expect(context.actionsDiffer(observedAction, desiredAction)).toBe(true);
+        expect(context.warningDetails?.()).toEqual([
+            "⚠ field item missing house interact_data — consume/Metadata checks will fail",
+        ]);
     });
 
     test("verified dependency snapshots include every fully observed target", () => {
@@ -262,11 +302,13 @@ describe("item dependency index", () => {
         );
 
         expect(verified.dependencies).toEqual([
-            index.snapshotOf(owner).dependencies.find(
-                (dependency) =>
-                    dependency.target.kind === "named" &&
-                    dependency.target.name === "first"
-            ),
+            index
+                .snapshotOf(owner)
+                .dependencies.find(
+                    (dependency) =>
+                        dependency.target.kind === "named" &&
+                        dependency.target.name === "first"
+                ),
         ]);
         expect(verified).not.toEqual(index.snapshotOf(owner));
     });

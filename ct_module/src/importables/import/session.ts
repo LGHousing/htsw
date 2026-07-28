@@ -60,10 +60,7 @@ import { applyReferencedShellPlan, planMissingReferencedShells } from "./referen
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
 import { readInteractDataCache } from "../items/interactDataCache";
-import {
-    getOverwriteWarningMode,
-    type OverwriteWarningMode,
-} from "../overwriteWarning";
+import { getOverwriteWarningMode, type OverwriteWarningMode } from "../overwriteWarning";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -265,16 +262,16 @@ async function runImportSessionInner(
                 tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
                     ? 1
                     : estimateImportableUnits(
-                      importable,
-                      tp?.entry ?? null,
-                      tp?.trustMode === true,
-                      importable.type === "ITEM" &&
-                          readInteractDataCache(
-                              importable,
-                              itemDependencies,
-                              selection.housingUuid
-                          ) !== undefined
-                  ),
+                          importable,
+                          tp?.entry ?? null,
+                          tp?.trustMode === true,
+                          importable.type === "ITEM" &&
+                              readInteractDataCache(
+                                  importable,
+                                  itemDependencies,
+                                  selection.housingUuid
+                              ) !== undefined
+                      ),
         };
     });
 
@@ -316,10 +313,7 @@ async function runImportSessionInner(
         chunkStart += SCAN_HYDRATE_CHUNK_SIZE
     ) {
         const chunkReads: typeof reads = [];
-        const chunkEnd = Math.min(
-            rowsMeta.length,
-            chunkStart + SCAN_HYDRATE_CHUNK_SIZE
-        );
+        const chunkEnd = Math.min(rowsMeta.length, chunkStart + SCAN_HYDRATE_CHUNK_SIZE);
         for (let i = chunkStart; i < chunkEnd; i++) {
             const row = rowsMeta[i];
             const cacheEntry = row.trustPlan?.entry ?? null;
@@ -333,10 +327,7 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            if (
-                row.trustPlan?.wholeImportableTrusted &&
-                row.importable.type !== "ITEM"
-            ) {
+            if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
                 trustedRows.push(row);
                 continue;
@@ -474,6 +465,10 @@ async function runImportSessionInner(
         } else {
             plans.push({ row, plan });
         }
+    }
+
+    for (const warning of itemDiff.warningDetails?.() ?? []) {
+        ctx.displayMessage(`&e[htsw] ${warning}`);
     }
 
     if (session.actions.conflicts.length > 0) {
@@ -804,10 +799,7 @@ async function maybeWritePartialImportCache(
 ): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
     if (partial === null) return false;
-    const itemDependencies = verifiedSnapshotFor(
-        plan.importable,
-        verifiedContext
-    );
+    const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
     if (
         !(await tryWriteImportableCache(ctx, partial, "importer", housingUuid, {
             itemDependencies,
@@ -837,10 +829,7 @@ async function writeObservedPlanCaches(
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
-        const itemDependencies = verifiedSnapshotFor(
-            plan.importable,
-            verifiedContext
-        );
+        const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
         if (
             !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
                 itemDependencies,

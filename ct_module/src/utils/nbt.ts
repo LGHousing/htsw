@@ -343,7 +343,11 @@ export function extractInteractDataSnbt(itemSnbt: string): string | null {
     } catch (_e) {
         return null;
     }
-    const interactData = getNestedCompound(tag, INTERACT_DATA_PATH);
+    return extractInteractDataSnbtFromNbt(tag);
+}
+
+export function extractInteractDataSnbtFromNbt(itemNbt: Tag): string | null {
+    const interactData = getNestedCompound(itemNbt, INTERACT_DATA_PATH);
     if (interactData === undefined) return null;
     return htswNbt.printSnbt(interactData, { pretty: false });
 }
@@ -357,18 +361,22 @@ function ensureCompoundChild(parent: TagCompound, key: string): TagCompound {
 }
 
 /**
- * Build an item from a source cosmetic NBT with a cached `interact_data` blob
+ * Build item NBT from a source cosmetic NBT with a cached `interact_data` blob
  * spliced back into `tag.ExtraAttributes.interact_data`. The inverse of
  * `extractInteractDataSnbt`: cosmetic + actions-blob → the real housing item.
  */
-export function itemWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string): Item {
+export function itemNbtWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string): Tag {
     const root = cloneTag(cosmeticNbt);
     if (root.type === "compound") {
         const tagCompound = ensureCompoundChild(root, "tag");
         const extra = ensureCompoundChild(tagCompound, "ExtraAttributes");
         extra.value.interact_data = htswNbt.parseSnbtText(interactDataSnbt);
     }
-    return getItemFromNbt(root);
+    return root;
+}
+
+export function itemWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string): Item {
+    return getItemFromNbt(itemNbtWithInteractData(cosmeticNbt, interactDataSnbt));
 }
 
 /**
