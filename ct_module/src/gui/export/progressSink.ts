@@ -30,11 +30,11 @@ import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
 import {
-    clearHousingOperation,
-    setHousingOperationScanning,
-    startHousingOperation,
-    updateHousingOperation,
-} from "../right-panel/import-tab/housingOperation";
+    clearHousingOperationProgress,
+    setHousingOperationProgressScanning,
+    startHousingOperationProgress,
+    updateHousingOperationProgress,
+} from "../right-panel/import-tab/housingOperationProgress";
 import {
     addToQueue,
     makeExportQueueItem,
@@ -67,7 +67,7 @@ export function createExportProgressSink(
 
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        updateHousingOperation(state.progress);
+        updateHousingOperationProgress(state.progress);
     };
 
     // Exports never apply changes, so per-item costs are final once hydration
@@ -153,7 +153,7 @@ export function createExportProgressSink(
                 rows,
                 initialTotalUnits: Math.max(1, total),
             });
-            startHousingOperation({
+            startHousingOperationProgress({
                 progress: state.progress,
                 verb,
                 path: null,
@@ -176,7 +176,7 @@ export function createExportProgressSink(
         scanStarted() {
             if (names.length === 0) return;
             stagedScanActive = true;
-            setHousingOperationScanning(true);
+            setHousingOperationProgressScanning(true);
         },
         item(index, name) {
             if (names.length === 0) return;
@@ -200,7 +200,7 @@ export function createExportProgressSink(
             currentIndex = index;
             currentClosed = false;
             livePreview.activate(index, false);
-            setHousingOperationScanning(false);
+            setHousingOperationProgressScanning(false);
             lockTotals();
             emit({
                 kind: "importableReactivated",
@@ -240,7 +240,7 @@ export function createExportProgressSink(
                 finishCurrent("imported");
                 emit({ kind: "sessionFinished" });
             }
-            clearHousingOperation();
+            clearHousingOperationProgress();
             livePreview.clear();
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;

@@ -13,11 +13,11 @@ import {
     getTaskProgress,
 } from "./taskProgress";
 import {
-    finishHousingOperation,
-    setHousingOperationPath,
-    startHousingOperation,
-    updateHousingOperation,
-} from "./housingOperation";
+    finishHousingOperationProgress,
+    setHousingOperationProgressPath,
+    startHousingOperationProgress,
+    updateHousingOperationProgress,
+} from "./housingOperationProgress";
 import {
     addSessionQueueItem,
     addToQueue,
@@ -382,9 +382,9 @@ function createSyncEventHandler(args: {
             traceSyncEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             if (state.progress !== before) {
-                updateHousingOperation(state.progress);
+                updateHousingOperationProgress(state.progress);
             }
-            setHousingOperationPath(activeViewPath);
+            setHousingOperationProgressPath(activeViewPath);
         },
         counts: () => {
             let imported = 0;
@@ -704,7 +704,7 @@ async function prepareAndStartImport(
     for (let i = 1; i < batches.length; i++) {
         rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    startHousingOperation({
+    startHousingOperationProgress({
         progress: createTaskProgress({
             totalUnits: 1,
             rows,
@@ -889,7 +889,7 @@ async function prepareAndStartImport(
                         : errorMessage(unexpectedError));
                 showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
             }
-            finishHousingOperation(failureMessage);
+            finishHousingOperationProgress(failureMessage);
             // End the queue session after the 1.5s done-state window. A fully
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the

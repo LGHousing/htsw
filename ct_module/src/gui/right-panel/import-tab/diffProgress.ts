@@ -9,12 +9,12 @@ import { initialReducerState, reduce } from "../../../housingSync/progress/reduc
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import type { SyncEvent } from "../../../housingSync/syncEvents";
 import {
-    clearHousingOperation,
-    finishHousingOperation,
-    setHousingOperationScanning,
-    startHousingOperation,
-    updateHousingOperation,
-} from "./housingOperation";
+    clearHousingOperationProgress,
+    finishHousingOperationProgress,
+    setHousingOperationProgressScanning,
+    startHousingOperationProgress,
+    updateHousingOperationProgress,
+} from "./housingOperationProgress";
 import { createReadLivePreview, type ReadLivePreview } from "./readLivePreview";
 
 export type DiffProgressSession = {
@@ -55,7 +55,7 @@ export function createDiffProgressSession(
     let started = false;
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        updateHousingOperation(state.progress);
+        updateHousingOperationProgress(state.progress);
     };
     const livePreviews: ReadLivePreview[] = [];
 
@@ -72,7 +72,11 @@ export function createDiffProgressSession(
                 rows,
                 initialTotalUnits: Math.max(1, totalUnits),
             });
-            startHousingOperation({ progress: state.progress, verb: "diff", path: manifest });
+            startHousingOperationProgress({
+                progress: state.progress,
+                verb: "diff",
+                path: manifest,
+            });
         },
         sinkFor(type) {
             let names: readonly string[] = [];
@@ -89,7 +93,7 @@ export function createDiffProgressSession(
                 },
                 scanStarted() {
                     scanPass = true;
-                    setHousingOperationScanning(true);
+                    setHousingOperationProgressScanning(true);
                 },
                 item(index, name) {
                     currentIndex = index;
@@ -112,7 +116,7 @@ export function createDiffProgressSession(
                     const name = names[index];
                     const key = importableKey(type, name);
                     livePreview.activate(index, false);
-                    setHousingOperationScanning(false);
+                    setHousingOperationProgressScanning(false);
                     emit({ kind: "sessionTotalsLocked" });
                     emit({
                         kind: "importableReactivated",
@@ -155,18 +159,18 @@ export function createDiffProgressSession(
         complete(summary) {
             emit({ kind: "sessionFinished" });
             clearLivePreviews();
-            finishHousingOperation(null, {
+            finishHousingOperationProgress(null, {
                 title: "Diff complete",
                 message: summary,
             });
         },
         fail(message) {
             clearLivePreviews();
-            finishHousingOperation(message);
+            finishHousingOperationProgress(message);
         },
         clear() {
             clearLivePreviews();
-            clearHousingOperation();
+            clearHousingOperationProgress();
         },
     };
 }

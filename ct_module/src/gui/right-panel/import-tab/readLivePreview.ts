@@ -9,7 +9,7 @@ import {
     setCurrent,
     setObservedTopLevel,
 } from "./livePreview";
-import { setHousingOperationPath } from "./housingOperation";
+import { setHousingOperationProgressPath } from "./housingOperationProgress";
 
 export type ReadLivePreview = {
     events: SyncEventHandler;
@@ -70,7 +70,7 @@ export function createReadLivePreview(
             for (let i = 0; i < latestSnapshots.length; i++) latestSnapshots[i] = null;
             if (paths.length > 0) {
                 resetPreview(paths[0]);
-                setHousingOperationPath(paths[0]);
+                setHousingOperationProgressPath(paths[0]);
             }
         },
         activate(index, reset) {
@@ -82,7 +82,7 @@ export function createReadLivePreview(
                 resetPreview(path);
             }
             setCurrent(path, null);
-            setHousingOperationPath(path);
+            setHousingOperationProgressPath(path);
         },
         finish(index) {
             if (index < 0 || index >= paths.length) return;
@@ -95,7 +95,7 @@ export function createReadLivePreview(
         },
         clear() {
             activeIndex = null;
-            setHousingOperationPath(null);
+            setHousingOperationProgressPath(null);
         },
     };
 }

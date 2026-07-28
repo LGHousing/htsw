@@ -11,7 +11,7 @@ import {
     type SessionVerb,
 } from "./taskProgress";
 
-export type HousingOperationStart = {
+export type HousingOperationProgressStart = {
     progress: TaskProgress;
     verb: SessionVerb;
     path: string | null;
@@ -19,7 +19,9 @@ export type HousingOperationStart = {
     trustMode?: boolean | null;
 };
 
-export function startHousingOperation(options: HousingOperationStart): void {
+export function startHousingOperationProgress(
+    options: HousingOperationProgressStart
+): void {
     setTaskProgress(options.progress);
     setSessionVerb(options.verb);
     setEtaRough(options.etaRough === true);
@@ -27,19 +29,19 @@ export function startHousingOperation(options: HousingOperationStart): void {
     setActiveTaskPath(options.path);
 }
 
-export function updateHousingOperation(progress: TaskProgress): void {
+export function updateHousingOperationProgress(progress: TaskProgress): void {
     setTaskProgress(progress);
 }
 
-export function setHousingOperationPath(path: string | null): void {
+export function setHousingOperationProgressPath(path: string | null): void {
     setActiveTaskPath(path);
 }
 
-export function setHousingOperationScanning(scanning: boolean): void {
+export function setHousingOperationProgressScanning(scanning: boolean): void {
     setEtaEstimating(scanning);
 }
 
-export function finishHousingOperation(
+export function finishHousingOperationProgress(
     failure: string | null,
     summary: FinishedTaskSummary | null = null
 ): void {
@@ -47,7 +49,7 @@ export function finishHousingOperation(
     finishTaskProgress(failure, summary);
 }
 
-export function clearHousingOperation(): void {
+export function clearHousingOperationProgress(): void {
     setActiveTaskPath(null);
     setTaskProgress(null);
 }

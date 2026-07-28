@@ -266,7 +266,7 @@ export async function readLiveMenu(
                       currentSlotReadingUnits =
                           slotRoundTripUnits + payload.phaseUnits.reading;
                       currentSlotHydratingUnits = payload.phaseUnits.hydrating;
-                  currentSlotCompletedUnits =
+                      currentSlotCompletedUnits =
                           COST.menuClickWait + payload.completedUnits;
                       emitProgress();
                   },
