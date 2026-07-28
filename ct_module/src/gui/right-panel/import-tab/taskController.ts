@@ -271,14 +271,12 @@ function createSyncEventHandler(args: {
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
-            const sourcePath =
-                imp === undefined ? null : (importableSourcePath(imp) ?? null);
-            if (sourcePath !== null && e.status !== "failed") {
+            if (imp === undefined) return;
+            const sourcePath = importableSourcePath(imp);
+            if (sourcePath !== undefined && e.status !== "failed") {
                 markPreviewCompleted(sourcePath);
             }
-            if (imp !== undefined && e.status === "imported") {
-                invalidateSourceDiffForImportable(imp);
-            }
+            if (e.status === "imported") invalidateSourceDiffForImportable(imp);
         },
         importableReactivated: (e) => {
             // Pass-2 (apply) re-activates an importable previously parked

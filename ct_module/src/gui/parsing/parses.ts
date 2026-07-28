@@ -745,20 +745,15 @@ export function invalidateParseCacheEntry(rawPath: string): void {
 export function disposeParseCachesUnder(rawPath: string): void {
     const root = canonicalPath(rawPath);
     const prefix = root.endsWith("/") ? root : `${root}/`;
+    const matches = (path: string): boolean => path === root || path.startsWith(prefix);
     const disposed: CachedParse[] = [];
     for (const entry of cache.values()) {
-        if (entry.canonicalPath === root || entry.canonicalPath.startsWith(prefix)) {
-            disposed.push(entry);
-        }
+        if (matches(entry.canonicalPath)) disposed.push(entry);
     }
     for (const entry of disposed) invalidateParseDerivedCaches(entry);
-    const removed = cache.deleteWhere((path) => path === root || path.startsWith(prefix));
+    const removed = cache.deleteWhere(matches);
     canonicalPathCache.deleteWhere(
-        (raw, canonical) =>
-            raw === root ||
-            raw.startsWith(prefix) ||
-            canonical === root ||
-            canonical.startsWith(prefix)
+        (raw, canonical) => matches(raw) || matches(canonical)
     );
     if (removed === 0) return;
     parseCacheRevision++;
