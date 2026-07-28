@@ -4,6 +4,7 @@ type DiffLine = {
 };
 
 const CONTEXT_LINES = 3;
+const MAX_LCS_CELLS = 20_000;
 
 function linesOf(text: string): string[] {
     if (text === "") return [];
@@ -102,7 +103,20 @@ export function unifiedDiff(
     sourcePath: string,
     livePath: string
 ): string {
-    const lines = diffLines(linesOf(sourceText), linesOf(liveText));
+    const sourceLines = linesOf(sourceText);
+    const liveLines = linesOf(liveText);
+    if (
+        sourceLines.length + 1 >
+        MAX_LCS_CELLS / Math.max(1, liveLines.length + 1)
+    ) {
+        return (
+            `# HTSW diff body omitted: ${sourceLines.length} source lines × ` +
+            `${liveLines.length} live lines exceeds the ${MAX_LCS_CELLS}-cell comparison limit.\n` +
+            `--- ${sourcePath}\n` +
+            `+++ ${livePath}\n`
+        );
+    }
+    const lines = diffLines(sourceLines, liveLines);
     const changes: number[] = [];
     for (let i = 0; i < lines.length; i++) {
         if (lines[i].kind !== "context") changes.push(i);

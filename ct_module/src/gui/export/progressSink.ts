@@ -30,10 +30,10 @@ import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
 import {
+    clearTaskProgress,
     setEtaEstimating,
-    setEtaRough,
     setTaskProgress,
-    setSessionVerb,
+    startTaskProgress,
 } from "../right-panel/import-tab/taskProgress";
 import {
     addToQueue,
@@ -42,7 +42,7 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "../right-panel/import-tab/queue";
-import { createExportLivePreview } from "./livePreview";
+import { createReadLivePreview } from "../right-panel/import-tab/readLivePreview";
 
 export function createExportProgressSink(
     type: Importable["type"],
@@ -57,11 +57,11 @@ export function createExportProgressSink(
     let currentIndex: number | null = null;
     /** True once the current item reached a terminal status (failed early). */
     let currentClosed = false;
-    /** True between `scanStarted` and the first pass-2 reactivation. */
-    let scanPass = false;
+    /** True after a staged reader announces that it is scanning. */
+    let stagedScanActive = false;
     let totalsLocked = false;
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
-    const livePreview = createExportLivePreview(type, canonicalImportJsonPath);
+    const livePreview = createReadLivePreview(type, canonicalImportJsonPath);
     const keyFor = (name: string): string =>
         queueRowKey(type, name, canonicalImportJsonPath);
 
@@ -70,10 +70,10 @@ export function createExportProgressSink(
         setTaskProgress(state.progress);
     };
 
-    // Exports have no apply pass, so per-item costs are final once the last
-    // pass begins: after the scan for staged reads, immediately for direct
-    // ones. Locking then lets the footer show a real total ETA instead of
-    // "total estimating…" forever (only imports emit this event otherwise).
+    // Exports never apply changes, so per-item costs are final once hydration
+    // begins for staged reads, or immediately for direct reads. Locking then
+    // lets the footer show a real total ETA instead of "total estimating…"
+    // forever (only imports emit this event otherwise).
     const lockTotals = (): void => {
         if (totalsLocked) return;
         totalsLocked = true;
@@ -139,24 +139,27 @@ export function createExportProgressSink(
         start(ns) {
             names = ns;
             if (ns.length === 0) return;
-            livePreview.start(ns);
             const resolved = resolveUnits(ns);
             units = resolved.units;
             let total = 0;
             for (const u of units) total += u;
-            emit({
+            const rows = ns.map((n, i) => ({
+                key: keyFor(n),
+                status: "queued" as const,
+                totalUnits: units[i],
+            }));
+            state = reduce(state, {
                 kind: "sessionStarted",
-                rows: ns.map((n, i) => ({
-                    key: keyFor(n),
-                    status: "queued" as const,
-                    totalUnits: units[i],
-                })),
+                rows,
                 initialTotalUnits: Math.max(1, total),
             });
-            // After the first emit: the null→non-null progress transition
-            // resets verb/rough to their import defaults, so set them last.
-            setSessionVerb(verb);
-            setEtaRough(resolved.knownCount === 0);
+            startTaskProgress({
+                progress: state.progress,
+                verb,
+                path: null,
+                etaRough: resolved.knownCount === 0,
+            });
+            livePreview.start(ns);
             for (const n of ns) {
                 const item = makeExportQueueItem(
                     verb,
@@ -172,7 +175,7 @@ export function createExportProgressSink(
         },
         scanStarted() {
             if (names.length === 0) return;
-            scanPass = true;
+            stagedScanActive = true;
             setEtaEstimating(true);
         },
         item(index, name) {
@@ -180,7 +183,7 @@ export function createExportProgressSink(
             currentIndex = index;
             currentClosed = false;
             livePreview.activate(index, true);
-            if (!scanPass) lockTotals();
+            if (!stagedScanActive) lockTotals();
             emit({
                 kind: "importableStarted",
                 key: keyFor(name),
@@ -237,7 +240,7 @@ export function createExportProgressSink(
                 finishCurrent("imported");
                 emit({ kind: "sessionFinished" });
             }
-            setTaskProgress(null);
+            clearTaskProgress();
             livePreview.clear();
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;

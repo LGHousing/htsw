@@ -6,7 +6,7 @@ import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
 import type { ItemFieldContent } from "../items/fieldContent";
 import { prettyCanonicalItemTag } from "../items/itemNbt";
 
-type ActionListConflictDifference = {
+export type ActionListConflictDifference = {
     path: string;
     live: string;
     source: string;
@@ -14,11 +14,6 @@ type ActionListConflictDifference = {
 
 export type ActionListConflictDetails = {
     differences: ActionListConflictDifference[];
-    itemDifferences?: {
-        path: string;
-        liveSnbt: string;
-        sourceSnbt: string;
-    }[];
     moreCount: number;
 };
 
@@ -27,10 +22,8 @@ const MAX_VALUE_LENGTH = 48;
 
 type DifferenceCollector = {
     differences: ActionListConflictDifference[];
-    itemDifferences: NonNullable<ActionListConflictDetails["itemDifferences"]>;
     liveItemContent?: ItemFieldContent;
     sourceItemContent?: ItemFieldContent;
-    total: number;
 };
 
 function actionLabel(index: number, type: string): string {
@@ -53,12 +46,10 @@ function addDifference(
     live: string | undefined,
     source: string | undefined
 ): void {
-    collector.total++;
-    if (collector.differences.length === MAX_DIFFERENCES) return;
     collector.differences.push({
         path,
-        live: compact(live),
-        source: compact(source),
+        live: live ?? "<unset>",
+        source: source ?? "<unset>",
     });
 }
 
@@ -81,15 +72,16 @@ function compareScalarFields(
                 field.prop
             );
             if (liveItem?.key !== sourceItem?.key) {
-                const itemPath = `${path} · ${field.prop}`;
-                addDifference(collector, itemPath, "<item>", "<item>");
-                if (liveItem !== undefined && sourceItem !== undefined) {
-                    collector.itemDifferences.push({
-                        path: itemPath,
-                        liveSnbt: prettyCanonicalItemTag(liveItem.tag),
-                        sourceSnbt: prettyCanonicalItemTag(sourceItem.tag),
-                    });
-                }
+                addDifference(
+                    collector,
+                    `${path} · ${field.prop}`,
+                    liveItem === undefined
+                        ? undefined
+                        : prettyCanonicalItemTag(liveItem.tag),
+                    sourceItem === undefined
+                        ? undefined
+                        : prettyCanonicalItemTag(sourceItem.tag)
+                );
             }
             continue;
         }
@@ -196,6 +188,15 @@ function compareEntries<T extends { type: string }>(
     }
 }
 
+function compareAction(
+    collector: DifferenceCollector,
+    path: string,
+    live: Action,
+    source: Action
+): void {
+    compareActionFields(collector, path, live, source, true);
+}
+
 function compareChildAction(
     collector: DifferenceCollector,
     path: string,
@@ -281,33 +282,40 @@ export function actionListConflictDetails(
     liveItemContent?: ItemFieldContent,
     sourceItemContent?: ItemFieldContent
 ): ActionListConflictDetails {
+    return summarizeActionListConflictDifferences(
+        actionListConflictDifferences(
+            live,
+            source,
+            liveItemContent,
+            sourceItemContent
+        )
+    );
+}
+
+export function summarizeActionListConflictDifferences(
+    differences: readonly ActionListConflictDifference[]
+): ActionListConflictDetails {
+    return {
+        differences: differences.slice(0, MAX_DIFFERENCES).map((difference) => ({
+            path: difference.path,
+            live: compact(difference.live),
+            source: compact(difference.source),
+        })),
+        moreCount: Math.max(0, differences.length - MAX_DIFFERENCES),
+    };
+}
+
+export function actionListConflictDifferences(
+    live: readonly Action[],
+    source: readonly Action[],
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
+): ActionListConflictDifference[] {
     const collector: DifferenceCollector = {
         differences: [],
-        itemDifferences: [],
         liveItemContent,
         sourceItemContent,
-        total: 0,
     };
-    compareEntries(
-        collector,
-        "",
-        live,
-        source,
-        (current, path, liveAction, sourceAction) =>
-            compareActionFields(
-                current,
-                path,
-                liveAction,
-                sourceAction,
-                true
-            ),
-        actionLabel
-    );
-    return {
-        differences: collector.differences,
-        ...(collector.itemDifferences.length > 0
-            ? { itemDifferences: collector.itemDifferences }
-            : {}),
-        moreCount: collector.total - collector.differences.length,
-    };
+    compareEntries(collector, "", live, source, compareAction, actionLabel);
+    return collector.differences;
 }

@@ -17,7 +17,7 @@ import {
     deleteObservedCondition,
     setOpenConditionInverted,
 } from "./conditionOps";
-import type { ApplyConditionListOptions } from "./types";
+import type { ApplyPlannedConditionListOptions } from "./types";
 
 type LiveConditionListEntry = {
     entryId: number;
@@ -44,7 +44,7 @@ export class ConditionListApplyRun {
         private readonly ctx: TaskContext,
         observedCount: number,
         private readonly diff: ConditionListDiff,
-        private readonly options: ApplyConditionListOptions,
+        private readonly options: ApplyPlannedConditionListOptions,
         private readonly phaseUnits: PhaseUnits
     ) {
         for (let i = 0; i < observedCount; i++) {

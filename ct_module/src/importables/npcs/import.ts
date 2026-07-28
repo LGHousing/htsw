@@ -24,6 +24,15 @@ import {
     validateSupportedNpcFields,
 } from "./housing";
 import { openNpcEditorForPos, type NpcListEntry } from "./listNpcs";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type NpcImportPlan = {
     kind: "NPC";
@@ -153,14 +162,19 @@ export function planImportableNpc(read: NpcRead): NpcImportPlan {
 export async function applyImportableNpcPlan(
     ctx: TaskContext,
     plan: NpcImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     if (!plan.nameHandled) {
-        await renameNpcIfNeeded(ctx, plan.liveNpc, plan.importable, session.npcLookup);
+        await application.run("rename", () =>
+            renameNpcIfNeeded(ctx, plan.liveNpc, plan.importable, session.npcLookup)
+        );
     }
 
     if (plan.leftPlan !== null || !plan.leftClickRedirectHandled) {
-        await openNpcLeftClickActions(ctx, plan.importable, session.npcLookup);
+        await application.run("openLeftActions", () =>
+            openNpcLeftClickActions(ctx, plan.importable, session.npcLookup)
+        );
         if (!plan.leftClickRedirectHandled) {
             const redirect = plan.importable.leftClickRedirect;
             if (redirect === undefined) {
@@ -168,16 +182,32 @@ export async function applyImportableNpcPlan(
                     "NPC left-click redirect became unavailable during apply"
                 );
             }
-            await setLeftClickRedirect(ctx, redirect);
+            await application.run("leftClickRedirect", () =>
+                setLeftClickRedirect(ctx, redirect)
+            );
         }
-        if (plan.leftPlan !== null) {
-            await applyActionListPlan(ctx, plan.leftPlan, { sync: session.actions });
+        const leftPlan = plan.leftPlan;
+        if (leftPlan !== null) {
+            await application.runActionList(
+                "leftActions",
+                leftPlan,
+                session.actions,
+                (sync) => applyActionListPlan(ctx, leftPlan, { sync })
+            );
         }
     }
 
-    if (plan.rightPlan !== null) {
-        await openNpcRightClickActions(ctx, plan.importable, session.npcLookup);
-        await applyActionListPlan(ctx, plan.rightPlan, { sync: session.actions });
+    const rightPlan = plan.rightPlan;
+    if (rightPlan !== null) {
+        await application.run("openRightActions", () =>
+            openNpcRightClickActions(ctx, plan.importable, session.npcLookup)
+        );
+        await application.runActionList(
+            "rightActions",
+            rightPlan,
+            session.actions,
+            (sync) => applyActionListPlan(ctx, rightPlan, { sync })
+        );
     }
 }
 
@@ -186,4 +216,37 @@ export function npcPlanIsNoOp(plan: NpcImportPlan): boolean {
     const rightNoOp =
         plan.rightPlan === null || plan.rightPlan.diff.operations.length === 0;
     return plan.nameHandled && plan.leftClickRedirectHandled && leftNoOp && rightNoOp;
+}
+
+export function npcPlanApplicationUnits(plan: NpcImportPlan): number {
+    return npcApplicationPlan(plan).totalUnits;
+}
+
+export function npcApplicationPlan(plan: NpcImportPlan): ApplicationPlan {
+    const steps: ApplicationStep[] = [];
+    if (npcPlanIsNoOp(plan)) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+    const openEditorUnits =
+        COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 3;
+    if (!plan.nameHandled) {
+        steps.push(workStep("rename", openEditorUnits + COST.chatInput));
+    }
+    if (plan.leftPlan !== null || !plan.leftClickRedirectHandled) {
+        steps.push(workStep("openLeftActions", openEditorUnits + COST.menuClickWait));
+        if (!plan.leftClickRedirectHandled) {
+            steps.push(workStep("leftClickRedirect", COST.menuClickWait));
+        }
+        if (plan.leftPlan !== null) {
+            steps.push(actionListStep("leftActions", plan.leftPlan));
+        }
+    }
+    if (plan.rightPlan !== null) {
+        steps.push(
+            workStep("openRightActions", openEditorUnits + COST.menuClickWait),
+            actionListStep("rightActions", plan.rightPlan)
+        );
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
 }

@@ -5,7 +5,7 @@ import { conditional, message, playSound } from "./utils";
 import type { Action } from "htsw/types";
 
 describe("action-list conflict details", () => {
-    it("ignores item operand aliases and reports canonical item changes", () => {
+    it("compares item fields by canonical content", () => {
         const source = {
             type: "GIVE_ITEM",
             itemName: "ingredient_bag.snbt",
@@ -15,12 +15,12 @@ describe("action-list conflict details", () => {
             itemName: "ingredient_bag",
         } as Action;
         const cookie = {
-            type: "compound",
-            value: { id: { type: "string", value: "minecraft:cookie" } },
+            type: "compound" as const,
+            value: { id: { type: "string" as const, value: "minecraft:cookie" } },
         };
         const apple = {
-            type: "compound",
-            value: { id: { type: "string", value: "minecraft:apple" } },
+            type: "compound" as const,
+            value: { id: { type: "string" as const, value: "minecraft:apple" } },
         };
 
         expect(
@@ -38,22 +38,14 @@ describe("action-list conflict details", () => {
                 [source],
                 () => ({ key: "apple", tag: apple }),
                 () => ({ key: "cookie", tag: cookie })
-            )
-        ).toMatchObject({
-            differences: [
-                {
-                    path: "action 1 (give item) · itemName",
-                    live: "<item>",
-                    source: "<item>",
-                },
-            ],
-            itemDifferences: [
-                {
-                    path: "action 1 (give item) · itemName",
-                },
-            ],
-            moreCount: 0,
-        });
+            ).differences
+        ).toEqual([
+            {
+                path: "action 1 (give item) · itemName",
+                live: '{\n    id: "minecraft:apple"\n}',
+                source: '{\n    id: "minecraft:cookie"\n}',
+            },
+        ]);
     });
 
     it("reports scalar changes", () => {

@@ -1,25 +1,26 @@
 import { describe, expect, it } from "vitest";
-import * as htsw from "htsw";
+import type { Action } from "htsw/types";
 
 import {
     formatDiffDetailsFile,
-    renderActionsForDiff,
+    printerDiagnosticsForDiff,
 } from "../src/slashCommands/diffDetails";
-import { message } from "./utils";
 
 describe("diff details", () => {
-    it("reuses the exporter HTSL serializer", () => {
-        const actions = [message("source")];
+    it("surfaces diagnostics from lossy HTSL printing", () => {
+        const actions: Action[] = [{ type: "REMOVE_ITEM" }];
 
-        expect(renderActionsForDiff(actions)).toBe(
-            htsw.htsl.printActionsWithDiagnostics(actions).source
-        );
+        expect(printerDiagnosticsForDiff("source", actions)).toEqual([
+            {
+                side: "source",
+                level: "warning",
+                message:
+                    "REMOVE_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
+            },
+        ]);
     });
 
-    it("assembles a canonical action-list diff report", () => {
-        const sourceText = renderActionsForDiff([message("source")]);
-        const liveText = renderActionsForDiff([message("live")]);
-
+    it("assembles canonical details for multiple conflicts", () => {
         expect(
             formatDiffDetailsFile(
                 {
@@ -29,16 +30,33 @@ describe("diff details", () => {
                             type: "FUNCTION",
                             identity: "Debug",
                             basePath: "actions",
-                            sourceText,
-                            liveText,
-                            differences: [
+                            canonicalDifferences: [
                                 {
                                     path: "action 1 (message) · message",
                                     live: '"live"',
                                     source: '"source"',
                                 },
                             ],
-                            moreCount: 2,
+                            printerDiagnostics: [],
+                        },
+                        {
+                            type: "REGION",
+                            identity: "Spawn",
+                            basePath: "onEnterActions",
+                            canonicalDifferences: [
+                                {
+                                    path: "action 1 (message) · note",
+                                    live: '"a b"',
+                                    source: '"a\\nb"',
+                                },
+                            ],
+                            printerDiagnostics: [
+                                {
+                                    side: "source",
+                                    level: "warning",
+                                    message: "serialized source is lossy",
+                                },
+                            ],
                         },
                     ],
                     unknown: 1,
@@ -51,64 +69,30 @@ describe("diff details", () => {
                 "# timestamp: 2026-07-27T12:00:00.000Z\n" +
                 "# manifest: /project/import.json\n" +
                 "# clean: 2\n" +
-                "# conflicts: 1\n" +
+                "# conflicts: 2\n" +
                 "# unknown: 1\n" +
+                "# Values use the canonical field comparison that determined the verdict.\n" +
                 "\n" +
                 '# FUNCTION "Debug" · actions\n' +
-                '# ≠ action 1 (message) · message: live="live" · source="source"\n' +
-                "# …and 2 more differences\n" +
                 "--- source/actions\n" +
                 "+++ live/actions\n" +
-                "@@ -1 +1 @@\n" +
-                '-chat "source"\n' +
-                '+chat "live"\n'
+                "@@ -1,2 +1,2 @@\n" +
+                " action 1 (message) · message\n" +
+                '-  "source"\n' +
+                '+  "live"\n' +
+                "\n" +
+                '# REGION "Spawn" · onEnterActions\n' +
+                "# HTSL printer warning (source): serialized source is lossy\n" +
+                "--- source/onEnterActions\n" +
+                "+++ live/onEnterActions\n" +
+                "@@ -1,2 +1,2 @@\n" +
+                " action 1 (message) · note\n" +
+                '-  "a\\nb"\n' +
+                '+  "a b"\n'
         );
     });
 
-    it("adds a unified canonical SNBT section for item differences", () => {
-        const output = formatDiffDetailsFile(
-            {
-                clean: 0,
-                conflicts: [
-                    {
-                        type: "FUNCTION",
-                        identity: "Items",
-                        basePath: "actions",
-                        sourceText: 'giveItem "mvp_cookies.snbt"\n',
-                        liveText: 'giveItem "mvp_cookies"\n',
-                        differences: [
-                            {
-                                path: "action 1 (give item) · itemName",
-                                live: "<item>",
-                                source: "<item>",
-                            },
-                        ],
-                        itemDifferences: [
-                            {
-                                path: "action 1 (give item) · itemName",
-                                sourceSnbt: '{\n  id: "minecraft:cookie"\n}',
-                                liveSnbt: '{\n  id: "minecraft:apple"\n}',
-                            },
-                        ],
-                        moreCount: 0,
-                    },
-                ],
-                unknown: 0,
-            },
-            "/project/import.json",
-            "2026-07-27T12:00:00.000Z"
-        );
-
-        expect(output).toContain(
-            "# item · action 1 (give item) · itemName\n" +
-                "--- source/actions/action 1 (give item) · itemName.snbt\n" +
-                "+++ live/actions/action 1 (give item) · itemName.snbt\n"
-        );
-        expect(output).toContain('-  id: "minecraft:cookie"');
-        expect(output).toContain('+  id: "minecraft:apple"');
-    });
-
-    it("renders pending changes in their own full diff section", () => {
+    it("renders pending changes from live to source", () => {
         const output = formatDiffDetailsFile(
             {
                 clean: 1,
@@ -118,10 +102,14 @@ describe("diff details", () => {
                         type: "FUNCTION",
                         identity: "Debug",
                         basePath: "actions",
-                        sourceText: 'chat "source"\n',
-                        liveText: 'chat "live"\n',
-                        differences: [],
-                        moreCount: 0,
+                        canonicalDifferences: [
+                            {
+                                path: "action 1 (message) · message",
+                                live: '"live"',
+                                source: '"source"',
+                            },
+                        ],
+                        printerDiagnostics: [],
                         revertsTo: "2026-07-20T00:00:00.000Z",
                     },
                 ],
@@ -138,14 +126,7 @@ describe("diff details", () => {
                 "--- live/actions\n" +
                 "+++ source/actions\n"
         );
-        expect(output).toContain('-chat "live"');
-        expect(output).toContain('+chat "source"');
-        expect(
-            formatDiffDetailsFile(
-                { clean: 1, conflicts: [], pendingChanges: [], unknown: 0 },
-                "/project/import.json",
-                "2026-07-28T00:00:00.000Z"
-            )
-        ).not.toContain("# PENDING CHANGES");
+        expect(output).toContain('-  "live"');
+        expect(output).toContain('+  "source"');
     });
 });

@@ -20,9 +20,17 @@ import {
 import type {
     ActionListDiff,
     ActionListOperation,
+    ChildActionListDiff,
+    ChildActionListOperation,
+    ChildConditionListDiff,
     ChildListDiff,
     CurrentActionListEntry,
+    RootAction,
 } from "./types";
+import {
+    assertOneLevelActionTree,
+    isChildAction,
+} from "../childActions";
 import type { ChildActionListName, ChildListName } from "../../actionPath";
 import type { Observed, ObservedActionSlot } from "../../observedActions";
 import type { UiFieldKind } from "../../fields/loreSpecs";
@@ -52,6 +60,14 @@ type ConditionEntry = {
     index: number;
     condition: Condition;
 };
+
+function plannedAction(action: Action): RootAction {
+    return action as RootAction;
+}
+
+function plannedObservedAction(action: Observed): Observed<RootAction> {
+    return action;
+}
 
 const NOTE_ONLY_COST = 1;
 
@@ -461,7 +477,7 @@ function matchActions(
         });
     }
 
-    // Pass 2: Note-only matching with same position preference.
+    // Match note-only edits next, preferring the same position.
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         let currentIndex = indexOfNoteOnlyActionAtDesiredIndex(
@@ -492,7 +508,7 @@ function matchActions(
         });
     }
 
-    // Pass 3: Same-type matching with position preference.
+    // Match same-type actions next, preferring the same position.
     // First pin same-index same-type pairs (avoids unnecessary moves for stable-order imports),
     // then fall back to cost-based greedy matching for remaining unpinned actions.
     const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.action.type));
@@ -668,7 +684,28 @@ function childActionListDiff(
         itemDiff
     );
     if (diff.operations.length === 0) return null;
-    return { prop, diff };
+    return { kind: "actions", prop, diff };
+}
+
+function assertChildActionList(
+    current: readonly CurrentActionListEntry[],
+    desired: readonly Action[]
+): void {
+    for (let i = 0; i < current.length; i++) {
+        const action = current[i].action;
+        if (action !== null && !isChildAction(action)) {
+            throw new Error(
+                `${action.type} action cannot appear inside an action child list.`
+            );
+        }
+    }
+    for (let i = 0; i < desired.length; i++) {
+        if (!isChildAction(desired[i])) {
+            throw new Error(
+                `${desired[i].type} action cannot appear inside an action child list.`
+            );
+        }
+    }
 }
 
 function childConditionListDiff(
@@ -686,7 +723,7 @@ function childConditionListDiff(
         itemDiff
     );
     if (diff.operations.length === 0) return null;
-    return { prop: "conditions", diff };
+    return { kind: "conditions", prop: "conditions", diff };
 }
 
 function getChildListDiffs(
@@ -710,6 +747,37 @@ function getChildListDiffs(
     return out;
 }
 
+function getAddedChildListDiffs(
+    desired: Action,
+    itemDiff?: ItemDiffContext
+): ChildListDiff[] {
+    const out: ChildListDiff[] = [];
+    for (const field of getChildListFields(desired.type)) {
+        const desiredList = getFieldValue(desired, field.prop);
+        const diff =
+            field.kind === "conditionList"
+                ? childConditionListDiff([], desiredList, itemDiff)
+                : childActionListDiff(field.prop, [], desiredList, itemDiff);
+        if (diff !== null) out.push(diff);
+    }
+    return out;
+}
+
+function conditionChildListDiffsOnly(
+    childListDiffs: ChildListDiff[]
+): ChildConditionListDiff[] {
+    const out: ChildConditionListDiff[] = [];
+    for (const childList of childListDiffs) {
+        if (childList.kind === "actions") {
+            throw new Error(
+                `Action child list "${childList.prop}" reached a child action.`
+            );
+        }
+        out.push(childList);
+    }
+    return out;
+}
+
 function createEditOperation(
     match: ActionMatch,
     itemDiff?: ItemDiffContext
@@ -720,8 +788,8 @@ function createEditOperation(
         entryId: match.current.entryId,
         fromIndex: match.current.index,
         desiredIndex: match.desiredIndex,
-        baselineAction: match.current.action,
-        desired: match.desired,
+        baselineAction: plannedObservedAction(match.current.action),
+        desired: plannedAction(match.desired),
         noteOnly,
         noteDiffers: !notesEqual(match.current.action.note, match.desired.note),
         childListDiffs: noteOnly
@@ -733,8 +801,11 @@ function createEditOperation(
 function createChildListEditOperation(
     match: ActionMatch,
     itemDiff?: ItemDiffContext
-): Extract<ActionListOperation, { kind: "edit" }> {
+): Extract<ChildActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
+    if (!isChildAction(match.current.action) || !isChildAction(match.desired)) {
+        throw new Error("Container action reached a child action-list diff.");
+    }
     return {
         kind: "edit",
         entryId: match.current.entryId,
@@ -746,7 +817,9 @@ function createChildListEditOperation(
         noteDiffers: !notesEqual(match.current.action.note, match.desired.note),
         childListDiffs: noteOnly
             ? []
-            : getChildListDiffs(match.current, match.desired, itemDiff),
+            : conditionChildListDiffsOnly(
+                  getChildListDiffs(match.current, match.desired, itemDiff)
+              ),
     };
 }
 
@@ -755,15 +828,43 @@ export function diffActionList(
     desired: Action[],
     itemDiff?: ItemDiffContext
 ): ActionListDiff {
-    return diffActionListCore(current, desired, createEditOperation, itemDiff);
+    assertOneLevelActionTree(current.map((entry) => entry.action));
+    assertOneLevelActionTree(desired);
+    return diffActionListCore(
+        current,
+        desired,
+        createEditOperation,
+        (action) => getAddedChildListDiffs(action, itemDiff),
+        itemDiff
+    );
 }
 
 function diffChildActionList(
     current: CurrentActionListEntry[],
     desired: Action[],
     itemDiff?: ItemDiffContext
-): ActionListDiff {
-    return diffActionListCore(current, desired, createChildListEditOperation, itemDiff);
+): ChildActionListDiff {
+    assertChildActionList(current, desired);
+    const diff = diffActionListCore(
+        current,
+        desired,
+        createChildListEditOperation,
+        (action) => {
+            if (!isChildAction(action)) {
+                throw new Error(
+                    `${action.type} action cannot appear inside an action child list.`
+                );
+            }
+            return conditionChildListDiffsOnly(
+                getAddedChildListDiffs(action, itemDiff)
+            );
+        },
+        itemDiff
+    );
+    return {
+        operations: diff.operations as ChildActionListOperation[],
+        desiredLength: diff.desiredLength,
+    };
 }
 
 function editOpIsObservablyNoop(
@@ -797,6 +898,7 @@ function diffActionListCore(
         match: ActionMatch,
         itemDiff?: ItemDiffContext
     ) => Extract<ActionListOperation, { kind: "edit" }>,
+    childListDiffsForAdd: (action: Action) => ChildListDiff[],
     itemDiff?: ItemDiffContext
 ): ActionListDiff {
     const knownCurrent = current.filter(
@@ -811,7 +913,10 @@ function diffActionListCore(
             kind: "delete",
             entryId: currentEntry.entryId,
             fromIndex: currentEntry.index,
-            baselineAction: currentEntry.action,
+            baselineAction:
+                currentEntry.action === null
+                    ? null
+                    : plannedObservedAction(currentEntry.action),
         });
     }
 
@@ -820,7 +925,7 @@ function diffActionListCore(
             kind: "delete",
             entryId: currentEntry.entryId,
             fromIndex: currentEntry.index,
-            baselineAction: currentEntry.action,
+            baselineAction: plannedObservedAction(currentEntry.action),
         });
     }
 
@@ -841,7 +946,7 @@ function diffActionListCore(
                 entryId: match.current.entryId,
                 fromIndex: match.current.index,
                 toIndex: targetIndex,
-                action: match.desired,
+                action: plannedAction(match.desired),
             });
             currentOrder.splice(currentIndex, 1);
             currentOrder.splice(targetIndex, 0, match);
@@ -863,8 +968,9 @@ function diffActionListCore(
         operations.push({
             kind: "add",
             desiredIndex: unmatched.index,
-            desired: unmatched.action,
+            desired: plannedAction(unmatched.action),
             toIndex: unmatched.index,
+            childListDiffs: childListDiffsForAdd(unmatched.action),
         });
     }
 

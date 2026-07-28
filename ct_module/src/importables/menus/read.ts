@@ -5,6 +5,7 @@ import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import type { ItemReadOptions } from "../../housingSync/context/actionReadContext";
 import { COST } from "../../housingSync/progress/costs";
 import type { ProgressHandler, ProgressPhase } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
@@ -123,7 +124,8 @@ async function readMenuSlotActions(
     ctx: TaskContext,
     slotId: number,
     itemRead: ItemReadOptions,
-    onListProgress?: ProgressHandler
+    onListProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<Action[]> {
     const container = Player.getContainer();
     if (container == null) {
@@ -134,6 +136,7 @@ async function readMenuSlotActions(
 
     const actions = await readActionListFully(ctx, {
         ...itemRead,
+        events,
         ...(onListProgress === undefined
             ? {}
             : {
@@ -194,7 +197,8 @@ export async function snapshotLiveMenuGrid(ctx: TaskContext): Promise<LiveMenuGr
 export async function readLiveMenu(
     ctx: TaskContext,
     itemRead: ItemReadOptions,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<LiveMenu> {
     const grid = await snapshotLiveMenuGrid(ctx);
     const { size, gridSize } = grid;
@@ -265,7 +269,8 @@ export async function readLiveMenu(
                       currentSlotCompletedUnits =
                           COST.menuClickWait + payload.completedUnits;
                       emitProgress();
-                  }
+                  },
+            events
         );
         doneReadingUnits += currentSlotReadingUnits;
         doneHydratingUnits += currentSlotHydratingUnits;

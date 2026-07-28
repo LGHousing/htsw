@@ -18,7 +18,7 @@ import type { CapturedItem } from "../importables/items/captureRegistry";
 import { capturedItemFieldContent } from "../housingSync/items/fieldContent";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
-import { isTaskCancelled, TaskManager } from "../tasks/manager";
+import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
@@ -137,7 +137,8 @@ export function commandDiff(args: string[]): void {
     }
 
     const progress = createDiffProgressSession(parsed.value, manifest);
-    void runHousingSyncTask("export", async (ctx) => {
+    void runHousingSyncTask("diff", async (ctx) => {
+        progress.start();
         const housingUuid = await getCurrentHousingUuid(ctx);
         const live = await readDiffImportables(
             ctx,
@@ -175,23 +176,30 @@ export function commandDiff(args: string[]): void {
             projectItems,
             captures,
         });
-        const detailsPath =
-            report.conflicts.length === 0 &&
-            (report.pendingChanges?.length ?? 0) === 0 &&
-            (report.revertCount ?? 0) === 0
-                ? undefined
-                : writeDiffDetailsFile(report, manifest, new Date().toISOString());
-        for (const line of formatDiffReport(report, manifest, detailsPath)) {
+        for (const line of formatDiffReport(report, manifest)) {
             ChatLib.chat(line);
         }
-        progress.complete(formatDiffProgress(report));
-    }).catch((error: unknown) => {
-        if (isTaskCancelled(error)) {
-            progress.clear();
-            return;
+        try {
+            const detailsPath = writeDiffDetailsFile(
+                report,
+                manifest,
+                new Date().toISOString()
+            );
+            ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
+        } catch (error) {
+            ChatLib.chat(
+                `[htsw] Diff details not written: ${errorReason(error)}`
+            );
         }
-        const reason = errorReason(error);
-        progress.fail(reason);
-        diffFailure(reason);
-    });
+        progress.complete(formatDiffProgress(report));
+        return true;
+    })
+        .then((completed) => {
+            if (completed === undefined) progress.clear();
+        })
+        .catch((error: unknown) => {
+            const reason = errorReason(error);
+            progress.fail(reason);
+            diffFailure(reason);
+        });
 }

@@ -56,6 +56,7 @@ type FileState = {
     lastObservedAt: number;
     pendingNodes: readonly ObservedNode[] | undefined;
     rebasedListKeys: Set<string>;
+    evictionEligible: boolean;
 };
 
 /**
@@ -70,16 +71,34 @@ type FileState = {
  */
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
-const states: { [key: string]: FileState | undefined } = {};
+const states = new Map<string, FileState>();
+const MAX_PREVIEW_STATES = 128;
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
 }
 
+function removeState(key: string): void {
+    if (!states.delete(key)) return;
+    markGuiDirty();
+}
+
+function evictCompletedPreview(): boolean {
+    for (const [key, state] of states) {
+        if (!state.evictionEligible) continue;
+        removeState(key);
+        return true;
+    }
+    return false;
+}
+
 function ensure(path: string): FileState {
     const k = keyForFile(path);
-    let s = states[k];
+    let s = states.get(k);
     if (!s) {
+        while (states.size >= MAX_PREVIEW_STATES) {
+            if (!evictCompletedPreview()) break;
+        }
         s = {
             lines: [],
             revision: 0,
@@ -90,8 +109,11 @@ function ensure(path: string): FileState {
             lastObservedAt: 0,
             pendingNodes: undefined,
             rebasedListKeys: new Set(),
+            evictionEligible: false,
         };
-        states[k] = s;
+        states.set(k, s);
+    } else {
+        s.evictionEligible = false;
     }
     return s;
 }
@@ -728,7 +750,7 @@ function flushPendingObserved(s: FileState): void {
 
 export function previewLinesForFile(path: string): readonly PreviewLine[] {
     const k = keyForFile(path);
-    const s = states[k];
+    const s = states.get(k);
     if (s !== undefined) flushPendingObserved(s);
     return s ? s.lines : [];
 }
@@ -739,18 +761,29 @@ export function previewLinesForFile(path: string): readonly PreviewLine[] {
  * objects are mutated in place, so array identity alone can't.
  */
 export function previewRevision(path: string): number {
-    const s = states[keyForFile(path)];
+    const s = states.get(keyForFile(path));
     if (s === undefined) return -1;
     flushPendingObserved(s);
     return s.revision;
 }
 
 export function resetPreview(path: string): void {
-    const k = keyForFile(path);
-    if (states[k] !== undefined) {
-        delete states[k];
-        markGuiDirty();
-    }
+    removeState(keyForFile(path));
+}
+
+export function markPreviewCompleted(path: string): void {
+    const state = states.get(keyForFile(path));
+    if (state !== undefined) state.evictionEligible = true;
+}
+
+export function disposeLivePreviews(): void {
+    if (states.size === 0) return;
+    states.clear();
+    markGuiDirty();
+}
+
+export function livePreviewCacheSize(): number {
+    return states.size;
 }
 
 export function primeWithCache(
@@ -1144,7 +1177,7 @@ export function effectiveFocusActionPath(
     path: string,
     actionPath: ActionTreePath
 ): ActionPath | null {
-    const s = states[keyForFile(path)];
+    const s = states.get(keyForFile(path));
     if (s === undefined) return null;
     let probe = ActionTreePath.nearestAction(actionPath);
     while (probe !== null) {
@@ -1170,7 +1203,7 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
         const nearest = ActionTreePath.nearestAction(actionPath);
         return computeLineId({ actionPath: nearest ?? actionPath, variant: "body" });
     }
-    const s = states[keyForFile(path)];
+    const s = states.get(keyForFile(path));
     if (s !== undefined) {
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
@@ -1220,11 +1253,11 @@ export function finalizeFromSource(path: string, actions: ReadonlyArray<Action>)
 // isn't per-line is the cursor and the phase flag, kept as two scalars below.
 
 export function getCurrentPath(path: string): ActionTreePath | null {
-    return states[keyForFile(path)]?.currentPath ?? null;
+    return states.get(keyForFile(path))?.currentPath ?? null;
 }
 
 export function getLiveSummary(path: string): DiffSummary | null {
-    return states[keyForFile(path)]?.summary ?? null;
+    return states.get(keyForFile(path))?.summary ?? null;
 }
 
 export function setCurrent(path: string, actionPath: ActionTreePath | null): void {

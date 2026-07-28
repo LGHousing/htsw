@@ -71,4 +71,51 @@ describe("unifiedDiff", () => {
                 " 8\n"
         );
     });
+
+    it("separates distant changes into multiple hunks", () => {
+        const source = Array.from({ length: 16 }, (_, i) => String(i + 1));
+        const live = source.slice();
+        live[1] = "two";
+        live[13] = "fourteen";
+
+        const diff = unifiedDiff(
+            `${source.join("\n")}\n`,
+            `${live.join("\n")}\n`,
+            "source/actions",
+            "live/actions"
+        );
+
+        expect(diff.match(/^@@/gm)).toHaveLength(2);
+        expect(diff).toContain("-2\n+two");
+        expect(diff).toContain("-14\n+fourteen");
+    });
+
+    it("keeps nearby changes in one hunk", () => {
+        const source = Array.from({ length: 12 }, (_, i) => String(i + 1));
+        const live = source.slice();
+        live[1] = "two";
+        live[7] = "eight";
+
+        const diff = unifiedDiff(
+            `${source.join("\n")}\n`,
+            `${live.join("\n")}\n`,
+            "source/actions",
+            "live/actions"
+        );
+
+        expect(diff.match(/^@@/gm)).toHaveLength(1);
+    });
+
+    it("omits oversized bodies before allocating the LCS table", () => {
+        const source = Array.from({ length: 150 }, (_, i) => `source ${i}`).join(
+            "\n"
+        );
+        const live = Array.from({ length: 150 }, (_, i) => `live ${i}`).join("\n");
+
+        expect(
+            unifiedDiff(source, live, "source/actions", "live/actions")
+        ).toContain(
+            "# HTSW diff body omitted: 150 source lines × 150 live lines exceeds the 20000-cell comparison limit."
+        );
+    });
 });

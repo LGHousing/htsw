@@ -1,23 +1,23 @@
 import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
 
+import type { ActionListConflictDifference } from "../housingSync/actions/conflictDetails";
 import { parentDirOf } from "../project/paths";
 import { atomicWriteText } from "../utils/filesystem";
 import { unifiedDiff } from "./unifiedDiff";
+
+export type DiffPrinterDiagnostic = {
+    side: "source" | "live";
+    level: "warning";
+    message: string;
+};
 
 type DiffDetailsConflict = {
     type: Importable["type"];
     identity: string;
     basePath: string;
-    sourceText: string;
-    liveText: string;
-    differences: readonly { path: string; live: string; source: string }[];
-    itemDifferences?: readonly {
-        path: string;
-        liveSnbt: string;
-        sourceSnbt: string;
-    }[];
-    moreCount: number;
+    canonicalDifferences: readonly ActionListConflictDifference[];
+    printerDiagnostics: readonly DiffPrinterDiagnostic[];
     revertsTo?: string;
 };
 
@@ -32,15 +32,17 @@ function withoutFinalNewline(text: string): string {
     return text.endsWith("\n") ? text.substring(0, text.length - 1) : text;
 }
 
-function boundedItemSnbt(text: string): string {
-    const lines = text.split("\n");
-    const shown = lines.slice(0, 120).join("\n");
-    const bounded = shown.length > 12000 ? shown.substring(0, 12000) : shown;
-    return bounded === text ? text : `${bounded}\n# …item diff truncated`;
-}
-
-export function renderActionsForDiff(actions: readonly Action[]): string {
-    return htsw.htsl.printActionsWithDiagnostics(actions).source;
+export function printerDiagnosticsForDiff(
+    side: DiffPrinterDiagnostic["side"],
+    actions: readonly Action[]
+): DiffPrinterDiagnostic[] {
+    return htsw.htsl.printActionsWithDiagnostics(actions).diagnostics.map(
+        (diagnostic) => ({
+            side,
+            level: diagnostic.level,
+            message: diagnostic.message,
+        })
+    );
 }
 
 function diffDetailsPath(manifest: string): string {
@@ -59,6 +61,7 @@ export function formatDiffDetailsFile(
         `# clean: ${report.clean}`,
         `# conflicts: ${report.conflicts.length}`,
         `# unknown: ${report.unknown}`,
+        "# Values use the canonical field comparison that determined the verdict.",
     ];
     appendListDiffs(lines, report.conflicts, false);
     if ((report.pendingChanges?.length ?? 0) > 0) {
@@ -74,8 +77,16 @@ function appendListDiffs(
     liveToSource: boolean
 ): void {
     for (const conflict of lists) {
-        const beforeText = liveToSource ? conflict.liveText : conflict.sourceText;
-        const afterText = liveToSource ? conflict.sourceText : conflict.liveText;
+        const beforeSide = liveToSource ? "live" : "source";
+        const afterSide = liveToSource ? "source" : "live";
+        const beforeText = canonicalDifferenceText(
+            conflict.canonicalDifferences,
+            beforeSide
+        );
+        const afterText = canonicalDifferenceText(
+            conflict.canonicalDifferences,
+            afterSide
+        );
         const beforeLabel = liveToSource ? "live" : "source";
         const afterLabel = liveToSource ? "source" : "live";
         const diff = unifiedDiff(
@@ -91,34 +102,28 @@ function appendListDiffs(
         if (conflict.revertsTo !== undefined) {
             lines.push(`# ⚠ reverts to recorded state from ${conflict.revertsTo}`);
         }
-        for (const difference of conflict.differences) {
+        for (const diagnostic of conflict.printerDiagnostics) {
             lines.push(
-                `# ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
+                `# HTSL printer ${diagnostic.level} (${diagnostic.side}): ${diagnostic.message}`
             );
         }
-        if (conflict.moreCount > 0) {
-            lines.push(`# …and ${conflict.moreCount} more differences`);
-        }
-        lines.push(withoutFinalNewline(diff));
-        for (const item of conflict.itemDifferences ?? []) {
-            lines.push(
-                "",
-                `# item · ${item.path}`,
-                withoutFinalNewline(
-                    unifiedDiff(
-                        boundedItemSnbt(
-                            liveToSource ? item.liveSnbt : item.sourceSnbt
-                        ),
-                        boundedItemSnbt(
-                            liveToSource ? item.sourceSnbt : item.liveSnbt
-                        ),
-                        `${beforeLabel}/${conflict.basePath}/${item.path}.snbt`,
-                        `${afterLabel}/${conflict.basePath}/${item.path}.snbt`
-                    )
-                )
-            );
-        }
+        lines.push(
+            diff === ""
+                ? "# Conflict verdict had no renderable canonical field difference."
+                : withoutFinalNewline(diff)
+        );
     }
+}
+
+function canonicalDifferenceText(
+    differences: readonly ActionListConflictDifference[],
+    side: "source" | "live"
+): string {
+    const lines: string[] = [];
+    for (const difference of differences) {
+        lines.push(difference.path, `  ${difference[side]}`);
+    }
+    return lines.join("\n") + (lines.length === 0 ? "" : "\n");
 }
 
 export function writeDiffDetailsFile(

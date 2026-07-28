@@ -2,8 +2,10 @@ import type { Action, Importable } from "htsw/types";
 
 import { actionListConflictVerdict } from "../housingSync/actions/conflicts";
 import {
-    actionListConflictDetails,
+    actionListConflictDifferences,
+    summarizeActionListConflictDifferences,
     type ActionListConflictDetails,
+    type ActionListConflictDifference,
 } from "../housingSync/actions/conflictDetails";
 import type { ActionSyncConflict } from "../housingSync/actions/syncContext";
 import {
@@ -16,7 +18,6 @@ import {
     type HouseLock,
 } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { renderActionsForDiff } from "./diffDetails";
 import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
 import {
     capturedItemFieldContent,
@@ -24,11 +25,12 @@ import {
 } from "../housingSync/items/fieldContent";
 import type { ProjectItemIndex } from "../importables/items/projectItems";
 import type { CapturedItem } from "../importables/items/captureRegistry";
+import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
 
 type DiffReportList = ActionSyncConflict &
     ActionListConflictDetails & {
-        sourceText: string;
-        liveText: string;
+        canonicalDifferences: ActionListConflictDifference[];
+        printerDiagnostics: DiffPrinterDiagnostic[];
         revertsTo?: string;
     };
 
@@ -117,9 +119,7 @@ export function evaluateDiffReport(
     const result: DiffReport = {
         clean: 0,
         conflicts: [],
-        pendingChanges: [],
         unknown: 0,
-        revertCount: 0,
     };
     const matchingLock =
         lock !== null && (lock.houseUuid === null || lock.houseUuid === housingUuid)
@@ -169,20 +169,28 @@ export function evaluateDiffReport(
                 sourceHash,
                 liveHash
             );
-            const details = (): DiffReportList => ({
-                type: source.type,
-                identity,
-                basePath: sourceList.basePath,
-                ...actionListConflictDetails(
+            const details = (): DiffReportList => {
+                const canonicalDifferences = actionListConflictDifferences(
                     liveActions,
                     sourceList.actions,
                     liveItems,
                     sourceItems
-                ),
-                sourceText: renderActionsForDiff(sourceList.actions),
-                liveText: renderActionsForDiff(liveActions),
-                ...(revertsTo === undefined ? {} : { revertsTo }),
-            });
+                );
+                return {
+                    type: source.type,
+                    identity,
+                    basePath: sourceList.basePath,
+                    ...summarizeActionListConflictDifferences(
+                        canonicalDifferences
+                    ),
+                    canonicalDifferences,
+                    printerDiagnostics: [
+                        ...printerDiagnosticsForDiff("source", sourceList.actions),
+                        ...printerDiagnosticsForDiff("live", liveActions),
+                    ],
+                    ...(revertsTo === undefined ? {} : { revertsTo }),
+                };
+            };
             if (
                 verdict === "conflict" ||
                 (verdict === "no-baseline" && liveHash !== sourceHash)
@@ -192,7 +200,9 @@ export function evaluateDiffReport(
                 result.unknown++;
             } else {
                 result.clean++;
-                if (sourceHash !== liveHash) result.pendingChanges?.push(details());
+                if (sourceHash !== liveHash) {
+                    (result.pendingChanges ??= []).push(details());
+                }
             }
             if (revertsTo !== undefined)
                 result.revertCount = (result.revertCount ?? 0) + 1;
@@ -212,13 +222,13 @@ export function formatDiffReport(
     if ((report.pendingChanges?.length ?? 0) > 0) {
         const pendingCount = report.pendingChanges?.length ?? 0;
         lines.push(
-            `[htsw] Pending changes: ${pendingCount} list${pendingCount === 1 ? "" : "s"} will be modified — see report`
+            `[htsw] Pending changes: ${pendingCount} list${pendingCount === 1 ? "" : "s"} will be modified`
         );
     }
     if ((report.revertCount ?? 0) > 0) {
         const revertCount = report.revertCount ?? 0;
         lines.push(
-            `[htsw] Warning: ${revertCount} list${revertCount === 1 ? "" : "s"} would revert to ${revertCount === 1 ? "an " : ""}older recorded state${revertCount === 1 ? "" : "s"} — see report.`
+            `[htsw] Warning: ${revertCount} list${revertCount === 1 ? "" : "s"} would revert to ${revertCount === 1 ? "an " : ""}older recorded state${revertCount === 1 ? "" : "s"}.`
         );
     }
     const shown = Math.min(report.conflicts.length, 20);
@@ -227,6 +237,14 @@ export function formatDiffReport(
         lines.push(
             `[htsw] Conflict: ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
         );
+        for (const difference of conflict.differences) {
+            lines.push(
+                `[htsw]   ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
+            );
+        }
+        if (conflict.moreCount > 0) {
+            lines.push(`[htsw]   …and ${conflict.moreCount} more differences`);
+        }
     }
     if (report.conflicts.length > shown) {
         lines.push(`[htsw] …and ${report.conflicts.length - shown} more conflicts`);

@@ -22,6 +22,11 @@ import { appendConditionsToOpenConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import { getActionIo, writeOpenAction } from "../io";
 import { isTaskCancelled } from "../../../tasks/manager";
+import {
+    assertOneLevelActionTree,
+    isChildAction,
+    type ChildAction,
+} from "../childActions";
 
 type ImportActionCallbacks = {
     onMutationStarted?: () => void;
@@ -71,12 +76,17 @@ export async function appendActionsToOpenActionList(
     desired: Action[],
     resolveItem: ResolveItemField
 ): Promise<void> {
+    assertOneLevelActionTree(desired);
     const apply: ActionApplyContext = {
         markHeaderApplied: () => undefined,
         shouldApplyList: () => true,
 
         async applyChildActions(_prop, args) {
-            await appendActionsToOpenActionList(ctx, args.desired, resolveItem);
+            await appendChildActionsToOpenActionList(
+                ctx,
+                args.desired,
+                resolveItem
+            );
         },
 
         async applyConditions(_prop, args) {
@@ -87,6 +97,46 @@ export async function appendActionsToOpenActionList(
         await addAction(ctx, desired[i], resolveItem, apply);
     }
     if (desired.length > 0) {
+        await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+    }
+}
+
+async function appendChildActionsToOpenActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    resolveItem: ResolveItemField
+): Promise<void> {
+    const children: ChildAction[] = [];
+    for (const action of desired) {
+        if (!isChildAction(action)) {
+            throw new Error(
+                `${action.type} action cannot appear inside an action child list.`
+            );
+        }
+        children.push(action);
+    }
+
+    const apply: ActionApplyContext = {
+        markHeaderApplied: () => undefined,
+        shouldApplyList: () => true,
+        async applyChildActions() {
+            throw new Error(
+                "An action child list cannot contain another action container."
+            );
+        },
+        async applyConditions(_prop, args) {
+            await appendConditionsToOpenConditionList(
+                ctx,
+                args.desired,
+                resolveItem
+            );
+        },
+    };
+
+    for (const action of children) {
+        await addAction(ctx, action, resolveItem, apply);
+    }
+    if (children.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     }
 }

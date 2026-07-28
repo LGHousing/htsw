@@ -19,7 +19,7 @@ import {
 import type { PhaseUnits } from "../../progress/types";
 import type { Observed } from "../../observedActions";
 import type { ActionListOperation } from "../diff/types";
-import { applyConditionList } from "../conditions/apply";
+import { applyPlannedConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import type { ActionListApplyOptions, ActionListPlan } from "../plan";
 import { getActionIo, writeOpenAction } from "../io";
@@ -451,9 +451,9 @@ export class ActionListApplyRun {
             appliedUnits: this.appliedUnits,
             completedOps: this.completedOps,
             totalOps: this.totalOps,
-            ...(op.kind === "edit" ? { childListDiffs: op.childListDiffs } : {}),
+            childListDiffs: op.childListDiffs,
             applyChildActions,
-            applyConditions: applyConditionList,
+            applyConditions: applyPlannedConditionList,
         });
     }
 

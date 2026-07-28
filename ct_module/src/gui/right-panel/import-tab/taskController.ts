@@ -13,8 +13,8 @@ import {
     finishTaskProgress,
     getTaskProgress,
     setActiveTaskPath,
-    setSessionTrustMode,
     setTaskProgress,
+    startTaskProgress,
 } from "./taskProgress";
 import {
     addSessionQueueItem,
@@ -61,6 +61,7 @@ import {
     finalizeFromSource,
     markHeadApplied,
     markMatch,
+    markPreviewCompleted,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
@@ -273,19 +274,23 @@ function createSyncEventHandler(args: {
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
-            if (imp !== undefined && e.status === "imported") {
-                invalidateSourceDiffForImportable(imp);
+            if (imp === undefined) return;
+            const sourcePath = importableSourcePath(imp);
+            if (sourcePath !== undefined && e.status !== "failed") {
+                markPreviewCompleted(sourcePath);
             }
+            if (e.status === "imported") invalidateSourceDiffForImportable(imp);
         },
         importableReactivated: (e) => {
-            // Pass-2 (apply) re-activates an importable previously parked
-            // after the Reader pass. Re-bind the preview to this row's
-            // source file so the apply-phase diff overlay lands in the
-            // right pane.
+            // Application reactivates an importable parked after observation.
+            // Re-bind the preview to this row's source file so the applying
+            // diff overlay lands in the right pane.
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
         sessionTotalsLocked: () => {},
+        sessionApplicationProgress: () => {},
+        applicationProgress: () => {},
         sessionFinished: () => {
             activeViewPath = null;
         },
@@ -702,14 +707,15 @@ async function prepareAndStartImport(
     for (let i = 1; i < batches.length; i++) {
         rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    setTaskProgress(
-        createTaskProgress({
+    startTaskProgress({
+        progress: createTaskProgress({
             totalUnits: 1,
             rows,
-        })
-    );
-    setSessionTrustMode(trustMode);
-    setActiveTaskPath(batches[0].sourcePath);
+        }),
+        verb: "import",
+        path: batches[0].sourcePath,
+        trustMode,
+    });
 
     // A command import (`explicit`) gets reflected into the visible queue so
     // it shows up + animates like a GUI run; otherwise we'd run an invisible
@@ -870,7 +876,6 @@ async function prepareAndStartImport(
                 unexpectedError = err;
             }
         } finally {
-            setActiveTaskPath(null);
             options.onComplete?.(importSucceeded);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);

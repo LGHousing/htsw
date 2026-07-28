@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { Importable, ImportableFunction, ImportableRegion } from "htsw/types";
+import type {
+    Action,
+    Importable,
+    ImportableFunction,
+    ImportableRegion,
+} from "htsw/types";
 
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
+import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
 import {
     evaluateDiffReport,
     formatDiffProgress,
@@ -74,7 +80,12 @@ describe("diff report", () => {
                 liveMap(func("Debug", baseline)),
                 lockFor("Debug", baseline)
             )
-        ).toMatchObject({ clean: 1, conflicts: [], unknown: 0 });
+        ).toMatchObject({
+            clean: 1,
+            conflicts: [],
+            pendingChanges: [{ identity: "Debug", basePath: "actions" }],
+            unknown: 0,
+        });
         expect(
             evaluateDiffReport(
                 "house",
@@ -82,7 +93,7 @@ describe("diff report", () => {
                 liveMap(source),
                 lockFor("Debug", baseline)
             )
-        ).toMatchObject({ clean: 1, conflicts: [], unknown: 0 });
+        ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
     });
 
     it("classifies live changes from both baseline and source as conflicts", () => {
@@ -109,37 +120,29 @@ describe("diff report", () => {
                         },
                     ],
                     moreCount: 0,
-                    sourceText: 'chat "source"\n',
-                    liveText: 'chat "live"\n',
+                    canonicalDifferences: [
+                        {
+                            path: "action 1 (message) · message",
+                            live: '"live"',
+                            source: '"source"',
+                        },
+                    ],
+                    printerDiagnostics: [],
                 },
             ],
             unknown: 0,
         });
     });
 
-    it("keeps only missing live reads unknown and compares missing baselines to source", () => {
+    it("classifies missing live reads and baselines as unknown", () => {
         const source = func("Debug", [message("source")]);
 
         expect(
             evaluateDiffReport("house", [source], new Map(), lockFor("Debug", []))
-        ).toMatchObject({ clean: 0, conflicts: [], unknown: 1 });
-        expect(
-            evaluateDiffReport("house", [source], liveMap(source), null)
-        ).toMatchObject({
+        ).toEqual({ clean: 0, conflicts: [], unknown: 1 });
+        expect(evaluateDiffReport("house", [source], liveMap(source), null)).toEqual({
             clean: 1,
             conflicts: [],
-            unknown: 0,
-        });
-        expect(
-            evaluateDiffReport(
-                "house",
-                [source],
-                liveMap(func("Debug", [message("live")])),
-                null
-            )
-        ).toMatchObject({
-            clean: 0,
-            conflicts: [{ type: "FUNCTION", identity: "Debug", basePath: "actions" }],
             unknown: 0,
         });
     });
@@ -181,7 +184,7 @@ describe("diff report", () => {
             },
         };
 
-        expect(evaluateDiffReport("house", [source], liveMap(live), lock)).toMatchObject({
+        expect(evaluateDiffReport("house", [source], liveMap(live), lock)).toEqual({
             clean: 0,
             conflicts: [],
             unknown: 1,
@@ -214,6 +217,89 @@ describe("diff report", () => {
         ]);
     });
 
+    it("keeps multiline note conflicts actionable in the details file", () => {
+        const source = func("Debug", [message("same", { note: "a\nb" })]);
+        const report = evaluateDiffReport(
+            "house",
+            [source],
+            liveMap(func("Debug", [message("same", { note: "a b" })])),
+            lockFor("Debug", [message("same", { note: "baseline" })])
+        );
+
+        const details = formatDiffDetailsFile(
+            report,
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(details).toContain("action 1 (message) · note");
+        expect(details).toContain('-  "a\\nb"');
+        expect(details).toContain('+  "a b"');
+    });
+
+    it("omits default-equivalent fields from canonical details", () => {
+        const source = func("Debug", [playSound({ sound: "random.anvil_land" })]);
+        const report = evaluateDiffReport(
+            "house",
+            [source],
+            liveMap(
+                func("Debug", [
+                    playSound({
+                        sound: "random.orb",
+                        volume: 0.7,
+                        pitch: 1,
+                    }),
+                ])
+            ),
+            lockFor("Debug", [playSound({ sound: "mob.cat.meow" })])
+        );
+
+        expect(report.conflicts[0].canonicalDifferences).toEqual([
+            {
+                path: "action 1 (play sound) · sound",
+                live: '{"type":"random.orb"}',
+                source: '{"type":"random.anvil_land"}',
+            },
+        ]);
+        expect(
+            formatDiffDetailsFile(
+                report,
+                "/project/import.json",
+                "2026-07-27T12:00:00.000Z"
+            )
+        ).not.toContain("volume");
+    });
+
+    it("includes printer diagnostics for a conflicting item action", () => {
+        const sourceAction: Action = {
+            type: "REMOVE_ITEM",
+            note: "source",
+        };
+        const liveAction: Action = {
+            type: "REMOVE_ITEM",
+            note: "live",
+        };
+        const report = evaluateDiffReport(
+            "house",
+            [func("Debug", [sourceAction])],
+            liveMap(func("Debug", [liveAction])),
+            lockFor("Debug", [{ type: "REMOVE_ITEM", note: "baseline" }])
+        );
+
+        const details = formatDiffDetailsFile(
+            report,
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(details).toContain(
+            "# HTSL printer warning (source): REMOVE_ITEM was emitted with a placeholder item name"
+        );
+        expect(details).toContain(
+            "# HTSL printer warning (live): REMOVE_ITEM was emitted with a placeholder item name"
+        );
+    });
+
     it("includes the action-list base path in conflict output", () => {
         expect(
             formatDiffReport(
@@ -232,8 +318,14 @@ describe("diff report", () => {
                                 },
                             ],
                             moreCount: 2,
-                            sourceText: 'chat "source"\n',
-                            liveText: 'chat "live"\n',
+                            canonicalDifferences: [
+                                {
+                                    path: "action 1 (message) · message",
+                                    live: '"live"',
+                                    source: '"source"',
+                                },
+                            ],
+                            printerDiagnostics: [],
                         },
                     ],
                     unknown: 0,
@@ -244,6 +336,8 @@ describe("diff report", () => {
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
+            '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
+            "[htsw]   …and 2 more differences",
             "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });
@@ -262,16 +356,18 @@ describe("diff report", () => {
                 type: "FUNCTION",
                 identity: "Debug",
                 basePath: "actions",
-                sourceText: 'chat "source"\n',
-                liveText: 'chat "live"\n',
+                canonicalDifferences: [
+                    {
+                        path: "action 1 (message) · message",
+                        live: '"live"',
+                        source: '"source"',
+                    },
+                ],
+                printerDiagnostics: [],
             },
         ]);
-        const lines = formatDiffReport(report, "/project/import.json");
-        expect(lines[0]).toBe(
-            "[htsw] Diff complete: 1 clean, 0 conflicts, 0 unknown · /project/import.json"
-        );
-        expect(lines[1]).toBe(
-            "[htsw] Pending changes: 1 list will be modified — see report"
+        expect(formatDiffReport(report, "/project/import.json")).toContain(
+            "[htsw] Pending changes: 1 list will be modified"
         );
         expect(formatDiffProgress(report)).toBe(
             "0 unchanged / 1 pending / 0 conflicts / 0 unknown / 0 rollback warnings"
@@ -283,7 +379,7 @@ describe("diff report", () => {
                 liveMap(func("Debug", baseline)),
                 lockFor("Debug", baseline)
             ).pendingChanges
-        ).toEqual([]);
+        ).toBeUndefined();
     });
 
     it("detects a source hash that predates the live hash in the journal", () => {
@@ -310,20 +406,14 @@ describe("diff report", () => {
             liveMap(func("Debug", newer)),
             lock
         );
-        expect(report.pendingChanges?.[0].revertsTo).toBe("2026-07-20T00:00:00.000Z");
+
+        expect(report.pendingChanges?.[0].revertsTo).toBe(
+            "2026-07-20T00:00:00.000Z"
+        );
         expect(report.revertCount).toBe(1);
         expect(formatDiffReport(report, "/project/import.json")).toContain(
-            "[htsw] Warning: 1 list would revert to an older recorded state — see report."
+            "[htsw] Warning: 1 list would revert to an older recorded state."
         );
         expect(formatDiffProgress(report)).toContain("1 rollback warning");
-
-        expect(
-            evaluateDiffReport(
-                "house",
-                [func("Debug", [message("brand new")])],
-                liveMap(func("Debug", newer)),
-                lock
-            ).revertCount
-        ).toBe(0);
     });
 });

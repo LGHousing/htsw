@@ -13,7 +13,7 @@ function emit(events: SyncEvent[]) {
 }
 
 describe("progress reducer", () => {
-    test("apply pass locks totals through reactivation, progress, and completion", () => {
+    test("application locks totals through reactivation, progress, and completion", () => {
         let s = emit([
             {
                 kind: "sessionStarted",
@@ -75,7 +75,7 @@ describe("progress reducer", () => {
         expect(s.progress.totalsLocked).toBe(true);
     });
 
-    test("total lock keeps active-phase behavior without an apply-pass event", () => {
+    test("total lock keeps active-phase behavior without an applying event", () => {
         const hydrating = emit([
             {
                 kind: "sessionStarted",
@@ -122,6 +122,400 @@ describe("progress reducer", () => {
 
         expect(applying.progress.totalsLocked).toBe(false);
         expect(isTaskTotalLocked(applying.progress)).toBe(true);
+    });
+
+    test("total lock combines measured observation with planned application work", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "small-menu", status: "queued", totalUnits: 90 },
+                    { key: "function", status: "queued", totalUnits: 140 },
+                    { key: "large-menu", status: "queued", totalUnits: 20 },
+                ],
+                initialTotalUnits: 250,
+            },
+            {
+                kind: "importableStarted",
+                key: "small-menu",
+                type: "MENU",
+                identity: "Small",
+                setupUnits: 0,
+                initialUnits: 90,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "hydrating",
+                    completedUnits: 20,
+                    totalUnits: 54,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 12,
+                        hydrating: 8,
+                        applying: 34,
+                    },
+                    sync: { completedUnits: 1, totalUnits: 1, parent: null },
+                },
+            },
+            {
+                kind: "importableStarted",
+                key: "function",
+                type: "FUNCTION",
+                identity: "Known",
+                setupUnits: 0,
+                initialUnits: 140,
+                rowIndex: 1,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "hydrating",
+                    completedUnits: 40,
+                    totalUnits: 93,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 25,
+                        hydrating: 15,
+                        applying: 53,
+                    },
+                    sync: { completedUnits: 1, totalUnits: 1, parent: null },
+                },
+            },
+            {
+                kind: "importableStarted",
+                key: "large-menu",
+                type: "MENU",
+                identity: "Large",
+                setupUnits: 0,
+                initialUnits: 20,
+                rowIndex: 2,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "hydrating",
+                    completedUnits: 10,
+                    totalUnits: 40,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 6,
+                        hydrating: 4,
+                        applying: 30,
+                    },
+                    sync: { completedUnits: 1, totalUnits: 1, parent: null },
+                },
+            },
+            {
+                kind: "sessionTotalsLocked",
+                plannedRows: [
+                    { key: "small-menu", applicationUnits: 34 },
+                    { key: "function", applicationUnits: 53 },
+                    { key: "large-menu", applicationUnits: 30 },
+                ],
+            },
+        ]);
+
+        expect(s.progress.rows.map((row) => row.totalUnits)).toEqual([54, 93, 40]);
+        expect(s.progress.totalUnits).toBe(54 + 93 + 40);
+        expect(s.progress.active?.phase).toBe("hydrating");
+        expect(s.progress.completedUnits).toBe(20 + 40 + 10);
+
+        const afterApplicationProgress = reduce(s, {
+            kind: "applicationProgress",
+            completedUnits: 5,
+            sync: { completedUnits: 1, totalUnits: 3, parent: null },
+        });
+        expect(afterApplicationProgress.progress.totalUnits).toBe(54 + 93 + 40);
+        expect(
+            afterApplicationProgress.progress.rows.map((row) => row.totalUnits)
+        ).toEqual([54, 93, 40]);
+        expect(afterApplicationProgress.progress.completedUnits).toBe(20 + 40 + 10 + 5);
+    });
+
+    test("total lock preserves a positive fractional application total", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "cached", status: "queued", totalUnits: 1 }],
+                initialTotalUnits: 1,
+            },
+            {
+                kind: "importableStarted",
+                key: "cached",
+                type: "FUNCTION",
+                identity: "cached",
+                setupUnits: 0,
+                initialUnits: 1,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "sessionTotalsLocked",
+                plannedRows: [{ key: "cached", applicationUnits: 0.25 }],
+            },
+        ]);
+
+        expect(s.progress.totalUnits).toBe(0.25);
+        s = reduce(s, {
+            kind: "applicationProgress",
+            completedUnits: 0.25,
+            sync: null,
+        });
+        const beforeFinish = s.progress.completedUnits;
+        s = reduce(s, {
+            kind: "importableFinished",
+            key: "cached",
+            status: "skipped",
+        });
+        expect(s.progress.totalUnits).toBe(0.25);
+        expect(s.progress.completedUnits).toBe(0.25);
+        expect(s.progress.completedUnits).toBe(beforeFinish);
+    });
+
+    test("session application work is included and credited outside row totals", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", totalUnits: 10 }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "sessionTotalsLocked",
+                plannedRows: [{ key: "a", applicationUnits: 6 }],
+                sessionApplicationUnits: 4,
+            },
+        ]);
+
+        expect(s.progress.totalUnits).toBe(10);
+        s = reduce(s, {
+            kind: "sessionApplicationProgress",
+            completedUnits: 4,
+        });
+        expect(s.progress.completedUnits).toBe(4);
+        expect(s.progress.totalUnits).toBe(10);
+    });
+
+    test("successful finish does not manufacture unreported application work", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", totalUnits: 5 }],
+                initialTotalUnits: 5,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "TEAM",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 5,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "sessionTotalsLocked",
+                plannedRows: [{ key: "a", applicationUnits: 5 }],
+            },
+            {
+                kind: "applicationProgress",
+                completedUnits: 2,
+                sync: null,
+            },
+        ]);
+
+        s = reduce(s, {
+            kind: "importableFinished",
+            key: "a",
+            status: "imported",
+        });
+        expect(s.progress.completedUnits).toBe(2);
+        expect(s.progress.totalUnits).toBe(5);
+    });
+
+    test("failed row does not manufacture unfinished pre-lock work", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", totalUnits: 10 }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 3,
+                    totalUnits: 10,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 3,
+                        hydrating: 2,
+                        applying: 5,
+                    },
+                    sync: { completedUnits: 3, totalUnits: 10, parent: null },
+                },
+            },
+        ]);
+
+        s = reduce(s, {
+            kind: "importableFinished",
+            key: "a",
+            status: "failed",
+        });
+        expect(s.progress.completedUnits).toBe(3);
+        expect(s.progress.totalUnits).toBe(10);
+    });
+
+    test("session finish preserves parked work after a failure", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "a", status: "queued", totalUnits: 10 },
+                    { key: "b", status: "queued", totalUnits: 10 },
+                ],
+                initialTotalUnits: 20,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 3,
+                    totalUnits: 10,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 3,
+                        hydrating: 2,
+                        applying: 5,
+                    },
+                    sync: { completedUnits: 3, totalUnits: 10, parent: null },
+                },
+            },
+            {
+                kind: "importableStarted",
+                key: "b",
+                type: "FUNCTION",
+                identity: "b",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 1,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 2,
+                    totalUnits: 10,
+                    phaseUnits: {
+                        setup: 0,
+                        reading: 2,
+                        hydrating: 3,
+                        applying: 5,
+                    },
+                    sync: { completedUnits: 2, totalUnits: 10, parent: null },
+                },
+            },
+            {
+                kind: "importableFinished",
+                key: "b",
+                status: "failed",
+            },
+        ]);
+        const beforeFinish = s.progress;
+
+        s = reduce(s, { kind: "sessionFinished" });
+        expect(s.progress.completedUnits).toBe(beforeFinish.completedUnits);
+        expect(s.progress.totalUnits).toBe(beforeFinish.totalUnits);
+        expect(s.progress.parked).toEqual({});
+    });
+
+    test("structured total lock is single-shot and ignores legacy progress", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", totalUnits: 10 }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "sessionTotalsLocked",
+                plannedRows: [{ key: "a", applicationUnits: 4 }],
+            },
+        ]);
+        const locked = s.progress;
+
+        s = reduce(s, {
+            kind: "sessionTotalsLocked",
+            plannedRows: [{ key: "a", applicationUnits: 99 }],
+        });
+        s = reduce(s, {
+            kind: "progress",
+            scope: { kind: "topLevel" },
+            progress: {
+                phase: "hydrating",
+                completedUnits: 50,
+                totalUnits: 100,
+                phaseUnits: {
+                    setup: 0,
+                    reading: 25,
+                    hydrating: 25,
+                    applying: 50,
+                },
+                sync: { completedUnits: 50, totalUnits: 100, parent: null },
+            },
+        });
+
+        expect(s.progress).toEqual(locked);
     });
 
     test("sessionStarted seeds rows + total", () => {

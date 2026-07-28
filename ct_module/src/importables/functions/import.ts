@@ -4,7 +4,10 @@ import {
     applyActionListPlan,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
-import { type ActionListPlan } from "../../housingSync/actions/plan";
+import {
+    actionListPlanNeedsApply,
+    type ActionListPlan,
+} from "../../housingSync/actions/plan";
 import {
     actionsFullyHydrated,
     fullyHydratedActionsFromSlots,
@@ -21,10 +24,7 @@ import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
-import {
-    getSessionFunctionNamesLower,
-    openFunctionList,
-} from "./listFunctions";
+import { getSessionFunctionNamesLower, openFunctionList } from "./listFunctions";
 import {
     applyFunctionSettings,
     ensureFunctionExists,
@@ -39,6 +39,15 @@ import {
     type ObservedFunctionSettings,
 } from "./settings";
 import { recordEmptyFunctionShell } from "../import/emptyShells";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type FunctionImportPlan = {
     kind: "FUNCTION";
@@ -125,36 +134,96 @@ export function planImportableFunction(read: FunctionRead): FunctionImportPlan {
 export async function applyImportableFunctionPlan(
     ctx: TaskContext,
     plan: FunctionImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     if (
         !plan.exists &&
-        !session.ensuredReferencedShells.functions.has(
-            plan.importable.name.toLowerCase()
-        )
+        !session.ensuredReferencedShells.functions.has(plan.importable.name.toLowerCase())
     ) {
-        await ensureFunctionExists(ctx, plan.importable.name);
-        await recordEmptyFunctionShell(ctx, session, plan.importable.name);
-        await clickGoBack(ctx);
+        await application.run("createShell", async () => {
+            await ensureFunctionExists(ctx, plan.importable.name);
+            await recordEmptyFunctionShell(ctx, session, plan.importable.name);
+            await clickGoBack(ctx);
+        });
     }
     if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
-        await openFunctionList(ctx);
-        await functionImportStep(
-            `opening settings for function ${plan.importable.name}`,
-            () => openFunctionSettings(ctx, plan.importable.name)
-        );
-        await applyFunctionSettings(ctx, plan.importable, plan.settingsPlan ?? []);
+        await application.run("settings", async () => {
+            for (const change of plan.settingsPlan ?? []) {
+                await openFunctionList(ctx);
+                await functionImportStep(
+                    `opening settings for function ${plan.importable.name}`,
+                    () => openFunctionSettings(ctx, plan.importable.name)
+                );
+                await applyFunctionSettings(ctx, plan.importable, [change]);
+            }
+        });
     }
 
-    if (plan.actionsPlan !== null) {
-        await ensureFunctionExists(ctx, plan.importable.name);
-        await applyActionListPlan(ctx, plan.actionsPlan, {
-            sync: session.actions,
-        });
-        await clickGoBack(ctx);
-    } else if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
-        await clickGoBack(ctx);
+    const actionsPlan = plan.actionsPlan;
+    if (actionListPlanNeedsApply(actionsPlan)) {
+        await application.run("openActions", () =>
+            ensureFunctionExists(ctx, plan.importable.name)
+        );
+        await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
+            applyActionListPlan(ctx, actionsPlan, {
+                sync,
+            })
+        );
+        await application.run("closeActions", () => clickGoBack(ctx));
     }
+}
+
+export function functionApplicationPlan(
+    plan: FunctionImportPlan,
+    session: ImportContext
+): ApplicationPlan {
+    if (functionPlanIsNoOp(plan)) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+    const steps: ApplicationStep[] = [];
+    const shellPlanned =
+        !plan.exists &&
+        session.plannedReferencedShells.functions.has(plan.importable.name.toLowerCase());
+    if (!plan.exists && !shellPlanned) {
+        steps.push(
+            workStep(
+                "createShell",
+                COST.commandInterval * 2 +
+                    COST.commandMessageWait +
+                    COST.commandMenuWait +
+                    COST.goBackWait +
+                    COST.cacheWrite
+            )
+        );
+    }
+    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
+        let units = 0;
+        for (const change of plan.settingsPlan ?? []) {
+            units += COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+            units +=
+                change.key === "icon"
+                    ? COST.menuClickWait + COST.itemSelect
+                    : COST.signInput;
+        }
+        steps.push(workStep("settings", units));
+    }
+    if (actionListPlanNeedsApply(plan.actionsPlan)) {
+        steps.push(
+            workStep("openActions", COST.commandInterval + COST.commandMenuWait),
+            actionListStep("actions", plan.actionsPlan),
+            workStep("closeActions", COST.goBackWait)
+        );
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
+}
+
+export function functionPlanApplicationUnits(
+    plan: FunctionImportPlan,
+    session: ImportContext
+): number {
+    return functionApplicationPlan(plan, session).totalUnits;
 }
 
 function functionSettingsPlanNeedsApply(
@@ -174,15 +243,12 @@ async function functionImportStep<T>(label: string, run: () => Promise<T>): Prom
 
 /**
  * True when applying this plan changes nothing — its action diff is empty and
- * icon/ticks are already handled — so the apply pass can be skipped.
+ * icon/ticks are already handled — so application can be skipped.
  */
 export function functionPlanIsNoOp(plan: FunctionImportPlan): boolean {
-    const actionsNoOp =
-        plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    const actionsNoOp = !actionListPlanNeedsApply(plan.actionsPlan);
     return (
-        plan.exists &&
-        actionsNoOp &&
-        !functionSettingsPlanNeedsApply(plan.settingsPlan)
+        plan.exists && actionsNoOp && !functionSettingsPlanNeedsApply(plan.settingsPlan)
     );
 }
 

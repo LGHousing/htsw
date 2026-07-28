@@ -12,6 +12,7 @@ import { functionIconCompareKey } from "../importables/functions/iconComparison"
 import { menuSlotCompareKey } from "../importables/menus/slotComparison";
 import { regionBoundsCompareKey } from "../importables/regions/bounds";
 import { actionListsOfImportable } from "./actionLists";
+import { getChildListFields } from "../housingSync/fields/actionMappings";
 
 /**
  * Importable-cache hashing.
@@ -46,16 +47,6 @@ function perSlotActionHashes(actions: readonly Action[]): string[] {
     return actions.map(actionHash);
 }
 
-/**
- * Walk an action list and emit `{ <path>: hashes[] }` for every reachable
- * action list (top-level + every nested ifActions/elseActions/RANDOM body).
- *
- * Each key is a dotted path locating that list within the importable:
- *   "actions"
- *   "actions[3].ifActions"
- *   "actions[3].elseActions"
- *   "actions[3].ifActions[1].actions"   // nested RANDOM inside an IF branch
- */
 function collectActionListHashes(
     out: Record<string, string[]>,
     path: string,
@@ -64,12 +55,16 @@ function collectActionListHashes(
     out[path] = perSlotActionHashes(actions);
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
-        if (action.type === "CONDITIONAL") {
-            out[`${path}[${i}].conditions`] = action.conditions.map(conditionHash);
-            collectActionListHashes(out, `${path}[${i}].ifActions`, action.ifActions);
-            collectActionListHashes(out, `${path}[${i}].elseActions`, action.elseActions);
-        } else if (action.type === "RANDOM") {
-            collectActionListHashes(out, `${path}[${i}].actions`, action.actions);
+        for (const field of getChildListFields(action.type)) {
+            const value = (
+                action as unknown as Record<string, unknown>
+            )[field.prop];
+            if (!Array.isArray(value)) continue;
+            const childPath = `${path}[${i}].${field.prop}`;
+            out[childPath] =
+                field.kind === "conditionList"
+                    ? (value as Condition[]).map(conditionHash)
+                    : perSlotActionHashes(value as Action[]);
         }
     }
 }

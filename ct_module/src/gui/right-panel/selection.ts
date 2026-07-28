@@ -1,4 +1,5 @@
 import { markGuiDirty } from "../lib/dirty";
+import { disposeLivePreviews } from "./import-tab/livePreview";
 
 export type FileSelection = {
     path: string;
@@ -47,6 +48,7 @@ export function closeLiveTab(): void {
     if (dismissedLiveImport && !liveTabActive) return;
     dismissedLiveImport = true;
     liveTabActive = false;
+    disposeLivePreviews();
     markGuiDirty();
 }
 
@@ -60,6 +62,7 @@ export function onTaskRunningChanged(
     finishedTaskNeedsAttention = false
 ): void {
     if (!wasRunning && isRunning) {
+        disposeLivePreviews();
         dismissedLiveImport = false;
         lastLivePath = null;
         liveTabActive = true;

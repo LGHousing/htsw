@@ -70,48 +70,79 @@ function collectTeamAndGroupFromCondition(
     }
 }
 
-function visitActionItemReferences(
-    actions: readonly Action[] | undefined,
+function visitActionOwnItemReferences(
+    action: Action,
     sourcePath: string | undefined,
-    parentActions: readonly Action[],
+    actionAncestors: readonly Action[],
     visitor: (use: ItemReferenceUse) => void
 ): void {
-    if (actions === undefined) return;
-    for (const action of actions) {
-        const actionAncestors = parentActions.concat(action);
-        const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
-            ?.loreFields;
-        if (fields === undefined) continue;
-        for (const label in fields) {
-            const field = fields[label];
-            const value = (action as unknown as Record<string, unknown>)[field.prop];
-            if (field.kind === "item") {
-                if (typeof value === "string") {
-                    visitor({
-                        owner: action,
-                        property: field.prop,
-                        itemName: value,
-                        sourcePath,
-                        actionAncestors,
-                    });
-                }
-            } else if (field.kind === "conditionList" && Array.isArray(value)) {
-                for (const condition of value as Condition[]) {
-                    visitConditionItemReferences(
-                        condition,
-                        sourcePath,
-                        actionAncestors,
-                        visitor
-                    );
-                }
-            } else if (field.kind === "actionList" && Array.isArray(value)) {
-                visitActionItemReferences(
-                    value as Action[],
+    const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
+        ?.loreFields;
+    if (fields === undefined) return;
+    for (const label in fields) {
+        const field = fields[label];
+        const value = (action as unknown as Record<string, unknown>)[field.prop];
+        if (field.kind === "item") {
+            if (typeof value === "string") {
+                visitor({
+                    owner: action,
+                    property: field.prop,
+                    itemName: value,
+                    sourcePath,
+                    actionAncestors,
+                });
+            }
+        } else if (field.kind === "conditionList" && Array.isArray(value)) {
+            for (const condition of value as Condition[]) {
+                visitConditionItemReferences(
+                    condition,
                     sourcePath,
                     actionAncestors,
                     visitor
                 );
             }
+        }
+    }
+}
+
+function visitChildActionItemReferences(
+    actions: readonly Action[],
+    sourcePath: string | undefined,
+    rootAction: Action,
+    visitor: (use: ItemReferenceUse) => void
+): void {
+    for (const action of actions) {
+        visitActionOwnItemReferences(
+            action,
+            sourcePath,
+            [rootAction, action],
+            visitor
+        );
+    }
+}
+
+function visitActionItemReferences(
+    actions: readonly Action[] | undefined,
+    sourcePath: string | undefined,
+    visitor: (use: ItemReferenceUse) => void
+): void {
+    if (actions === undefined) return;
+    for (const action of actions) {
+        visitActionOwnItemReferences(action, sourcePath, [action], visitor);
+        const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
+            ?.loreFields;
+        if (fields === undefined) continue;
+        for (const label in fields) {
+            const field = fields[label];
+            if (field.kind !== "actionList") continue;
+            const value = (action as unknown as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(value)) continue;
+            visitChildActionItemReferences(
+                value as Action[],
+                sourcePath,
+                action,
+                visitor
+            );
         }
     }
 }
@@ -126,7 +157,6 @@ export function visitItemReferences(
             visitActionItemReferences(
                 importable.actions,
                 importable.sourcePath,
-                [],
                 visitor
             );
             break;
@@ -134,7 +164,6 @@ export function visitItemReferences(
             visitActionItemReferences(
                 importable.actions,
                 importable.actionsPath ?? importable.sourcePath,
-                [],
                 visitor
             );
             break;
@@ -142,13 +171,11 @@ export function visitItemReferences(
             visitActionItemReferences(
                 importable.onEnterActions,
                 importable.onEnterActionsPath ?? importable.sourcePath,
-                [],
                 visitor
             );
             visitActionItemReferences(
                 importable.onExitActions,
                 importable.onExitActionsPath ?? importable.sourcePath,
-                [],
                 visitor
             );
             break;
@@ -157,7 +184,6 @@ export function visitItemReferences(
                 visitActionItemReferences(
                     slot.actions,
                     slot.actionsPath ?? importable.sourcePath,
-                    [],
                     visitor
                 );
             }
@@ -167,13 +193,11 @@ export function visitItemReferences(
             visitActionItemReferences(
                 importable.leftClickActions,
                 importable.leftClickActionsPath ?? importable.sourcePath,
-                [],
                 visitor
             );
             visitActionItemReferences(
                 importable.rightClickActions,
                 importable.rightClickActionsPath ?? importable.sourcePath,
-                [],
                 visitor
             );
             break;
@@ -187,6 +211,47 @@ export function visitItemReferences(
     }
 }
 
+function collectTeamAndGroupFromAction(
+    action: Action,
+    teams: string[],
+    groups: string[]
+): void {
+    if (action.type === "SET_TEAM") {
+        teams.push(action.team);
+    } else if (action.type === "SET_GROUP") {
+        groups.push(action.group);
+    } else if (
+        action.type === "CHANGE_VAR" &&
+        action.holder.type === "Team" &&
+        typeof action.holder.team === "string"
+    ) {
+        teams.push(action.holder.team);
+    }
+
+    const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
+        ?.loreFields;
+    if (fields === undefined) return;
+    for (const label in fields) {
+        const field = fields[label];
+        if (field.kind !== "conditionList") continue;
+        const value = (action as unknown as Record<string, unknown>)[field.prop];
+        if (!Array.isArray(value)) continue;
+        for (const condition of value as Condition[]) {
+            collectTeamAndGroupFromCondition(condition, teams, groups);
+        }
+    }
+}
+
+function collectTeamAndGroupFromChildActions(
+    actions: readonly Action[],
+    teams: string[],
+    groups: string[]
+): void {
+    for (const action of actions) {
+        collectTeamAndGroupFromAction(action, teams, groups);
+    }
+}
+
 function collectTeamAndGroupFromActions(
     actions: readonly Action[] | undefined,
     teams: string[],
@@ -194,32 +259,20 @@ function collectTeamAndGroupFromActions(
 ): void {
     if (actions === undefined) return;
     for (const action of actions) {
-        if (action.type === "SET_TEAM") {
-            teams.push(action.team);
-        } else if (action.type === "SET_GROUP") {
-            groups.push(action.group);
-        } else if (
-            action.type === "CHANGE_VAR" &&
-            action.holder.type === "Team" &&
-            typeof action.holder.team === "string"
-        ) {
-            teams.push(action.holder.team);
-        }
-
+        collectTeamAndGroupFromAction(action, teams, groups);
         const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
             ?.loreFields;
         if (fields === undefined) continue;
         for (const label in fields) {
             const field = fields[label];
-            if (field.kind !== "actionList" && field.kind !== "conditionList") continue;
+            if (field.kind !== "actionList") continue;
             const value = (action as unknown as Record<string, unknown>)[field.prop];
-            if (!Array.isArray(value)) continue;
-            if (field.kind === "conditionList") {
-                for (const condition of value as Condition[]) {
-                    collectTeamAndGroupFromCondition(condition, teams, groups);
-                }
-            } else {
-                collectTeamAndGroupFromActions(value as Action[], teams, groups);
+            if (Array.isArray(value)) {
+                collectTeamAndGroupFromChildActions(
+                    value as Action[],
+                    teams,
+                    groups
+                );
             }
         }
     }
