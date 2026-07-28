@@ -75,13 +75,19 @@ import {
 import { ActionPath } from "../../../housingSync/actionPath";
 import { setFocusPath } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
-import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
 import type { ImportConflict } from "../../../importables/import/conflicts";
+import { resolveImportConflictPolicy } from "../../../importables/import/conflictResolution";
+import type { ImportConflictPolicy } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { resetLivePreviewScroll } from "../view-body";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
+import {
+    closeConflictResolutionPopover,
+    openConflictResolutionPopover,
+    type ConflictResolutionDecision,
+} from "./conflictResolutionPopover";
 
 function errorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
@@ -138,66 +144,27 @@ function conflictSubject(type: ImportConflict["type"], identity: string): string
     return `${label} "${identity}"`;
 }
 
-function conflictLines(conflicts: readonly ImportConflict[]): string[] {
-    const groups: Array<{
-        type: ImportConflict["type"];
-        identity: string;
-        paths: string[];
-    }> = [];
-    const byImportable = new Map<string, (typeof groups)[number]>();
-    for (const conflict of conflicts) {
-        const key = `${conflict.type}:${conflict.identity}`;
-        let group = byImportable.get(key);
-        if (group === undefined) {
-            group = { type: conflict.type, identity: conflict.identity, paths: [] };
-            byImportable.set(key, group);
-            groups.push(group);
-        }
-        if (group.paths.indexOf(conflict.basePath) < 0) {
-            group.paths.push(conflict.basePath);
-        }
-    }
-
-    const lines = groups.map((group) => {
-        const subject = conflictSubject(group.type, group.identity);
-        // A lone "actions" list is the type's only list (functions, commands,
-        // events) — naming it adds nothing over the subject itself.
-        if (group.paths.length === 1 && group.paths[0] === "actions") {
-            return subject;
-        }
-        return `${subject} — ${group.paths.map(conflictListLabel).join(", ")}`;
-    });
-    const visible = lines.slice(0, 10);
-    if (lines.length > visible.length) {
-        visible.push(`…and ${lines.length - visible.length} more`);
-    }
-    return ["Someone edited these in Housing after your last import:", ...visible];
+function conflictLabel(conflict: ImportConflict): string {
+    const subject = conflictSubject(conflict.type, conflict.identity);
+    if (conflict.basePath === "actions") return subject;
+    return `${subject} — ${conflictListLabel(conflict.basePath)}`;
 }
 
-async function confirmImportConflicts(
+async function chooseImportConflicts(
     ctx: TaskContext,
-    conflicts: readonly ImportConflict[],
-    onReview: () => void
-): Promise<boolean> {
-    let decision: boolean | null = null;
-    const decide = (value: boolean): void => {
+    conflicts: readonly ImportConflict[]
+): Promise<ConflictResolutionDecision> {
+    let decision: ConflictResolutionDecision | null = null;
+    const decide = (value: ConflictResolutionDecision): void => {
         if (decision === null) decision = value;
     };
-    const currentDecision = (): boolean | null => decision;
+    const currentDecision = (): ConflictResolutionDecision | null => decision;
 
     ChatLib.chat(conflictAwaitingConfirmationMessage(conflicts));
-    openConfirmPopover({
-        title: "Housing changed since your last import",
-        lines: conflictLines(conflicts),
-        confirmLabel: "Import anyway",
-        extraLabel: "See changes",
-        danger: true,
-        onConfirm: () => decide(true),
-        onExtra: () => {
-            onReview();
-            decide(false);
-        },
-        onClose: () => decide(false),
+    openConflictResolutionPopover({
+        conflicts,
+        label: conflictLabel,
+        onDecision: decide,
     });
     try {
         for (;;) {
@@ -206,7 +173,7 @@ async function confirmImportConflicts(
             await ctx.sleep(50);
         }
     } finally {
-        closeConfirmPopover();
+        closeConflictResolutionPopover();
     }
 }
 
@@ -585,7 +552,8 @@ export function startImport(
 }
 
 type ImportStartOptions = {
-    onConflict?: "prompt" | "cancel";
+    onConflict?: ImportConflictPolicy;
+    accepts?: readonly string[];
     fresh?: boolean;
     silentBusy?: boolean;
     onStarted?: () => void;
@@ -762,6 +730,8 @@ async function prepareAndStartImport(
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
+        let totalAppliedLists = 0;
+        const skippedConflicts: ImportConflict[] = [];
         let unexpectedError: unknown = null;
         try {
             const cached = getHousingUuid();
@@ -782,7 +752,7 @@ async function prepareAndStartImport(
                     trustMode,
                     housingUuid,
                 });
-                await runImportSession(ctx, {
+                const sessionResult = await runImportSession(ctx, {
                     importables: batch.importables,
                     trustMode,
                     housingUuid,
@@ -790,32 +760,51 @@ async function prepareAndStartImport(
                     freshHydration: options.fresh,
                     parsed: batch.parsed,
                     events,
-                    confirmConflicts: async (conflicts) => {
-                        if (options.onConflict === "cancel") {
+                    resolveConflicts: async (conflicts) => {
+                        const decision = resolveImportConflictPolicy(
+                            conflicts,
+                            options.accepts ?? [],
+                            options.onConflict ?? "prompt"
+                        );
+                        if (decision.kind === "resolved") {
+                            return decision.resolution;
+                        }
+                        if (decision.kind === "cancel") {
                             cancelled = true;
                             ChatLib.chat(
                                 `[htsw] Import cancelled: conflicts detected · ${totalImported} imported`
                             );
-                            return false;
+                            return { accepted: [], skipped: [] };
                         }
-                        const proceed = await confirmImportConflicts(
+                        const prompted = await chooseImportConflicts(
                             ctx,
-                            conflicts,
-                            () => {
-                                reviewRequest = {
-                                    batch,
-                                    conflicts: conflicts.slice(),
-                                    housingUuid,
-                                };
-                            }
+                            decision.resolution.skipped
                         );
-                        if (!proceed) {
+                        if (prompted.kind === "review") {
+                            reviewRequest = {
+                                batch,
+                                conflicts: decision.resolution.skipped.slice(),
+                                housingUuid,
+                            };
+                            cancelled = true;
+                            ChatLib.chat(
+                                `[htsw] Import cancelled for conflict review · ${totalImported} imported`
+                            );
+                            return { accepted: [], skipped: [] };
+                        }
+                        if (prompted.kind === "cancel") {
                             cancelled = true;
                             ChatLib.chat(
                                 `[htsw] Import cancelled by user · ${totalImported} imported`
                             );
+                            return { accepted: [], skipped: [] };
                         }
-                        return proceed;
+                        return {
+                            accepted: decision.resolution.accepted.concat(
+                                prompted.resolution.accepted
+                            ),
+                            skipped: prompted.resolution.skipped,
+                        };
                     },
                     onImportableAutoAdded: (importable) => {
                         const queueItem = makeImportableQueueItem(
@@ -832,6 +821,10 @@ async function prepareAndStartImport(
                         }
                     },
                 });
+                totalAppliedLists += sessionResult.appliedLists;
+                for (const conflict of sessionResult.skippedConflicts) {
+                    skippedConflicts.push(conflict);
+                }
                 const c = events.counts();
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
@@ -866,12 +859,21 @@ async function prepareAndStartImport(
                 // at completion — so the toggle must be checked directly.
                 if (isImportCompletionSoundEnabled()) playImportSuccessSound();
                 showToast(
-                    `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
+                    `Import complete in ${elapsed} · ${totalAppliedLists} applied, ${skippedConflicts.length} conflicts skipped`,
                     0xff5cb85c
                 );
+                const manifest = batches[0].sourcePath;
                 ChatLib.chat(
                     `&a[htsw] Import complete in ${elapsed} &7· &f${totalImported}&a imported, &f${totalSkipped}&7 skipped`
                 );
+                ChatLib.chat(
+                    `&a[htsw] Import complete: &f${totalAppliedLists}&a applied, &f${skippedConflicts.length}&a skipped (conflicts) &7· &f${manifest}`
+                );
+                for (const conflict of skippedConflicts) {
+                    ChatLib.chat(
+                        `&e[htsw] Skipped (conflict): ${conflict.type} "${conflict.identity}" &7· &f${conflict.basePath}`
+                    );
+                }
             } else {
                 // Surface the failure reason (read before clearing progress
                 // below) — a failure halts the whole run, so the *why* must be

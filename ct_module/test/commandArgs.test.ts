@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { parseCommandArgs, quoteCommandArg } from "../src/utils/commandArgs";
-import { parseImportCommandArgs } from "../src/slashCommands/importArgs";
+import {
+    IMPORT_USAGE,
+    parseImportCommandArgs,
+} from "../src/slashCommands/importArgs";
 
 describe("parseCommandArgs", () => {
     test("keeps normal split args unchanged", () => {
@@ -47,6 +50,10 @@ describe("quoteCommandArg", () => {
 });
 
 describe("parseImportCommandArgs", () => {
+    test("documents skip and per-list accept syntax", () => {
+        expect(IMPORT_USAGE).toContain("--on-conflict=cancel|skip");
+        expect(IMPORT_USAGE).toContain("--accept TYPE:name[:basePath]");
+    });
     test("strips the cancel policy flag from the import path", () => {
         expect(
             parseImportCommandArgs([
@@ -57,6 +64,7 @@ describe("parseImportCommandArgs", () => {
         ).toEqual({
             pathArgs: ["projects/My", "House/import.json"],
             onConflict: "cancel",
+            accepts: [],
             fresh: false,
         });
     });
@@ -65,7 +73,35 @@ describe("parseImportCommandArgs", () => {
         expect(parseImportCommandArgs(["--fresh", "import.json"])).toEqual({
             pathArgs: ["import.json"],
             onConflict: "prompt",
+            accepts: [],
             fresh: true,
+        });
+    });
+
+    test("parses skip and repeatable per-list accepts", () => {
+        expect(
+            parseImportCommandArgs([
+                "--on-conflict=skip",
+                "--accept",
+                "ITEM:Wand:leftClickActions",
+                "--accept",
+                "FUNCTION:Debug",
+                "import.json",
+            ])
+        ).toEqual({
+            pathArgs: ["import.json"],
+            onConflict: "skip",
+            accepts: [
+                "ITEM:Wand:leftClickActions",
+                "FUNCTION:Debug",
+            ],
+            fresh: false,
+        });
+    });
+
+    test("rejects a missing accept identifier", () => {
+        expect(parseImportCommandArgs(["import.json", "--accept"])).toMatchObject({
+            error: "--accept requires TYPE:name or TYPE:name:basePath",
         });
     });
 });

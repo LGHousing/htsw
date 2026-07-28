@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Action, ImportableFunction } from "htsw/types";
+import type {
+    Action,
+    Importable,
+    ImportableFunction,
+    ImportableItem,
+} from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
     applyImportablePlan: vi.fn(async () => undefined),
@@ -20,17 +25,24 @@ vi.mock("../src/importCache", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/importCache")>()),
     buildTrustPlan: (
         housingUuid: string,
-        importables: readonly ImportableFunction[],
+        importables: readonly Importable[],
         trustMode: boolean
     ) => ({
         housingUuid,
         trustMode,
         importables: new Map(
-            importables.map((importable) => [
-                `${importable.type}:${importable.name}`,
-                {
+            importables.map((importable) => {
+                const identity =
+                    importable.type === "EVENT"
+                        ? importable.event
+                        : importable.type === "NPC"
+                          ? `${importable.pos.x},${importable.pos.y},${importable.pos.z}`
+                          : importable.name;
+                return [
+                    `${importable.type}:${identity}`,
+                    {
                     importable,
-                    identity: importable.name,
+                    identity,
                     entry: null,
                     sourceHash: "",
                     cacheHash: null,
@@ -39,11 +51,13 @@ vi.mock("../src/importCache", async (importOriginal) => ({
                     lockListContentHashes: { actions: "baseline-content" },
                     cacheMatchesLock: true,
                     trustMode: false,
-                    wholeImportableTrusted: false,
+                    wholeImportableTrusted:
+                        "name" in importable && importable.name === "Trusted",
                     trustedChildListPaths: new Set(),
                     trustedChildLists: new Map(),
                 },
-            ])
+                ];
+            })
         ),
     }),
     deleteImportableCache: mocks.deleteImportableCache,
@@ -62,10 +76,20 @@ import { runImportSession } from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
-import { message } from "./utils";
+import { changeVar, message, observedSlot, playSound } from "./utils";
 import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
+import { resolveImportConflictPolicy } from "../src/importables/import/conflictResolution";
+import { applyActionListPlan } from "../src/housingSync/actions/apply";
+import { ActionListApplyRun } from "../src/housingSync/actions/apply/run";
+import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
+import {
+    actionSyncConflictIdentifier,
+    type ObservedConflictList,
+} from "../src/housingSync/actions/syncContext";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import type { TagLike } from "../src/housingSync/items/itemTag";
+
+const actionListApply = vi.spyOn(ActionListApplyRun.prototype, "apply");
 
 describe("import conflict gate", () => {
     beforeEach(() => {
@@ -75,6 +99,8 @@ describe("import conflict gate", () => {
         mocks.tryWriteImportableCache.mockResolvedValue(true);
         mocks.deleteImportableCache.mockReturnValue(true);
         mocks.upsertHouseLockImportables.mockReturnValue(true);
+        actionListApply.mockReset();
+        actionListApply.mockResolvedValue({ currentSnapshot: [] });
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -138,6 +164,395 @@ describe("import conflict gate", () => {
         expect(events[events.length - 1]).toEqual({ kind: "sessionFinished" });
         expect(messages).toContain(
             "&c[htsw] Import cancelled — Housing changed since the last import."
+        );
+    });
+
+    it("applies changed plans, skips through the real list boundary, and reports only changed lists", async () => {
+        const trusted: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Trusted",
+            actions: [message("trusted")],
+        };
+        const noOp: ImportableFunction = {
+            type: "FUNCTION",
+            name: "NoOp",
+            actions: [message("same")],
+        };
+        const clean: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Clean",
+            actions: [message("clean source")],
+        };
+        const accepted: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Accepted",
+            actions: [playSound()],
+        };
+        const skipped: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Skipped",
+            actions: [changeVar()],
+        };
+        const liveByName: Record<string, ImportableFunction["actions"]> = {
+            NoOp: [message("same")],
+            Clean: [message("clean live")],
+            Accepted: [message("accepted live")],
+            Skipped: [message("skipped live")],
+        };
+        mocks.scanImportable.mockImplementation(
+            async (
+                _ctx: unknown,
+                importable: ImportableFunction,
+                session: {
+                    actions: Parameters<typeof createKnownActionListPlan>[2]["sync"];
+                }
+            ) => {
+                const target = {
+                    type: "FUNCTION" as const,
+                    identity: importable.name,
+                    basePath: "actions",
+                };
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    needsHydration: true,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => {
+                        const actionPlan = createKnownActionListPlan(
+                            importable.actions ?? [],
+                            liveByName[importable.name] ?? [],
+                            { sync: session.actions, conflictTarget: target }
+                        );
+                        return {
+                            kind: "FUNCTION",
+                            importable,
+                            isNoOp: () => actionPlan.diff.operations.length === 0,
+                            apply: (
+                                applyCtx: TaskContext,
+                                applySession: typeof session
+                            ) =>
+                                applyActionListPlan(applyCtx, actionPlan, {
+                                    sync: applySession.actions,
+                                }).then(() => undefined),
+                            reconstructObserved: () => null,
+                            reconstructPartial: () => null,
+                        };
+                    },
+                };
+            }
+        );
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: vi.fn(),
+        } as unknown as TaskContext;
+
+        const result = await runImportSession(ctx, {
+            importables: [trusted, noOp, clean, accepted, skipped],
+            trustMode: true,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: {
+                value: [trusted, noOp, clean, accepted, skipped],
+            } as never,
+            resolveConflicts: async (conflicts) => {
+                const decision = resolveImportConflictPolicy(
+                    conflicts,
+                    ["FUNCTION:Accepted"],
+                    "skip"
+                );
+                if (decision.kind !== "resolved") {
+                    throw new Error(`Unexpected ${decision.kind} decision`);
+                }
+                return decision.resolution;
+            },
+        });
+
+        expect(result).toEqual({
+            appliedLists: 2,
+            skippedConflicts: [
+                {
+                    type: "FUNCTION",
+                    identity: "Skipped",
+                    basePath: "actions",
+                },
+            ],
+        });
+        expect(actionListApply).toHaveBeenCalledTimes(2);
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledWith(
+            ctx,
+            expect.objectContaining({
+                name: "Skipped",
+                actions: liveByName.Skipped,
+            }),
+            "importer",
+            "test-house",
+            expect.anything()
+        );
+        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledWith(
+            "./project/import.json",
+            "test-house",
+            expect.arrayContaining([
+                expect.objectContaining({
+                    importable: clean,
+                    preserveListPaths: [],
+                }),
+                expect.objectContaining({
+                    preserveListPaths: ["actions"],
+                }),
+            ])
+        );
+    });
+
+    it("applies a fully named accept under cancel policy", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Accepted",
+            actions: [playSound()],
+        };
+        mocks.scanImportable.mockImplementation(
+            async (
+                _ctx: unknown,
+                _importable: ImportableFunction,
+                session: {
+                    actions: Parameters<typeof createKnownActionListPlan>[2]["sync"];
+                }
+            ) => ({
+                kind: "FUNCTION",
+                importable,
+                needsHydration: false,
+                hydrate: mocks.hydrateImportable,
+                plan: () => {
+                    const actionPlan = createKnownActionListPlan(
+                        importable.actions ?? [],
+                        [message("live")],
+                        {
+                            sync: session.actions,
+                            conflictTarget: {
+                                type: "FUNCTION",
+                                identity: "Accepted",
+                                basePath: "actions",
+                            },
+                        }
+                    );
+                    return {
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: (
+                            applyCtx: TaskContext,
+                            applySession: typeof session
+                        ) =>
+                            applyActionListPlan(applyCtx, actionPlan, {
+                                sync: applySession.actions,
+                            }).then(() => undefined),
+                        reconstructObserved: () => null,
+                        reconstructPartial: () => null,
+                    };
+                },
+            })
+        );
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: vi.fn(),
+        } as unknown as TaskContext;
+
+        const result = await runImportSession(ctx, {
+            importables: [importable],
+            trustMode: true,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: [importable] } as never,
+            resolveConflicts: async (conflicts) => {
+                const decision = resolveImportConflictPolicy(
+                    conflicts,
+                    ["FUNCTION:Accepted"],
+                    "cancel"
+                );
+                if (decision.kind !== "resolved") {
+                    return { accepted: [], skipped: [] };
+                }
+                return decision.resolution;
+            },
+        });
+
+        expect(result.appliedLists).toBe(1);
+        expect(actionListApply).toHaveBeenCalledOnce();
+    });
+
+    it("rejects an unmatched accept against an empty conflict set before writes", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Clean",
+            actions: [message("same")],
+        };
+        mocks.scanImportable.mockResolvedValue({
+            kind: "FUNCTION",
+            importable,
+            needsHydration: false,
+            hydrate: mocks.hydrateImportable,
+            plan: () => ({
+                kind: "FUNCTION",
+                importable,
+                isNoOp: () => true,
+                apply: mocks.applyImportablePlan,
+                reconstructObserved: () => null,
+                reconstructPartial: () => null,
+            }),
+        });
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: vi.fn(),
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables: [importable],
+                trustMode: true,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: [importable] } as never,
+                resolveConflicts: async (conflicts) => {
+                    const decision = resolveImportConflictPolicy(
+                        conflicts,
+                        ["FUNCTION:Typo"],
+                        "cancel"
+                    );
+                    return decision.kind === "resolved"
+                        ? decision.resolution
+                        : { accepted: [], skipped: [] };
+                },
+            })
+        ).rejects.toThrow(
+            "--accept did not match any conflicted list: FUNCTION:Typo"
+        );
+
+        expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
+        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
+        expect(mocks.upsertHouseLockImportables).not.toHaveBeenCalled();
+    });
+
+    it("rejects an incomplete skipped observation before applying anything", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Unreadable",
+            actions: [playSound()],
+        };
+        const conflict = {
+            type: "FUNCTION" as const,
+            identity: "Unreadable",
+            basePath: "actions",
+        };
+        const unreadable = observedSlot(0, message("unreadable"));
+        unreadable.action = null;
+        unreadable.hydrated = false;
+        mocks.scanImportable.mockImplementation(
+            async (
+                _ctx: unknown,
+                _importable: ImportableFunction,
+                session: {
+                    actions: {
+                        conflicts: typeof conflict[];
+                        observedConflictLists: Map<string, ObservedConflictList>;
+                    };
+                }
+            ) => {
+                session.actions.conflicts.push(conflict);
+                session.actions.observedConflictLists.set(
+                    actionSyncConflictIdentifier(conflict),
+                    { kind: "slots", slots: [unreadable] }
+                );
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    needsHydration: false,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => null,
+                        reconstructPartial: () => null,
+                    }),
+                };
+            }
+        );
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: vi.fn(),
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables: [importable],
+                trustMode: true,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: [importable] } as never,
+                resolveConflicts: async () => ({
+                    accepted: [],
+                    skipped: [conflict],
+                }),
+            })
+        ).rejects.toThrow(
+            "Cannot skip conflicted list FUNCTION:Unreadable:actions: " +
+                "its live contents could not be read completely."
+        );
+
+        expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
+        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
+        expect(mocks.upsertHouseLockImportables).not.toHaveBeenCalled();
+    });
+
+    it("leaves successful ITEM cache persistence with the item importer", async () => {
+        const importable: ImportableItem = {
+            type: "ITEM",
+            name: "Wand",
+            nbt: {
+                type: "compound",
+                value: {
+                    id: { type: "string", value: "minecraft:stick" },
+                },
+            },
+        };
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: vi.fn(),
+        } as unknown as TaskContext;
+        mocks.scanImportable.mockResolvedValue({
+            kind: "ITEM",
+            importable,
+            needsHydration: false,
+            hydrate: mocks.hydrateImportable,
+            plan: () => ({
+                kind: "ITEM",
+                importable,
+                isNoOp: () => false,
+                apply: async () => {
+                    await mocks.tryWriteImportableCache();
+                },
+                reconstructObserved: () => null,
+                reconstructPartial: () => null,
+            }),
+        });
+
+        await runImportSession(ctx, {
+            importables: [importable],
+            trustMode: false,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: [importable] } as never,
+        });
+
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledOnce();
+        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledWith(
+            "./project/import.json",
+            "test-house",
+            [
+                expect.objectContaining({
+                    importable,
+                }),
+            ]
         );
     });
 

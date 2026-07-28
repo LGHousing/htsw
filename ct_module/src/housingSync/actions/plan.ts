@@ -1,7 +1,11 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ActionSyncConflict, ActionSyncContext } from "./syncContext";
+import {
+    actionSyncConflictIdentifier,
+    type ActionSyncConflict,
+    type ActionSyncContext,
+} from "./syncContext";
 import type { ActionListTrust } from "./applyTrust";
 import type { ActionListDiff } from "./diff/types";
 import type { ObservedActionSlot } from "../observedActions";
@@ -48,6 +52,7 @@ export type ActionListPlan = {
     readonly observed: ObservedActionSlot[];
     readonly diff: ActionListDiff;
     readonly phaseUnits: Readonly<PhaseUnits>;
+    readonly conflictTarget?: ActionSyncConflict;
 };
 
 export type ActionListPlanScan =
@@ -213,7 +218,7 @@ export async function hydrateActionListForPlan(
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     emitPrereadCompleted(progress, phaseUnits);
 
-    return { desired, observed, diff, phaseUnits };
+    return { desired, observed, diff, phaseUnits, conflictTarget: options.conflictTarget };
 }
 
 export function createKnownEmptyActionListPlan(
@@ -267,7 +272,7 @@ function knownActionListPlan(
         options.sync.itemDiff
     );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
-    return { desired, observed, diff, phaseUnits };
+    return { desired, observed, diff, phaseUnits, conflictTarget: options.conflictTarget };
 }
 
 function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
@@ -325,6 +330,14 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
+        const observed =
+            "slots" in live
+                ? { kind: "slots" as const, slots: live.slots }
+                : { kind: "actions" as const, actions: live.actions.slice() };
+        options.sync.observedConflictLists?.set(
+            actionSyncConflictIdentifier(target),
+            observed
+        );
     }
     return verdict;
 }

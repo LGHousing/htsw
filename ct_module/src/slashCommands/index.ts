@@ -49,7 +49,7 @@ import { commandQueue } from "./queue";
 import { commandWatch } from "./watch";
 import { commandTrust } from "./trust";
 import { commandWarnMode } from "./warnMode";
-import { parseImportCommandArgs } from "./importArgs";
+import { IMPORT_USAGE, parseImportCommandArgs } from "./importArgs";
 import { commandDiff } from "./diff";
 
 type HtswSubcommand = {
@@ -66,7 +66,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "import",
         summary: "Import an import.json or .htsl file",
         run: commandImport,
-        usage: "import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]",
+        usage: IMPORT_USAGE,
     },
     {
         name: "trust",
@@ -595,13 +595,22 @@ function commandEta(args: string[]): void {
 
 function commandImport(args: string[]) {
     const parsedArgs = parseImportCommandArgs(args);
+    if (parsedArgs.error !== undefined) {
+        ChatLib.chat(`&c[htsw] ${parsedArgs.error}`);
+        return;
+    }
     const commandArgs = parsedArgs.pathArgs;
     if (commandArgs.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
-        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]");
+        ChatLib.chat(
+            `&f/htsw ${IMPORT_USAGE}`
+        );
+        ChatLib.chat(
+            "&7  --accept TYPE:name accepts all conflicted lists for that importable; append :basePath for one exact list. Repeat as needed."
+        );
         ChatLib.chat(
             "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
         );
@@ -648,7 +657,11 @@ function commandImport(args: string[]) {
                 label: compactFileLabel(canon),
             },
         ],
-        { onConflict: parsedArgs.onConflict, fresh: parsedArgs.fresh }
+        {
+            onConflict: parsedArgs.onConflict,
+            accepts: parsedArgs.accepts,
+            fresh: parsedArgs.fresh,
+        }
     );
 }
 
