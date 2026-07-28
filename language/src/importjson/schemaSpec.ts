@@ -161,11 +161,7 @@ export type RawMenuImportable = {
     slots: RawMenuSlot[];
 };
 type RawNpcSkin = NpcSkin;
-const NPC_SKINS = completeValues<RawNpcSkin>()([
-    "Steve",
-    "Alex",
-    "Players Skin",
-]);
+const NPC_SKINS = completeValues<RawNpcSkin>()(["Steve", "Alex", "Players Skin"]);
 export type RawNpcEquipment = {
     helmet?: string;
     chestplate?: string;
@@ -208,9 +204,11 @@ export type RawCommandImportable = {
     requiredPriority?: number;
     listed?: boolean;
 };
+export type RawPackageBaseline = { exportedAt: string; houseId: string };
 
 export type RawImportJson = {
     houseUuid?: string;
+    baseline?: RawPackageBaseline;
     include?: string[];
     functions?: RawFunctionImportable[];
     events?: RawEventImportable[];
@@ -280,6 +278,7 @@ type DefinitionTypes = {
     groupImportable: RawGroupImportable;
     commandMode: CommandMode;
     commandImportable: RawCommandImportable;
+    packageBaseline: RawPackageBaseline;
 };
 
 export type ImportJsonSchemaDefinitionName = keyof DefinitionTypes;
@@ -309,6 +308,7 @@ export const IMPORT_JSON_SCHEMA = object<RawImportJson>({
                 "Housing UUID binding. Only the entry import.json's binding is used.",
         })
     ),
+    baseline: optional(ref("packageBaseline")),
     include: optional(array(ref("importJsonPath"))),
     functions: optional(array(ref("functionImportable"))),
     events: optional(array(ref("eventImportable"))),
@@ -327,6 +327,10 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     importJsonPath: string({ pattern: "\\.?[iI][mM][pP][oO][rR][tT]\\.json$" }),
     htslPath: string({ pattern: "\\.htsl$" }),
     snbtPath: string({ pattern: "\\.snbt$" }),
+    packageBaseline: object<RawPackageBaseline>({
+        exportedAt: required(string()),
+        houseId: required(string()),
+    }),
     functionImportable: object<RawFunctionImportable>({
         name: required(string()),
         actions: optional(ref("htslPath")),

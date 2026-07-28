@@ -1,10 +1,6 @@
 import type { Action, Importable } from "htsw/types";
 
-import {
-    cacheEntryHash,
-    readImportableCache,
-    type ImportableCacheEntry,
-} from "./cache";
+import { cacheEntryHash, readImportableCache, type ImportableCacheEntry } from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { cacheEntryListHashes, sameHashList } from "./status";
@@ -15,6 +11,7 @@ import type {
     TrustedChildListSnapshot,
 } from "../housingSync/actions/applyTrust";
 import { houseLockEntryFor, readHouseLock, type HouseLock } from "./houseLock";
+import type { ContentHashJournalEntry } from "./houseLock";
 import {
     itemDependencyIndexFor,
     sameItemDependencySnapshot,
@@ -43,6 +40,7 @@ export type ImportableTrustPlan = {
     lockHash: string | null;
     lockListScanHashes: Record<string, string> | null;
     lockListContentHashes: Record<string, string> | null;
+    lockListContentHashJournal?: Record<string, ContentHashJournalEntry[]> | null;
     cacheMatchesLock: boolean;
     breakdown: {
         dependenciesMatch: boolean;
@@ -172,6 +170,7 @@ export function buildTrustPlan(
             lockHash: lockEntry?.hash ?? null,
             lockListScanHashes: lockEntry?.listScanHashes ?? null,
             lockListContentHashes: lockEntry?.listContentHashes ?? null,
+            lockListContentHashJournal: lockEntry?.listContentHashJournal ?? null,
             cacheMatchesLock,
             breakdown: {
                 dependenciesMatch,
@@ -205,6 +204,7 @@ function lockEntryForImportable(
             hash: "",
             listScanHashes: undefined,
             listContentHashes: undefined,
+            listContentHashJournal: undefined,
             itemDependencies: undefined,
         };
     }

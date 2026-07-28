@@ -107,4 +107,43 @@ describe("diff details", () => {
         expect(output).toContain('-  id: "minecraft:cookie"');
         expect(output).toContain('+  id: "minecraft:apple"');
     });
+
+    it("renders pending changes in their own full diff section", () => {
+        const output = formatDiffDetailsFile(
+            {
+                clean: 1,
+                conflicts: [],
+                pendingChanges: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        basePath: "actions",
+                        sourceText: 'chat "source"\n',
+                        liveText: 'chat "live"\n',
+                        differences: [],
+                        moreCount: 0,
+                        revertsTo: "2026-07-20T00:00:00.000Z",
+                    },
+                ],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-28T00:00:00.000Z"
+        );
+
+        expect(output).toContain(
+            "# PENDING CHANGES (what this import will write)\n\n" +
+                '# FUNCTION "Debug" · actions\n' +
+                "# ⚠ reverts to recorded state from 2026-07-20T00:00:00.000Z\n" +
+                "--- source/actions\n" +
+                "+++ live/actions\n"
+        );
+        expect(
+            formatDiffDetailsFile(
+                { clean: 1, conflicts: [], pendingChanges: [], unknown: 0 },
+                "/project/import.json",
+                "2026-07-28T00:00:00.000Z"
+            )
+        ).not.toContain("# PENDING CHANGES");
+    });
 });

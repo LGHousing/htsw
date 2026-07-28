@@ -65,10 +65,11 @@ import { applyReferencedShellPlan, planMissingReferencedShells } from "./referen
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
 import { readInteractDataCache } from "../items/interactDataCache";
-import {
-    getOverwriteWarningMode,
-    type OverwriteWarningMode,
-} from "../overwriteWarning";
+import { getOverwriteWarningMode, type OverwriteWarningMode } from "../overwriteWarning";
+import { packageBaselineAgeDays, readPackageBaselineStamp } from "../baselineStamp";
+import { actionListsOfImportable } from "../../importCache/actionLists";
+import { actionListContentHashFromActions } from "../../housingSync/actions/scanHash";
+import { recordedRevertDate } from "../../importCache/houseLock";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -167,6 +168,14 @@ async function runImportSessionInner(
     resetFunctionNameSession();
     resetMenuNameSession();
     resetCommandNameSession();
+    const baselineAgeDays = packageBaselineAgeDays(
+        readPackageBaselineStamp(selection.sourcePath)
+    );
+    if (baselineAgeDays !== undefined) {
+        ctx.displayMessage(
+            `[htsw] Package baseline is ${baselineAgeDays} days old — verify against current canonical before importing.`
+        );
+    }
 
     const parsed =
         selection.parsed ??
@@ -257,6 +266,7 @@ async function runImportSessionInner(
             conflicts: [],
             conflictTargets: [],
             observedConflictLists: new Map(),
+            observedActionLists: new Map(),
             events,
             itemRead: { mode: "sync" },
             itemDiff,
@@ -283,16 +293,16 @@ async function runImportSessionInner(
                 tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
                     ? 1
                     : estimateImportableUnits(
-                      importable,
-                      tp?.entry ?? null,
-                      tp?.trustMode === true,
-                      importable.type === "ITEM" &&
-                          readInteractDataCache(
-                              importable,
-                              itemDependencies,
-                              selection.housingUuid
-                          ) !== undefined
-                  ),
+                          importable,
+                          tp?.entry ?? null,
+                          tp?.trustMode === true,
+                          importable.type === "ITEM" &&
+                              readInteractDataCache(
+                                  importable,
+                                  itemDependencies,
+                                  selection.housingUuid
+                              ) !== undefined
+                      ),
         };
     });
 
@@ -334,10 +344,7 @@ async function runImportSessionInner(
         chunkStart += SCAN_HYDRATE_CHUNK_SIZE
     ) {
         const chunkReads: typeof reads = [];
-        const chunkEnd = Math.min(
-            rowsMeta.length,
-            chunkStart + SCAN_HYDRATE_CHUNK_SIZE
-        );
+        const chunkEnd = Math.min(rowsMeta.length, chunkStart + SCAN_HYDRATE_CHUNK_SIZE);
         for (let i = chunkStart; i < chunkEnd; i++) {
             const row = rowsMeta[i];
             const cacheEntry = row.trustPlan?.entry ?? null;
@@ -351,10 +358,7 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            if (
-                row.trustPlan?.wholeImportableTrusted &&
-                row.importable.type !== "ITEM"
-            ) {
+            if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
                 trustedRows.push(row);
                 continue;
@@ -493,6 +497,12 @@ async function runImportSessionInner(
             plans.push({ row, plan });
         }
     }
+    const revertCount = countRecordedReverts(orderedImportables, session);
+    if (revertCount > 0) {
+        ctx.displayMessage(
+            `[htsw] Warning: ${revertCount} lists would revert to older recorded states — see report.`
+        );
+    }
 
     let skippedConflicts: ImportConflict[] = [];
     if (session.actions.conflicts.length > 0) {
@@ -502,17 +512,12 @@ async function runImportSessionInner(
                 : {
                       accepted:
                           selection.confirmConflicts === undefined ||
-                          (await selection.confirmConflicts(
-                              session.actions.conflicts
-                          ))
+                          (await selection.confirmConflicts(session.actions.conflicts))
                               ? session.actions.conflicts.slice()
                               : [],
                       skipped: [],
                   };
-        if (
-            resolution.accepted.length === 0 &&
-            resolution.skipped.length === 0
-        ) {
+        if (resolution.accepted.length === 0 && resolution.skipped.length === 0) {
             for (const row of rowsMeta) {
                 events?.emit({
                     kind: "importableFinished",
@@ -753,6 +758,44 @@ async function runImportSessionInner(
     };
 }
 
+function countRecordedReverts(
+    importables: readonly Importable[],
+    session: ImportContext
+): number {
+    let count = 0;
+    const fieldContent = session.actions.itemDiff?.fieldContent;
+    for (const importable of importables) {
+        const identity = importableIdentity(importable);
+        const trust = session.actions.trust.importables.get(
+            importableKey(importable.type, identity)
+        );
+        for (const list of actionListsOfImportable(importable)) {
+            const key = conflictIdentifier({
+                type: importable.type,
+                identity,
+                basePath: list.basePath,
+            });
+            const live = session.actions.observedActionLists?.get(key);
+            if (live === undefined) continue;
+            const sourceHash = actionListContentHashFromActions(
+                list.actions,
+                fieldContent
+            );
+            const liveHash = actionListContentHashFromActions(live, fieldContent);
+            if (
+                recordedRevertDate(
+                    trust?.lockListContentHashJournal?.[list.basePath],
+                    sourceHash,
+                    liveHash
+                ) !== undefined
+            ) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
 async function finishWithoutApply(
     ctx: TaskContext,
     row: {
@@ -854,10 +897,7 @@ async function maybeWritePartialImportCache(
 ): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
     if (partial === null) return false;
-    const itemDependencies = verifiedSnapshotFor(
-        plan.importable,
-        verifiedContext
-    );
+    const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
     if (
         !(await tryWriteImportableCache(ctx, partial, "importer", housingUuid, {
             itemDependencies,
@@ -887,10 +927,7 @@ async function writeObservedPlanCaches(
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
-        const itemDependencies = verifiedSnapshotFor(
-            plan.importable,
-            verifiedContext
-        );
+        const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
         if (
             !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
                 itemDependencies,

@@ -6,6 +6,7 @@ import {
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
+import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
 import { evaluateDiffReport, formatDiffReport } from "../src/slashCommands/diffReport";
 import { changeVar, message, playSound } from "./utils";
 
@@ -70,7 +71,7 @@ describe("diff report", () => {
                 liveMap(func("Debug", baseline)),
                 lockFor("Debug", baseline)
             )
-        ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
+        ).toMatchObject({ clean: 1, conflicts: [], unknown: 0 });
         expect(
             evaluateDiffReport(
                 "house",
@@ -78,7 +79,7 @@ describe("diff report", () => {
                 liveMap(source),
                 lockFor("Debug", baseline)
             )
-        ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
+        ).toMatchObject({ clean: 1, conflicts: [], unknown: 0 });
     });
 
     it("classifies live changes from both baseline and source as conflicts", () => {
@@ -118,8 +119,10 @@ describe("diff report", () => {
 
         expect(
             evaluateDiffReport("house", [source], new Map(), lockFor("Debug", []))
-        ).toEqual({ clean: 0, conflicts: [], unknown: 1 });
-        expect(evaluateDiffReport("house", [source], liveMap(source), null)).toEqual({
+        ).toMatchObject({ clean: 0, conflicts: [], unknown: 1 });
+        expect(
+            evaluateDiffReport("house", [source], liveMap(source), null)
+        ).toMatchObject({
             clean: 1,
             conflicts: [],
             unknown: 0,
@@ -175,7 +178,7 @@ describe("diff report", () => {
             },
         };
 
-        expect(evaluateDiffReport("house", [source], liveMap(live), lock)).toEqual({
+        expect(evaluateDiffReport("house", [source], liveMap(live), lock)).toMatchObject({
             clean: 0,
             conflicts: [],
             unknown: 1,
@@ -240,5 +243,100 @@ describe("diff report", () => {
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
             "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
+    });
+
+    it("reports clean lists that the import will modify as pending", () => {
+        const baseline = [message("live")];
+        const report = evaluateDiffReport(
+            "house",
+            [func("Debug", [message("source")])],
+            liveMap(func("Debug", baseline)),
+            lockFor("Debug", baseline)
+        );
+
+        expect(report.pendingChanges).toMatchObject([
+            {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                sourceText: 'chat "source"\n',
+                liveText: 'chat "live"\n',
+            },
+        ]);
+        const lines = formatDiffReport(report, "/project/import.json");
+        expect(lines[0]).toBe(
+            "[htsw] Diff complete: 1 clean, 0 conflicts, 0 unknown · /project/import.json"
+        );
+        expect(lines[1]).toBe(
+            "[htsw] Pending changes: 1 lists will be modified — see report"
+        );
+        expect(
+            evaluateDiffReport(
+                "house",
+                [func("Debug", baseline)],
+                liveMap(func("Debug", baseline)),
+                lockFor("Debug", baseline)
+            ).pendingChanges
+        ).toEqual([]);
+    });
+
+    it("prints a stale package-baseline warning in chat and the report header", () => {
+        const report = {
+            clean: 1,
+            conflicts: [],
+            pendingChanges: [],
+            unknown: 0,
+            staleBaselineDays: 2,
+        };
+
+        expect(formatDiffReport(report, "/project/import.json")).toContain(
+            "[htsw] Package baseline is 2 days old — verify against current canonical before importing."
+        );
+        expect(
+            formatDiffDetailsFile(
+                report,
+                "/project/import.json",
+                "2026-07-28T00:00:00.000Z"
+            )
+        ).toContain(
+            "# WARNING: Package baseline is 2 days old — verify against current canonical before importing."
+        );
+    });
+
+    it("detects a source hash that predates the live hash in the journal", () => {
+        const older = [message("older")];
+        const newer = [message("newer")];
+        const lock = lockFor("Debug", newer);
+        lock.contentHashJournalVersion = 1;
+        lock.importables["FUNCTION:Debug"].listContentHashJournal = {
+            actions: [
+                {
+                    hash: actionListContentHashFromActions(older),
+                    recordedAt: "2026-07-20T00:00:00.000Z",
+                },
+                {
+                    hash: actionListContentHashFromActions(newer),
+                    recordedAt: "2026-07-27T00:00:00.000Z",
+                },
+            ],
+        };
+
+        const report = evaluateDiffReport(
+            "house",
+            [func("Debug", older)],
+            liveMap(func("Debug", newer)),
+            lock
+        );
+        expect(report.pendingChanges?.[0].revertsTo).toBe("2026-07-20T00:00:00.000Z");
+        expect(report.revertCount).toBe(1);
+
+        expect(
+            evaluateDiffReport(
+                "house",
+                [func("Debug", [message("brand new")])],
+                liveMap(func("Debug", newer)),
+                lock
+            ).revertCount
+        ).toBe(0);
     });
 });

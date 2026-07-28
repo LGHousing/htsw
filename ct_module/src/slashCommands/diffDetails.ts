@@ -18,12 +18,15 @@ type DiffDetailsConflict = {
         sourceSnbt: string;
     }[];
     moreCount: number;
+    revertsTo?: string;
 };
 
 type DiffDetailsReport = {
     clean: number;
     conflicts: readonly DiffDetailsConflict[];
+    pendingChanges?: readonly DiffDetailsConflict[];
     unknown: number;
+    staleBaselineDays?: number;
 };
 
 function withoutFinalNewline(text: string): string {
@@ -58,7 +61,21 @@ export function formatDiffDetailsFile(
         `# conflicts: ${report.conflicts.length}`,
         `# unknown: ${report.unknown}`,
     ];
-    for (const conflict of report.conflicts) {
+    if (report.staleBaselineDays !== undefined) {
+        lines.push(
+            `# WARNING: Package baseline is ${report.staleBaselineDays} days old — verify against current canonical before importing.`
+        );
+    }
+    appendListDiffs(lines, report.conflicts);
+    if ((report.pendingChanges?.length ?? 0) > 0) {
+        lines.push("", "# PENDING CHANGES (what this import will write)");
+        appendListDiffs(lines, report.pendingChanges ?? []);
+    }
+    return lines.join("\n") + "\n";
+}
+
+function appendListDiffs(lines: string[], lists: readonly DiffDetailsConflict[]): void {
+    for (const conflict of lists) {
         const diff = unifiedDiff(
             conflict.sourceText,
             conflict.liveText,
@@ -69,6 +86,9 @@ export function formatDiffDetailsFile(
             "",
             `# ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`
         );
+        if (conflict.revertsTo !== undefined) {
+            lines.push(`# ⚠ reverts to recorded state from ${conflict.revertsTo}`);
+        }
         for (const difference of conflict.differences) {
             lines.push(
                 `# ≠ ${difference.path}: live=${difference.live} · source=${difference.source}`
@@ -77,9 +97,7 @@ export function formatDiffDetailsFile(
         if (conflict.moreCount > 0) {
             lines.push(`# …and ${conflict.moreCount} more differences`);
         }
-        lines.push(
-            withoutFinalNewline(diff)
-        );
+        lines.push(withoutFinalNewline(diff));
         for (const item of conflict.itemDifferences ?? []) {
             lines.push(
                 "",
@@ -95,7 +113,6 @@ export function formatDiffDetailsFile(
             );
         }
     }
-    return lines.join("\n") + "\n";
 }
 
 export function writeDiffDetailsFile(

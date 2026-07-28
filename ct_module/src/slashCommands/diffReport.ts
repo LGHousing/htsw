@@ -10,7 +10,11 @@ import {
     actionListsOfImportable,
     type ImportableActionList,
 } from "../importCache/actionLists";
-import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
+import {
+    houseLockEntryFor,
+    recordedRevertDate,
+    type HouseLock,
+} from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { renderActionsForDiff } from "./diffDetails";
 import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
@@ -21,16 +25,20 @@ import {
 import type { ProjectItemIndex } from "../importables/items/projectItems";
 import type { CapturedItem } from "../importables/items/captureRegistry";
 
-type DiffReportConflict = ActionSyncConflict &
+export type DiffReportList = ActionSyncConflict &
     ActionListConflictDetails & {
         sourceText: string;
         liveText: string;
+        revertsTo?: string;
     };
 
 export type DiffReport = {
     clean: number;
-    conflicts: DiffReportConflict[];
+    conflicts: DiffReportList[];
+    pendingChanges?: DiffReportList[];
     unknown: number;
+    staleBaselineDays?: number;
+    revertCount?: number;
 };
 
 function liveActionsFor(
@@ -74,12 +82,7 @@ export function matchedLiveActionLists(
         if (live === undefined) continue;
         const liveListsByPath = actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {
-            const actions = liveActionsFor(
-                source,
-                live,
-                sourceList,
-                liveListsByPath
-            );
+            const actions = liveActionsFor(source, live, sourceList, liveListsByPath);
             if (actions !== undefined) {
                 matched.push({
                     source,
@@ -112,7 +115,13 @@ export function evaluateDiffReport(
         captures: ReadonlyMap<string, CapturedItem>;
     }
 ): DiffReport {
-    const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
+    const result: DiffReport = {
+        clean: 0,
+        conflicts: [],
+        pendingChanges: [],
+        unknown: 0,
+        revertCount: 0,
+    };
     const matchingLock =
         lock !== null && (lock.houseUuid === null || lock.houseUuid === housingUuid)
             ? lock
@@ -151,33 +160,43 @@ export function evaluateDiffReport(
                 liveItems,
                 sourceItems
             );
+            const liveHash = actionListContentHashFromActions(liveActions, liveItems);
+            const sourceHash = actionListContentHashFromActions(
+                sourceList.actions,
+                sourceItems
+            );
+            const revertsTo = recordedRevertDate(
+                lockEntry?.listContentHashJournal?.[sourceList.basePath],
+                sourceHash,
+                liveHash
+            );
+            const details = (): DiffReportList => ({
+                type: source.type,
+                identity,
+                basePath: sourceList.basePath,
+                ...actionListConflictDetails(
+                    liveActions,
+                    sourceList.actions,
+                    liveItems,
+                    sourceItems
+                ),
+                sourceText: renderActionsForDiff(sourceList.actions),
+                liveText: renderActionsForDiff(liveActions),
+                ...(revertsTo === undefined ? {} : { revertsTo }),
+            });
             if (
                 verdict === "conflict" ||
-                (verdict === "no-baseline" &&
-                    actionListContentHashFromActions(liveActions, liveItems) !==
-                        actionListContentHashFromActions(
-                            sourceList.actions,
-                            sourceItems
-                        ))
+                (verdict === "no-baseline" && liveHash !== sourceHash)
             ) {
-                result.conflicts.push({
-                    type: source.type,
-                    identity,
-                    basePath: sourceList.basePath,
-                    ...actionListConflictDetails(
-                        liveActions,
-                        sourceList.actions,
-                        liveItems,
-                        sourceItems
-                    ),
-                    sourceText: renderActionsForDiff(sourceList.actions),
-                    liveText: renderActionsForDiff(liveActions),
-                });
+                result.conflicts.push(details());
             } else if (verdict === null) {
                 result.unknown++;
             } else {
                 result.clean++;
+                if (sourceHash !== liveHash) result.pendingChanges?.push(details());
             }
+            if (revertsTo !== undefined)
+                result.revertCount = (result.revertCount ?? 0) + 1;
         }
     }
     return result;
@@ -191,6 +210,21 @@ export function formatDiffReport(
     const lines = [
         `[htsw] Diff complete: ${report.clean} clean, ${report.conflicts.length} conflicts, ${report.unknown} unknown · ${manifest}`,
     ];
+    if ((report.pendingChanges?.length ?? 0) > 0) {
+        lines.push(
+            `[htsw] Pending changes: ${report.pendingChanges?.length ?? 0} lists will be modified — see report`
+        );
+    }
+    if (report.staleBaselineDays !== undefined) {
+        lines.push(
+            `[htsw] Package baseline is ${report.staleBaselineDays} days old — verify against current canonical before importing.`
+        );
+    }
+    if ((report.revertCount ?? 0) > 0) {
+        lines.push(
+            `[htsw] Warning: ${report.revertCount ?? 0} lists would revert to older recorded states — see report.`
+        );
+    }
     const shown = Math.min(report.conflicts.length, 20);
     for (let i = 0; i < shown; i++) {
         const conflict = report.conflicts[i];

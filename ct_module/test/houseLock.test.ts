@@ -95,6 +95,7 @@ describe("house lock scan hashes", () => {
         const written = JSON.parse(files[lockPath]!) as HouseLock;
         expect(written.scanHashVersion).toBe(ACTION_LIST_SCAN_HASH_VERSION);
         expect(written.contentHashVersion).toBe(ACTION_LIST_CONTENT_HASH_VERSION);
+        expect(written.contentHashJournalVersion).toBe(1);
         expect(written.importables["FUNCTION:Debug"].listScanHashes).toEqual({
             actions: actionListScanHashFromActions(importable.actions ?? []),
         });
@@ -105,6 +106,30 @@ describe("house lock scan hashes", () => {
             itemDependencies
         );
         expect(readHouseLock(importJsonPath)).toEqual(written);
+    });
+
+    it("keeps only the last three distinct list content hashes", () => {
+        const files: Partial<Record<string, string>> = {};
+        stubFiles(files);
+        for (const message of ["one", "two", "three", "four"]) {
+            const importable = functionEntry();
+            importable.actions![0] = { type: "MESSAGE", message };
+            expect(
+                upsertHouseLockImportable(importJsonPath, "current-house", importable)
+            ).toBe(true);
+        }
+
+        const journal =
+            readHouseLock(importJsonPath)?.importables["FUNCTION:Debug"]
+                .listContentHashJournal?.actions;
+        expect(journal?.map((entry) => entry.hash)).toEqual(
+            ["two", "three", "four"].map((message) =>
+                actionListContentHashFromActions([{ type: "MESSAGE", message }])
+            )
+        );
+        expect(
+            journal?.every((entry) => !Number.isNaN(Date.parse(entry.recordedAt)))
+        ).toBe(true);
     });
 
     it("seeds a missing live baseline without replacing an existing one", () => {

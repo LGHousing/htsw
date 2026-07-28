@@ -22,6 +22,7 @@ import { createItemDependencyIndex } from "../items/dependencyIndex";
 import { hasRequiredInteractDataCache } from "../items/interactDataCache";
 import { importableIdentity } from "../identity";
 import { exportedItemDependencies } from "../items/exportedDependencies";
+import { stampPackageBaseline } from "../baselineStamp";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -377,9 +378,7 @@ export function defineHouseExporter<
         } finally {
             try {
                 if (options.output.kind === "memory") {
-                    options.output.acceptItemCaptures?.(
-                        state.itemCaptures.entries()
-                    );
+                    options.output.acceptItemCaptures?.(state.itemCaptures.entries());
                 }
                 if (!readOnly && spec.capturesActionItems === true) {
                     await exportCapturedItems(
@@ -427,6 +426,9 @@ export function defineHouseExporter<
         }
 
         const summary = spec.exportSummary?.(state) ?? "";
+        if (succeeded > 0) {
+            stampPackageBaseline(importJsonPath, lockHousingUuid);
+        }
         ctx.displayMessage(
             `&aExported ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${summary}${failedNote}`
         );

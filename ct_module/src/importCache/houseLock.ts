@@ -18,14 +18,38 @@ import { itemDependencyIndexFor } from "../importables/items/dependencyIndex";
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
+export const CONTENT_HASH_JOURNAL_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
 
-type HouseLockEntry = {
+export type ContentHashJournalEntry = {
+    hash: string;
+    recordedAt: string;
+};
+
+export function recordedRevertDate(
+    journal: readonly ContentHashJournalEntry[] | undefined,
+    sourceHash: string,
+    liveHash: string
+): string | undefined {
+    if (journal === undefined) return undefined;
+    let sourceIndex = -1;
+    let liveIndex = -1;
+    for (let i = 0; i < journal.length; i++) {
+        if (journal[i].hash === sourceHash) sourceIndex = i;
+        if (journal[i].hash === liveHash) liveIndex = i;
+    }
+    return sourceIndex >= 0 && liveIndex > sourceIndex
+        ? journal[sourceIndex].recordedAt
+        : undefined;
+}
+
+export type HouseLockEntry = {
     type: Importable["type"];
     identity: string;
     hash: string;
     listScanHashes?: Record<string, string>;
     listContentHashes?: Record<string, string>;
+    listContentHashJournal?: Record<string, ContentHashJournalEntry[]>;
     itemDependencies?: ItemDependencySnapshot;
 };
 
@@ -34,6 +58,7 @@ export type HouseLock = {
     houseUuid: string | null;
     scanHashVersion?: number;
     contentHashVersion?: number;
+    contentHashJournalVersion?: number;
     importables: Record<string, HouseLockEntry>;
 };
 
@@ -71,6 +96,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
         houseUuid?: unknown;
         scanHashVersion?: unknown;
         contentHashVersion?: unknown;
+        contentHashJournalVersion?: unknown;
         importables?: unknown;
     };
     if (obj.schemaVersion !== HOUSE_LOCK_SCHEMA_VERSION) return null;
@@ -87,12 +113,16 @@ function parseHouseLock(raw: string | null): HouseLock | null {
     const scanHashVersion =
         typeof obj.scanHashVersion === "number" ? obj.scanHashVersion : undefined;
     const contentHashVersion =
-        typeof obj.contentHashVersion === "number"
-            ? obj.contentHashVersion
-            : undefined;
+        typeof obj.contentHashVersion === "number" ? obj.contentHashVersion : undefined;
     const exposeListScanHashes = scanHashVersion === ACTION_LIST_SCAN_HASH_VERSION;
     const exposeListContentHashes =
         contentHashVersion === ACTION_LIST_CONTENT_HASH_VERSION;
+    const contentHashJournalVersion =
+        typeof obj.contentHashJournalVersion === "number"
+            ? obj.contentHashJournalVersion
+            : undefined;
+    const exposeContentHashJournal =
+        contentHashJournalVersion === CONTENT_HASH_JOURNAL_VERSION;
     const records = obj.importables as Record<string, unknown>;
     for (const key in records) {
         const entry = records[key];
@@ -103,6 +133,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
             hash?: unknown;
             listScanHashes?: unknown;
             listContentHashes?: unknown;
+            listContentHashJournal?: unknown;
             itemDependencies?: unknown;
         };
         if (
@@ -129,6 +160,10 @@ function parseHouseLock(raw: string | null): HouseLock | null {
                 parsedEntry.listContentHashes = listContentHashes;
             }
         }
+        if (exposeContentHashJournal) {
+            const journal = parseContentHashJournal(e.listContentHashJournal);
+            if (journal !== undefined) parsedEntry.listContentHashJournal = journal;
+        }
         const itemDependencies = parseItemDependencySnapshot(e.itemDependencies);
         if (itemDependencies !== undefined) {
             parsedEntry.itemDependencies = itemDependencies;
@@ -141,8 +176,36 @@ function parseHouseLock(raw: string | null): HouseLock | null {
         houseUuid: obj.houseUuid,
         ...(scanHashVersion !== undefined ? { scanHashVersion } : {}),
         ...(contentHashVersion !== undefined ? { contentHashVersion } : {}),
+        ...(contentHashJournalVersion !== undefined ? { contentHashJournalVersion } : {}),
         importables,
     };
+}
+
+function parseContentHashJournal(
+    value: unknown
+): Record<string, ContentHashJournalEntry[]> | undefined {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const result: Record<string, ContentHashJournalEntry[]> = {};
+    for (const path in value as Record<string, unknown>) {
+        const entries = (value as Record<string, unknown>)[path];
+        if (!Array.isArray(entries)) return undefined;
+        const parsed: ContentHashJournalEntry[] = [];
+        for (const entry of entries) {
+            if (entry === null || typeof entry !== "object") return undefined;
+            const candidate = entry as { hash?: unknown; recordedAt?: unknown };
+            if (
+                typeof candidate.hash !== "string" ||
+                typeof candidate.recordedAt !== "string"
+            ) {
+                return undefined;
+            }
+            parsed.push({ hash: candidate.hash, recordedAt: candidate.recordedAt });
+        }
+        result[path] = parsed.slice(-3);
+    }
+    return result;
 }
 
 function parseItemDependencyTarget(value: unknown): ItemDependencyTarget | null {
@@ -253,6 +316,7 @@ export function seedMissingHouseLockActionLists(
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
+    lock.contentHashJournalVersion = CONTENT_HASH_JOURNAL_VERSION;
     let changed = false;
     for (const seed of seeds) {
         const identity = importableIdentity(seed.importable);
@@ -284,12 +348,15 @@ export function seedMissingHouseLockActionLists(
             continue;
         }
         if (!hasScan) {
-            entry.listScanHashes[seed.basePath] =
-                actionListScanHashFromActions(seed.actions);
+            entry.listScanHashes[seed.basePath] = actionListScanHashFromActions(
+                seed.actions
+            );
         }
         if (!hasContent) {
-            entry.listContentHashes[seed.basePath] =
-                actionListContentHashFromActions(seed.actions, seed.itemContent);
+            entry.listContentHashes[seed.basePath] = actionListContentHashFromActions(
+                seed.actions,
+                seed.itemContent
+            );
         }
         changed = true;
     }
@@ -318,6 +385,7 @@ export function upsertHouseLockImportables(
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
+    lock.contentHashJournalVersion = CONTENT_HASH_JOURNAL_VERSION;
     for (const update of updates) {
         const importable = update.importable;
         const identity = importableIdentity(importable);
@@ -333,18 +401,33 @@ export function upsertHouseLockImportables(
                   ) => dependencyIndex.fieldContent(owner, property);
         for (const { basePath, actions } of actionListsOfImportable(importable)) {
             listScanHashes[basePath] = actionListScanHashFromActions(actions);
-            listContentHashes[basePath] =
-                actionListContentHashFromActions(
-                    actions,
-                    itemContent
-                );
+            listContentHashes[basePath] = actionListContentHashFromActions(
+                actions,
+                itemContent
+            );
         }
         const previous = lock.importables[importableKey(importable.type, identity)];
+        const listContentHashJournal = {
+            ...(previous?.listContentHashJournal ?? {}),
+        };
+        const recordedAt = new Date().toISOString();
+        for (const basePath in listContentHashes) {
+            const hash = listContentHashes[basePath];
+            const entries = (listContentHashJournal[basePath] ?? []).slice();
+            if (entries.length === 0 || entries[entries.length - 1].hash !== hash) {
+                entries.push({ hash, recordedAt });
+            }
+            listContentHashJournal[basePath] = entries.slice(-3);
+        }
         for (const basePath of update.preserveListPaths ?? []) {
             const scanHash = previous.listScanHashes?.[basePath];
             const contentHash = previous.listContentHashes?.[basePath];
             if (scanHash !== undefined) listScanHashes[basePath] = scanHash;
             if (contentHash !== undefined) listContentHashes[basePath] = contentHash;
+            if (previous.listContentHashJournal?.[basePath] !== undefined) {
+                listContentHashJournal[basePath] =
+                    previous.listContentHashJournal[basePath];
+            }
         }
         lock.importables[importableKey(importable.type, identity)] = {
             type: importable.type,
@@ -352,6 +435,7 @@ export function upsertHouseLockImportables(
             hash: importableHash(importable),
             listScanHashes,
             listContentHashes,
+            listContentHashJournal,
             ...(update.itemDependencies !== undefined
                 ? { itemDependencies: update.itemDependencies }
                 : {}),

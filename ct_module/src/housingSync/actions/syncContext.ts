@@ -23,6 +23,7 @@ export type ActionSyncContext = {
     conflictTargets?: ActionSyncConflict[];
     skippedConflicts?: ReadonlySet<string>;
     observedConflictLists?: Map<string, readonly Action[]>;
+    observedActionLists?: Map<string, readonly Action[]>;
     events?: SyncEventHandler;
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
     itemDiff?: ItemDiffContext;

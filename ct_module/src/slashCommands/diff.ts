@@ -9,10 +9,7 @@ import type { Importable } from "htsw/types";
 import { canonicalPath } from "../gui/parsing/parses";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { actionListsOfImportable } from "../importCache/actionLists";
-import {
-    readHouseLock,
-    seedMissingHouseLockActionLists,
-} from "../importCache/houseLock";
+import { readHouseLock, seedMissingHouseLockActionLists } from "../importCache/houseLock";
 import { writeStagedActionListHydration } from "../importCache/stagedHydration";
 import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
@@ -26,6 +23,10 @@ import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
+import {
+    packageBaselineAgeDays,
+    readPackageBaselineStamp,
+} from "../importables/baselineStamp";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "./diffDetails";
 import {
@@ -173,15 +174,18 @@ export function commandDiff(args: string[]): void {
                 itemContent: capturedItemFieldContent(list.live, captures),
             }))
         );
-        const report = evaluateDiffReport(
-            housingUuid,
-            parsed.value,
-            live,
-            existingLock,
-            { projectItems, captures }
+        const report = evaluateDiffReport(housingUuid, parsed.value, live, existingLock, {
+            projectItems,
+            captures,
+        });
+        report.staleBaselineDays = packageBaselineAgeDays(
+            readPackageBaselineStamp(manifest)
         );
         const detailsPath =
-            report.conflicts.length === 0
+            report.conflicts.length === 0 &&
+            (report.pendingChanges?.length ?? 0) === 0 &&
+            report.staleBaselineDays === undefined &&
+            (report.revertCount ?? 0) === 0
                 ? undefined
                 : writeDiffDetailsFile(report, manifest, new Date().toISOString());
         for (const line of formatDiffReport(report, manifest, detailsPath)) {
