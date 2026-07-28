@@ -57,10 +57,10 @@ import { writeImportFailureLog } from "../../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer";
 import type { ImportConflict } from "./conflicts";
 import {
-    conflictIdentifier,
     importableWithSkippedConflictLists,
     type ImportConflictResolution,
 } from "./conflictResolution";
+import { actionSyncConflictIdentifier } from "../../housingSync/actions/syncContext";
 import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
@@ -255,7 +255,7 @@ async function runImportSessionInner(
             overwriteWarningMode:
                 selection.overwriteWarningMode ?? getOverwriteWarningMode(),
             conflicts: [],
-            conflictTargets: [],
+            appliedActionLists: new Set(),
             observedConflictLists: new Map(),
             events,
             itemRead: { mode: "sync" },
@@ -495,21 +495,24 @@ async function runImportSessionInner(
     }
 
     let skippedConflicts: ImportConflict[] = [];
-    if (session.actions.conflicts.length > 0) {
-        const resolution =
-            selection.resolveConflicts !== undefined
-                ? await selection.resolveConflicts(session.actions.conflicts)
-                : {
-                      accepted:
-                          selection.confirmConflicts === undefined ||
-                          (await selection.confirmConflicts(
-                              session.actions.conflicts
-                          ))
-                              ? session.actions.conflicts.slice()
-                              : [],
-                      skipped: [],
-                  };
+    const resolution =
+        selection.resolveConflicts !== undefined
+            ? await selection.resolveConflicts(session.actions.conflicts)
+            : session.actions.conflicts.length > 0
+              ? {
+                    accepted:
+                        selection.confirmConflicts === undefined ||
+                        (await selection.confirmConflicts(
+                            session.actions.conflicts
+                        ))
+                            ? session.actions.conflicts.slice()
+                            : [],
+                    skipped: [],
+                }
+              : null;
+    if (resolution !== null) {
         if (
+            session.actions.conflicts.length > 0 &&
             resolution.accepted.length === 0 &&
             resolution.skipped.length === 0
         ) {
@@ -531,7 +534,19 @@ async function runImportSessionInner(
         }
         skippedConflicts = resolution.skipped.slice();
         session.actions.skippedConflicts = new Set(
-            skippedConflicts.map(conflictIdentifier)
+            skippedConflicts.map(actionSyncConflictIdentifier)
+        );
+    }
+
+    const persistedImportables = new Map<Importable, Importable>();
+    for (const row of rowsMeta) {
+        persistedImportables.set(
+            row.importable,
+            importableWithSkippedConflictLists(
+                row.importable,
+                skippedConflicts,
+                session.actions.observedConflictLists ?? new Map()
+            )
         );
     }
 
@@ -602,18 +617,21 @@ async function runImportSessionInner(
             });
             try {
                 await plan.apply(ctx, session);
-                const persistedImportable = importableWithSkippedConflictLists(
-                    row.importable,
-                    skippedConflicts,
-                    session.actions.observedConflictLists ?? new Map()
-                );
-                const cacheSaved = await tryWriteImportableCache(
-                    ctx,
-                    persistedImportable,
-                    "importer",
-                    selection.housingUuid,
-                    { itemDependencies: itemDependencies.snapshotOf(row.importable) }
-                );
+                const persistedImportable =
+                    persistedImportables.get(row.importable) ?? row.importable;
+                let cacheSaved = true;
+                if (plan.kind !== "ITEM") {
+                    cacheSaved = await tryWriteImportableCache(
+                        ctx,
+                        persistedImportable,
+                        "importer",
+                        selection.housingUuid,
+                        {
+                            itemDependencies:
+                                itemDependencies.snapshotOf(row.importable),
+                        }
+                    );
+                }
                 if (cacheSaved) {
                     pendingHouseLockEntries.push({
                         importable: persistedImportable,
@@ -745,10 +763,7 @@ async function runImportSessionInner(
     );
     events?.emit({ kind: "sessionFinished" });
     return {
-        appliedLists: Math.max(
-            0,
-            (session.actions.conflictTargets?.length ?? 0) - skippedConflicts.length
-        ),
+        appliedLists: session.actions.appliedActionLists?.size ?? 0,
         skippedConflicts,
     };
 }

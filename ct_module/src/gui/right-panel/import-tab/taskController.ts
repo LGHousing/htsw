@@ -78,8 +78,9 @@ import { autoTrackRefresh } from "../../autoTrack";
 import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
 import type { ImportConflict } from "../../../importables/import/conflicts";
 import {
-    resolveImportConflicts,
+    resolveImportConflictPolicy,
 } from "../../../importables/import/conflictResolution";
+import type { ImportConflictPolicy } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
@@ -588,7 +589,7 @@ export function startImport(
 }
 
 type ImportStartOptions = {
-    onConflict?: "prompt" | "cancel" | "skip";
+    onConflict?: ImportConflictPolicy;
     accepts?: readonly string[];
     fresh?: boolean;
     silentBusy?: boolean;
@@ -797,13 +798,15 @@ async function prepareAndStartImport(
                     parsed: batch.parsed,
                     events,
                     resolveConflicts: async (conflicts) => {
-                        const resolution = resolveImportConflicts(
+                        const decision = resolveImportConflictPolicy(
                             conflicts,
-                            options.accepts ?? []
+                            options.accepts ?? [],
+                            options.onConflict ?? "prompt"
                         );
-                        if (resolution.skipped.length === 0) return resolution;
-                        if (options.onConflict === "skip") return resolution;
-                        if (options.onConflict === "cancel") {
+                        if (decision.kind === "resolved") {
+                            return decision.resolution;
+                        }
+                        if (decision.kind === "cancel") {
                             cancelled = true;
                             ChatLib.chat(
                                 `[htsw] Import cancelled: conflicts detected · ${totalImported} imported`
@@ -812,11 +815,11 @@ async function prepareAndStartImport(
                         }
                         const proceed = await confirmImportConflicts(
                             ctx,
-                            resolution.skipped,
+                            decision.resolution.skipped,
                             () => {
                                 reviewRequest = {
                                     batch,
-                                    conflicts: resolution.skipped.slice(),
+                                    conflicts: decision.resolution.skipped.slice(),
                                     housingUuid,
                                 };
                             }

@@ -11,6 +11,7 @@ import { createItemDependencyIndex } from "../src/importables/items/dependencyIn
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import { actionSyncConflictIdentifier } from "../src/housingSync/actions/syncContext";
 import {
     itemFieldContentFromSnapshot,
     type ItemFieldContent,
@@ -139,6 +140,35 @@ describe("readActionListPlan conflict detection", () => {
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
+
+    it("records an unreadable live slot when its scan conflicts", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        const unreadable = observedSlot(0, message("unreadable"));
+        unreadable.action = null;
+        unreadable.hydrated = false;
+        mocks.scanActionList.mockResolvedValue({ slots: [unreadable] });
+        const session = sessionWithLock(importable, [message("baseline")]);
+        session.observedConflictLists = new Map();
+        const target = {
+            type: "FUNCTION" as const,
+            identity: "Debug",
+            basePath: "actions",
+        };
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: target,
+        });
+
+        expect(session.conflicts).toEqual([target]);
+        expect(
+            session.observedConflictLists.get(actionSyncConflictIdentifier(target))
+        ).toEqual({ kind: "slots", slots: [unreadable] });
     });
 
     it("detects an untrusted content conflict without an import cache entry", async () => {

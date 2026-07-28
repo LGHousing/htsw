@@ -1,4 +1,6 @@
-export type ImportConflictPolicy = "prompt" | "cancel" | "skip";
+import type { ImportConflictPolicy } from "../importables/import/conflicts";
+
+export type { ImportConflictPolicy } from "../importables/import/conflicts";
 export const IMPORT_USAGE =
     "import <import.json|actions.htsl> [--on-conflict=cancel|skip] [--accept TYPE:name[:basePath]] [--fresh]";
 

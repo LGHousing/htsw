@@ -1,7 +1,11 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ActionSyncConflict, ActionSyncContext } from "./syncContext";
+import {
+    actionSyncConflictIdentifier,
+    type ActionSyncConflict,
+    type ActionSyncContext,
+} from "./syncContext";
 import type { ActionListTrust } from "./applyTrust";
 import type { ActionListDiff } from "./diff/types";
 import type { ObservedActionSlot } from "../observedActions";
@@ -27,7 +31,6 @@ import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import { actionListScanHashFromSlots } from "./scanHash";
-import { conflictIdentifier } from "../../importables/import/conflictResolution";
 import { itemFieldContentFromSnapshot, type ItemFieldContent } from "../items/fieldContent";
 
 export type ActionListApplyOptions = {
@@ -299,15 +302,6 @@ function recordActionListConflict(
     liveItemContent?: ItemFieldContent
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
-    if (
-        target !== undefined &&
-        options.sync.conflictTargets !== undefined &&
-        !options.sync.conflictTargets.some(
-            (entry) => conflictIdentifier(entry) === conflictIdentifier(target)
-        )
-    ) {
-        options.sync.conflictTargets.push(target);
-    }
     const trustedImport = options.sync.trust.trustMode;
     if (
         target === undefined ||
@@ -336,18 +330,14 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
-        const actions =
+        const observed =
             "slots" in live
-                ? live.slots
-                      .map((entry) => entry.action)
-                      .filter((action): action is Action => action !== null)
-                : live.actions.slice();
-        if (!("slots" in live) || actions.length === live.slots.length) {
-            options.sync.observedConflictLists?.set(
-                conflictIdentifier(target),
-                actions
-            );
-        }
+                ? { kind: "slots" as const, slots: live.slots }
+                : { kind: "actions" as const, actions: live.actions.slice() };
+        options.sync.observedConflictLists?.set(
+            actionSyncConflictIdentifier(target),
+            observed
+        );
     }
     return verdict;
 }

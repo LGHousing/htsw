@@ -88,3 +88,51 @@ export function readCachedActionList(
     }
     return undefined;
 }
+
+export function setImportableActionList(
+    importable: Importable,
+    basePath: string,
+    actions: readonly Action[]
+): boolean {
+    const cloned = JSON.parse(JSON.stringify(actions)) as Action[];
+    if (
+        (importable.type === "FUNCTION" ||
+            importable.type === "EVENT" ||
+            importable.type === "COMMAND") &&
+        basePath === "actions"
+    ) {
+        importable.actions = cloned;
+        return true;
+    }
+    if (importable.type === "REGION") {
+        if (basePath === "onEnterActions") {
+            importable.onEnterActions = cloned;
+            return true;
+        }
+        if (basePath === "onExitActions") {
+            importable.onExitActions = cloned;
+            return true;
+        }
+    }
+    if (importable.type === "ITEM" || importable.type === "NPC") {
+        if (basePath === "leftClickActions") {
+            importable.leftClickActions = cloned;
+            return true;
+        }
+        if (basePath === "rightClickActions") {
+            importable.rightClickActions = cloned;
+            return true;
+        }
+    }
+    if (importable.type === "MENU") {
+        const match = basePath.match(/^slots\[(\d+)\]\.actions$/);
+        if (match !== null) {
+            const index = Number(match[1]);
+            if (index >= 0 && index < importable.slots.length) {
+                importable.slots[index].actions = cloned;
+                return true;
+            }
+        }
+    }
+    return false;
+}

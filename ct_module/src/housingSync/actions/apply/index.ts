@@ -10,7 +10,7 @@ import {
 } from "../plan";
 import { appendActionsToOpenActionList } from "./actionOps";
 import { ActionListApplyRun, actionListApplyResultFromError } from "./run";
-import { conflictIdentifier } from "../../../importables/import/conflictResolution";
+import { actionSyncConflictIdentifier } from "../syncContext";
 
 export {
     actionListApplyResultFromError,
@@ -25,13 +25,24 @@ export async function applyActionListPlan(
 ): Promise<ActionListApplyResult> {
     if (
         plan.conflictTarget !== undefined &&
-        options.sync.skippedConflicts?.has(conflictIdentifier(plan.conflictTarget))
+        options.sync.skippedConflicts?.has(
+            actionSyncConflictIdentifier(plan.conflictTarget)
+        )
     ) {
         return { currentSnapshot: plan.observed.map((entry) => entry.action) };
     }
     const progressScope = options.progressScope ?? { kind: "topLevel" as const };
     const run = new ActionListApplyRun(ctx, plan, options, progressScope);
-    return run.apply(applyChildActionList);
+    const result = await run.apply(applyChildActionList);
+    if (
+        plan.conflictTarget !== undefined &&
+        plan.diff.operations.length > 0
+    ) {
+        options.sync.appliedActionLists?.add(
+            actionSyncConflictIdentifier(plan.conflictTarget)
+        );
+    }
+    return result;
 }
 
 async function applyChildActionList(

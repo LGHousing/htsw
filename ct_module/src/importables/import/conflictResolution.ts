@@ -1,16 +1,21 @@
-import type { Action, Importable } from "htsw/types";
+import type { Importable } from "htsw/types";
 
+import { fullyHydratedActionsFromSlots } from "../../housingSync/actions/hydration/plan";
+import {
+    actionSyncConflictIdentifier,
+    type ObservedConflictList,
+} from "../../housingSync/actions/syncContext";
+import { setImportableActionList } from "../../importCache/actionLists";
 import { importableIdentity } from "../identity";
-import type { ImportConflict } from "./conflicts";
+import type {
+    ImportConflict,
+    ImportConflictPolicy,
+} from "./conflicts";
 
 export type ImportConflictResolution = {
     accepted: ImportConflict[];
     skipped: ImportConflict[];
 };
-
-export function conflictIdentifier(conflict: ImportConflict): string {
-    return `${conflict.type}:${conflict.identity}:${conflict.basePath}`;
-}
 
 function conflictImportableIdentifier(conflict: ImportConflict): string {
     return `${conflict.type}:${conflict.identity}`;
@@ -26,74 +31,77 @@ export function resolveImportConflicts(
         const matches = conflicts.filter(
             (conflict) =>
                 conflictImportableIdentifier(conflict) === identifier ||
-                conflictIdentifier(conflict) === identifier
+                actionSyncConflictIdentifier(conflict) === identifier
         );
         if (matches.length === 0) {
-            const actual = conflicts.map(conflictIdentifier).join(", ");
+            const actual = conflicts.map(actionSyncConflictIdentifier).join(", ");
             throw new Error(
                 `--accept did not match any conflicted list: ${identifier}` +
                     (actual.length === 0 ? "" : ` (conflicts: ${actual})`)
             );
         }
-        for (const conflict of matches) acceptedKeys.add(conflictIdentifier(conflict));
+        for (const conflict of matches) {
+            acceptedKeys.add(actionSyncConflictIdentifier(conflict));
+        }
     }
     const skipped: ImportConflict[] = [];
     for (const conflict of conflicts) {
-        if (acceptedKeys.has(conflictIdentifier(conflict))) accepted.push(conflict);
-        else skipped.push(conflict);
+        if (acceptedKeys.has(actionSyncConflictIdentifier(conflict))) {
+            accepted.push(conflict);
+        } else skipped.push(conflict);
     }
     return { accepted, skipped };
+}
+
+export type ImportConflictPolicyDecision =
+    | { kind: "resolved"; resolution: ImportConflictResolution }
+    | { kind: "cancel" }
+    | { kind: "prompt"; resolution: ImportConflictResolution };
+
+export function resolveImportConflictPolicy(
+    conflicts: readonly ImportConflict[],
+    accepts: readonly string[],
+    policy: ImportConflictPolicy
+): ImportConflictPolicyDecision {
+    const resolution = resolveImportConflicts(conflicts, accepts);
+    if (resolution.skipped.length === 0 || policy === "skip") {
+        return { kind: "resolved", resolution };
+    }
+    return policy === "cancel"
+        ? { kind: "cancel" }
+        : { kind: "prompt", resolution };
 }
 
 export function importableWithSkippedConflictLists(
     desired: Importable,
     skipped: readonly ImportConflict[],
-    observedLists: ReadonlyMap<string, readonly Action[]>
+    observedLists: ReadonlyMap<string, ObservedConflictList>
 ): Importable {
     if (skipped.length === 0) return desired;
+    const relevant = skipped.filter(
+        (conflict) =>
+            conflict.type === desired.type &&
+            conflict.identity === importableIdentity(desired)
+    );
+    if (relevant.length === 0) return desired;
     const result = JSON.parse(JSON.stringify(desired)) as Importable;
-    for (const conflict of skipped) {
-        if (
-            conflict.type !== desired.type ||
-            conflict.identity !== importableIdentity(desired)
-        ) {
-            continue;
+    for (const conflict of relevant) {
+        const identifier = actionSyncConflictIdentifier(conflict);
+        const observed = observedLists.get(identifier);
+        const actions =
+            observed === undefined
+                ? null
+                : observed.kind === "actions"
+                  ? observed.actions.slice()
+                  : fullyHydratedActionsFromSlots(observed.slots);
+        if (actions === null) {
+            throw new Error(
+                `Cannot skip conflicted list ${identifier}: its live contents could not be read completely.`
+            );
         }
-        const actions = observedLists.get(conflictIdentifier(conflict));
-        if (actions !== undefined) setActionList(result, conflict.basePath, actions);
+        if (!setImportableActionList(result, conflict.basePath, actions)) {
+            throw new Error(`Cannot persist skipped conflicted list ${identifier}.`);
+        }
     }
     return result;
-}
-
-function setActionList(
-    importable: Importable,
-    basePath: string,
-    actions: readonly Action[]
-): void {
-    const cloned = JSON.parse(JSON.stringify(actions)) as Action[];
-    if (
-        (importable.type === "FUNCTION" ||
-            importable.type === "EVENT" ||
-            importable.type === "COMMAND") &&
-        basePath === "actions"
-    ) {
-        importable.actions = cloned;
-        return;
-    }
-    if (importable.type === "REGION") {
-        if (basePath === "onEnterActions") importable.onEnterActions = cloned;
-        if (basePath === "onExitActions") importable.onExitActions = cloned;
-        return;
-    }
-    if (importable.type === "ITEM" || importable.type === "NPC") {
-        if (basePath === "leftClickActions") importable.leftClickActions = cloned;
-        if (basePath === "rightClickActions") importable.rightClickActions = cloned;
-        return;
-    }
-    if (importable.type === "MENU") {
-        const match = basePath.match(/^slots\[(\d+)\]\.actions$/);
-        if (match !== null) {
-            importable.slots[Number(match[1])].actions = cloned;
-        }
-    }
 }
