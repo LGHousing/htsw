@@ -56,6 +56,45 @@ describe("action-list conflict details", () => {
         });
     });
 
+    it("keeps item sections within the general difference cap", () => {
+        const live: Action[] = Array.from(
+            { length: 6 },
+            (_, index): Action =>
+                ({
+                    type: "GIVE_ITEM",
+                    itemName: `live-${index}`,
+                })
+        );
+        const source: Action[] = Array.from(
+            { length: 6 },
+            (_, index): Action =>
+                ({
+                    type: "GIVE_ITEM",
+                    itemName: `source-${index}`,
+                })
+        );
+        const tag = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        };
+        const result = actionListConflictDetails(
+            live,
+            source,
+            (owner) => ({
+                key: `live-${live.indexOf(owner as Action)}`,
+                tag,
+            }),
+            (owner) => ({
+                key: `source-${source.indexOf(owner as Action)}`,
+                tag,
+            })
+        );
+
+        expect(result.differences).toHaveLength(5);
+        expect(result.itemDifferences).toHaveLength(5);
+        expect(result.moreCount).toBe(1);
+    });
+
     it("reports scalar changes", () => {
         expect(actionListConflictDetails([message("live")], [message("source")])).toEqual(
             {

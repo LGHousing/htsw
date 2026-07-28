@@ -107,4 +107,83 @@ describe("diff details", () => {
         expect(output).toContain('-  id: "minecraft:cookie"');
         expect(output).toContain('+  id: "minecraft:apple"');
     });
+
+    it("bounds one rendered item section by its combined output", () => {
+        const sourceSnbt = Array.from(
+            { length: 300 },
+            (_, index) => `source_${index}: ${"s".repeat(80)}`
+        ).join("\n");
+        const liveSnbt = Array.from(
+            { length: 300 },
+            (_, index) => `live_${index}: ${"l".repeat(80)}`
+        ).join("\n");
+        const output = formatDiffDetailsFile(
+            {
+                clean: 0,
+                conflicts: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Items",
+                        basePath: "actions",
+                        sourceText: "",
+                        liveText: "",
+                        differences: [],
+                        itemDifferences: [
+                            {
+                                path: "action 1 · itemName",
+                                sourceSnbt,
+                                liveSnbt,
+                            },
+                        ],
+                        moreCount: 0,
+                    },
+                ],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+        const itemOutput = output
+            .substring(output.indexOf("# item"))
+            .replace(/\n+$/, "");
+
+        expect(itemOutput.split("\n").length).toBeLessThanOrEqual(120);
+        expect(itemOutput.length).toBeLessThanOrEqual(12000);
+        expect(itemOutput).toContain("# …item diff truncated");
+    });
+
+    it("caps the total item section count and budget", () => {
+        const itemDifferences = Array.from({ length: 8 }, (_, index) => ({
+            path: `action ${index + 1} · itemName`,
+            sourceSnbt: `{id:"minecraft:stone",source:${index}}`,
+            liveSnbt: `{id:"minecraft:dirt",live:${index}}`,
+        }));
+        const output = formatDiffDetailsFile(
+            {
+                clean: 0,
+                conflicts: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Items",
+                        basePath: "actions",
+                        sourceText: "",
+                        liveText: "",
+                        differences: [],
+                        itemDifferences,
+                        moreCount: 3,
+                    },
+                ],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+        const itemOutput = output
+            .substring(output.indexOf("# item"))
+            .replace(/\n+$/, "");
+
+        expect(output.match(/^# item ·/gm)).toHaveLength(5);
+        expect(itemOutput.split("\n").length).toBeLessThanOrEqual(120);
+        expect(itemOutput.length).toBeLessThanOrEqual(12000);
+    });
 });

@@ -52,14 +52,15 @@ function addDifference(
     path: string,
     live: string | undefined,
     source: string | undefined
-): void {
+): boolean {
     collector.total++;
-    if (collector.differences.length === MAX_DIFFERENCES) return;
+    if (collector.differences.length === MAX_DIFFERENCES) return false;
     collector.differences.push({
         path,
         live: compact(live),
         source: compact(source),
     });
+    return true;
 }
 
 function compareScalarFields(
@@ -82,8 +83,12 @@ function compareScalarFields(
             );
             if (liveItem?.key !== sourceItem?.key) {
                 const itemPath = `${path} · ${field.prop}`;
-                addDifference(collector, itemPath, "<item>", "<item>");
-                if (liveItem !== undefined && sourceItem !== undefined) {
+                const shown = addDifference(collector, itemPath, "<item>", "<item>");
+                if (
+                    shown &&
+                    liveItem !== undefined &&
+                    sourceItem !== undefined
+                ) {
                     collector.itemDifferences.push({
                         path: itemPath,
                         liveSnbt: prettyCanonicalItemTag(liveItem.tag),

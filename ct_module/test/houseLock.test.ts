@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 import {
     readHouseLock,
     seedMissingHouseLockActionLists,
     upsertHouseLockImportable,
+    upsertHouseLockImportables,
     type HouseLock,
 } from "../src/importCache/houseLock";
 import {
@@ -14,6 +15,10 @@ import {
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { ItemDependencySnapshot } from "../src/importables/items/dependencyIndex";
+import type { ItemFieldContent } from "../src/housingSync/items/fieldContent";
+import { cloneActionsWithItemFieldContent } from "../src/housingSync/items/fieldContent";
+import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import type { TagLike } from "../src/housingSync/items/itemTag";
 
 const importJsonPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";
@@ -88,8 +93,7 @@ describe("house lock scan hashes", () => {
             upsertHouseLockImportable(
                 importJsonPath,
                 "current-house",
-                importable,
-                itemDependencies
+                { importable, itemDependencies, itemContent: undefined }
             )
         ).toBe(true);
         const written = JSON.parse(files[lockPath]!) as HouseLock;
@@ -105,6 +109,89 @@ describe("house lock scan hashes", () => {
             itemDependencies
         );
         expect(readHouseLock(importJsonPath)).toEqual(written);
+    });
+
+    it("uses explicit item content for cached and reconstructed importables", () => {
+        const files: Partial<Record<string, string>> = {};
+        stubFiles(files);
+        const cookie: TagLike = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:cookie" } },
+        };
+        const apple: TagLike = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:apple" } },
+        };
+        const cachedItem = { type: "GIVE_ITEM", itemName: "cached" } as Action;
+        const reconstructedItem = {
+            type: "GIVE_ITEM",
+            itemName: "reconstructed",
+        } as Action;
+        const cached: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Cached",
+            actions: [cachedItem],
+        };
+        const reconstructed: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Reconstructed",
+            actions: [reconstructedItem],
+        };
+        const contentFor = (
+            action: Action,
+            tag: TagLike
+        ): ItemFieldContent => (owner, property) =>
+            owner === action && property === "itemName"
+                ? { key: canonicalItemShellTagKey(tag), tag }
+                : undefined;
+        const cachedContent = contentFor(cachedItem, cookie);
+        const reconstructedContent = contentFor(reconstructedItem, apple);
+
+        expect(
+            upsertHouseLockImportables(importJsonPath, "current-house", [
+                { importable: cached, itemContent: cachedContent },
+                {
+                    importable: reconstructed,
+                    itemContent: reconstructedContent,
+                },
+            ])
+        ).toBe(true);
+
+        const written = JSON.parse(files[lockPath]!) as HouseLock;
+        expect(written.importables["FUNCTION:Cached"].listContentHashes).toEqual({
+            actions: actionListContentHashFromActions(
+                cached.actions ?? [],
+                cachedContent
+            ),
+        });
+        expect(
+            written.importables["FUNCTION:Reconstructed"].listContentHashes
+        ).toEqual({
+            actions: actionListContentHashFromActions(
+                reconstructed.actions ?? [],
+                reconstructedContent
+            ),
+        });
+    });
+
+    it("preserves item content when an apply snapshot is cloned", () => {
+        const tag: TagLike = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:cookie" } },
+        };
+        const action = { type: "GIVE_ITEM", itemName: "cookie" } as Action;
+        const key = canonicalItemShellTagKey(tag);
+        const cloned = cloneActionsWithItemFieldContent(
+            [action],
+            (owner, property) =>
+                owner === action && property === "itemName"
+                    ? { key, tag }
+                    : undefined
+        );
+        const clonedAction = cloned.actions[0]!;
+
+        expect(clonedAction).not.toBe(action);
+        expect(cloned.itemContent?.(clonedAction, "itemName")?.key).toBe(key);
     });
 
     it("seeds a missing live baseline without replacing an existing one", () => {

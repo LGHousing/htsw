@@ -6,14 +6,18 @@ import {
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
-import { evaluateDiffReport, formatDiffReport } from "../src/slashCommands/diffReport";
+import {
+    evaluateDiffReport,
+    formatDiffReport,
+    type LiveDiffImportable,
+} from "../src/slashCommands/diffReport";
 import { changeVar, message, playSound } from "./utils";
 
 function func(name: string, actions: ImportableFunction["actions"]): ImportableFunction {
     return { type: "FUNCTION", name, actions };
 }
 
-function liveMap(...importables: Importable[]): Map<string, Importable> {
+function liveMap(...importables: Importable[]): Map<string, LiveDiffImportable> {
     return new Map(
         importables.map((importable) => [
             `${importable.type}:${
@@ -23,7 +27,7 @@ function liveMap(...importables: Importable[]): Map<string, Importable> {
                       ? `${importable.pos.x},${importable.pos.y},${importable.pos.z}`
                       : importable.name
             }`,
-            importable,
+            { importable, itemContent: () => undefined },
         ])
     );
 }
