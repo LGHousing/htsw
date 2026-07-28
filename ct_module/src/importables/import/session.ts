@@ -66,7 +66,6 @@ import { createImportedItemPlacementSession } from "../../housingSync/items/held
 import { recordEmptyFunctionShell } from "./emptyShells";
 import { readInteractDataCache } from "../items/interactDataCache";
 import { getOverwriteWarningMode, type OverwriteWarningMode } from "../overwriteWarning";
-import { packageBaselineAgeDays, readPackageBaselineStamp } from "../baselineStamp";
 import { actionListsOfImportable } from "../../importCache/actionLists";
 import { actionListContentHashFromActions } from "../../housingSync/actions/scanHash";
 import { recordedRevertDate } from "../../importCache/houseLock";
@@ -168,15 +167,6 @@ async function runImportSessionInner(
     resetFunctionNameSession();
     resetMenuNameSession();
     resetCommandNameSession();
-    const baselineAgeDays = packageBaselineAgeDays(
-        readPackageBaselineStamp(selection.sourcePath)
-    );
-    if (baselineAgeDays !== undefined) {
-        ctx.displayMessage(
-            `[htsw] Package baseline is ${baselineAgeDays} days old — verify against current canonical before importing.`
-        );
-    }
-
     const parsed =
         selection.parsed ??
         parseImportablesResult(
@@ -497,11 +487,17 @@ async function runImportSessionInner(
             plans.push({ row, plan });
         }
     }
-    const revertCount = countRecordedReverts(orderedImportables, session);
-    if (revertCount > 0) {
+    const recordedReverts = findRecordedReverts(orderedImportables, session);
+    if (recordedReverts.length > 0) {
+        const single = recordedReverts.length === 1;
         ctx.displayMessage(
-            `[htsw] Warning: ${revertCount} lists would revert to older recorded states — see report.`
+            `[htsw] Warning: ${recordedReverts.length} action list${single ? "" : "s"} would revert to ${single ? "an " : ""}older recorded state${single ? "" : "s"}:`
         );
+        for (const revert of recordedReverts) {
+            ctx.displayMessage(
+                `[htsw] Revert: ${revert.type} "${revert.identity}" · ${revert.basePath}`
+            );
+        }
     }
 
     let skippedConflicts: ImportConflict[] = [];
@@ -758,11 +754,11 @@ async function runImportSessionInner(
     };
 }
 
-function countRecordedReverts(
+function findRecordedReverts(
     importables: readonly Importable[],
     session: ImportContext
-): number {
-    let count = 0;
+): ImportConflict[] {
+    const reverts: ImportConflict[] = [];
     const fieldContent = session.actions.itemDiff?.fieldContent;
     for (const importable of importables) {
         const identity = importableIdentity(importable);
@@ -789,11 +785,15 @@ function countRecordedReverts(
                     liveHash
                 ) !== undefined
             ) {
-                count++;
+                reverts.push({
+                    type: importable.type,
+                    identity,
+                    basePath: list.basePath,
+                });
             }
         }
     }
-    return count;
+    return reverts;
 }
 
 async function finishWithoutApply(

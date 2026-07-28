@@ -135,9 +135,11 @@ describe("diff details", () => {
             "# PENDING CHANGES (what this import will write)\n\n" +
                 '# FUNCTION "Debug" · actions\n' +
                 "# ⚠ reverts to recorded state from 2026-07-20T00:00:00.000Z\n" +
-                "--- source/actions\n" +
-                "+++ live/actions\n"
+                "--- live/actions\n" +
+                "+++ source/actions\n"
         );
+        expect(output).toContain('-chat "live"');
+        expect(output).toContain('+chat "source"');
         expect(
             formatDiffDetailsFile(
                 { clean: 1, conflicts: [], pendingChanges: [], unknown: 0 },

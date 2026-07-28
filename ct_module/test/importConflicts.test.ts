@@ -18,6 +18,7 @@ import {
 import type { TagLike } from "../src/housingSync/items/itemTag";
 import type TaskContext from "../src/tasks/context";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
+import { conflictIdentifier } from "../src/importables/import/conflictResolution";
 
 const mocks = vi.hoisted(() => ({
     scanActionList: vi.fn(),
@@ -93,6 +94,7 @@ function sessionWithLock(
         },
         overwriteWarningMode,
         conflicts: [],
+        observedActionLists: new Map(),
         events: undefined,
         itemRead: { mode: "sync" },
     };
@@ -263,6 +265,15 @@ describe("readActionListPlan conflict detection", () => {
             );
 
             expect(session.conflicts).toEqual([]);
+            expect(
+                session.observedActionLists?.get(
+                    conflictIdentifier({
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        basePath: "actions",
+                    })
+                )
+            ).toEqual([changeVar()]);
         }
     );
 

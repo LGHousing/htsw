@@ -26,7 +26,6 @@ type DiffDetailsReport = {
     conflicts: readonly DiffDetailsConflict[];
     pendingChanges?: readonly DiffDetailsConflict[];
     unknown: number;
-    staleBaselineDays?: number;
 };
 
 function withoutFinalNewline(text: string): string {
@@ -61,26 +60,29 @@ export function formatDiffDetailsFile(
         `# conflicts: ${report.conflicts.length}`,
         `# unknown: ${report.unknown}`,
     ];
-    if (report.staleBaselineDays !== undefined) {
-        lines.push(
-            `# WARNING: Package baseline is ${report.staleBaselineDays} days old — verify against current canonical before importing.`
-        );
-    }
-    appendListDiffs(lines, report.conflicts);
+    appendListDiffs(lines, report.conflicts, false);
     if ((report.pendingChanges?.length ?? 0) > 0) {
         lines.push("", "# PENDING CHANGES (what this import will write)");
-        appendListDiffs(lines, report.pendingChanges ?? []);
+        appendListDiffs(lines, report.pendingChanges ?? [], true);
     }
     return lines.join("\n") + "\n";
 }
 
-function appendListDiffs(lines: string[], lists: readonly DiffDetailsConflict[]): void {
+function appendListDiffs(
+    lines: string[],
+    lists: readonly DiffDetailsConflict[],
+    liveToSource: boolean
+): void {
     for (const conflict of lists) {
+        const beforeText = liveToSource ? conflict.liveText : conflict.sourceText;
+        const afterText = liveToSource ? conflict.sourceText : conflict.liveText;
+        const beforeLabel = liveToSource ? "live" : "source";
+        const afterLabel = liveToSource ? "source" : "live";
         const diff = unifiedDiff(
-            conflict.sourceText,
-            conflict.liveText,
-            `source/${conflict.basePath}`,
-            `live/${conflict.basePath}`
+            beforeText,
+            afterText,
+            `${beforeLabel}/${conflict.basePath}`,
+            `${afterLabel}/${conflict.basePath}`
         );
         lines.push(
             "",
@@ -104,10 +106,14 @@ function appendListDiffs(lines: string[], lists: readonly DiffDetailsConflict[])
                 `# item · ${item.path}`,
                 withoutFinalNewline(
                     unifiedDiff(
-                        boundedItemSnbt(item.sourceSnbt),
-                        boundedItemSnbt(item.liveSnbt),
-                        `source/${conflict.basePath}/${item.path}.snbt`,
-                        `live/${conflict.basePath}/${item.path}.snbt`
+                        boundedItemSnbt(
+                            liveToSource ? item.liveSnbt : item.sourceSnbt
+                        ),
+                        boundedItemSnbt(
+                            liveToSource ? item.sourceSnbt : item.liveSnbt
+                        ),
+                        `${beforeLabel}/${conflict.basePath}/${item.path}.snbt`,
+                        `${afterLabel}/${conflict.basePath}/${item.path}.snbt`
                     )
                 )
             );

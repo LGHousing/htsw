@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
     tryWriteImportableCache: vi.fn(async () => true),
     deleteImportableCache: vi.fn(() => true),
     upsertHouseLockImportables: vi.fn(() => true),
+    lockListContentHashJournal: undefined as
+        | Record<string, Array<{ hash: string; recordedAt: string }>>
+        | undefined,
 }));
 
 vi.mock("../src/importables/import/importers", () => ({
@@ -35,6 +38,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
                     lockHash: null,
                     lockListScanHashes: { actions: "baseline" },
                     lockListContentHashes: { actions: "baseline-content" },
+                    lockListContentHashJournal: mocks.lockListContentHashJournal,
                     cacheMatchesLock: true,
                     trustMode: false,
                     wholeImportableTrusted: false,
@@ -48,7 +52,8 @@ vi.mock("../src/importCache", async (importOriginal) => ({
     tryWriteImportableCache: mocks.tryWriteImportableCache,
 }));
 
-vi.mock("../src/importCache/houseLock", () => ({
+vi.mock("../src/importCache/houseLock", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/importCache/houseLock")>()),
     upsertHouseLockImportables: mocks.upsertHouseLockImportables,
 }));
 
@@ -63,6 +68,7 @@ import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
 import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
 import { conflictIdentifier } from "../src/importables/import/conflictResolution";
+import { actionListContentHashFromActions } from "../src/housingSync/actions/scanHash";
 
 describe("import conflict gate", () => {
     beforeEach(() => {
@@ -72,6 +78,7 @@ describe("import conflict gate", () => {
         mocks.tryWriteImportableCache.mockResolvedValue(true);
         mocks.deleteImportableCache.mockReturnValue(true);
         mocks.upsertHouseLockImportables.mockReturnValue(true);
+        mocks.lockListContentHashJournal = undefined;
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -254,6 +261,84 @@ describe("import conflict gate", () => {
                 }),
             ])
         );
+    });
+
+    it("lists the current rollback paths inline before applying", async () => {
+        const source = [message("older")];
+        const live = [message("newer")];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: source,
+        };
+        mocks.lockListContentHashJournal = {
+            actions: [
+                {
+                    hash: actionListContentHashFromActions(source),
+                    recordedAt: "2026-07-20T00:00:00.000Z",
+                },
+                {
+                    hash: actionListContentHashFromActions(live),
+                    recordedAt: "2026-07-27T00:00:00.000Z",
+                },
+            ],
+        };
+        mocks.scanImportable.mockImplementation(
+            async (
+                _ctx: unknown,
+                _importable: unknown,
+                session: {
+                    actions: {
+                        observedActionLists: Map<
+                            string,
+                            ReturnType<typeof message>[]
+                        >;
+                    };
+                }
+            ) => {
+                session.actions.observedActionLists.set(
+                    conflictIdentifier({
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        basePath: "actions",
+                    }),
+                    live
+                );
+                return {
+                    kind: "FUNCTION",
+                    importable,
+                    needsHydration: false,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => null,
+                        reconstructPartial: () => null,
+                    }),
+                };
+            }
+        );
+        const messages: string[] = [];
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: (text: string) => messages.push(text),
+        } as unknown as TaskContext;
+
+        await runImportSession(ctx, {
+            importables: [importable],
+            trustMode: false,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: [importable] } as never,
+        });
+
+        expect(messages).toContain(
+            "[htsw] Warning: 1 action list would revert to an older recorded state:"
+        );
+        expect(messages).toContain('[htsw] Revert: FUNCTION "Debug" · actions');
+        expect(messages.join("\n")).not.toContain("see report");
     });
 
     it("saves completed observations when hydration is cancelled", async () => {

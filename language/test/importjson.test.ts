@@ -141,7 +141,9 @@ describe("import.json include", () => {
 
         expect(hasHardErrors(result.diagnostics)).toBe(false);
         // The shared file's importables merge once, not per include edge.
-        expect(result.value.filter((imp) => imp.type === "REGION").length).toBe(1);
+        expect(
+            result.value.filter((imp) => imp.type === "REGION").length
+        ).toBe(1);
     });
 
     it("homes a file's contents at the folder-shaped include edge", () => {
@@ -162,9 +164,7 @@ describe("import.json include", () => {
         expect(sharedNode.includes.map((n) => n.path)).toEqual([menusPath]);
         expect(sharedNode.includes[0].reference).toBeUndefined();
         expect(sharedNode.includes[0].importables.length).toBe(1);
-        expect(
-            result.importJson.declaringPathOf(sharedNode.includes[0].importables[0])
-        ).toBe(menusPath);
+        expect(result.importJson.declaringPathOf(sharedNode.includes[0].importables[0])).toBe(menusPath);
 
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
@@ -213,9 +213,7 @@ describe("import.json include", () => {
 
         expect(
             result.diagnostics.some((diagnostic) => {
-                return diagnostic.message.includes(
-                    "Couldn't read `does_not_exist.import.json` file"
-                );
+                return diagnostic.message.includes("Couldn't read `does_not_exist.import.json` file");
             })
         ).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(true);
@@ -268,6 +266,7 @@ describe("import.json include", () => {
             "MENU",
         ]);
     });
+
 });
 
 describe("import.json basic passing behavior", () => {
@@ -382,9 +381,7 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(true);
         expect(
             result.diagnostics.some((diagnostic) =>
-                diagnostic.message.includes(
-                    "Unknown Minecraft 1.8 item: `minecraft:target`"
-                )
+                diagnostic.message.includes("Unknown Minecraft 1.8 item: `minecraft:target`")
             )
         ).toBe(true);
     });
@@ -456,7 +453,7 @@ describe("import.json basic passing behavior", () => {
         expect(group.tagShownInChat).toBe(true);
         expect(group.color).toBe("Aqua");
         expect(group.priority).toBe(5);
-        expect(group.permissions).toEqual({ Build: true, "Use Launch Pads": false });
+        expect(group.permissions).toEqual({ "Build": true, "Use Launch Pads": false });
         expect(group.chatSpeed).toBe("Slow 3s");
         expect(group.defaultGameMode).toBe("CREATIVE");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
@@ -514,13 +511,6 @@ describe("import.json houseUuid", () => {
 });
 
 describe("import.json diagnostics readability", () => {
-    it("accepts an optional package baseline without changing importables", () => {
-        const result = parseImportables(caseFilePath("package_baseline"));
-
-        expect(result.value).toEqual([]);
-        expect(result.diagnostics).toEqual([]);
-    });
-
     it("reports unknown keys", () => {
         const result = parseImportables(caseFilePath("unknown_key"));
         const diag = result.diagnostics.find((it) =>
@@ -555,9 +545,9 @@ describe("import.json diagnostics readability", () => {
         expect(npc?.leftClickActionsPath).toBe(
             resolve("test", "cases", "importjson", "npc_left.htsl")
         );
-        expect(
-            npc !== undefined && htsw.importableChildListPath(npc, "rightClickActions")
-        ).toBe(resolve("test", "cases", "importjson", "npc_right.htsl"));
+        expect(npc !== undefined && htsw.importableChildListPath(npc, "rightClickActions")).toBe(
+            resolve("test", "cases", "importjson", "npc_right.htsl")
+        );
     });
 
     it("reports missing required keys", () => {
@@ -645,7 +635,9 @@ describe("import.json diagnostics readability", () => {
     });
 
     it("reports unknown vanilla item ids distinctly", () => {
-        const result = parseImportables(caseFilePath("unknown_vanilla_item_reference"));
+        const result = parseImportables(
+            caseFilePath("unknown_vanilla_item_reference")
+        );
 
         expect(hasHardErrors(result.diagnostics)).toBe(true);
         expect(

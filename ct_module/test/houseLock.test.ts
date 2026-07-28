@@ -3,6 +3,7 @@ import type { ImportableFunction } from "htsw/types";
 
 import {
     readHouseLock,
+    recordedRevertDate,
     seedMissingHouseLockActionLists,
     upsertHouseLockImportable,
     type HouseLock,
@@ -132,6 +133,85 @@ describe("house lock scan hashes", () => {
         ).toBe(true);
     });
 
+    it("rejects writes to an unknown journal version without changing the file", () => {
+        const futureLock = JSON.stringify({
+            schemaVersion: 1,
+            houseUuid: "current-house",
+            contentHashJournalVersion: 2,
+            importables: {
+                "FUNCTION:Debug": {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    hash: "0xfuture",
+                    listContentHashJournal: {
+                        actions: [
+                            {
+                                hash: "0xfuture-content",
+                                recordedAt: "2026-07-28T00:00:00.000Z",
+                                futureField: "preserve me",
+                            },
+                        ],
+                    },
+                },
+            },
+        });
+        const files = { [lockPath]: futureLock };
+        stubFiles(files);
+        const importable = functionEntry();
+
+        expect(
+            upsertHouseLockImportable(importJsonPath, "current-house", importable)
+        ).toBe(false);
+        expect(
+            seedMissingHouseLockActionLists(importJsonPath, "current-house", [
+                {
+                    importable,
+                    basePath: "actions",
+                    actions: importable.actions!,
+                },
+            ])
+        ).toBe(false);
+        expect(files[lockPath]).toBe(futureLock);
+    });
+
+    it("starts journal history with the existing content baseline on upgrade", () => {
+        const baseline = [messageAction("baseline")];
+        const baselineHash = actionListContentHashFromActions(baseline);
+        const files: Partial<Record<string, string>> = {
+            [lockPath]: JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: "current-house",
+                contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: "0xold",
+                        listContentHashes: { actions: baselineHash },
+                    },
+                },
+            }),
+        };
+        stubFiles(files);
+        const newer = functionEntry();
+        newer.actions = [messageAction("newer")];
+        const newerHash = actionListContentHashFromActions(newer.actions);
+
+        expect(
+            upsertHouseLockImportable(importJsonPath, "current-house", newer)
+        ).toBe(true);
+        const journal =
+            readHouseLock(importJsonPath)?.importables["FUNCTION:Debug"]
+                .listContentHashJournal?.actions;
+        expect(journal?.map((entry) => entry.hash)).toEqual([
+            baselineHash,
+            newerHash,
+        ]);
+        expect(recordedRevertDate(journal, baselineHash, newerHash)).toEqual(
+            expect.any(String)
+        );
+    });
+
     it("seeds a missing live baseline without replacing an existing one", () => {
         const existing = [functionEntry().actions![0]];
         const files: Partial<Record<string, string>> = {
@@ -176,6 +256,10 @@ describe("house lock scan hashes", () => {
                 },
             },
         });
+        expect(
+            readHouseLock(importJsonPath)?.importables["FUNCTION:Debug"]
+                .listContentHashJournal?.actions.map((entry) => entry.hash)
+        ).toEqual([actionListContentHashFromActions(existing)]);
     });
 
     it("seeds the observed live state when no baseline exists", () => {
@@ -201,6 +285,13 @@ describe("house lock scan hashes", () => {
                 },
             },
         });
+        const journal =
+            readHouseLock(importJsonPath)?.importables["FUNCTION:Debug"]
+                .listContentHashJournal?.actions;
+        expect(journal?.map((entry) => entry.hash)).toEqual([
+            actionListContentHashFromActions(live.actions!),
+        ]);
+        expect(typeof journal?.[0].recordedAt).toBe("string");
     });
 
     it("hides entry scan hashes from a different scan-hash version", () => {
@@ -267,3 +358,7 @@ describe("house lock scan hashes", () => {
         });
     });
 });
+
+function messageAction(message: string): NonNullable<ImportableFunction["actions"]>[number] {
+    return { type: "MESSAGE", message };
+}

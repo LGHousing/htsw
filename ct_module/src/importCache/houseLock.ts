@@ -18,7 +18,7 @@ import { itemDependencyIndexFor } from "../importables/items/dependencyIndex";
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
-export const CONTENT_HASH_JOURNAL_VERSION = 1;
+const CONTENT_HASH_JOURNAL_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
 
 export type ContentHashJournalEntry = {
@@ -291,6 +291,34 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     }
 }
 
+function canWriteContentHashJournal(lock: HouseLock): boolean {
+    return (
+        lock.contentHashJournalVersion === undefined ||
+        lock.contentHashJournalVersion === CONTENT_HASH_JOURNAL_VERSION
+    );
+}
+
+function seedContentHashJournalFromBaselines(
+    lock: HouseLock,
+    recordedAt: string
+): boolean {
+    let changed = false;
+    for (const key in lock.importables) {
+        const entry = lock.importables[key];
+        if (entry.listContentHashes === undefined) continue;
+        for (const basePath in entry.listContentHashes) {
+            const existing = entry.listContentHashJournal?.[basePath];
+            if (existing !== undefined && existing.length > 0) continue;
+            entry.listContentHashJournal ??= {};
+            entry.listContentHashJournal[basePath] = [
+                { hash: entry.listContentHashes[basePath], recordedAt },
+            ];
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 export type HouseLockImportableUpdate = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
@@ -313,11 +341,14 @@ export function seedMissingHouseLockActionLists(
     const path = houseLockPathForImportJson(importJsonPath);
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
+    if (!canWriteContentHashJournal(lock)) return false;
+    const recordedAt = new Date().toISOString();
+    let changed = lock.contentHashJournalVersion !== CONTENT_HASH_JOURNAL_VERSION;
+    if (seedContentHashJournalFromBaselines(lock, recordedAt)) changed = true;
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
     lock.contentHashJournalVersion = CONTENT_HASH_JOURNAL_VERSION;
-    let changed = false;
     for (const seed of seeds) {
         const identity = importableIdentity(seed.importable);
         const key = importableKey(seed.importable.type, identity);
@@ -353,10 +384,15 @@ export function seedMissingHouseLockActionLists(
             );
         }
         if (!hasContent) {
-            entry.listContentHashes[seed.basePath] = actionListContentHashFromActions(
+            const contentHash = actionListContentHashFromActions(
                 seed.actions,
                 seed.itemContent
             );
+            entry.listContentHashes[seed.basePath] = contentHash;
+            entry.listContentHashJournal ??= {};
+            entry.listContentHashJournal[seed.basePath] = [
+                { hash: contentHash, recordedAt },
+            ];
         }
         changed = true;
     }
@@ -382,6 +418,9 @@ export function upsertHouseLockImportables(
     if (updates.length === 0) return true;
     const path = houseLockPathForImportJson(importJsonPath);
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
+    if (!canWriteContentHashJournal(lock)) return false;
+    const recordedAt = new Date().toISOString();
+    seedContentHashJournalFromBaselines(lock, recordedAt);
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
@@ -406,11 +445,13 @@ export function upsertHouseLockImportables(
                 itemContent
             );
         }
-        const previous = lock.importables[importableKey(importable.type, identity)];
+        const key = importableKey(importable.type, identity);
+        const previous = Object.prototype.hasOwnProperty.call(lock.importables, key)
+            ? lock.importables[key]
+            : undefined;
         const listContentHashJournal = {
             ...(previous?.listContentHashJournal ?? {}),
         };
-        const recordedAt = new Date().toISOString();
         for (const basePath in listContentHashes) {
             const hash = listContentHashes[basePath];
             const entries = (listContentHashJournal[basePath] ?? []).slice();
@@ -420,16 +461,16 @@ export function upsertHouseLockImportables(
             listContentHashJournal[basePath] = entries.slice(-3);
         }
         for (const basePath of update.preserveListPaths ?? []) {
-            const scanHash = previous.listScanHashes?.[basePath];
-            const contentHash = previous.listContentHashes?.[basePath];
+            const scanHash = previous?.listScanHashes?.[basePath];
+            const contentHash = previous?.listContentHashes?.[basePath];
             if (scanHash !== undefined) listScanHashes[basePath] = scanHash;
             if (contentHash !== undefined) listContentHashes[basePath] = contentHash;
-            if (previous.listContentHashJournal?.[basePath] !== undefined) {
+            if (previous?.listContentHashJournal?.[basePath] !== undefined) {
                 listContentHashJournal[basePath] =
                     previous.listContentHashJournal[basePath];
             }
         }
-        lock.importables[importableKey(importable.type, identity)] = {
+        lock.importables[key] = {
             type: importable.type,
             identity,
             hash: importableHash(importable),

@@ -23,14 +23,11 @@ import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
-import {
-    packageBaselineAgeDays,
-    readPackageBaselineStamp,
-} from "../importables/baselineStamp";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "./diffDetails";
 import {
     evaluateDiffReport,
+    formatDiffProgress,
     formatDiffReport,
     matchedLiveActionLists,
 } from "./diffReport";
@@ -178,22 +175,16 @@ export function commandDiff(args: string[]): void {
             projectItems,
             captures,
         });
-        report.staleBaselineDays = packageBaselineAgeDays(
-            readPackageBaselineStamp(manifest)
-        );
         const detailsPath =
             report.conflicts.length === 0 &&
             (report.pendingChanges?.length ?? 0) === 0 &&
-            report.staleBaselineDays === undefined &&
             (report.revertCount ?? 0) === 0
                 ? undefined
                 : writeDiffDetailsFile(report, manifest, new Date().toISOString());
         for (const line of formatDiffReport(report, manifest, detailsPath)) {
             ChatLib.chat(line);
         }
-        progress.complete(
-            `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
-        );
+        progress.complete(formatDiffProgress(report));
     }).catch((error: unknown) => {
         if (isTaskCancelled(error)) {
             progress.clear();

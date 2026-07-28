@@ -6,8 +6,11 @@ import {
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
-import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
-import { evaluateDiffReport, formatDiffReport } from "../src/slashCommands/diffReport";
+import {
+    evaluateDiffReport,
+    formatDiffProgress,
+    formatDiffReport,
+} from "../src/slashCommands/diffReport";
 import { changeVar, message, playSound } from "./utils";
 
 function func(name: string, actions: ImportableFunction["actions"]): ImportableFunction {
@@ -268,7 +271,10 @@ describe("diff report", () => {
             "[htsw] Diff complete: 1 clean, 0 conflicts, 0 unknown · /project/import.json"
         );
         expect(lines[1]).toBe(
-            "[htsw] Pending changes: 1 lists will be modified — see report"
+            "[htsw] Pending changes: 1 list will be modified — see report"
+        );
+        expect(formatDiffProgress(report)).toBe(
+            "0 unchanged / 1 pending / 0 conflicts / 0 unknown / 0 rollback warnings"
         );
         expect(
             evaluateDiffReport(
@@ -278,29 +284,6 @@ describe("diff report", () => {
                 lockFor("Debug", baseline)
             ).pendingChanges
         ).toEqual([]);
-    });
-
-    it("prints a stale package-baseline warning in chat and the report header", () => {
-        const report = {
-            clean: 1,
-            conflicts: [],
-            pendingChanges: [],
-            unknown: 0,
-            staleBaselineDays: 2,
-        };
-
-        expect(formatDiffReport(report, "/project/import.json")).toContain(
-            "[htsw] Package baseline is 2 days old — verify against current canonical before importing."
-        );
-        expect(
-            formatDiffDetailsFile(
-                report,
-                "/project/import.json",
-                "2026-07-28T00:00:00.000Z"
-            )
-        ).toContain(
-            "# WARNING: Package baseline is 2 days old — verify against current canonical before importing."
-        );
     });
 
     it("detects a source hash that predates the live hash in the journal", () => {
@@ -329,6 +312,10 @@ describe("diff report", () => {
         );
         expect(report.pendingChanges?.[0].revertsTo).toBe("2026-07-20T00:00:00.000Z");
         expect(report.revertCount).toBe(1);
+        expect(formatDiffReport(report, "/project/import.json")).toContain(
+            "[htsw] Warning: 1 list would revert to an older recorded state — see report."
+        );
+        expect(formatDiffProgress(report)).toContain("1 rollback warning");
 
         expect(
             evaluateDiffReport(

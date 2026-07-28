@@ -4,21 +4,11 @@ import type { GlobalCtxt } from "../../context";
 import type { Importable } from "../../types";
 import { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
-import {
-    parseImportableCommand,
-    parseImportableEvent,
-    parseImportableFunction,
-    parseImportableGroup,
-    parseImportableItem,
-    parseImportableMenu,
-    parseImportableNpc,
-    parseImportableRegion,
-    parseImportableTeam,
-} from "./importables";
+import { parseImportableCommand, parseImportableEvent, parseImportableFunction, parseImportableGroup, parseImportableItem, parseImportableMenu, parseImportableNpc, parseImportableRegion, parseImportableTeam } from "./importables";
 import { getFileName, warnUnused } from "./helpers";
 import type { ImportJsonFileNode, ImportJsonParseMetadata } from "../metadata";
-import type { RawImportJson, RawPackageBaseline } from "../schemaSpec";
-import { optionalRawField, parseRawFields, requiredRawField } from "./rawFields";
+import type { RawImportJson } from "../schemaSpec";
+import { optionalRawField, parseRawFields } from "./rawFields";
 
 type IncludeOrigin = {
     includeParser: Parser;
@@ -58,9 +48,7 @@ export function parseImportJson(
         } else if (e instanceof Error) {
             gcx.addDiagnostic(Diagnostic.bugFromError(e));
         } else {
-            gcx.addDiagnostic(
-                Diagnostic.bug(`An unknown error occurred parsing ${path}`)
-            );
+            gcx.addDiagnostic(Diagnostic.bug(`An unknown error occurred parsing ${path}`));
         }
         return [];
     }
@@ -72,7 +60,6 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
         houseUuid: optionalRawField((field) =>
             parseHouseUuid(field, p.importJson.fileTree === fileNode)
         ),
-        baseline: optionalRawField(parsePackageBaseline),
         include: optionalRawField((field) =>
             parseEntryList(field, (entry) => {
                 parseInclude(entry, fileNode);
@@ -115,14 +102,6 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
     return importables;
 }
 
-function parsePackageBaseline(p: Parser): void {
-    parseRawFields<RawPackageBaseline>(p, {
-        exportedAt: requiredRawField((field) => field.parseString()),
-        houseId: requiredRawField((field) => field.parseString()),
-    });
-    warnUnused(p);
-}
-
 function pushParsedEntries<T extends Importable>(
     field: Parser,
     out: Importable[],
@@ -160,9 +139,7 @@ function addParseFailureDiagnostic(p: Parser, e: unknown): void {
     } else if (e instanceof Error) {
         p.gcx.addDiagnostic(Diagnostic.bugFromError(e));
     } else {
-        p.gcx.addDiagnostic(
-            Diagnostic.bug("An unknown error occurred parsing an import.json entry")
-        );
+        p.gcx.addDiagnostic(Diagnostic.bug("An unknown error occurred parsing an import.json entry"));
     }
 }
 
@@ -172,31 +149,38 @@ function parseHouseUuid(p: Parser, isEntryFile: boolean): void {
     }
     const uuid = p.parseString();
     if (!HOUSE_UUID_RE.test(uuid)) {
-        p.gcx.addDiagnostic(Diagnostic.error("Expected UUID").addPrimarySpan(p.span()));
+        p.gcx.addDiagnostic(
+            Diagnostic.error("Expected UUID").addPrimarySpan(p.span())
+        );
         return;
     }
     p.importJson.houseUuid = uuid.toLowerCase();
 }
 
-function parseInclude(p: Parser, fileNode: ImportJsonFileNode): Importable[] {
+function parseInclude(
+    p: Parser,
+    fileNode: ImportJsonFileNode
+): Importable[] {
     const path = p.parseString();
 
-    if (!path.endsWith("import.json") && !path.endsWith(".import.json")) {
+    if (
+        !path.endsWith("import.json") &&
+        !path.endsWith(".import.json")
+    ) {
         p.gcx.addDiagnostic(
-            Diagnostic.error("Invalid import file").addPrimarySpan(
-                p.span(),
-                "Expected an `import.json` file"
-            )
+            Diagnostic.error("Invalid import file")
+                .addPrimarySpan(p.span(), "Expected an `import.json` file")
         );
         return [];
     }
 
     const resolved = resolveRelativePath(p.gcx, fileNode.path, path);
-    return parseImportJson(p.gcx.subContext(resolved), resolved, p.importJson, {
-        includeParser: p,
-        includePath: path,
-        fromNode: fileNode,
-    });
+    return parseImportJson(
+        p.gcx.subContext(resolved),
+        resolved,
+        p.importJson,
+        { includeParser: p, includePath: path, fromNode: fileNode }
+    );
 }
 
 function prepareImportJsonParsing(
@@ -212,13 +196,13 @@ function prepareImportJsonParsing(
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
         if (origin !== undefined) metadata.recordMissing(origin.fromNode, resolvedPath);
         const fileName = getFileName(resolvedPath);
-        const diag =
-            origin === undefined
-                ? Diagnostic.error(`import.json file does not exist '${resolvedPath}'`)
-                : Diagnostic.error(`Couldn't read \`${fileName}\` file`).addPrimarySpan(
-                      origin.includeParser.span(),
-                      "No such file"
-                  );
+        const diag = origin === undefined
+            ? Diagnostic.error(`import.json file does not exist '${resolvedPath}'`)
+            : Diagnostic.error(`Couldn't read \`${fileName}\` file`)
+                .addPrimarySpan(
+                    origin.includeParser.span(),
+                    "No such file"
+                );
         gcx.addDiagnostic(diag);
         return false;
     }

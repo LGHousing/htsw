@@ -25,7 +25,7 @@ import {
 import type { ProjectItemIndex } from "../importables/items/projectItems";
 import type { CapturedItem } from "../importables/items/captureRegistry";
 
-export type DiffReportList = ActionSyncConflict &
+type DiffReportList = ActionSyncConflict &
     ActionListConflictDetails & {
         sourceText: string;
         liveText: string;
@@ -37,7 +37,6 @@ export type DiffReport = {
     conflicts: DiffReportList[];
     pendingChanges?: DiffReportList[];
     unknown: number;
-    staleBaselineDays?: number;
     revertCount?: number;
 };
 
@@ -211,18 +210,15 @@ export function formatDiffReport(
         `[htsw] Diff complete: ${report.clean} clean, ${report.conflicts.length} conflicts, ${report.unknown} unknown · ${manifest}`,
     ];
     if ((report.pendingChanges?.length ?? 0) > 0) {
+        const pendingCount = report.pendingChanges?.length ?? 0;
         lines.push(
-            `[htsw] Pending changes: ${report.pendingChanges?.length ?? 0} lists will be modified — see report`
-        );
-    }
-    if (report.staleBaselineDays !== undefined) {
-        lines.push(
-            `[htsw] Package baseline is ${report.staleBaselineDays} days old — verify against current canonical before importing.`
+            `[htsw] Pending changes: ${pendingCount} list${pendingCount === 1 ? "" : "s"} will be modified — see report`
         );
     }
     if ((report.revertCount ?? 0) > 0) {
+        const revertCount = report.revertCount ?? 0;
         lines.push(
-            `[htsw] Warning: ${report.revertCount ?? 0} lists would revert to older recorded states — see report.`
+            `[htsw] Warning: ${revertCount} list${revertCount === 1 ? "" : "s"} would revert to ${revertCount === 1 ? "an " : ""}older recorded state${revertCount === 1 ? "" : "s"} — see report.`
         );
     }
     const shown = Math.min(report.conflicts.length, 20);
@@ -239,4 +235,12 @@ export function formatDiffReport(
         lines.push(`[htsw] Diff details: ${detailsPath}`);
     }
     return lines;
+}
+
+export function formatDiffProgress(report: DiffReport): string {
+    const pending = report.pendingChanges?.length ?? 0;
+    const unchanged = Math.max(0, report.clean - pending);
+    const reverts = report.revertCount ?? 0;
+    const conflicts = report.conflicts.length;
+    return `${unchanged} unchanged / ${pending} pending / ${conflicts} conflict${conflicts === 1 ? "" : "s"} / ${report.unknown} unknown / ${reverts} rollback warning${reverts === 1 ? "" : "s"}`;
 }
