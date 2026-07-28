@@ -31,6 +31,7 @@ import {
 } from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
 import {
+    clearTaskProgress,
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
     getFinishedTaskSummary,
@@ -45,8 +46,6 @@ import {
     isEtaRough,
     parkedTaskFor,
     phaseFractions,
-    setActiveTaskPath,
-    setTaskProgress,
     type PhaseUnits,
 } from "./taskProgress";
 import {
@@ -627,8 +626,7 @@ function cancelButton(): Element {
         onClick: () => {
             if (getTaskProgress() === null) return;
             cancelActiveTask();
-            setTaskProgress(null);
-            setActiveTaskPath(null);
+            clearTaskProgress();
             ChatLib.chat(`&c[htsw] cancelling task…`);
         },
     });

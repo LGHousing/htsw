@@ -7,6 +7,7 @@ import type { PlayerInventorySnapshot } from "../../housingSync/items/playerInve
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import type { HtslExportTarget } from "../../project/paths";
@@ -33,6 +34,7 @@ export type ExportNpcWithSharedStateOptions = {
     rightClickTarget: HtslExportTarget;
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    events?: SyncEventHandler;
     output: ReadOutput;
     quiet?: boolean;
 };
@@ -49,7 +51,8 @@ async function readNpcActionList(
     slotKind: "leftClickActions" | "rightClickActions",
     itemCaptures: ItemCaptureRegistry,
     npcLookup: NpcLookupCache,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<Action[]> {
     if (slotKind === "leftClickActions") {
         await openNpcLeftClickActions(ctx, entry, npcLookup);
@@ -57,17 +60,19 @@ async function readNpcActionList(
         await openNpcRightClickActions(ctx, entry, npcLookup);
     }
 
-    return await readOpenNpcActionList(ctx, itemCaptures, onReadProgress);
+    return await readOpenNpcActionList(ctx, itemCaptures, onReadProgress, events);
 }
 
 async function readOpenNpcActionList(
     ctx: TaskContext,
     itemCaptures: ItemCaptureRegistry,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<Action[]> {
     return readActionListFully(ctx, {
         itemReadMode: "export",
         itemCaptures,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -113,7 +118,8 @@ export async function exportNpcWithSharedState(
         const actions = await readOpenNpcActionList(
             ctx,
             shared.itemCaptures,
-            options.onReadProgress
+            options.onReadProgress,
+            options.events
         );
         if (actions.length > 0) {
             leftActions = actions;
@@ -128,7 +134,8 @@ export async function exportNpcWithSharedState(
             "rightClickActions",
             shared.itemCaptures,
             shared.npcLookup,
-            options.onReadProgress
+            options.onReadProgress,
+            options.events
         );
         if (actions.length > 0) {
             rightActions = actions;

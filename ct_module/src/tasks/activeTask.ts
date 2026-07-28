@@ -1,6 +1,6 @@
 import type TaskContext from "./context";
 
-export type ActiveTaskKind = "import" | "export";
+export type ActiveTaskKind = "import" | "export" | "diff";
 
 type ActiveTask = {
     kind: ActiveTaskKind;

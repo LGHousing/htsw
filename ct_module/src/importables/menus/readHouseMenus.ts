@@ -3,6 +3,7 @@ import * as htsw from "htsw";
 
 import { tryWriteImportableCache } from "../../importCache";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { prettySnbt } from "../../housingSync/items/itemNbt";
 import { ItemCaptureRegistry } from "../items/captureRegistry";
 import TaskContext from "../../tasks/context";
@@ -40,7 +41,8 @@ async function readMenu(
     ctx: TaskContext,
     name: string,
     actionItemCaptures: ItemCaptureRegistry,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<MenuReadResult> {
     if ((await openMenuEditor(ctx, name)) === "missing") {
         throw new Error(`No menu named "${name}" exists in this housing.`);
@@ -52,7 +54,8 @@ async function readMenu(
             itemReadMode: "export",
             itemCaptures: actionItemCaptures,
         },
-        onReadProgress
+        onReadProgress,
+        events
     );
     const cacheSlots: MenuSlot[] = [];
     for (const liveSlot of live.slots) {
@@ -152,8 +155,8 @@ export const readMenus = defineHouseExporter<string, "MENU", never, MenuReadResu
     },
     reader: {
         kind: "direct",
-        read: (ctx, name, _options, state, onReadProgress) =>
-            readMenu(ctx, name, state.itemCaptures, onReadProgress),
+        read: (ctx, name, options, state, onReadProgress) =>
+            readMenu(ctx, name, state.itemCaptures, onReadProgress, options.progress?.events),
     },
     importableOf: (result) => result.importable,
     export: async (ctx, name, result, options, state) => {

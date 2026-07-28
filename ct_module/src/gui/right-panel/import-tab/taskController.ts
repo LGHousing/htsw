@@ -13,8 +13,8 @@ import {
     finishTaskProgress,
     getTaskProgress,
     setActiveTaskPath,
-    setSessionTrustMode,
     setTaskProgress,
+    startTaskProgress,
 } from "./taskProgress";
 import {
     addSessionQueueItem,
@@ -702,14 +702,15 @@ async function prepareAndStartImport(
     for (let i = 1; i < batches.length; i++) {
         rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    setTaskProgress(
-        createTaskProgress({
+    startTaskProgress({
+        progress: createTaskProgress({
             totalUnits: 1,
             rows,
-        })
-    );
-    setSessionTrustMode(trustMode);
-    setActiveTaskPath(batches[0].sourcePath);
+        }),
+        verb: "import",
+        path: batches[0].sourcePath,
+        trustMode,
+    });
 
     // A command import (`explicit`) gets reflected into the visible queue so
     // it shows up + animates like a GUI run; otherwise we'd run an invisible
@@ -853,7 +854,6 @@ async function prepareAndStartImport(
                 unexpectedError = err;
             }
         } finally {
-            setActiveTaskPath(null);
             options.onComplete?.(importSucceeded);
             autoTrackRefresh();
             const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);

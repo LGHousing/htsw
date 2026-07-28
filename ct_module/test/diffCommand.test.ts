@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
         unknown: number;
     },
     atomicWriteText: vi.fn<(path: string, content: string) => boolean>(),
+    start: vi.fn(),
     complete: vi.fn(),
     fail: vi.fn(),
     clear: vi.fn(),
@@ -60,6 +61,7 @@ vi.mock("../src/importCache/houseLock", async (importOriginal) => {
 
 vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
     createDiffProgressSession: () => ({
+        start: state.start,
         sinkFor: () => undefined,
         complete: state.complete,
         fail: state.fail,
@@ -122,6 +124,7 @@ describe("/htsw diff report persistence", () => {
         };
         state.atomicWriteText.mockReset();
         state.atomicWriteText.mockReturnValue(true);
+        state.start.mockReset();
         state.complete.mockReset();
         state.fail.mockReset();
         state.clear.mockReset();

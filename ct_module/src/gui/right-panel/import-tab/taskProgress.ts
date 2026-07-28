@@ -2,12 +2,11 @@
 
 /**
  * Shared task progress state. Owns the `TaskProgress` object used by import,
- * read, and export flows, plus derived queue-row render state and helpers for
- * building fresh progress shapes.
+ * read, export, and diff flows, plus derived queue-row render state and helpers
+ * for building fresh progress shapes.
  *
  * Read by: the right-panel progress panel, queue rows, and code-view focus
- * tracking. Written by import/read/export task controllers through
- * `setTaskProgress`.
+ * tracking. Written by task controllers through the functions in this module.
  */
 
 import type { Importable } from "htsw/types";
@@ -66,7 +65,7 @@ let taskProgressRows = new Map<string, TaskProgressEntry>();
 let lastFinishedTaskProgress: TaskProgress | null = null;
 let lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
 let finishedTaskFailure: string | null = null;
-export type FinishedTaskSummary = {
+type FinishedTaskSummary = {
     title: string;
     message: string;
 };
@@ -95,16 +94,15 @@ export function parkedTaskFor(
 }
 
 /**
- * Whether the active progress session is an import or an export. The
- * progress strip + queue summary share one UI; this only swaps the
- * user-facing verb so an export run doesn't read "Importable N of M".
+ * The user-facing verb for the active progress session. Import, export, read,
+ * and diff share one progress strip and queue summary.
  */
-export type SessionVerb = "import" | "export" | "read" | "diff";
+type SessionVerb = "import" | "export" | "read" | "diff";
 let sessionVerb: SessionVerb = "import";
 export function getSessionVerb(): SessionVerb {
     return sessionVerb;
 }
-export function setSessionVerb(v: SessionVerb): void {
+function setSessionVerb(v: SessionVerb): void {
     if (sessionVerb === v) return;
     sessionVerb = v;
     markGuiDirty();
@@ -119,7 +117,7 @@ let etaRough = false;
 export function isEtaRough(): boolean {
     return etaRough;
 }
-export function setEtaRough(v: boolean): void {
+function setEtaRough(v: boolean): void {
     if (etaRough === v) return;
     etaRough = v;
     markGuiDirty();
@@ -146,7 +144,7 @@ let sessionTrustMode: boolean | null = null;
 export function getSessionTrustMode(): boolean | null {
     return sessionTrustMode;
 }
-export function setSessionTrustMode(v: boolean | null): void {
+function setSessionTrustMode(v: boolean | null): void {
     if (sessionTrustMode === v) return;
     sessionTrustMode = v;
     markGuiDirty();
@@ -267,11 +265,23 @@ function updateTaskProgress(
     markGuiDirty();
 }
 
-export function setTaskProgress(p: TaskProgress | null): void {
-    if (p === null) {
-        finishedTaskFailure = null;
-        finishedTaskSummary = null;
-    }
+type TaskProgressStart = {
+    progress: TaskProgress;
+    verb: SessionVerb;
+    path: string | null;
+    etaRough?: boolean;
+    trustMode?: boolean | null;
+};
+
+export function startTaskProgress(options: TaskProgressStart): void {
+    setTaskProgress(options.progress);
+    setSessionVerb(options.verb);
+    setEtaRough(options.etaRough === true);
+    setSessionTrustMode(options.trustMode ?? null);
+    setActiveTaskPath(options.path);
+}
+
+export function setTaskProgress(p: TaskProgress): void {
     updateTaskProgress(p, false);
 }
 
@@ -279,9 +289,17 @@ export function finishTaskProgress(
     failure: string | null,
     summary: FinishedTaskSummary | null = null
 ): void {
+    setActiveTaskPath(null);
     finishedTaskFailure = failure;
     finishedTaskSummary = summary;
     updateTaskProgress(null, failure !== null);
+}
+
+export function clearTaskProgress(): void {
+    setActiveTaskPath(null);
+    finishedTaskFailure = null;
+    finishedTaskSummary = null;
+    updateTaskProgress(null, false);
 }
 
 export function getFinishedTaskFailure(): string | null {
