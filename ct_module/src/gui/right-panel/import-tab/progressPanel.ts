@@ -30,8 +30,8 @@ import {
     PHASE_SCANNED,
 } from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
-import { clearHousingOperationProgress } from "./housingOperationProgress";
 import {
+    clearTaskProgress,
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
     getFinishedTaskSummary,
@@ -626,7 +626,7 @@ function cancelButton(): Element {
         onClick: () => {
             if (getTaskProgress() === null) return;
             cancelActiveTask();
-            clearHousingOperationProgress();
+            clearTaskProgress();
             ChatLib.chat(`&c[htsw] cancelling task…`);
         },
     });

@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
 import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
-import { clearHousingOperationProgress } from "../src/gui/right-panel/import-tab/housingOperationProgress";
 import {
     clearLastFinishedProgress,
+    clearTaskProgress,
     getActiveTaskPath,
     getFinishedTaskSummary,
     getSessionVerb,
@@ -23,7 +23,7 @@ function sourceFunction(): ImportableFunction {
 }
 
 beforeEach(() => {
-    clearHousingOperationProgress();
+    clearTaskProgress();
     clearLastFinishedProgress();
 });
 

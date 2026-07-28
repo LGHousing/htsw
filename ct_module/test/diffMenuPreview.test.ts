@@ -42,9 +42,11 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
 }));
 
 import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
-import { clearHousingOperationProgress } from "../src/gui/right-panel/import-tab/housingOperationProgress";
 import { previewLinesForFile, resetPreview } from "../src/gui/right-panel/import-tab/livePreview";
-import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
+import {
+    clearTaskProgress,
+    getActiveTaskPath,
+} from "../src/gui/right-panel/import-tab/taskProgress";
 import type { SyncEventHandler } from "../src/housingSync/syncEvents";
 import { readMenus } from "../src/importables/menus/readHouseMenus";
 import type TaskContext from "../src/tasks/context";
@@ -69,7 +71,7 @@ function sourceMenu(): Importable {
 describe("diff menu preview", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        clearHousingOperationProgress();
+        clearTaskProgress();
         vi.stubGlobal("Player", {
             getName: () => "tester",
             getContainer: () => ({
@@ -94,7 +96,7 @@ describe("diff menu preview", () => {
 
     afterEach(() => {
         const path = getActiveTaskPath();
-        clearHousingOperationProgress();
+        clearTaskProgress();
         if (path !== null) resetPreview(path);
         vi.unstubAllGlobals();
     });

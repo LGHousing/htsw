@@ -9,7 +9,7 @@ import {
     setCurrent,
     setObservedTopLevel,
 } from "./livePreview";
-import { setHousingOperationProgressPath } from "./housingOperationProgress";
+import { setActiveTaskPath } from "./taskProgress";
 
 export type ReadLivePreview = {
     events: SyncEventHandler;
@@ -70,7 +70,7 @@ export function createReadLivePreview(
             for (let i = 0; i < latestSnapshots.length; i++) latestSnapshots[i] = null;
             if (paths.length > 0) {
                 resetPreview(paths[0]);
-                setHousingOperationProgressPath(paths[0]);
+                setActiveTaskPath(paths[0]);
             }
         },
         activate(index, reset) {
@@ -82,7 +82,7 @@ export function createReadLivePreview(
                 resetPreview(path);
             }
             setCurrent(path, null);
-            setHousingOperationProgressPath(path);
+            setActiveTaskPath(path);
         },
         finish(index) {
             if (index < 0 || index >= paths.length) return;
@@ -95,7 +95,7 @@ export function createReadLivePreview(
         },
         clear() {
             activeIndex = null;
-            setHousingOperationProgressPath(null);
+            setActiveTaskPath(null);
         },
     };
 }

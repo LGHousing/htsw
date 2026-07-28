@@ -9,12 +9,12 @@ import { initialReducerState, reduce } from "../../../housingSync/progress/reduc
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import type { SyncEvent } from "../../../housingSync/syncEvents";
 import {
-    clearHousingOperationProgress,
-    finishHousingOperationProgress,
-    setHousingOperationProgressScanning,
-    startHousingOperationProgress,
-    updateHousingOperationProgress,
-} from "./housingOperationProgress";
+    clearTaskProgress,
+    finishTaskProgress,
+    setEtaEstimating,
+    setTaskProgress,
+    startTaskProgress,
+} from "./taskProgress";
 import { createReadLivePreview, type ReadLivePreview } from "./readLivePreview";
 
 export type DiffProgressSession = {
@@ -55,7 +55,7 @@ export function createDiffProgressSession(
     let started = false;
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        updateHousingOperationProgress(state.progress);
+        setTaskProgress(state.progress);
     };
     const livePreviews: ReadLivePreview[] = [];
 
@@ -72,7 +72,7 @@ export function createDiffProgressSession(
                 rows,
                 initialTotalUnits: Math.max(1, totalUnits),
             });
-            startHousingOperationProgress({
+            startTaskProgress({
                 progress: state.progress,
                 verb: "diff",
                 path: manifest,
@@ -93,7 +93,7 @@ export function createDiffProgressSession(
                 },
                 scanStarted() {
                     scanPass = true;
-                    setHousingOperationProgressScanning(true);
+                    setEtaEstimating(true);
                 },
                 item(index, name) {
                     currentIndex = index;
@@ -116,7 +116,7 @@ export function createDiffProgressSession(
                     const name = names[index];
                     const key = importableKey(type, name);
                     livePreview.activate(index, false);
-                    setHousingOperationProgressScanning(false);
+                    setEtaEstimating(false);
                     emit({ kind: "sessionTotalsLocked" });
                     emit({
                         kind: "importableReactivated",
@@ -159,18 +159,18 @@ export function createDiffProgressSession(
         complete(summary) {
             emit({ kind: "sessionFinished" });
             clearLivePreviews();
-            finishHousingOperationProgress(null, {
+            finishTaskProgress(null, {
                 title: "Diff complete",
                 message: summary,
             });
         },
         fail(message) {
             clearLivePreviews();
-            finishHousingOperationProgress(message);
+            finishTaskProgress(message);
         },
         clear() {
             clearLivePreviews();
-            clearHousingOperationProgress();
+            clearTaskProgress();
         },
     };
 }
