@@ -61,6 +61,7 @@ import {
     finalizeFromSource,
     markHeadApplied,
     markMatch,
+    markPreviewCompleted,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
@@ -270,9 +271,12 @@ function createSyncEventHandler(args: {
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
-            if (imp !== undefined && e.status === "imported") {
-                invalidateSourceDiffForImportable(imp);
+            if (imp === undefined) return;
+            const sourcePath = importableSourcePath(imp);
+            if (sourcePath !== undefined && e.status !== "failed") {
+                markPreviewCompleted(sourcePath);
             }
+            if (e.status === "imported") invalidateSourceDiffForImportable(imp);
         },
         importableReactivated: (e) => {
             // Application reactivates an importable parked after observation.

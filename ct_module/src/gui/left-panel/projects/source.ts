@@ -4,6 +4,7 @@ import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
 import { normalizePathSeparators } from "htsw-editor-common/project";
 import {
     canonicalPath,
+    disposeParseCachesUnder,
     getParseAt,
     isParsePending,
     requestParse,
@@ -12,6 +13,8 @@ import {
 import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
 import { recordPhase } from "../../lib/framePerf";
 import { getImportJsonPath, setImportJsonPath } from "../../state";
+import { disposeLineModelCachesUnder } from "../../code-view/lineModel";
+import { BoundedLruMap } from "../../lib/boundedLruMap";
 
 export type SourceDir = {
     kind: "dir";
@@ -117,6 +120,8 @@ export function removeSource(fullPath: string): void {
             const removed = sources[i];
             sources.splice(i, 1);
             enumerationCache.delete(fullPath);
+            disposeParseCachesUnder(fullPath);
+            disposeLineModelCachesUnder(fullPath);
             const activePath = getImportJsonPath();
             if (
                 activePath !== "" &&
@@ -256,7 +261,11 @@ function walkDir(
 // parsing owns freshness for files already in the project; repeating this
 // recursive directory walk from a GUI rebuild made an unrelated caret click
 // synchronously stat the whole source.
-const enumerationCache = new Map<string, Result[]>();
+const enumerationCache = new BoundedLruMap<string, Result[]>(32);
+
+export function enumerationCacheSize(): number {
+    return enumerationCache.size;
+}
 
 function enumerateForSourceUncached(s: Source): Result[] {
     const startedAt = Date.now();

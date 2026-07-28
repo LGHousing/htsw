@@ -4,9 +4,12 @@ import type { Action, Importable } from "htsw/types";
 import {
     applyComplete,
     buildObservedToDesiredIndexMap,
+    disposeLivePreviews,
     finalizeFromSource,
     getCurrentPath,
+    livePreviewCacheSize,
     markHeadApplied,
+    markPreviewCompleted,
     markReadComplete,
     markPlannedAdd,
     markPlannedDelete,
@@ -76,7 +79,7 @@ function conditionalSummary(actionCount: number): ObservedNode {
 }
 
 beforeEach(() => {
-    resetPreview(PATH);
+    disposeLivePreviews();
 });
 
 describe("primeWithCache + previewLinesForFile", () => {
@@ -88,6 +91,33 @@ describe("primeWithCache + previewLinesForFile", () => {
     test("function with one action gets one :body line", () => {
         primeWithCache(PATH, func([message("hi")]));
         expect(ids()).toEqual(["0:body"]);
+    });
+
+    test("keeps every file in a 20-function import live", () => {
+        const paths: string[] = [];
+        for (let i = 0; i < 20; i++) {
+            const path = `./function-${i}.htsl`;
+            paths.push(path);
+            primeWithCache(path, func([message(String(i))]));
+        }
+
+        for (const path of paths) {
+            expect(previewLinesForFile(path).map((line) => line.id)).toEqual(["0:body"]);
+        }
+    });
+
+    test("evicts only completed files when a large import reaches the cap", () => {
+        for (let i = 0; i < 130; i++) {
+            const path = `./large-import-${i}.htsl`;
+            primeWithCache(path, func([message(String(i))]));
+            if (i < 129) markPreviewCompleted(path);
+        }
+
+        expect(previewLinesForFile("./large-import-0.htsl")).toEqual([]);
+        expect(livePreviewCacheSize()).toBe(128);
+        expect(
+            previewLinesForFile("./large-import-129.htsl").map((line) => line.id)
+        ).toEqual(["0:body"]);
     });
 
     test("CONDITIONAL renders head + close with stable ids", () => {
@@ -383,12 +413,7 @@ describe("rebaseToDesired", () => {
             ]
         );
         expect(
-            buildObservedToDesiredIndexMap(
-                [0, 1, 2, 3],
-                undefined,
-                operations,
-                []
-            )
+            buildObservedToDesiredIndexMap([0, 1, 2, 3], undefined, operations, [])
         ).toBeNull();
     });
 
