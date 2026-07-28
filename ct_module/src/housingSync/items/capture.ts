@@ -24,53 +24,20 @@ export interface ItemCaptureSink {
     register(snbt: string, displayNameHint: string): string;
 }
 
+type CapturedEditorItem = {
+    editorSnbt: string;
+    recapturedSnbt: string;
+};
+
 export async function captureItemFromOpenEditorField(
     ctx: TaskContext,
     fieldName: string,
     captures: ItemCaptureSink,
     displayNameHint: string
 ): Promise<string | null> {
-    const itemFieldSlot = ctx.tryGetItemSlot(fieldName);
-    if (itemFieldSlot === null) return null;
-
-    itemFieldSlot.click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-
-    let registered: string | null = null;
-    try {
-        const currentItemSlot = ctx.tryGetMenuItemSlot("Current Item");
-        if (currentItemSlot === null) {
-            ctx.displayMessage(
-                `&7[item-capture] &eNo "Current Item" slot for "${displayNameHint}".`
-            );
-            return null;
-        }
-
-        const actionItemCount = getStackCount(currentItemSlot.getItem());
-        const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
-        const targetKey = mergeKey(currentSnbt);
-        if (targetKey === null) {
-            ctx.displayMessage(
-                `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
-            );
-            return null;
-        }
-
-        const captured = await recaptureCurrentItem(
-            ctx,
-            currentItemSlot,
-            targetKey,
-            actionItemCount,
-            displayNameHint
-        );
-        if (captured !== null) {
-            registered = captures.register(captured.snbt, displayNameHint);
-        }
-    } finally {
-        await clickGoBack(ctx);
-    }
-
-    return registered;
+    return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) =>
+        captures.register(captured.recapturedSnbt, displayNameHint)
+    );
 }
 
 export async function observeItemFromOpenEditorField(
@@ -78,6 +45,18 @@ export async function observeItemFromOpenEditorField(
     fieldName: string,
     displayNameHint: string
 ): Promise<ItemFieldObservation | null> {
+    return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) => ({
+        snbt: captured.recapturedSnbt,
+        canonicalKey: canonicalItemShellKey(getItemFromSnbt(captured.editorSnbt)),
+    }));
+}
+
+async function withCapturedEditorItem<T>(
+    ctx: TaskContext,
+    fieldName: string,
+    displayNameHint: string,
+    useCapturedItem: (captured: CapturedEditorItem) => T
+): Promise<T | null> {
     const itemFieldSlot = ctx.tryGetItemSlot(fieldName);
     if (itemFieldSlot === null) return null;
 
@@ -112,10 +91,10 @@ export async function observeItemFromOpenEditorField(
         );
         if (captured === null) return null;
 
-        return {
-            snbt: captured.snbt,
-            canonicalKey: canonicalItemShellKey(getItemFromSnbt(currentSnbt)),
-        };
+        return useCapturedItem({
+            editorSnbt: currentSnbt,
+            recapturedSnbt: captured.snbt,
+        });
     } finally {
         await clickGoBack(ctx);
     }
