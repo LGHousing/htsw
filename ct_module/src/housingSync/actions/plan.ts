@@ -28,6 +28,7 @@ import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import { actionListScanHashFromSlots } from "./scanHash";
 import { conflictIdentifier } from "../../importables/import/conflictResolution";
+import { itemFieldContentFromSnapshot, type ItemFieldContent } from "../items/fieldContent";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -144,7 +145,13 @@ export async function scanActionListForPlan(
         // structure, the same profile as trusted mode. Conflict comparison
         // still uses the staged list's fully hydrated content below.
         phaseUnits.hydrating = 0;
-        const plan = knownActionListPlan(desired, staged.actions, options, phaseUnits);
+        const plan = knownActionListPlan(
+            desired,
+            staged.actions,
+            options,
+            phaseUnits,
+            itemFieldContentFromSnapshot(staged.itemFields)
+        );
         if (options.listPath === undefined) {
             emitObservedSnapshot(plan.observed, options.sync.events);
         }
@@ -233,7 +240,8 @@ function knownActionListPlan(
     desired: Action[],
     current: readonly Action[],
     options: ActionListPrereadOptions,
-    phaseUnits: PhaseUnits
+    phaseUnits: PhaseUnits,
+    liveItemContent?: ItemFieldContent
 ): ActionListPlan {
     const observed = current.map((action, index) => ({
         index,
@@ -252,7 +260,8 @@ function knownActionListPlan(
             actions: observed.map((entry) => entry.action),
         },
         desired,
-        options
+        options,
+        liveItemContent
     );
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
@@ -286,7 +295,8 @@ function emitPrereadCompleted(
 function recordActionListConflict(
     live: { slots: readonly ObservedActionSlot[] } | { actions: readonly Action[] },
     desired: readonly Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPrereadOptions,
+    liveItemContent?: ItemFieldContent
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
     if (
@@ -321,7 +331,7 @@ function recordActionListConflict(
         },
         desired,
         trustedImport ? "scan" : "content",
-        itemContent,
+        liveItemContent ?? itemContent,
         itemContent
     );
     if (verdict === "conflict") {

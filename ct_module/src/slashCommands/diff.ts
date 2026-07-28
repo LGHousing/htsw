@@ -153,12 +153,14 @@ export function commandDiff(args: string[]): void {
         const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
         const existingLock = readHouseLock(manifest);
         for (const list of matchedLists) {
+            const liveItemContent = capturedItemFieldContent(list.live, captures);
             writeStagedActionListHydration(
                 housingUuid,
                 list.source.type,
                 list.identity,
                 list.basePath,
-                list.actions
+                list.actions,
+                liveItemContent
             );
         }
         seedMissingHouseLockActionLists(
