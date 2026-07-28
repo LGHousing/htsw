@@ -406,7 +406,8 @@ export function upsertHouseLockImportables(
                 itemContent
             );
         }
-        const previous = lock.importables[importableKey(importable.type, identity)];
+        const previous: (typeof lock.importables)[string] | undefined =
+            lock.importables[importableKey(importable.type, identity)];
         const listContentHashJournal = {
             ...(previous?.listContentHashJournal ?? {}),
         };

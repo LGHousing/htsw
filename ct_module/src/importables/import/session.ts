@@ -70,6 +70,7 @@ import { packageBaselineAgeDays, readPackageBaselineStamp } from "../baselineSta
 import { actionListsOfImportable } from "../../importCache/actionLists";
 import { actionListContentHashFromActions } from "../../housingSync/actions/scanHash";
 import { recordedRevertDate } from "../../importCache/houseLock";
+import { appendImportCancelEvidence } from "../../slashCommands/diffDetails";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -94,6 +95,25 @@ export type ImportSessionResult = {
     appliedLists: number;
     skippedConflicts: ImportConflict[];
 };
+
+export function importCancelEvidenceMessages(
+    conflicts: readonly ImportConflict[]
+): string[] {
+    const shown = Math.min(conflicts.length, 5);
+    const messages: string[] = [];
+    for (let i = 0; i < shown; i++) {
+        const conflict = conflicts[i];
+        messages.push(
+            `[htsw] Cancelled by: ${conflict.type} "${conflict.identity}" · ${conflict.basePath} — see report`
+        );
+    }
+    if (conflicts.length > shown) {
+        messages.push(
+            `[htsw] …and ${conflicts.length - shown} more apply-time conflicts — see report`
+        );
+    }
+    return messages;
+}
 
 type PendingHouseLockEntry = {
     importable: Importable;
@@ -267,6 +287,7 @@ async function runImportSessionInner(
             conflictTargets: [],
             observedConflictLists: new Map(),
             observedActionLists: new Map(),
+            conflictEvidence: new Map(),
             events,
             itemRead: { mode: "sync" },
             itemDiff,
@@ -528,6 +549,25 @@ async function runImportSessionInner(
             ctx.displayMessage(
                 "&c[htsw] Import cancelled — Housing changed since the last import."
             );
+            const cancelEvidence = session.actions.conflicts.map((conflict) => {
+                const evidence = session.actions.conflictEvidence?.get(
+                    conflictIdentifier(conflict)
+                );
+                return (
+                    evidence ?? {
+                        ...conflict,
+                        expectedActions: [],
+                        liveScanHash: "<unavailable>",
+                        expectedScanHash: "<unavailable>",
+                    }
+                );
+            });
+            appendImportCancelEvidence(selection.sourcePath, cancelEvidence);
+            for (const evidenceMessage of importCancelEvidenceMessages(
+                cancelEvidence
+            )) {
+                ctx.displayMessage(evidenceMessage);
+            }
             ctx.displayMessage(
                 "&7[htsw] Review the conflicting action lists in Housing, then retry."
             );

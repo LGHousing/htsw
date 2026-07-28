@@ -26,7 +26,10 @@ import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
-import { actionListScanHashFromSlots } from "./scanHash";
+import {
+    actionListScanHashFromActions,
+    actionListScanHashFromSlots,
+} from "./scanHash";
 import { conflictIdentifier } from "../../importables/import/conflictResolution";
 import {
     itemFieldContentFromSnapshot,
@@ -315,6 +318,37 @@ function recordActionListConflict(
     liveItemContent?: ItemFieldContent
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
+    const actions =
+        "slots" in live
+            ? live.slots
+                  .map((entry) => entry.action)
+                  .filter((action): action is Action => action !== null)
+            : live.actions.slice();
+    const trustPlan =
+        target === undefined
+            ? undefined
+            : options.sync.trust.importables.get(
+                  importableKey(target.type, target.identity)
+              );
+    const staged =
+        target === undefined
+            ? undefined
+            : trustPlan?.stagedActionLists?.get(target.basePath);
+    if (target !== undefined) {
+        options.sync.conflictEvidence?.set(conflictIdentifier(target), {
+            ...target,
+            expectedActions: (staged?.actions ?? desired).slice(),
+            ...(!("slots" in live) || actions.length === live.slots.length
+                ? { liveActions: actions }
+                : {}),
+            liveScanHash:
+                "slots" in live
+                    ? actionListScanHashFromSlots(live.slots)
+                    : actionListScanHashFromActions(live.actions),
+            expectedScanHash:
+                staged?.scanHash ?? actionListScanHashFromActions(desired),
+        });
+    }
     if (
         target !== undefined &&
         options.sync.conflictTargets !== undefined &&
@@ -326,12 +360,6 @@ function recordActionListConflict(
     }
     const trustedImport = options.sync.trust.trustMode;
     if (target !== undefined) {
-        const actions =
-            "slots" in live
-                ? live.slots
-                      .map((entry) => entry.action)
-                      .filter((action): action is Action => action !== null)
-                : live.actions.slice();
         if (!("slots" in live) || actions.length === live.slots.length) {
             options.sync.observedActionLists?.set(conflictIdentifier(target), actions);
         }
@@ -342,9 +370,6 @@ function recordActionListConflict(
     ) {
         return null;
     }
-    const trustPlan = options.sync.trust.importables.get(
-        importableKey(target.type, target.identity)
-    );
     const itemContent =
         options.sync.itemDiff?.fieldContent === undefined
             ? undefined
@@ -363,12 +388,6 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
-        const actions =
-            "slots" in live
-                ? live.slots
-                      .map((entry) => entry.action)
-                      .filter((action): action is Action => action !== null)
-                : live.actions.slice();
         if (!("slots" in live) || actions.length === live.slots.length) {
             options.sync.observedConflictLists?.set(conflictIdentifier(target), actions);
         }

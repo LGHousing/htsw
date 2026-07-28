@@ -93,6 +93,7 @@ function sessionWithLock(
         },
         overwriteWarningMode,
         conflicts: [],
+        conflictEvidence: new Map(),
         events: undefined,
         itemRead: { mode: "sync" },
     };
@@ -531,5 +532,14 @@ describe("readActionListPlan conflict detection", () => {
         });
 
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+        expect(session.conflictEvidence?.get("FUNCTION:Debug:actions")).toEqual(
+            expect.objectContaining({
+                expectedActions: [message("cached")],
+                expectedScanHash: actionListScanHashFromActions([
+                    freshHydration ? playSound() : message("cached"),
+                ]),
+                liveScanHash: actionListScanHashFromActions([playSound()]),
+            })
+        );
     });
 });

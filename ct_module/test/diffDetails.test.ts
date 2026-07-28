@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as htsw from "htsw";
 
 import {
+    formatImportCancelEvidence,
     formatDiffDetailsFile,
     renderActionsForDiff,
 } from "../src/slashCommands/diffDetails";
@@ -145,5 +146,49 @@ describe("diff details", () => {
                 "2026-07-28T00:00:00.000Z"
             )
         ).not.toContain("# PENDING CHANGES");
+    });
+
+    it("renders hydrated apply-time cancellation evidence as a unified diff", () => {
+        const output = formatImportCancelEvidence([
+            {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                expectedActions: [message("expected")],
+                liveActions: [message("live")],
+                liveScanHash: "live-scan",
+                expectedScanHash: "expected-scan",
+            },
+        ]);
+
+        expect(output).toContain(
+            '# IMPORT CANCELLED — CONFLICT AT APPLY TIME\n\n' +
+                '# FUNCTION "Debug" · actions\n' +
+                "--- expected/actions\n" +
+                "+++ live/actions\n" +
+                "@@ -1 +1 @@\n" +
+                '-chat "expected"\n' +
+                '+chat "live"\n'
+        );
+    });
+
+    it("states when apply-time cancellation evidence is scan-only", () => {
+        const output = formatImportCancelEvidence([
+            {
+                type: "MENU",
+                identity: "Shop",
+                basePath: "slots[3].actions",
+                expectedActions: [message("expected")],
+                liveScanHash: "live-scan",
+                expectedScanHash: "expected-scan",
+            },
+        ]);
+
+        expect(output).toContain(
+            '# MENU "Shop" · slots[3].actions\n' +
+                "# Full content was not hydrated at cancellation; scan-level delta only.\n" +
+                "# live scan hash: live-scan\n" +
+                "# expected scan hash: expected-scan\n"
+        );
     });
 });
