@@ -56,6 +56,7 @@ type FileState = {
     lastObservedAt: number;
     pendingNodes: readonly ObservedNode[] | undefined;
     rebasedListKeys: Set<string>;
+    evictionEligible: boolean;
 };
 
 /**
@@ -72,16 +73,35 @@ const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
 const states: { [key: string]: FileState | undefined } = {};
 const stateOrder: string[] = [];
-const MAX_PREVIEW_STATES = 8;
+const MAX_PREVIEW_STATES = 128;
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
+}
+
+function removeStateAt(index: number): void {
+    const key = stateOrder[index];
+    stateOrder.splice(index, 1);
+    delete states[key];
+    markGuiDirty();
+}
+
+function evictCompletedPreview(): boolean {
+    for (let i = 0; i < stateOrder.length; i++) {
+        if (states[stateOrder[i]]?.evictionEligible !== true) continue;
+        removeStateAt(i);
+        return true;
+    }
+    return false;
 }
 
 function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
     if (!s) {
+        while (stateOrder.length >= MAX_PREVIEW_STATES) {
+            if (!evictCompletedPreview()) break;
+        }
         s = {
             lines: [],
             revision: 0,
@@ -92,17 +112,12 @@ function ensure(path: string): FileState {
             lastObservedAt: 0,
             pendingNodes: undefined,
             rebasedListKeys: new Set(),
+            evictionEligible: false,
         };
         states[k] = s;
         stateOrder.push(k);
-        while (stateOrder.length > MAX_PREVIEW_STATES) {
-            const oldest = stateOrder.shift();
-            if (oldest !== undefined) delete states[oldest];
-        }
     } else {
-        const index = stateOrder.indexOf(k);
-        if (index >= 0) stateOrder.splice(index, 1);
-        stateOrder.push(k);
+        s.evictionEligible = false;
     }
     return s;
 }
@@ -759,11 +774,21 @@ export function previewRevision(path: string): number {
 export function resetPreview(path: string): void {
     const k = keyForFile(path);
     if (states[k] !== undefined) {
-        delete states[k];
         const index = stateOrder.indexOf(k);
-        if (index >= 0) stateOrder.splice(index, 1);
-        markGuiDirty();
+        if (index >= 0) removeStateAt(index);
     }
+}
+
+export function markPreviewCompleted(path: string): void {
+    const state = states[keyForFile(path)];
+    if (state !== undefined) state.evictionEligible = true;
+}
+
+export function disposeLivePreviews(): void {
+    if (stateOrder.length === 0) return;
+    for (let i = 0; i < stateOrder.length; i++) delete states[stateOrder[i]];
+    stateOrder.length = 0;
+    markGuiDirty();
 }
 
 export function livePreviewCacheSize(): number {

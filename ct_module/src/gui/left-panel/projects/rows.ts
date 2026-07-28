@@ -21,7 +21,7 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
-import { BoundedLruMap } from "../../lib/boundedLruMap";
+import { BoundedMap } from "../../lib/boundedLruMap";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
     cachedImportableLinkStatus,
@@ -895,7 +895,7 @@ type CachedSubtreeAggregate = SubtreeAggregate & {
     statusKey: string;
 };
 
-const subtreeAggregateCache = new BoundedLruMap<string, CachedSubtreeAggregate>(256);
+const subtreeAggregateCache = new BoundedMap<string, CachedSubtreeAggregate>(256);
 
 export function subtreeAggregateCacheSize(): number {
     return subtreeAggregateCache.size;
