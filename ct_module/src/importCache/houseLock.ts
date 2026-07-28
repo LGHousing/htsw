@@ -14,7 +14,6 @@ import type {
     ItemDependencySnapshot,
     ItemDependencyTarget,
 } from "../importables/items/dependencyIndex";
-import { itemDependencyIndexFor } from "../importables/items/dependencyIndex";
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
@@ -231,6 +230,7 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 export type HouseLockImportableUpdate = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
+    itemContent: ItemFieldContent | undefined;
 };
 
 export type HouseLockActionListSeed = {
@@ -298,12 +298,9 @@ export function seedMissingHouseLockActionLists(
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
-    importable: Importable,
-    itemDependencies?: ItemDependencySnapshot
+    update: HouseLockImportableUpdate
 ): boolean {
-    return upsertHouseLockImportables(importJsonPath, housingUuid, [
-        { importable, itemDependencies },
-    ]);
+    return upsertHouseLockImportables(importJsonPath, housingUuid, [update]);
 }
 
 export function upsertHouseLockImportables(
@@ -322,20 +319,12 @@ export function upsertHouseLockImportables(
         const identity = importableIdentity(importable);
         const listScanHashes: Record<string, string> = {};
         const listContentHashes: Record<string, string> = {};
-        const dependencyIndex = itemDependencyIndexFor(importable);
-        const itemContent =
-            dependencyIndex === undefined
-                ? undefined
-                : (
-                      owner: import("htsw/types").Action | import("htsw/types").Condition,
-                      property: string
-                  ) => dependencyIndex.fieldContent(owner, property);
         for (const { basePath, actions } of actionListsOfImportable(importable)) {
             listScanHashes[basePath] = actionListScanHashFromActions(actions);
             listContentHashes[basePath] =
                 actionListContentHashFromActions(
                     actions,
-                    itemContent
+                    update.itemContent
                 );
         }
         lock.importables[importableKey(importable.type, identity)] = {

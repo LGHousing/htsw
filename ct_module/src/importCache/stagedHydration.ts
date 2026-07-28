@@ -11,6 +11,7 @@ import { cacheDirFor, IMPORT_CACHE_ROOT } from "./paths";
 import {
     itemFieldContentFromSnapshot,
     itemFieldContentSnapshot,
+    parseItemFieldContentSnapshot,
     type ItemFieldContent,
     type ItemFieldContentSnapshot,
 } from "../housingSync/items/fieldContent";
@@ -95,18 +96,17 @@ export function readStagedActionListHydration(
         stored.contentHashVersion !== ACTION_LIST_CONTENT_HASH_VERSION ||
         typeof stored.scanHash !== "string" ||
         typeof stored.contentHash !== "string" ||
-        !Array.isArray(stored.actions) ||
-        (stored.itemFields as unknown) === null ||
-        typeof stored.itemFields !== "object" ||
-        Array.isArray(stored.itemFields)
+        !Array.isArray(stored.actions)
     ) {
         return null;
     }
+    const itemFields = parseItemFieldContentSnapshot(stored.itemFields);
+    if (itemFields === null) return null;
     if (
         actionListScanHashFromActions(stored.actions) !== stored.scanHash ||
         actionListContentHashFromActions(
             stored.actions,
-            itemFieldContentFromSnapshot(stored.itemFields)
+            itemFieldContentFromSnapshot(itemFields)
         ) !== stored.contentHash
     ) {
         return null;
@@ -115,6 +115,6 @@ export function readStagedActionListHydration(
         scanHash: stored.scanHash,
         contentHash: stored.contentHash,
         actions: stored.actions,
-        itemFields: stored.itemFields,
+        itemFields,
     };
 }

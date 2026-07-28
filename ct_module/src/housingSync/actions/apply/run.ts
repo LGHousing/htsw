@@ -38,6 +38,7 @@ import {
     operationApplyUnits,
 } from "./progress";
 import type { ActionListApplyResult, ApplyChildActionList } from "./types";
+import { cloneActionsWithItemFieldContent } from "../../items/fieldContent";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -171,12 +172,15 @@ export class ActionListApplyRun {
     }
 
     result(): ActionListApplyResult {
+        const cloned = cloneActionsWithItemFieldContent(
+            this.current.map((entry) => entry.action as Action | null),
+            this.options.sync.itemDiff?.fieldContent
+        );
         return {
-            currentSnapshot: this.current.map((entry) =>
-                entry.action === null
-                    ? null
-                    : (JSON.parse(JSON.stringify(entry.action)) as Action)
-            ),
+            currentSnapshot: cloned.actions,
+            ...(cloned.itemContent === undefined
+                ? {}
+                : { itemContent: cloned.itemContent }),
         };
     }
 

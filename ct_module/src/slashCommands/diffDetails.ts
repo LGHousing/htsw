@@ -30,11 +30,48 @@ function withoutFinalNewline(text: string): string {
     return text.endsWith("\n") ? text.substring(0, text.length - 1) : text;
 }
 
-function boundedItemSnbt(text: string): string {
-    const lines = text.split("\n");
-    const shown = lines.slice(0, 120).join("\n");
-    const bounded = shown.length > 12000 ? shown.substring(0, 12000) : shown;
-    return bounded === text ? text : `${bounded}\n# …item diff truncated`;
+const MAX_ITEM_DIFF_SECTIONS = 5;
+const MAX_ITEM_DIFF_LINES = 120;
+const MAX_ITEM_DIFF_CHARS = 12000;
+const ITEM_DIFF_TRUNCATED = "# …item diff truncated";
+
+type ItemDiffBudget = {
+    sections: number;
+    lines: number;
+    chars: number;
+};
+
+function boundedItemDiff(text: string, budget: ItemDiffBudget): string {
+    const availableLines = MAX_ITEM_DIFF_LINES - budget.lines;
+    const availableChars = MAX_ITEM_DIFF_CHARS - budget.chars;
+    if (availableLines <= 0 || availableChars <= 0) return "";
+
+    const inputLines = text.split("\n");
+    const fits =
+        inputLines.length <= availableLines && text.length <= availableChars;
+    let bounded = text;
+    if (!fits) {
+        const contentLines = Math.max(0, availableLines - 1);
+        bounded = inputLines.slice(0, contentLines).join("\n");
+        const contentChars = Math.max(
+            0,
+            availableChars -
+                ITEM_DIFF_TRUNCATED.length -
+                (bounded.length > 0 ? 1 : 0)
+        );
+        if (bounded.length > contentChars) {
+            bounded = bounded.substring(0, contentChars);
+        }
+        bounded =
+            bounded.length === 0
+                ? ITEM_DIFF_TRUNCATED.substring(0, availableChars)
+                : `${bounded}\n${ITEM_DIFF_TRUNCATED}`;
+    }
+
+    budget.sections++;
+    budget.lines += bounded.split("\n").length;
+    budget.chars += bounded.length;
+    return bounded;
 }
 
 export function renderActionsForDiff(actions: readonly Action[]): string {
@@ -58,6 +95,7 @@ export function formatDiffDetailsFile(
         `# conflicts: ${report.conflicts.length}`,
         `# unknown: ${report.unknown}`,
     ];
+    const itemBudget: ItemDiffBudget = { sections: 0, lines: 0, chars: 0 };
     for (const conflict of report.conflicts) {
         const diff = unifiedDiff(
             conflict.sourceText,
@@ -81,17 +119,25 @@ export function formatDiffDetailsFile(
             withoutFinalNewline(diff)
         );
         for (const item of conflict.itemDifferences ?? []) {
+            if (itemBudget.sections === MAX_ITEM_DIFF_SECTIONS) break;
+            const itemDiff = boundedItemDiff(
+                [
+                    `# item · ${item.path}`,
+                    withoutFinalNewline(
+                        unifiedDiff(
+                            item.sourceSnbt,
+                            item.liveSnbt,
+                            `source/${conflict.basePath}/${item.path}.snbt`,
+                            `live/${conflict.basePath}/${item.path}.snbt`
+                        )
+                    ),
+                ].join("\n"),
+                itemBudget
+            );
+            if (itemDiff.length === 0) break;
             lines.push(
                 "",
-                `# item · ${item.path}`,
-                withoutFinalNewline(
-                    unifiedDiff(
-                        boundedItemSnbt(item.sourceSnbt),
-                        boundedItemSnbt(item.liveSnbt),
-                        `source/${conflict.basePath}/${item.path}.snbt`,
-                        `live/${conflict.basePath}/${item.path}.snbt`
-                    )
-                )
+                itemDiff
             );
         }
     }

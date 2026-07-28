@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Action } from "htsw/types";
 
 import {
     readStagedActionListHydration,
@@ -8,11 +9,30 @@ import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
+import {
+    itemFieldContentFromSnapshot,
+    type ItemFieldContentSnapshot,
+} from "../src/housingSync/items/fieldContent";
+import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import type { TagLike } from "../src/housingSync/items/itemTag";
 import { message } from "./utils";
 
 const mocks = vi.hoisted(() => ({
     atomicWriteText: vi.fn((_path: string, _content: string) => true),
 }));
+
+const cookie: TagLike = {
+    type: "compound",
+    value: { id: { type: "string", value: "minecraft:cookie" } },
+};
+
+function giveCookie(): Action {
+    return { type: "GIVE_ITEM", itemName: "cookie" };
+}
+
+function cookieFields(key = canonicalItemShellTagKey(cookie)): ItemFieldContentSnapshot {
+    return { cookie: { key, tag: cookie } };
+}
 
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
@@ -50,18 +70,54 @@ describe("staged hydration cache", () => {
     });
 
     it("rejects a snapshot whose content no longer matches its hashes", () => {
-        const actions = [message("live")];
+        const actions = [giveCookie(), message("live")];
+        const itemFields = cookieFields();
         vi.stubGlobal("FileLib", {
             exists: () => true,
             read: () =>
                 JSON.stringify({
-                    schemaVersion: 1,
+                    schemaVersion: 2,
                     scanHashVersion: 1,
-                    contentHashVersion: 1,
+                    contentHashVersion: 2,
                     writtenAt: "now",
                     scanHash: actionListScanHashFromActions(actions),
-                    contentHash: actionListContentHashFromActions(actions),
-                    actions: [message("tampered")],
+                    contentHash: actionListContentHashFromActions(
+                        actions,
+                        itemFieldContentFromSnapshot(itemFields)
+                    ),
+                    actions: [giveCookie(), message("tampered")],
+                    itemFields,
+                }),
+        });
+
+        expect(
+            readStagedActionListHydration(
+                "house",
+                "FUNCTION",
+                "Debug",
+                "actions"
+            )
+        ).toBeNull();
+    });
+
+    it("rejects an item field whose key does not match its tag", () => {
+        const actions = [giveCookie()];
+        const itemFields = cookieFields("inconsistent");
+        vi.stubGlobal("FileLib", {
+            exists: () => true,
+            read: () =>
+                JSON.stringify({
+                    schemaVersion: 2,
+                    scanHashVersion: 1,
+                    contentHashVersion: 2,
+                    writtenAt: "now",
+                    scanHash: actionListScanHashFromActions(actions),
+                    contentHash: actionListContentHashFromActions(
+                        actions,
+                        itemFieldContentFromSnapshot(itemFields)
+                    ),
+                    actions,
+                    itemFields,
                 }),
         });
 

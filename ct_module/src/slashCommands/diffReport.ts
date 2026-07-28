@@ -15,11 +15,10 @@ import { importableIdentity, importableKey } from "../importables/identity";
 import { renderActionsForDiff } from "./diffDetails";
 import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
 import {
-    capturedItemFieldContent,
     sourceItemFieldContent,
+    type ItemFieldContent,
 } from "../housingSync/items/fieldContent";
 import type { ProjectItemIndex } from "../importables/items/projectItems";
-import type { CapturedItem } from "../importables/items/captureRegistry";
 
 type DiffReportConflict = ActionSyncConflict &
     ActionListConflictDetails & {
@@ -31,6 +30,11 @@ export type DiffReport = {
     clean: number;
     conflicts: DiffReportConflict[];
     unknown: number;
+};
+
+export type LiveDiffImportable = {
+    importable: Importable;
+    itemContent: ItemFieldContent;
 };
 
 function liveActionsFor(
@@ -58,6 +62,7 @@ function liveActionsFor(
 export type MatchedLiveActionList = {
     source: Importable;
     live: Importable;
+    liveItemContent: ItemFieldContent;
     identity: string;
     basePath: string;
     actions: readonly Action[];
@@ -65,13 +70,14 @@ export type MatchedLiveActionList = {
 
 export function matchedLiveActionLists(
     sourceImportables: readonly Importable[],
-    liveImportables: ReadonlyMap<string, Importable>
+    liveImportables: ReadonlyMap<string, LiveDiffImportable>
 ): MatchedLiveActionList[] {
     const matched: MatchedLiveActionList[] = [];
     for (const source of sourceImportables) {
         const identity = importableIdentity(source);
-        const live = liveImportables.get(importableKey(source.type, identity));
-        if (live === undefined) continue;
+        const liveEntry = liveImportables.get(importableKey(source.type, identity));
+        if (liveEntry === undefined) continue;
+        const live = liveEntry.importable;
         const liveListsByPath = actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {
             const actions = liveActionsFor(
@@ -84,6 +90,7 @@ export function matchedLiveActionLists(
                 matched.push({
                     source,
                     live,
+                    liveItemContent: liveEntry.itemContent,
                     identity,
                     basePath: sourceList.basePath,
                     actions,
@@ -105,12 +112,9 @@ function actionListsByPath(importable: Importable): Map<string, readonly Action[
 export function evaluateDiffReport(
     housingUuid: string,
     sourceImportables: readonly Importable[],
-    liveImportables: ReadonlyMap<string, Importable>,
+    liveImportables: ReadonlyMap<string, LiveDiffImportable>,
     lock: HouseLock | null,
-    itemContent?: {
-        projectItems: ProjectItemIndex;
-        captures: ReadonlyMap<string, CapturedItem>;
-    }
+    projectItems?: ProjectItemIndex
 ): DiffReport {
     const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
     const matchingLock =
@@ -120,15 +124,13 @@ export function evaluateDiffReport(
 
     for (const source of sourceImportables) {
         const identity = importableIdentity(source);
-        const live = liveImportables.get(importableKey(source.type, identity));
+        const liveEntry = liveImportables.get(importableKey(source.type, identity));
+        const live = liveEntry?.importable;
         const sourceItems =
-            itemContent === undefined
+            projectItems === undefined
                 ? undefined
-                : sourceItemFieldContent(source, itemContent.projectItems);
-        const liveItems =
-            live === undefined || itemContent === undefined
-                ? undefined
-                : capturedItemFieldContent(live, itemContent.captures);
+                : sourceItemFieldContent(source, projectItems);
+        const liveItems = liveEntry?.itemContent;
         const lockEntry = houseLockEntryFor(matchingLock, source.type, identity);
         const liveListsByPath = live === undefined ? null : actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {

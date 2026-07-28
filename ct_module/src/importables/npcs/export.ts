@@ -24,6 +24,7 @@ import {
     type NpcLookupCache,
 } from "./listNpcs";
 import type { ReadOutput } from "../export/reader";
+import { capturedItemFieldContent } from "../../housingSync/items/fieldContent";
 
 export type ExportNpcWithSharedStateOptions = {
     entry: NpcListEntry;
@@ -155,7 +156,13 @@ export async function exportNpcWithSharedState(
         return;
     }
     if (options.output.kind === "memory") {
-        options.output.accept(importable);
+        options.output.accept(
+            importable,
+            capturedItemFieldContent(
+                importable,
+                shared.itemCaptures.entries()
+            )
+        );
         return;
     }
 

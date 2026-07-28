@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
     applyImportablePlan: vi.fn(async () => undefined),
@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
     hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
     deleteImportableCache: vi.fn(() => true),
-    upsertHouseLockImportables: vi.fn(() => true),
+    upsertHouseLockImportables: vi.fn(
+        (_path: string, _housingUuid: string, _updates: unknown[]) => true
+    ),
 }));
 
 vi.mock("../src/importables/import/importers", () => ({
@@ -62,6 +64,8 @@ import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
 import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
+import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import type { TagLike } from "../src/housingSync/items/itemTag";
 
 describe("import conflict gate", () => {
     beforeEach(() => {
@@ -296,6 +300,97 @@ describe("import conflict gate", () => {
         expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
         expect(messages).toContain(
             "&a[htsw] Cancellation saved verified house state for &f2&a importables; retry can reuse the cache."
+        );
+    });
+
+    it("carries observed item content into a reconstructed cancellation lock", async () => {
+        const desiredItem = {
+            type: "GIVE_ITEM",
+            itemName: "desired",
+        } as Action;
+        const partialItem = {
+            type: "GIVE_ITEM",
+            itemName: "observed",
+        } as Action;
+        const observedTag: TagLike = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:apple" } },
+        };
+        const observedKey = canonicalItemShellTagKey(observedTag);
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Partial",
+            actions: [desiredItem],
+        };
+        const cancellation = createTaskCancelledError() as Error & {
+            __htswActionListApplyResult?: {
+                currentSnapshot: Action[];
+                itemContent: (
+                    owner: Action,
+                    property: string
+                ) => { key: string; tag: TagLike } | undefined;
+            };
+        };
+        cancellation.__htswActionListApplyResult = {
+            currentSnapshot: [partialItem],
+            itemContent: (owner, property) =>
+                owner === partialItem && property === "itemName"
+                    ? { key: observedKey, tag: observedTag }
+                    : undefined,
+        };
+        mocks.scanImportable.mockResolvedValue({
+            kind: "FUNCTION",
+            importable,
+            needsHydration: true,
+            hydrate: mocks.hydrateImportable,
+            plan: () => ({
+                kind: "FUNCTION",
+                importable,
+                isNoOp: () => false,
+                apply: async () => {
+                    throw cancellation;
+                },
+                reconstructObserved: () => importable,
+                reconstructPartial: (result: {
+                    currentSnapshot: Action[];
+                } | null) =>
+                    result === null
+                        ? null
+                        : {
+                              type: "FUNCTION",
+                              name: "Partial",
+                              actions: result.currentSnapshot,
+                          },
+            }),
+        });
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: () => undefined,
+        } as unknown as TaskContext;
+
+        await expect(
+            runImportSession(ctx, {
+                importables: [importable],
+                trustMode: false,
+                housingUuid: "test-house",
+                sourcePath: "./project/import.json",
+                parsed: { value: [importable] } as never,
+            })
+        ).rejects.toMatchObject({ __taskCancelled: true });
+
+        const updates = mocks.upsertHouseLockImportables.mock.calls[0][2] as Array<{
+            importable: ImportableFunction;
+            itemContent: (
+                owner: Action,
+                property: string
+            ) => { key: string } | undefined;
+        }>;
+        const update = updates.find(
+            (entry) => entry.importable.name === "Partial"
+        )!;
+        const reconstructedItem = update.importable.actions![0];
+        expect(update.itemContent(reconstructedItem, "itemName")?.key).toBe(
+            observedKey
         );
     });
 
