@@ -8,7 +8,7 @@ const inventory = vi.hoisted(() => ({
     restoredSlots: [] as number[],
 }));
 
-vi.mock("../src/tasks/context", () => ({ default: class {} }));
+vi.mock("../src/tasks/context", () => ({ default: vi.fn() }));
 vi.mock("../src/housingSync/menus/menuUtils", () => ({
     clickGoBack: vi.fn(async () => undefined),
 }));
@@ -20,15 +20,12 @@ vi.mock("../src/utils/nbt", () => ({
 }));
 vi.mock("../src/housingSync/items/itemNbt", () => ({
     canonicalItemShellKey: (item: { snbt: string }) => `shell:${item.snbt}`,
-    canonicalLiveItemKey: (item: { snbt: string }) => item.snbt,
+    canonicalLiveItemKey: (item: { snbt: string }) =>
+        item.snbt.replace(',tag:{captureEcho:"changed"}', ""),
     snbtFromItem: (item: { snbt: string }) => item.snbt,
 }));
 vi.mock("../src/housingSync/items/playerInventory", () => ({
-    clearInventorySlot: async (
-        _ctx: unknown,
-        slotId: number,
-        _view: "openContainer"
-    ) => {
+    clearInventorySlot: async (_ctx: unknown, slotId: number, _view: "openContainer") => {
         inventory.clearedSlots.push(slotId);
         inventory.slots[slotId] = { slotId, nbt: null, count: 0 };
     },
@@ -41,14 +38,14 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
         for (let index = 0; index < snapshot.length; index++) {
             const expected = snapshot[index];
             const current = inventory.slots[index];
-            if (current.nbt === expected.nbt && current.count === expected.count) continue;
+            if (current.nbt === expected.nbt && current.count === expected.count)
+                continue;
             inventory.restoredSlots.push(expected.slotId);
             inventory.slots[index] = { ...expected };
         }
     },
     snapshotInventoryView: () => inventory.slots.map((entry) => ({ ...entry })),
-    snapshotOpenContainerInventory: () =>
-        inventory.slots.map((entry) => ({ ...entry })),
+    snapshotOpenContainerInventory: () => inventory.slots.map((entry) => ({ ...entry })),
 }));
 
 import {
@@ -110,8 +107,6 @@ describe("editor item capture inventory handling", () => {
 
         expect(inventory.clearedSlots).toEqual([]);
         expect(inventory.restoredSlots).toEqual([3]);
-        expect(inventory.restoredSlots).not.toContain(1);
-        expect(inventory.restoredSlots).not.toContain(2);
     });
 
     test("detects capture when the item merges into an existing stack", async () => {
@@ -139,6 +134,29 @@ describe("editor item capture inventory handling", () => {
         expect(register.mock.calls[0][0]).toContain("Count:1b");
     });
 
+    test("rejects an unrelated sole inventory change", async () => {
+        const target = '{id:"minecraft:stone",Count:1b,Damage:0s}';
+        inventory.slots[4] = {
+            slotId: 4,
+            nbt: '{id:"minecraft:stone",Count:2b,Damage:0s}',
+            count: 2,
+        };
+        const ctx = context(target, 1, () => {
+            inventory.slots[5] = {
+                slotId: 5,
+                nbt: '{id:"minecraft:dirt",Count:2b,Damage:0s}',
+                count: 2,
+            };
+        });
+
+        const register = vi.fn(() => "wrong");
+        await expect(
+            captureItemFromOpenEditorField(ctx as never, "Item", { register }, "item")
+        ).resolves.toBeNull();
+
+        expect(register).not.toHaveBeenCalled();
+    });
+
     test("borrows the scratch slot when the inventory is full", async () => {
         inventory.slots = Array.from({ length: 36 }, (_, slotId) => ({
             slotId,
@@ -164,7 +182,7 @@ describe("editor item capture inventory handling", () => {
     test("keys observations from editor SNBT while retaining recaptured SNBT", async () => {
         const editorSnbt = '{id:"minecraft:stone",Count:1b,Damage:0s}';
         const recapturedSnbt =
-            '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{ExtraAttributes:{}}}';
+            '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{captureEcho:"changed"}}';
         const ctx = context(editorSnbt, 1, () => {
             inventory.slots[5] = {
                 slotId: 5,
@@ -179,8 +197,7 @@ describe("editor item capture inventory handling", () => {
             "item"
         );
 
-        expect(observation?.snbt).toContain("ExtraAttributes");
+        expect(observation?.snbt).toBe(recapturedSnbt);
         expect(observation?.canonicalKey).toBe(`shell:${editorSnbt}`);
-        expect(observation?.canonicalKey).not.toContain("ExtraAttributes");
     });
 });
