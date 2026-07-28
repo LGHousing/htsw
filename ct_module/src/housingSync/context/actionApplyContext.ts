@@ -2,9 +2,14 @@ import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import type { ActionSyncContext } from "../actions/syncContext";
-import type { ResolveItemField } from "../items/itemReferences";
-import type { ChildListDiff } from "../actions/diff/types";
-import type { Observed, ObservedActionSlot } from "../observedActions";
+import type {
+    ChildAction,
+    ChildActionListDiff,
+    ChildListDiff,
+    ConditionListDiff,
+} from "../actions/diff/types";
+import { isChildAction } from "../actions/childActions";
+import type { Observed } from "../observedActions";
 import type { SyncEventHandler, ProgressScope } from "../syncEvents";
 import {
     ActionListPath,
@@ -17,9 +22,11 @@ import {
 } from "../actionPath";
 import type { ProgressHandler } from "../progress/types";
 import {
-    estimateActionListPhaseUnits,
-    estimateConditionListPhaseUnits,
+    childActionListDiffApplyUnits,
+    conditionListDiffApplyUnits,
 } from "../progress/costs";
+import type { PlannedChildActionList } from "../actions/apply/types";
+import type { ApplyPlannedConditionListOptions } from "../actions/conditions/apply";
 
 type ChildActionApplyArgs = {
     desired: Action[];
@@ -48,25 +55,19 @@ export type ActionApplyContext = {
 
 type ApplyChildActionList = (
     ctx: TaskContext,
-    desired: Action[],
+    plan: PlannedChildActionList,
     options: {
-        observed?: ObservedActionSlot[];
         sync: ActionSyncContext;
-        listPath?: ActionListPath;
-        baselineCurrent?: readonly Action[];
-        progressScope?: ProgressScope;
+        listPath: ActionListPath;
+        progressScope: ProgressScope;
     }
 ) => Promise<unknown>;
 
 type ApplyConditionList = (
     ctx: TaskContext,
-    desired: Condition[],
-    options: {
-        resolveItem: ResolveItemField;
-        baselineCurrent?: ReadonlyArray<Condition | null>;
-        progress?: ProgressHandler;
-        itemDiff?: import("../actions/diff/itemDiffContext").ItemDiffContext;
-    }
+    observedCount: number,
+    diff: ConditionListDiff,
+    options: ApplyPlannedConditionListOptions
 ) => Promise<unknown>;
 
 export type CreateActionApplyContextArgs = {
@@ -76,20 +77,66 @@ export type CreateActionApplyContextArgs = {
     appliedUnits: number;
     completedOps: number;
     totalOps: number;
-    childListDiffs?: readonly ChildListDiff[];
+    childListDiffs: readonly ChildListDiff[];
     applyChildActions: ApplyChildActionList;
     applyConditions: ApplyConditionList;
 };
 
-function observedActionsAsBaselineCurrent(
-    observed: ReadonlyArray<Observed | null> | undefined
-): readonly Action[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: Action[] = [];
-    for (const entry of observed) {
-        if (entry !== null) out.push(entry as Action);
+function childActionListDiffFor(
+    childListDiffs: readonly ChildListDiff[],
+    prop: ChildActionListName
+): ChildActionListDiff {
+    const childList = plannedChildListDiffFor(childListDiffs, prop);
+    if (childList.kind !== "actions") {
+        throw new Error(`Planned child list "${prop}" is not an action list.`);
     }
-    return out;
+    return childList.diff;
+}
+
+function conditionListDiffFor(
+    childListDiffs: readonly ChildListDiff[],
+    prop: ChildConditionListName
+): ConditionListDiff {
+    const childList = plannedChildListDiffFor(childListDiffs, prop);
+    if (childList.kind !== "conditions") {
+        throw new Error(`Planned child list "${prop}" is not a condition list.`);
+    }
+    return childList.diff;
+}
+
+function plannedChildListDiffFor(
+    childListDiffs: readonly ChildListDiff[],
+    prop: ChildListName
+): ChildListDiff {
+    for (const childList of childListDiffs) {
+        if (childList.prop === prop) return childList;
+    }
+    throw new Error(`No planned child-list diff for "${prop}".`);
+}
+
+function checkedChildActions(actions: readonly Action[]): ChildAction[] {
+    for (const action of actions) {
+        if (!isChildAction(action)) {
+            throw new Error(
+                `${action.type} action cannot appear inside an action child list.`
+            );
+        }
+    }
+    return actions as ChildAction[];
+}
+
+function checkedObservedChildActions(
+    actions: ReadonlyArray<Observed | null> | undefined
+): ReadonlyArray<Observed<ChildAction> | null> {
+    if (actions === undefined) return [];
+    for (const action of actions) {
+        if (action !== null && !isChildAction(action)) {
+            throw new Error(
+                `${action.type} action cannot appear inside an action child list.`
+            );
+        }
+    }
+    return actions as ReadonlyArray<Observed<ChildAction> | null>;
 }
 
 function childListScope(
@@ -129,10 +176,7 @@ export function createActionApplyContext({
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const events = sync.events;
     const scopeAt = childListScope(appliedUnits, completedOps, totalOps);
-    const listsToApply =
-        childListDiffs === undefined
-            ? null
-            : new Set(childListDiffs.map((diff) => diff.prop));
+    const listsToApply = new Set(childListDiffs.map((diff) => diff.prop));
     let nextOffset = 0;
 
     return {
@@ -141,36 +185,38 @@ export function createActionApplyContext({
         },
 
         shouldApplyList(prop) {
-            return listsToApply === null || listsToApply.has(prop);
+            return listsToApply.has(prop);
         },
 
         async applyChildActions(prop, args) {
             const path = ActionListPath.childOf(actionPath, prop);
-            const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
+            const diff = childActionListDiffFor(childListDiffs, prop);
             const offset = args.offset ?? nextOffset;
-            await applyChildActions(ctx, args.desired, {
-                sync,
-                listPath: path,
-                baselineCurrent,
-                progressScope: scopeAt(path, offset),
-            });
-            nextOffset =
-                offset +
-                estimateActionListPhaseUnits(args.desired, baselineCurrent).applying;
+            await applyChildActions(
+                ctx,
+                {
+                    desired: checkedChildActions(args.desired),
+                    observed: checkedObservedChildActions(args.observed),
+                    diff,
+                },
+                {
+                    sync,
+                    listPath: path,
+                    progressScope: scopeAt(path, offset),
+                }
+            );
+            nextOffset = offset + childActionListDiffApplyUnits(diff);
         },
 
         async applyConditions(prop, args) {
             const path = ConditionListPath.of(actionPath, prop);
+            const diff = conditionListDiffFor(childListDiffs, prop);
             const offset = args.offset ?? nextOffset;
-            await applyConditionList(ctx, args.desired, {
+            await applyConditionList(ctx, args.observed?.length ?? 0, diff, {
                 resolveItem: sync.resolveItem,
-                baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
-                itemDiff: sync.itemDiff,
             });
-            nextOffset =
-                offset +
-                estimateConditionListPhaseUnits(args.desired, args.observed).applying;
+            nextOffset = offset + conditionListDiffApplyUnits(diff);
         },
     };
 }

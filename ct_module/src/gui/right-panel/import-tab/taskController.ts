@@ -275,14 +275,15 @@ function createSyncEventHandler(args: {
             }
         },
         importableReactivated: (e) => {
-            // Pass-2 (apply) re-activates an importable previously parked
-            // after the Reader pass. Re-bind the preview to this row's
-            // source file so the apply-phase diff overlay lands in the
-            // right pane.
+            // Application reactivates an importable parked after observation.
+            // Re-bind the preview to this row's source file so the applying
+            // diff overlay lands in the right pane.
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
         sessionTotalsLocked: () => {},
+        sessionApplicationProgress: () => {},
+        applicationProgress: () => {},
         sessionFinished: () => {
             activeViewPath = null;
         },

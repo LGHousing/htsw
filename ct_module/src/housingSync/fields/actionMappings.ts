@@ -10,6 +10,7 @@ import type {
     ChildConditionListName,
     ChildListName,
 } from "../actionPath";
+import type { ActionListFieldName } from "../actions/actionStructure";
 
 export const ACTION_MAPPINGS = {
     CONDITIONAL: {
@@ -383,12 +384,29 @@ export const ACTION_MAPPINGS = {
     [K in Action["type"]]: ActionLoreSpec<Extract<Action, { type: K }>>;
 };
 
-export function getActionLoreFields(
-    type: Action["type"]
-): Record<
+type MappedActionListFieldName<TType extends Action["type"]> = (
+    typeof ACTION_MAPPINGS
+)[TType]["loreFields"][keyof (typeof ACTION_MAPPINGS)[TType]["loreFields"]] extends infer TField
+    ? TField extends { kind: "actionList"; prop: infer TProp }
+        ? TProp
+        : never
+    : never;
+
+type MissingActionListFieldMappings = {
+    [TType in Action["type"]]: Exclude<
+        ActionListFieldName<Extract<Action, { type: TType }>>,
+        MappedActionListFieldName<TType>
+    >;
+}[Action["type"]];
+
+type CompleteActionLoreFields<_TMissing extends never> = Record<
     string,
     { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean }
-> {
+>;
+
+export function getActionLoreFields(
+    type: Action["type"]
+): CompleteActionLoreFields<MissingActionListFieldMappings> {
     return ACTION_MAPPINGS[type].loreFields;
 }
 

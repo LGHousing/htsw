@@ -1,7 +1,10 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
-import { type ActionListPlan } from "../../housingSync/actions/plan";
+import {
+    actionListPlanNeedsApply,
+    type ActionListPlan,
+} from "../../housingSync/actions/plan";
 import {
     actionListPlanFromRead,
     hydrateActionListSync,
@@ -26,6 +29,15 @@ import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./housing";
 import { regionBoundsEqual } from "./bounds";
 import { recordEmptyRegionShell } from "../import/emptyShells";
+import { COST, REGION_BOUNDS_CHANGE_UNITS } from "../../housingSync/progress/costs";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type RegionImportPlan = {
     kind: "REGION";
@@ -96,25 +108,44 @@ async function setDesiredRegionSelection(
 async function applyRegionActionPlans(
     ctx: TaskContext,
     plan: RegionImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
-    if (plan.enterPlan !== null) {
-        ctx.getItemSlot("Entry Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.enterPlan, { sync: session.actions });
+    const enterPlan = plan.enterPlan;
+    if (actionListPlanNeedsApply(enterPlan)) {
+        await application.run("openEnterActions", async () => {
+            ctx.getItemSlot("Entry Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+        });
+        await application.runActionList(
+            "enterActions",
+            enterPlan,
+            session.actions,
+            (sync) => applyActionListPlan(ctx, enterPlan, { sync })
+        );
     }
 
-    if (plan.exitPlan !== null) {
+    const exitPlan = plan.exitPlan;
+    if (actionListPlanNeedsApply(exitPlan)) {
         // Reopen by command instead of clickGoBack-ing up to the region editor:
         // it's a parent-less /region edit "Close" menu, and a deep onEnter unwind
         // can't be relied on to land exactly back on it. Reopening re-establishes
         // a known menu regardless of where onEnter ended.
-        if (plan.enterPlan !== null) {
-            await openRegionEditor(ctx, plan.importable.name);
+        if (actionListPlanNeedsApply(enterPlan)) {
+            await application.run("reopenForExit", () =>
+                openRegionEditor(ctx, plan.importable.name)
+            );
         }
-        ctx.getItemSlot("Exit Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.exitPlan, { sync: session.actions });
+        await application.run("openExitActions", async () => {
+            ctx.getItemSlot("Exit Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+        });
+        await application.runActionList(
+            "exitActions",
+            exitPlan,
+            session.actions,
+            (sync) => applyActionListPlan(ctx, exitPlan, { sync })
+        );
     }
 }
 
@@ -187,8 +218,7 @@ export async function scanImportableRegion(
     const setup = createSetupStepEmitter(session.actions.events, 2);
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
-    const current =
-        liveRegion === null ? { kind: "known-empty" as const } : undefined;
+    const current = liveRegion === null ? { kind: "known-empty" as const } : undefined;
     const progress = createProgressGroup(session.actions.events, 2);
 
     const enter = await scanActionListSync(ctx, {
@@ -266,24 +296,73 @@ export function planImportableRegion(read: RegionRead): RegionImportPlan {
 export async function applyImportableRegionPlan(
     ctx: TaskContext,
     plan: RegionImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
-    if (plan.enterPlan === null && plan.exitPlan === null) {
+    if (
+        !actionListPlanNeedsApply(plan.enterPlan) &&
+        !actionListPlanNeedsApply(plan.exitPlan)
+    ) {
         if (regionPlanIsNoOp(plan)) return;
         // Region created/moved to bounds; nothing to edit. No clickGoBack — the
         // /region edit editor is a parent-less "Close" menu, and the next
         // importable opens its own menu by command anyway.
-        await ensureRegionEditorForApply(ctx, plan, session);
+        await application.run("openEditor", () =>
+            ensureRegionEditorForApply(ctx, plan, session)
+        );
         return;
     }
 
-    await ensureRegionEditorForApply(ctx, plan, session);
-    await applyRegionActionPlans(ctx, plan, session);
+    await application.run("openEditor", () =>
+        ensureRegionEditorForApply(ctx, plan, session)
+    );
+    await applyRegionActionPlans(ctx, plan, session, application);
 }
 
 export function regionPlanIsNoOp(plan: RegionImportPlan): boolean {
-    const enterNoOp =
-        plan.enterPlan === null || plan.enterPlan.diff.operations.length === 0;
-    const exitNoOp = plan.exitPlan === null || plan.exitPlan.diff.operations.length === 0;
+    const enterNoOp = !actionListPlanNeedsApply(plan.enterPlan);
+    const exitNoOp = !actionListPlanNeedsApply(plan.exitPlan);
     return plan.liveRegion !== null && plan.boundsMatch && enterNoOp && exitNoOp;
+}
+
+export function regionApplicationPlan(
+    plan: RegionImportPlan,
+    session: ImportContext
+): ApplicationPlan {
+    const steps: ApplicationStep[] = [];
+    if (regionPlanIsNoOp(plan)) {
+        return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
+    }
+    const boundsChange = plan.liveRegion === null || !plan.boundsMatch;
+    const shellPlanned =
+        plan.liveRegion === null &&
+        session.plannedReferencedShells.regions.has(plan.importable.name.toLowerCase());
+    steps.push(
+        workStep(
+            "openEditor",
+            boundsChange
+                ? REGION_BOUNDS_CHANGE_UNITS +
+                      (plan.liveRegion === null && !shellPlanned ? COST.cacheWrite : 0)
+                : COST.commandInterval + COST.commandMenuWait
+        )
+    );
+    if (actionListPlanNeedsApply(plan.enterPlan)) {
+        steps.push(
+            workStep("openEnterActions", COST.menuClickWait),
+            actionListStep("enterActions", plan.enterPlan)
+        );
+    }
+    if (actionListPlanNeedsApply(plan.exitPlan)) {
+        if (actionListPlanNeedsApply(plan.enterPlan)) {
+            steps.push(
+                workStep("reopenForExit", COST.commandInterval + COST.commandMenuWait)
+            );
+        }
+        steps.push(
+            workStep("openExitActions", COST.menuClickWait),
+            actionListStep("exitActions", plan.exitPlan)
+        );
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
 }

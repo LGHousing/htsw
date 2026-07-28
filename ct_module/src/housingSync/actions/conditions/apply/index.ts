@@ -1,33 +1,30 @@
-import type { Condition } from "htsw/types";
-
 import TaskContext from "../../../../tasks/context";
-import {
-    estimateConditionListPhaseUnits,
-} from "../../../progress/costs";
-import { baselineConditionListFromConditions, diffConditionList } from "../diff";
+import { conditionListDiffApplyUnits } from "../../../progress/costs";
 import { appendConditionsToOpenConditionList } from "./conditionOps";
 import { ConditionListApplyRun } from "./run";
-import type { ApplyConditionListOptions } from "./types";
+import type { ApplyPlannedConditionListOptions } from "./types";
+import type { ConditionListDiff } from "../../diff/types";
 
-export { appendConditionsToOpenConditionList, type ApplyConditionListOptions };
+export {
+    appendConditionsToOpenConditionList,
+    type ApplyPlannedConditionListOptions,
+};
 
-export async function applyConditionList(
+export async function applyPlannedConditionList(
     ctx: TaskContext,
-    desired: Condition[],
-    options: ApplyConditionListOptions
+    observedCount: number,
+    diff: ConditionListDiff,
+    options: ApplyPlannedConditionListOptions
 ): Promise<void> {
-    const current = options.baselineCurrent ?? [];
-    const phaseUnits = estimateConditionListPhaseUnits(desired, current);
-    phaseUnits.reading = 0;
-    phaseUnits.hydrating = 0;
-    const diff = diffConditionList(
-        baselineConditionListFromConditions(current),
-        desired,
-        options.itemDiff
-    );
+    const phaseUnits = {
+        setup: 0,
+        reading: 0,
+        hydrating: 0,
+        applying: conditionListDiffApplyUnits(diff),
+    };
     const run = new ConditionListApplyRun(
         ctx,
-        current.length,
+        observedCount,
         diff,
         options,
         phaseUnits

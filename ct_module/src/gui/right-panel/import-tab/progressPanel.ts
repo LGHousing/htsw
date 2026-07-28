@@ -233,7 +233,7 @@ function taskPhaseSliceSegments(snapshot: PhaseSnapshot): Element[] {
  * previous phase's solid color. A phase that finished leaves the segment
  * solid in its color (read → blue, hydrated → purple, applied → green), so
  * the footer bar reads left-to-right as green / purple / blue bands with at
- * most one partially-filled segment per pass.
+ * most one partially-filled segment for the active stage.
  */
 function taskPhaseFillSegments(snapshot: PhaseSnapshot): Element[] {
     const f = phaseFractions(snapshot.phaseUnits, snapshot.completedUnits);
@@ -250,8 +250,8 @@ function taskPhaseFillSegments(snapshot: PhaseSnapshot): Element[] {
 }
 
 /**
- * Segments for the importable currently being worked on. During the export
- * scan pass the phase-unit math has nothing to show (a scan credits almost
+ * Segments for the importable currently being worked on. During export
+ * scanning the phase-unit math has nothing to show (a scan credits almost
  * no units), so the segment fills solid reading-blue while its scan runs.
  * `style` picks the renderer: "slices" for the queue-row mini bars, "fill"
  * for the footer bar's per-importable segments.
@@ -412,8 +412,8 @@ function progressBar(): Element {
                         })
                     );
                 } else if (parkedTaskFor(p, row.key) !== undefined) {
-                    // The read/hydrate pass finished this row but the apply
-                    // pass hasn't reached it yet. Show the parked phase fill
+                    // Reading and hydration finished for this row, but
+                    // application hasn't reached it yet. Show the parked phase fill
                     // so the segment doesn't visually rewind.
                     children.push(
                         Container({

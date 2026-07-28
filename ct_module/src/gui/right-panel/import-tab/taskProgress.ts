@@ -38,10 +38,7 @@ import {
     setLiveTaskPathProvider,
 } from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
-import {
-    getActiveTaskElapsedMs,
-    getActiveTaskStartedAt,
-} from "../../../tasks/activeTask";
+import { getActiveTaskElapsedMs } from "../../../tasks/activeTask";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -168,15 +165,11 @@ export function getTaskProgressFraction(): number {
 }
 
 export function getTaskEtaSeconds(): number | null {
-    return etaCalc === null
-        ? null
-        : etaCalc.getTotal(taskProgress, getActiveTaskStartedAt());
+    return etaCalc === null ? null : etaCalc.getTotal(taskProgress);
 }
 
 export function getCurrentPhaseEtaSeconds(): number | null {
-    return etaCalc === null
-        ? null
-        : etaCalc.getPhase(taskProgress, getActiveTaskStartedAt());
+    return etaCalc === null ? null : etaCalc.getPhase(taskProgress);
 }
 
 export function getTaskEtcMs(): number | null {

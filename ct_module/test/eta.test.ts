@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
     createEtaCalculator,
     easeEta,
-    sessionBlendedMsPerUnit,
     type EtaCalculator,
 } from "../src/housingSync/progress/eta";
 import type { TaskProgress } from "../src/housingSync/progress/types";
@@ -52,21 +51,13 @@ function progress(
 
 describe("import ETA", () => {
     test("small candidate rises leave the target unchanged while display moves", () => {
-        const next = easeEta(
-            { displayed: 100, target: 100, at: 0 },
-            107,
-            1_000
-        );
+        const next = easeEta({ displayed: 100, target: 100, at: 0 }, 107, 1_000);
         expect(next.target).toBe(100);
         expect(next.displayed).toBeLessThan(100);
     });
 
     test("large candidate rises still ease or snap upward", () => {
-        const eased = easeEta(
-            { displayed: 100, target: 100, at: 0 },
-            110,
-            1_000
-        );
+        const eased = easeEta({ displayed: 100, target: 100, at: 0 }, 110, 1_000);
         expect(eased.displayed).toBeGreaterThan(100);
         expect(eased.displayed).toBeLessThan(110);
 
@@ -77,61 +68,40 @@ describe("import ETA", () => {
         });
     });
 
-    test("session rate takes over from the prior as units accumulate", () => {
-        const early = sessionBlendedMsPerUnit(180, 140, 10);
-        const mature = sessionBlendedMsPerUnit(180, 140, 1_500);
-
-        expect(early).toBeCloseTo(177.5);
-        expect(mature).toBeCloseTo(143.636, 3);
-        expect(Math.abs(mature - 140)).toBeLessThan(Math.abs(early - 140));
-    });
-
-    test("pathological session rates are ignored", () => {
-        expect(sessionBlendedMsPerUnit(150, 1_501, 1_000)).toBe(150);
-        expect(sessionBlendedMsPerUnit(150, 14.9, 1_000)).toBe(150);
-    });
-
     test("cold start uses the prior ms/unit", () => {
         const p = progress(10, "hydrating");
-        // elapsedMs=0 → effectiveMsPerUnit = prior (150).
         // Phase remaining for hydrating: within=10, phaseStart=10, phaseEnd=110 → 100 units.
-        expect(eta.getPhase(p, 0)).toBe(15);
+        expect(eta.getPhase(p)).toBe(15);
         // Total remaining: 120-10=110 → 110*150/1000 = 16.5s.
-        expect(eta.getTotal(p, 0)).toBe(16.5);
+        expect(eta.getTotal(p)).toBe(16.5);
     });
 
-    test("session-blended candidate stays flat between progress events", () => {
+    test("candidate stays flat between progress events", () => {
         const p = progress(10, "hydrating");
-        expect(eta.getPhase(p, 0)).toBe(15);
+        expect(eta.getPhase(p)).toBe(15);
         now = 1_000;
-        const at1 = eta.getPhase(p, 0)!;
+        const at1 = eta.getPhase(p)!;
         expect(at1).toBeLessThan(15);
         expect(at1).toBeGreaterThan(14);
         now = 3_000;
-        const at3 = eta.getPhase(p, 0)!;
+        const at3 = eta.getPhase(p)!;
         expect(at3).toBeLessThan(at1);
         expect(at3).toBeGreaterThan(12);
     });
 
-    test("a bad early sample is corrected once enough units accumulate", () => {
-        // Snapshot 1: 1 unit completed in 1s → observed = 1000 ms/u (6.7× the prior).
-        now = 1_000;
-        const earlyEta = eta.getPhase(progress(1, "hydrating"), 0)!;
-        // Snapshot 2: 80 units in 12s → observed ≈ 150 ms/u (matches the prior).
-        // Bayesian blend at 80 samples should bring msPerUnit close to observed,
-        // so ETA reflects the real per-unit cost.
-        now = 12_000;
-        const laterEta = eta.getPhase(progress(80, "hydrating"), 0)!;
-        expect(laterEta).toBeLessThan(earlyEta);
-        // 30 units remaining * ~150 ms/u ≈ 4.5s. Allow slack for the blend.
-        expect(laterEta).toBeGreaterThan(3);
-        expect(laterEta).toBeLessThan(7);
+    test("totals lock replaces the opening estimate immediately", () => {
+        const p = progress(10, "hydrating");
+        expect(eta.getTotal(p)).toBe(16.5);
+
+        p.totalUnits = 80;
+        p.totalsLocked = true;
+        expect(eta.getTotal(p)).toBe(10.5);
     });
 
     test("phase ETA covers parked rows still waiting for the phase", () => {
         const p = progress(10, "hydrating");
-        // A scanned row waiting for pass-2: read done (completed = setup +
-        // reading), hydration units unspent.
+        // A scanned row waiting for hydration: reading is complete and
+        // hydration units are unspent.
         p.parked["FUNCTION:waiting"] = {
             key: "FUNCTION:waiting",
             type: "FUNCTION",
@@ -155,7 +125,7 @@ describe("import ETA", () => {
             sync: null,
         };
         // Active remaining 100 + waiting row's 50 = 150 units * 150 ms/u.
-        expect(eta.getPhase(p, 0)).toBe(22.5);
+        expect(eta.getPhase(p)).toBe(22.5);
     });
 
     test("setup phase remaining accounts for the setup segment", () => {
@@ -164,6 +134,6 @@ describe("import ETA", () => {
         p.totalUnits = 125;
         // phaseStart for setup = 0, phaseLength = 5, within = 0 → 5 units.
         // ETA = 5 * 150 / 1000 = 0.75s.
-        expect(eta.getPhase(p, 0)).toBe(0.75);
+        expect(eta.getPhase(p)).toBe(0.75);
     });
 });

@@ -46,7 +46,7 @@ function fakeSink() {
 }
 
 describe("runReadLoop", () => {
-    it("reports two-pass item lifecycle in scan then hydrate order", async () => {
+    it("reports staged item lifecycle in scan then hydrate order", async () => {
         const { sink, calls } = fakeSink();
         await runReadLoop(fakeCtx(), {
             names: ["a", "b"],
@@ -72,7 +72,7 @@ describe("runReadLoop", () => {
         ]);
     });
 
-    it("reports single-pass item lifecycle in processing order", async () => {
+    it("reports direct-reader item lifecycle in processing order", async () => {
         const { sink, calls } = fakeSink();
         await runReadLoop(fakeCtx(), {
             names: ["a", "b"],
@@ -91,7 +91,7 @@ describe("runReadLoop", () => {
         ]);
     });
 
-    it("does not finish failed single-pass items and continues", async () => {
+    it("does not finish failed direct-reader items and continues", async () => {
         const { sink, calls } = fakeSink();
         await runReadLoop(fakeCtx(), {
             names: ["a", "b"],

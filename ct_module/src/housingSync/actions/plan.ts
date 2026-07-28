@@ -19,7 +19,6 @@ import {
     editUnitsWithChildLists,
     estimateActionListPhaseUnits,
     estimateTrustedActionListHydrateUnits,
-    phaseUnitsTotal,
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
@@ -33,7 +32,7 @@ export type ActionListApplyOptions = {
     progressScope?: ProgressScope;
 };
 
-export type ActionListPrereadOptions = ActionListApplyOptions & {
+export type ActionListPlanOptions = ActionListApplyOptions & {
     trust?: ActionListTrust;
     baselineCurrent?: readonly Action[];
     trustedBaselineAfterUnchangedScan?: readonly Action[];
@@ -48,22 +47,27 @@ export type ActionListPlan = {
     readonly phaseUnits: Readonly<PhaseUnits>;
 };
 
+export function actionListPlanNeedsApply(
+    plan: ActionListPlan | null
+): plan is ActionListPlan {
+    return plan !== null && plan.diff.operations.length > 0;
+}
+
 export type ActionListPlanScan =
     | { kind: "planned"; plan: ActionListPlan }
     | {
           kind: "hydrate";
           desired: Action[];
           scan: Awaited<ReturnType<typeof scanActionList>>;
-          options: ActionListPrereadOptions;
+          options: ActionListPlanOptions;
           readOptions: ListReadOptions;
           phaseUnits: PhaseUnits;
-          progress: ProgressHandler | undefined;
       };
 
 export async function readActionListPlan(
     ctx: TaskContext,
     desired: Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPlanOptions
 ): Promise<ActionListPlan> {
     const scan = await scanActionListForPlan(ctx, desired, options);
     return scan.kind === "planned" ? scan.plan : hydrateActionListForPlan(ctx, scan);
@@ -72,7 +76,7 @@ export async function readActionListPlan(
 export async function scanActionListForPlan(
     ctx: TaskContext,
     desired: Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPlanOptions
 ): Promise<ActionListPlanScan> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
     if (options.trust !== undefined && options.baselineCurrent !== undefined) {
@@ -139,7 +143,6 @@ export async function scanActionListForPlan(
         if (options.listPath === undefined) {
             emitObservedSnapshot(plan.observed, options.sync.events);
         }
-        emitPrereadCompleted(progress, plan.phaseUnits);
         return { kind: "planned", plan };
     }
     return {
@@ -149,7 +152,6 @@ export async function scanActionListForPlan(
         options,
         readOptions,
         phaseUnits,
-        progress,
     };
 }
 
@@ -157,7 +159,7 @@ export async function hydrateActionListForPlan(
     ctx: TaskContext,
     pending: Extract<ActionListPlanScan, { kind: "hydrate" }>
 ): Promise<ActionListPlan> {
-    const { desired, scan, options, readOptions, phaseUnits, progress } = pending;
+    const { desired, scan, options, readOptions, phaseUnits } = pending;
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
@@ -177,14 +179,12 @@ export async function hydrateActionListForPlan(
         options.sync.itemDiff
     );
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
-    emitPrereadCompleted(progress, phaseUnits);
-
     return { desired, observed, diff, phaseUnits };
 }
 
 export function createKnownEmptyActionListPlan(
     desired: Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPlanOptions
 ): ActionListPlan {
     return createKnownActionListPlan(desired, [], options);
 }
@@ -192,7 +192,7 @@ export function createKnownEmptyActionListPlan(
 export function createKnownActionListPlan(
     desired: Action[],
     current: readonly Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPlanOptions
 ): ActionListPlan {
     const phaseUnits = estimateActionListPhaseUnits(desired, current);
     phaseUnits.reading = 0;
@@ -203,7 +203,7 @@ export function createKnownActionListPlan(
 function knownActionListPlan(
     desired: Action[],
     current: readonly Action[],
-    options: ActionListPrereadOptions,
+    options: ActionListPlanOptions,
     phaseUnits: PhaseUnits
 ): ActionListPlan {
     const observed = current.map((action, index) => ({
@@ -235,29 +235,13 @@ function knownActionListPlan(
 }
 
 function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
-    return Math.max(
-        actionListDiffApplyUnits(diff, editUnitsWithChildLists, desiredLength),
-        1
-    );
-}
-
-function emitPrereadCompleted(
-    progress: ProgressHandler | undefined,
-    phaseUnits: PhaseUnits
-): void {
-    progress?.({
-        phase: "hydrating",
-        completedUnits: phaseUnits.reading + phaseUnits.hydrating,
-        totalUnits: phaseUnitsTotal(phaseUnits),
-        phaseUnits,
-        sync: { completedUnits: 1, totalUnits: 1, parent: null },
-    });
+    return actionListDiffApplyUnits(diff, editUnitsWithChildLists, desiredLength);
 }
 
 function recordActionListConflict(
     live: { slots: readonly ObservedActionSlot[] } | { actions: readonly Action[] },
     desired: readonly Action[],
-    options: ActionListPrereadOptions
+    options: ActionListPlanOptions
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
     const trustedImport = options.sync.trust.trustMode;

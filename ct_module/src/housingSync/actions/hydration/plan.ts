@@ -14,6 +14,7 @@ import type {
 } from "../../observedActions";
 import { fullyHydratedObservedSlotsToActions } from "../../observedActions";
 import type { DesiredActionEntry } from "../diff/childListMatching";
+import { isChildAction } from "../childActions";
 
 export type ActionScalarFieldToRead = {
     label: string;
@@ -211,14 +212,27 @@ export function actionsFullyHydrated(
         for (const field of getChildListFields(action.type)) {
             const childList = (action as Record<string, unknown>)[field.prop];
             if (!Array.isArray(childList)) return false;
-            if (field.prop === "conditions") {
+            if (field.kind === "conditionList") {
                 for (const condition of childList) {
                     if (condition === null) return false;
                 }
-            } else if (!actionsFullyHydrated(childList as Array<Action | null>)) {
-                return false;
+            } else {
+                for (const child of childList as Array<Action | null>) {
+                    if (child === null || !isChildAction(child)) return false;
+                    if (!childActionFullyHydrated(child)) return false;
+                }
             }
         }
+    }
+    return true;
+}
+
+function childActionFullyHydrated(action: Action): boolean {
+    for (const field of getChildListFields(action.type)) {
+        if (field.kind === "actionList") return false;
+        const childList = (action as Record<string, unknown>)[field.prop];
+        if (!Array.isArray(childList)) return false;
+        if (childList.some((entry) => entry === null)) return false;
     }
     return true;
 }

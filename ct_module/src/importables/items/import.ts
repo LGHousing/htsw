@@ -7,10 +7,9 @@ import {
     readActionListSync,
     type ActionListSyncResult,
 } from "../../housingSync/actions/prepareSync";
-import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import { tryWriteImportableCache, type ImportableTrustPlan } from "../../importCache";
+import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { stableStringify } from "../../utils/helpers";
 import {
@@ -29,6 +28,14 @@ import {
     readInteractDataCache,
     writeInteractDataCache,
 } from "./interactDataCache";
+import {
+    actionListStep,
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 function sourceItemShell(importable: ImportableItem): object {
     return {
@@ -135,67 +142,99 @@ export function planImportableItem(read: ItemRead): ItemImportPlan {
     };
 }
 
+export function itemPlanApplicationUnits(plan: ItemImportPlan): number {
+    return itemApplicationPlan(plan).totalUnits;
+}
+
+export function itemApplicationPlan(plan: ItemImportPlan): ApplicationPlan {
+    const steps: ApplicationStep[] = [
+        workStep("placeItem", COST.itemInject + COST.guaranteedSleep1000),
+    ];
+    if (plan.leftPlan !== null || plan.rightPlan !== null) {
+        steps.push(
+            workStep("openItemEditor", COST.commandInterval + COST.commandMenuWait),
+            workStep("openActionsEditor", COST.menuClickWait)
+        );
+        if (plan.leftPlan !== null) {
+            steps.push(
+                workStep("openLeftActions", COST.menuClickWait),
+                actionListStep("leftActions", plan.leftPlan)
+            );
+            if (plan.rightPlan !== null) {
+                steps.push(workStep("leaveLeftActions", COST.goBackWait));
+            }
+        }
+        if (plan.rightPlan !== null) {
+            steps.push(
+                workStep("openRightActions", COST.menuClickWait),
+                actionListStep("rightActions", plan.rightPlan)
+            );
+        }
+        steps.push(
+            workStep("captureInteractData", COST.guaranteedSleep1000 + COST.nbtCapture),
+            workStep("interactDataCache", COST.cacheWrite)
+        );
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
+}
+
 export async function applyImportableItemPlan(
     ctx: TaskContext,
     plan: ItemImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     const { importable } = plan;
-    const events = session.actions.events;
-    const ownSteps = hasItemClickActions(importable) ? 3 : 1;
-    const setup = createSetupStepEmitter(
-        events,
-        ownSteps
-    );
 
     const uuid = plan.housingUuid;
     const dependencyIndex = session.itemDependencies;
     const needsActionApply = plan.leftPlan !== null || plan.rightPlan !== null;
     if (!needsActionApply) {
-        await session.itemPlacement.place(ctx, plan.item);
-        setup(
-            plan.usesCachedInteractData
-                ? `gave cached ${importable.name}`
-                : `gave ${importable.name}`
+        await application.run("placeItem", () =>
+            session.itemPlacement.place(ctx, plan.item)
         );
-        await tryWriteImportableCache(ctx, importable, "importer", uuid, {
-            itemDependencies: dependencyIndex.snapshotOf(importable),
-        });
         return;
     }
 
-    await session.itemPlacement.place(ctx, plan.item);
-    setup(`injected item ${importable.name}`);
+    await application.run("placeItem", () => session.itemPlacement.place(ctx, plan.item));
 
-    await ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
-    setup(`opened item editor`);
+    await application.run("openItemEditor", () =>
+        ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened())
+    );
 
-    ctx.getItemSlot("Edit Actions").click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-    setup(`opened Edit Actions for ${importable.name}`);
+    await application.run("openActionsEditor", async () => {
+        ctx.getItemSlot("Edit Actions").click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+    });
 
-    await applyItemActionPlans(ctx, plan, session);
+    await applyItemActionPlans(ctx, plan, session, application);
 
-    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
+    let interactData: string | null = null;
+    await application.run("captureInteractData", async () => {
+        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
-    const snbt = Player.getInventory()
-        ?.getStackInSlot(selectedHotbarSlot())
-        ?.getRawNBT();
-    if (!snbt) throw Error("Why don't we have the item?");
+        const snbt = Player.getInventory()
+            ?.getStackInSlot(selectedHotbarSlot())
+            ?.getRawNBT();
+        if (!snbt) throw Error("Why don't we have the item?");
 
-    const interactData = extractInteractDataSnbt(snbt);
-    if (interactData === null) {
-        throw new Error(
-            `Could not capture interact_data after applying click actions to '${importable.name}'.`
-        );
-    }
-    if (!writeInteractDataCache(importable, dependencyIndex, uuid, interactData)) {
-        throw new Error(
-            `Could not save interact_data after applying click actions to '${importable.name}'.`
-        );
-    }
-    await tryWriteImportableCache(ctx, importable, "importer", uuid, {
-        itemDependencies: dependencyIndex.snapshotOf(importable),
+        interactData = extractInteractDataSnbt(snbt);
+        if (interactData === null) {
+            throw new Error(
+                `Could not capture interact_data after applying click actions to '${importable.name}'.`
+            );
+        }
+    });
+    await application.run("interactDataCache", async () => {
+        if (
+            interactData === null ||
+            !writeInteractDataCache(importable, dependencyIndex, uuid, interactData)
+        ) {
+            throw new Error(
+                `Could not save interact_data after applying click actions to '${importable.name}'.`
+            );
+        }
     });
 }
 
@@ -288,19 +327,38 @@ function currentItemActionList(
 async function applyItemActionPlans(
     ctx: TaskContext,
     plan: ItemImportPlan,
-    session: ImportContext
+    session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
-    if (plan.leftPlan !== null) {
-        ctx.getItemSlot("Left Click Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.leftPlan, { sync: session.actions });
-        if (plan.rightPlan !== null) await clickGoBack(ctx);
+    const leftPlan = plan.leftPlan;
+    if (leftPlan !== null) {
+        await application.run("openLeftActions", async () => {
+            ctx.getItemSlot("Left Click Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+        });
+        await application.runActionList(
+            "leftActions",
+            leftPlan,
+            session.actions,
+            (sync) => applyActionListPlan(ctx, leftPlan, { sync })
+        );
+        if (plan.rightPlan !== null) {
+            await application.run("leaveLeftActions", () => clickGoBack(ctx));
+        }
     }
 
-    if (plan.rightPlan !== null) {
-        ctx.getItemSlot("Right Click Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.rightPlan, { sync: session.actions });
+    const rightPlan = plan.rightPlan;
+    if (rightPlan !== null) {
+        await application.run("openRightActions", async () => {
+            ctx.getItemSlot("Right Click Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+        });
+        await application.runActionList(
+            "rightActions",
+            rightPlan,
+            session.actions,
+            (sync) => applyActionListPlan(ctx, rightPlan, { sync })
+        );
     }
 }
 

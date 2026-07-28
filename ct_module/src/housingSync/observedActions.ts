@@ -4,6 +4,7 @@ import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ChildConditionListName, ChildListName } from "./actionPath";
 import type { ActionScalarFieldToRead } from "./actions/hydration/plan";
 import { getChildListFields } from "./fields/actionMappings";
+import { isChildAction, type ChildAction } from "./actions/childActions";
 
 type ObservedFields<T extends Action | Condition> = {
     [K in keyof Omit<T, "type">]?: T[K] extends Action[]
@@ -110,7 +111,7 @@ function observedNodeFromAction(
                     entries: entries.map((entry) =>
                         entry === null
                             ? { kind: "unknown" }
-                            : observedNodeFromAction(entry as Observed)
+                            : observedNodeFromChildAction(entry as Observed)
                     ),
                 };
             }
@@ -124,6 +125,34 @@ function observedNodeFromAction(
     }
 
     return { kind: "partial", type: action.type, action, childLists };
+}
+
+function observedNodeFromChildAction(action: Observed): ObservedNode {
+    if (!isChildAction(action)) {
+        throw new Error(
+            `${action.type} action cannot appear inside an action child list.`
+        );
+    }
+    const fields = getChildListFields(action.type);
+    let unresolved = false;
+    const childLists: Partial<Record<ChildListName, ObservedChildList>> = {};
+    for (const field of fields) {
+        if (field.kind === "actionList") {
+            throw new Error(
+                `Action child list "${field.prop}" reached a child action.`
+            );
+        }
+        const value = (action as Record<string, unknown>)[field.prop];
+        if (!Array.isArray(value)) continue;
+        if (value.some((entry) => entry === null)) unresolved = true;
+        childLists[field.prop] = {
+            state: "conditions",
+            entries: value as ReadonlyArray<Condition | null>,
+        };
+    }
+    return unresolved
+        ? { kind: "partial", type: action.type, action, childLists }
+        : { kind: "action", action: action as Action };
 }
 
 export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Action[] {
@@ -141,13 +170,23 @@ export function presentChildListsContainNoNulls(action: Observed): boolean {
         if (!Array.isArray(value)) continue;
         for (const entry of value) {
             if (entry === null) return false;
-            if (
-                field.kind === "actionList" &&
-                !presentChildListsContainNoNulls(entry as Observed)
-            ) {
-                return false;
+            if (field.kind === "actionList") {
+                if (!isChildAction(entry as Observed)) return false;
+                if (!presentChildConditionListsContainNoNulls(entry as Observed)) {
+                    return false;
+                }
             }
         }
+    }
+    return true;
+}
+
+function presentChildConditionListsContainNoNulls(action: Observed): boolean {
+    for (const field of getChildListFields(action.type)) {
+        if (field.kind === "actionList") return false;
+        const value = (action as Record<string, unknown>)[field.prop];
+        if (!Array.isArray(value)) continue;
+        if (value.some((entry) => entry === null)) return false;
     }
     return true;
 }
@@ -164,10 +203,6 @@ export function fullyHydratedObservedSlotsToActions(
 }
 
 function observedActionToActionStrict(observed: Observed): Action {
-    if (observed.type !== "CONDITIONAL" && observed.type !== "RANDOM") {
-        return observed as Action;
-    }
-
     const action = { ...observed } as Record<string, unknown>;
     for (const field of getChildListFields(observed.type)) {
         const value = action[field.prop];
@@ -184,38 +219,64 @@ function observedActionToActionStrict(observed: Observed): Action {
                 );
             }
             return field.kind === "actionList"
-                ? observedActionToActionStrict(entry as Observed)
+                ? observedChildActionToActionStrict(entry as Observed)
                 : entry;
         });
     }
     return action as Action;
 }
 
+function observedChildActionToActionStrict(observed: Observed): ChildAction {
+    if (!isChildAction(observed)) {
+        throw new Error(
+            `${observed.type} action cannot appear inside an action child list.`
+        );
+    }
+    const action = { ...observed } as Record<string, unknown>;
+    for (const field of getChildListFields(observed.type)) {
+        if (field.kind === "actionList") {
+            throw new Error(
+                `Action child list "${field.prop}" reached a child action.`
+            );
+        }
+        const value = action[field.prop];
+        if (!Array.isArray(value)) {
+            throw new Error(
+                `Hydrated action "${observed.type}" is missing child list "${field.prop}".`
+            );
+        }
+        if (value.some((entry) => entry === null)) {
+            throw new Error(
+                `Hydrated action "${observed.type}" has an unread entry in "${field.prop}".`
+            );
+        }
+    }
+    return action as ChildAction;
+}
+
 function observedActionToAction(observed: Observed): Action {
-    if (observed.type === "CONDITIONAL") {
-        return {
-            type: "CONDITIONAL",
-            matchAny: observed.matchAny ?? false,
-            conditions: (observed.conditions ?? []).filter(
-                (c): c is NonNullable<typeof c> => c !== null
-            ),
-            ifActions: (observed.ifActions ?? [])
-                .filter((a): a is Observed => a !== null)
-                .map(observedActionToAction),
-            elseActions: (observed.elseActions ?? [])
-                .filter((a): a is Observed => a !== null)
-                .map(observedActionToAction),
-            ...(observed.note !== undefined ? { note: observed.note } : {}),
-        };
+    const action = { ...observed } as Record<string, unknown>;
+    if (observed.type === "CONDITIONAL" && observed.matchAny === undefined) {
+        action.matchAny = false;
     }
-    if (observed.type === "RANDOM") {
-        return {
-            type: "RANDOM",
-            actions: (observed.actions ?? [])
-                .filter((a): a is Observed => a !== null)
-                .map(observedActionToAction),
-            ...(observed.note !== undefined ? { note: observed.note } : {}),
-        };
+    for (const field of getChildListFields(observed.type)) {
+        const value = action[field.prop];
+        const entries = Array.isArray(value) ? value : [];
+        action[field.prop] =
+            field.kind === "actionList"
+                ? entries
+                      .filter((entry): entry is Observed => entry !== null)
+                      .map(observedChildActionToAction)
+                : entries.filter((entry) => entry !== null);
     }
-    return observed as Action;
+    return action as Action;
+}
+
+function observedChildActionToAction(observed: Observed): ChildAction {
+    if (!isChildAction(observed)) {
+        throw new Error(
+            `${observed.type} action cannot appear inside an action child list.`
+        );
+    }
+    return observed as ChildAction;
 }

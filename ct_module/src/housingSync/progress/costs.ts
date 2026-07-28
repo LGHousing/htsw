@@ -2,10 +2,11 @@ import type { Action, Condition, Importable } from "htsw/types";
 
 import type { ActionHydrationWork, ActionHydrationPlan } from "../actions/hydration/plan";
 import type {
-    ActionListDiff,
     ActionListOperation,
+    ChildActionListDiff,
     ConditionListDiff,
     ConditionListOperation,
+    ChildListDiff,
 } from "../actions/diff/types";
 import type { ChildListName } from "../actionPath";
 import type { ObservedActionSlot } from "../observedActions";
@@ -517,20 +518,10 @@ export function conditionListOperationApplyUnits(
     return result;
 }
 
-/**
- * Cost of writing one action's payload (scalar fields + any child-list
- * action/condition lists) once its shell has been added. Scalar fields
- * each use their mapped editor cost; array fields recurse through the same
- * empty-to-desired diff pricing used by their nested apply runs.
- *
- * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
- * nest — the child action lists only contain non-CONDITIONAL,
- * non-RANDOM actions, none of which carry action-list arrays.
- *
- * When the action has a writer, also includes the `goBackWait` for the
- * `clickGoBack` that `addAction` issues to exit the action editor.
- */
-function actionWriteRoughUnits(action: Action): number {
+function actionWriteUnits(
+    action: Action,
+    childListDiffs: readonly ChildListDiff[]
+): number {
     let total = 0;
     const scalars = getActionScalarLoreFields(action.type);
     for (let i = 0; i < scalars.length; i++) {
@@ -552,38 +543,34 @@ function actionWriteRoughUnits(action: Action): number {
             );
     }
 
-    const childLists = getChildListFields(action.type);
-    for (let i = 0; i < childLists.length; i++) {
-        const childList = childLists[i];
-        const value = (action as unknown as Record<string, unknown>)[childList.prop];
-        if (!Array.isArray(value) || value.length === 0) continue;
-        if (childList.kind === "conditionList") {
-            const conditions = value as Condition[];
+    for (let i = 0; i < childListDiffs.length; i++) {
+        const childList = childListDiffs[i];
+        if (childList.diff.operations.length === 0) continue;
+        if (childList.kind === "conditions") {
             total +=
                 COST.menuClickWait +
-                conditionListDiffApplyUnits(
-                    diffConditionList([], conditions)
-                ) +
+                conditionListDiffApplyUnits(childList.diff) +
                 COST.goBackWait;
         } else {
-            const actions = value as Action[];
             total +=
                 COST.menuClickWait +
-                actionListDiffApplyUnits(
-                    diffActionList(baselineActionListFromActions([]), actions),
-                    editUnitsWithChildLists,
-                    actions.length
-                ) +
+                childActionListDiffApplyUnits(childList.diff) +
                 COST.goBackWait;
         }
     }
-    if (scalars.length > 0 || childLists.length > 0) total += COST.goBackWait;
+    if (scalars.length > 0 || getChildListFields(action.type).length > 0) {
+        total += COST.goBackWait;
+    }
     return total;
 }
 
-export function actionListDiffApplyUnits(
-    diff: ActionListDiff,
-    editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
+export function actionListDiffApplyUnits<
+    TOperation extends ActionListOperation,
+>(
+    diff: { operations: TOperation[]; desiredLength: number },
+    editUnitsForFields: (
+        op: Extract<TOperation, { kind: "edit" }>
+    ) => number,
     desiredLength: number
 ): number {
     const units = actionListOperationApplyUnits(
@@ -596,12 +583,16 @@ export function actionListDiffApplyUnits(
     return total;
 }
 
-export function actionListOperationApplyUnits(
-    diff: ActionListDiff,
-    editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
+export function actionListOperationApplyUnits<
+    TOperation extends ActionListOperation,
+>(
+    diff: { operations: TOperation[]; desiredLength: number },
+    editUnitsForFields: (
+        op: Extract<TOperation, { kind: "edit" }>
+    ) => number,
     desiredLength: number
-): Map<ActionListOperation, number> {
-    const result = new Map<ActionListOperation, number>();
+): Map<TOperation, number> {
+    const result = new Map<TOperation, number>();
     const addCount = diff.operations.filter((op) => op.kind === "add").length;
     const deleteCount = diff.operations.filter((op) => op.kind === "delete").length;
     const observedLength = desiredLength - addCount + deleteCount;
@@ -611,27 +602,27 @@ export function actionListOperationApplyUnits(
     const currentPage = { value: 1 };
     const deletes = diff.operations
         .filter(
-            (op): op is Extract<ActionListOperation, { kind: "delete" }> =>
+            (op): op is Extract<TOperation, { kind: "delete" }> =>
                 op.kind === "delete"
         )
         .sort((a, b) => b.fromIndex - a.fromIndex);
     const edits = diff.operations.filter(
-        (op): op is Extract<ActionListOperation, { kind: "edit" }> =>
+        (op): op is Extract<TOperation, { kind: "edit" }> =>
             op.kind === "edit"
     );
     const moves = diff.operations
         .filter(
-            (op): op is Extract<ActionListOperation, { kind: "move" }> =>
+            (op): op is Extract<TOperation, { kind: "move" }> =>
                 op.kind === "move"
         )
         .sort((a, b) => a.toIndex - b.toIndex);
     const adds = diff.operations
         .filter(
-            (op): op is Extract<ActionListOperation, { kind: "add" }> =>
+            (op): op is Extract<TOperation, { kind: "add" }> =>
                 op.kind === "add"
         )
         .sort((a, b) => a.toIndex - b.toIndex);
-    const ordered: ActionListOperation[] = [...deletes, ...edits, ...moves, ...adds];
+    const ordered: TOperation[] = [...deletes, ...edits, ...moves, ...adds];
 
     for (const op of ordered) {
         let units = 0;
@@ -644,7 +635,11 @@ export function actionListOperationApplyUnits(
             units += visitIndexUnits(currentPage, index);
             units += op.noteOnly
                 ? noteEditUnits(op.desired.note)
-                : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
+                : COST.menuClickWait +
+                  editUnitsForFields(
+                      op as Extract<TOperation, { kind: "edit" }>
+                  ) +
+                  COST.goBackWait;
             if (!op.noteOnly && op.noteDiffers) {
                 units += noteEditUnits(op.desired.note);
             }
@@ -666,7 +661,9 @@ export function actionListOperationApplyUnits(
             current.splice(op.toIndex, 0, entry);
         } else {
             const appendedIndex = current.length;
-            units += actionAddShellUnits() + actionWriteRoughUnits(op.desired);
+            units +=
+                actionAddShellUnits() +
+                actionWriteUnits(op.desired, op.childListDiffs);
             units += moveUnits(appendedIndex, op.toIndex, appendedIndex + 1);
             let index = appendedIndex;
             while (index !== op.toIndex) {
@@ -714,7 +711,9 @@ export function actionOperationApplyUnits(
         return moveUnits(op.fromIndex, op.toIndex, desiredLength);
     }
     if (op.kind === "add") {
-        let total = actionAddShellUnits() + actionWriteRoughUnits(op.desired);
+        let total =
+            actionAddShellUnits() +
+            actionWriteUnits(op.desired, op.childListDiffs);
         total += moveUnits(desiredLength, op.toIndex, desiredLength + 1);
         if (op.desired.note !== undefined) total += noteEditUnits(op.desired.note);
         return total;
@@ -732,13 +731,6 @@ export function actionOperationApplyUnits(
 /**
  * Per-phase work estimate for a single action-list sync call. `readList` and
  * apply phases emit completed/total units on this shared scale.
- *
- * `readPart` / `hydratePart` cover this list only — child action-list apply
- * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
- * their reading is folded into the parent's hydrate phase (via
- * `topLevelHydrateUnits`). `applyPart` does include child-list apply
- * work via the cache-aware diff recursing one level into
- * `ifActions` / `elseActions` / `actions` (see `editUnitsWithChildLists`).
  */
 /** Sum of the four phase fields. Computed on demand — no cached `total`. */
 export function phaseUnitsTotal(p: PhaseUnits): number {
@@ -794,14 +786,13 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
     for (let i = 0; i < desired.length; i++) {
         const a = desired[i];
         let lists = 0;
-        if (a.type === "CONDITIONAL") {
-            lists += knownChildListUnits(a.ifActions);
-            lists += knownChildListUnits(a.elseActions);
-            if (a.conditions.length > 0) {
-                lists += conditionChildListUnits(a.conditions);
-            }
-        } else if (a.type === "RANDOM") {
-            lists += knownChildListUnits(a.actions);
+        for (const field of getChildListFields(a.type)) {
+            const value = (a as unknown as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(value) || value.length === 0) continue;
+            lists +=
+                field.kind === "conditionList"
+                    ? conditionChildListUnits(value as Condition[])
+                    : knownChildListUnits(value as Action[]);
         }
         const itemFields = actionItemFieldCount(a.type);
         if (lists > 0 || itemFields > 0) {
@@ -916,25 +907,6 @@ function baselineAwareApplyUnits(
     return actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length);
 }
 
-/**
- * Edit-op cost for the baseline-aware apply path. Scalar field changes are
- * derived from the edit op's observed/desired pair.
- *
- * `getActionScalarLoreFields` strips out `childList` field kinds, so
- * the scalar pass never prices changes to CONDITIONAL.ifActions /
- * elseActions / RANDOM.actions — even though the diff engine still
- * emits an edit op when those bodies differ (its `actionsEqual` does a
- * deep compare). Without this wrapper, a CONDITIONAL whose ifActions
- * grew by 30 actions would be priced as `menuClickWait + 0 + goBackWait`
- * and the bar would silently under-count by the cost of those 30
- * additions, making the live current-unit widening do all
- * the catch-up work.
- *
- * We re-run the diff one level deeper for any CONDITIONAL/RANDOM edit
- * and add the child apply cost. The HTSL constraint that
- * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
- * body bounds the recursion at one level.
- */
 export function editUnitsWithChildLists(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
@@ -944,29 +916,37 @@ export function editUnitsWithChildLists(
         const childList = op.childListDiffs[i];
         if (childList.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
-        if (childList.prop === "conditions") {
+        if (childList.kind === "conditions") {
             total += conditionListDiffApplyUnits(childList.diff);
         } else {
-            const desired = childActionDesired(op.desired, childList.prop);
-            total += actionListDiffApplyUnits(
-                childList.diff,
-                editUnitsWithChildLists,
-                desired.length
-            );
+            total += childActionListDiffApplyUnits(childList.diff);
         }
     }
     return total;
 }
 
-function childActionDesired(
-    action: Action,
-    prop: "ifActions" | "elseActions" | "actions"
-): readonly Action[] {
-    if (action.type === "CONDITIONAL") {
-        return prop === "ifActions" ? action.ifActions : action.elseActions;
+export function childActionListDiffApplyUnits(
+    diff: ChildActionListDiff
+): number {
+    return actionListDiffApplyUnits(
+        diff,
+        childActionEditUnits,
+        diff.desiredLength
+    );
+}
+
+function childActionEditUnits(
+    op: Extract<ChildActionListDiff["operations"][number], { kind: "edit" }>
+): number {
+    let total = scalarFieldEditUnitsForOp(op);
+    for (const childList of op.childListDiffs) {
+        if (childList.diff.operations.length === 0) continue;
+        total +=
+            COST.menuClickWait +
+            conditionListDiffApplyUnits(childList.diff) +
+            COST.goBackWait;
     }
-    if (action.type === "RANDOM" && prop === "actions") return action.actions;
-    return [];
+    return total;
 }
 
 /**
@@ -1022,31 +1002,18 @@ export function estimateTrustedActionListHydrateUnits(
         const action = baseline[baselineIndex];
         const desiredPath = `${basePath}[${desiredIndex}]`;
         let lists = 0;
-        if (action.type === "CONDITIONAL") {
-            if (
-                action.conditions.length > 0 &&
-                trustedChildListPaths?.has(`${desiredPath}.conditions`) !== true
-            ) {
-                lists += childListUnits(action.conditions.length);
+        for (const field of getChildListFields(action.type)) {
+            const value = (
+                action as unknown as Record<string, unknown>
+            )[field.prop];
+            if (!Array.isArray(value) || value.length === 0) continue;
+            if (trustedChildListPaths?.has(`${desiredPath}.${field.prop}`) === true) {
+                continue;
             }
-            if (
-                action.ifActions.length > 0 &&
-                trustedChildListPaths?.has(`${desiredPath}.ifActions`) !== true
-            ) {
-                lists += knownChildListUnits(action.ifActions);
-            }
-            if (
-                action.elseActions.length > 0 &&
-                trustedChildListPaths?.has(`${desiredPath}.elseActions`) !== true
-            ) {
-                lists += knownChildListUnits(action.elseActions);
-            }
-        } else if (
-            action.type === "RANDOM" &&
-            action.actions.length > 0 &&
-            trustedChildListPaths?.has(`${desiredPath}.actions`) !== true
-        ) {
-            lists += knownChildListUnits(action.actions);
+            lists +=
+                field.kind === "conditionList"
+                    ? conditionChildListUnits(value as Condition[])
+                    : knownChildListUnits(value as Action[]);
         }
         const itemFields = actionItemFieldCount(action.type);
         if (lists > 0 || itemFields > 0) {
@@ -1074,14 +1041,15 @@ function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
         let lists = 0;
-        if (action.type === "CONDITIONAL") {
-            lists += exactKnownChildListUnits(action.ifActions);
-            lists += exactKnownChildListUnits(action.elseActions);
-            if (action.conditions.length > 0) {
-                lists += conditionChildListUnits(action.conditions);
-            }
-        } else if (action.type === "RANDOM") {
-            lists += exactKnownChildListUnits(action.actions);
+        for (const field of getChildListFields(action.type)) {
+            const value = (
+                action as unknown as Record<string, unknown>
+            )[field.prop];
+            if (!Array.isArray(value) || value.length === 0) continue;
+            lists +=
+                field.kind === "conditionList"
+                    ? conditionChildListUnits(value as Condition[])
+                    : exactKnownChildListUnits(value as Action[]);
         }
         const itemFields = actionItemFieldCount(action.type);
         if (lists > 0 || itemFields > 0) {

@@ -46,6 +46,9 @@ export type ProgressReducerState = {
     parkedRows: Partial<Record<string, ActiveBookkeeping>>;
     completedSessionUnits: number;
     totalSessionUnits: number;
+    completedSessionApplicationUnits: number;
+    totalSessionApplicationUnits: number;
+    applicationTotalsPlanned: boolean;
 };
 
 export function initialReducerState(): ProgressReducerState {
@@ -62,6 +65,9 @@ export function initialReducerState(): ProgressReducerState {
         parkedRows: {},
         completedSessionUnits: 0,
         totalSessionUnits: 1,
+        completedSessionApplicationUnits: 0,
+        totalSessionApplicationUnits: 0,
+        applicationTotalsPlanned: false,
     };
 }
 
@@ -77,10 +83,15 @@ export function reduce(
         case "importableReactivated":
             return reactivateImportable(state, event.key, event.rowIndex, event.phase);
         case "sessionTotalsLocked":
-            return {
-                ...state,
-                progress: { ...state.progress, totalsLocked: true },
-            };
+            return lockSessionTotals(
+                state,
+                event.plannedRows,
+                event.sessionApplicationUnits
+            );
+        case "sessionApplicationProgress":
+            return applySessionApplicationProgress(state, event.completedUnits);
+        case "applicationProgress":
+            return applyApplicationProgress(state, event.completedUnits, event.sync);
         case "setupStep":
             return applySetupStep(state, event.completed, event.total);
         case "progress":
@@ -113,11 +124,114 @@ export function reduce(
     }
 }
 
+function lockSessionTotals(
+    state: ProgressReducerState,
+    plannedRows:
+        | readonly {
+              key: string;
+              applicationUnits: number;
+          }[]
+        | undefined,
+    sessionApplicationUnits: number | undefined
+): ProgressReducerState {
+    if (plannedRows === undefined) {
+        return {
+            ...state,
+            progress: { ...state.progress, totalsLocked: true },
+        };
+    }
+    if (state.applicationTotalsPlanned) return state;
+
+    let active = state.active;
+    const parkedRows = { ...state.parkedRows };
+    let rows = state.progress.rows;
+    const totalSessionApplicationUnits = Math.max(0, sessionApplicationUnits ?? 0);
+    let totalSessionUnits = totalSessionApplicationUnits;
+    for (const planned of plannedRows) {
+        if (active?.key === planned.key) {
+            active = lockBookkeepingToPlan(active, planned.applicationUnits);
+            totalSessionUnits += active.currentTotalUnits;
+            rows = replaceRow(
+                rows,
+                active.rowIndex,
+                rows[active.rowIndex]?.status ?? "current",
+                active.currentTotalUnits
+            );
+            continue;
+        }
+        const parked = parkedRows[planned.key];
+        if (parked !== undefined) {
+            const locked = lockBookkeepingToPlan(parked, planned.applicationUnits);
+            parkedRows[planned.key] = locked;
+            totalSessionUnits += locked.currentTotalUnits;
+            rows = replaceRow(
+                rows,
+                locked.rowIndex,
+                rows[locked.rowIndex]?.status ?? "current",
+                locked.currentTotalUnits
+            );
+            continue;
+        }
+        const total = planned.applicationUnits;
+        totalSessionUnits += total;
+        const rowIndex = rowIndexForKey(rows, planned.key);
+        rows = replaceRow(rows, rowIndex, rows[rowIndex]?.status ?? "queued", total);
+    }
+
+    const next: ProgressReducerState = {
+        ...state,
+        active,
+        parkedRows,
+        totalSessionUnits,
+        totalSessionApplicationUnits,
+        applicationTotalsPlanned: true,
+        progress: {
+            ...state.progress,
+            rows,
+            totalUnits: visibleTotalUnits(totalSessionUnits),
+            totalsLocked: true,
+        },
+    };
+    if (active === null) return next;
+    const rebuilt = rebuildSnapshot(next, active);
+    return {
+        ...rebuilt,
+        progress: { ...rebuilt.progress, totalsLocked: true },
+    };
+}
+
+function lockBookkeepingToPlan(
+    bookkeeping: ActiveBookkeeping,
+    applicationUnits: number
+): ActiveBookkeeping {
+    const observed = trueUpReadHydrate(bookkeeping);
+    const applying = Math.max(0, applicationUnits);
+    const total = observed.currentCompletedUnits + applying;
+    return {
+        ...observed,
+        initialUnits: total,
+        currentTotalUnits: total,
+        currentPhaseUnits: {
+            setup: observed.currentPhaseUnits.setup,
+            reading: observed.currentPhaseUnits.reading,
+            hydrating: observed.currentPhaseUnits.hydrating,
+            applying,
+        },
+    };
+}
+
+function rowIndexForKey(rows: readonly TaskProgressEntry[], key: string): number {
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].key === key) return i;
+    }
+    return -1;
+}
+
 function startSession(
     rows: readonly TaskProgressEntry[],
     initialTotalUnits: number
 ): ProgressReducerState {
-    const total = initialTotalUnits === 0 ? 1 : initialTotalUnits;
+    const total = visibleTotalUnits(initialTotalUnits);
     return {
         progress: {
             completedUnits: 0,
@@ -131,6 +245,9 @@ function startSession(
         parkedRows: {},
         completedSessionUnits: 0,
         totalSessionUnits: total,
+        completedSessionApplicationUnits: 0,
+        totalSessionApplicationUnits: 0,
+        applicationTotalsPlanned: false,
     };
 }
 
@@ -294,6 +411,59 @@ function applyMenuSlotStarted(
     return rebuildSnapshot(state, { ...state.active, currentSlot: focus });
 }
 
+function applySessionApplicationProgress(
+    state: ProgressReducerState,
+    completedUnits: number
+): ProgressReducerState {
+    if (!state.progress.totalsLocked) return state;
+    const completedSessionApplicationUnits = clamp(
+        completedUnits,
+        state.completedSessionApplicationUnits,
+        state.totalSessionApplicationUnits
+    );
+    const delta =
+        completedSessionApplicationUnits - state.completedSessionApplicationUnits;
+    if (delta === 0) return state;
+    const next: ProgressReducerState = {
+        ...state,
+        completedSessionApplicationUnits,
+        completedSessionUnits: state.completedSessionUnits + delta,
+    };
+    if (next.active !== null) {
+        return rebuildSnapshot(next, next.active);
+    }
+    const parked = deriveParked(next.parkedRows);
+    return {
+        ...next,
+        progress: {
+            ...next.progress,
+            parked: parked.snapshots,
+            completedUnits: next.completedSessionUnits + parked.completed,
+        },
+    };
+}
+
+function applyApplicationProgress(
+    state: ProgressReducerState,
+    completedApplicationUnits: number,
+    sync: TaskProgressActive["sync"]
+): ProgressReducerState {
+    const active = state.active;
+    if (active === null || !state.applicationTotalsPlanned) return state;
+    const completedBeforeApplication =
+        active.currentTotalUnits - active.currentPhaseUnits.applying;
+    return rebuildSnapshot(state, {
+        ...active,
+        phase: "applying",
+        currentCompletedUnits: clamp(
+            completedBeforeApplication + Math.max(0, completedApplicationUnits),
+            active.currentCompletedUnits,
+            active.currentTotalUnits
+        ),
+        sync,
+    });
+}
+
 function applyKnowledgeSource(
     state: ProgressReducerState,
     event: Extract<SyncEvent, { kind: "knowledgeSourceUsed" }>
@@ -317,6 +487,7 @@ function applyProgress(
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;
+    if (state.applicationTotalsPlanned) return state;
     if (scope.kind !== "topLevel") {
         return applyNestedListProgress(state, scope, payload);
     }
@@ -325,12 +496,12 @@ function applyProgress(
         payload.totalUnits > 0
             ? payload.totalUnits + setupUnits
             : state.active.initialUnits;
-    // During read/hydrate the total only ratchets *up* (work is still being
-    // discovered; anti-flicker). But applying-phase payloads carry the EXACT
+    // During reading and hydration the total only ratchets *up* (work is still
+    // being discovered; anti-flicker). Applying payloads carry the exact
     // total — the diff is known and the read/hydrate phase units now reflect
     // what was actually read, not the up-front `sumHydrationCost` over-
     // estimate. So once applying, take the payload total directly (floored at
-    // completed) instead of `max`-ing against the latched read-pass estimate;
+    // completed) instead of `max`-ing against the latched observation estimate;
     // otherwise that stale over-estimate sticks in the total and gets dumped
     // as a phantom jump when the importable finishes. This also covers the
     // single-importable case, which never gets parked (so the park-time
@@ -339,10 +510,10 @@ function applyProgress(
         payload.phase === "applying"
             ? Math.max(state.active.currentCompletedUnits, eventTotalUnits)
             : Math.max(state.active.currentTotalUnits, eventTotalUnits);
-    // Read/hydrate-phase progress payloads emit phaseUnits.applying = 0
+    // Reading and hydration progress payloads emit phaseUnits.applying = 0
     // because the diff isn't yet known. Preserve the prior (initial or
-    // Reader-seeded) apply estimate so the bar's apply sub-segment
-    // doesn't collapse to zero width during the read/hydrate pass.
+    // scan-seeded) apply estimate so the bar's apply sub-segment
+    // does not collapse to zero width before planning completes.
     const prevApplying = state.active.currentPhaseUnits.applying;
     const incomingApplying = payload.phaseUnits.applying;
     const applying =
@@ -414,7 +585,12 @@ function finishImportable(
         return updateRowStatus(state, key, status, error);
     }
     const active = state.active;
-    const completedAddend = active.currentTotalUnits;
+    const completionGap = active.currentTotalUnits - active.currentCompletedUnits;
+    const completedAddend =
+        status === "imported" &&
+        (!state.applicationTotalsPlanned || completionGap <= 1e-6)
+            ? active.currentTotalUnits
+            : active.currentCompletedUnits;
     const totalAddend = active.currentTotalUnits - active.initialUnits;
     const rows = replaceRow(
         state.progress.rows,
@@ -449,17 +625,22 @@ function finishImportable(
 }
 
 function finishSession(state: ProgressReducerState): ProgressReducerState {
+    const parked = deriveParked(state.parkedRows);
+    const completedUnits = state.completedSessionUnits + parked.completed;
+    const totalUnits = state.totalSessionUnits + parked.refinement;
     return {
         ...state,
         progress: {
             ...state.progress,
             active: null,
             parked: {},
-            completedUnits: state.completedSessionUnits,
-            totalUnits: state.totalSessionUnits,
+            completedUnits,
+            totalUnits,
         },
         active: null,
         parkedRows: {},
+        completedSessionUnits: completedUnits,
+        totalSessionUnits: totalUnits,
     };
 }
 
@@ -527,7 +708,7 @@ function rebuildSnapshot(
         active,
         progress: {
             completedUnits: sessionCompletedUnits,
-            totalUnits: Math.max(1, sessionTotalUnits),
+            totalUnits: visibleTotalUnits(sessionTotalUnits),
             totalsLocked: state.progress.totalsLocked,
             active: activeSnapshot,
             parked: parked.snapshots,
@@ -539,7 +720,7 @@ function rebuildSnapshot(
 /**
  * Parked importables' contribution to the session totals: the sum of their
  * refinements (current − initial, since `totalSessionUnits` already carries
- * each one's initial estimate) and their read-pass completed units. Folding
+ * each one's initial estimate) and their completed observation units. Folding
  * these in keeps the session total/completed stable across active-importable
  * switches instead of dropping a parked importable's estimate until it's
  * applied.
@@ -608,4 +789,8 @@ function replaceRow(
 
 function clamp(value: number, floor: number, ceiling: number): number {
     return Math.min(ceiling, Math.max(floor, value));
+}
+
+function visibleTotalUnits(total: number): number {
+    return total > 0 ? total : 1;
 }

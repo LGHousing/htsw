@@ -13,6 +13,14 @@ import {
     setGroupTag,
     setGroupTagShownInChat,
 } from "./housing";
+import { COST } from "../../housingSync/progress/costs";
+import {
+    defineApplicationPlan,
+    workStep,
+    type ApplicationPlan,
+    type ApplicationProgress,
+    type ApplicationStep,
+} from "../import/applicationProgress";
 
 export type GroupImportPlan = {
     kind: "GROUP";
@@ -26,6 +34,7 @@ export type GroupImportPlan = {
     permissionsHandled: boolean;
     chatSpeedHandled: boolean;
     defaultGameModeHandled: boolean;
+    permissions: GroupRead["permissions"];
 };
 
 export type GroupRead = {
@@ -47,10 +56,10 @@ function permissionsMatch(
     return true;
 }
 
-// True when a group's permission menu (boolean toggles + the two cycles) needs
-// no writes: the whole submenu can be skipped in the apply pass.
 function permissionMenuHandled(plan: GroupImportPlan): boolean {
-    return plan.permissionsHandled && plan.chatSpeedHandled && plan.defaultGameModeHandled;
+    return (
+        plan.permissionsHandled && plan.chatSpeedHandled && plan.defaultGameModeHandled
+    );
 }
 
 export async function readImportableGroup(
@@ -60,7 +69,13 @@ export async function readImportableGroup(
 ): Promise<GroupRead> {
     const exists = (await listAllGroupNames(ctx)).indexOf(importable.name) >= 0;
     if (!exists) {
-        return { kind: "GROUP", importable, trustPlan, settings: null, permissions: null };
+        return {
+            kind: "GROUP",
+            importable,
+            trustPlan,
+            settings: null,
+            permissions: null,
+        };
     }
 
     await openEditGroup(ctx, importable.name);
@@ -69,9 +84,7 @@ export async function readImportableGroup(
         importable.permissions !== undefined ||
         importable.chatSpeed !== undefined ||
         importable.defaultGameMode !== undefined;
-    const permissions = needsPermissionMenu
-        ? await readGroupPermissionMenu(ctx)
-        : null;
+    const permissions = needsPermissionMenu ? await readGroupPermissionMenu(ctx) : null;
     return { kind: "GROUP", importable, trustPlan, settings, permissions };
 }
 
@@ -85,68 +98,71 @@ export function planImportableGroup(read: GroupRead): GroupImportPlan {
         trustPlan: read.trustPlan,
         exists,
         tagHandled:
-            exists &&
-            (importable.tag === undefined || settings.tag === importable.tag),
+            importable.tag === undefined || (exists && settings.tag === importable.tag),
         tagShownInChatHandled:
-            exists &&
-            (importable.tagShownInChat === undefined ||
-                settings.tagShownInChat === importable.tagShownInChat),
+            importable.tagShownInChat === undefined ||
+            (exists && settings.tagShownInChat === importable.tagShownInChat),
         colorHandled:
-            exists &&
-            (importable.color === undefined || settings.color === importable.color),
+            importable.color === undefined ||
+            (exists && settings.color === importable.color),
         priorityHandled:
-            exists &&
-            (importable.priority === undefined ||
-                settings.priority === importable.priority),
+            importable.priority === undefined ||
+            (exists && settings.priority === importable.priority),
         permissionsHandled:
-            exists &&
-            (importable.permissions === undefined ||
-                (permissions !== null &&
-                    permissionsMatch(
-                        importable.permissions,
-                        permissions.permissions
-                    ))),
+            importable.permissions === undefined ||
+            (exists &&
+                permissions !== null &&
+                permissionsMatch(importable.permissions, permissions.permissions)),
         chatSpeedHandled:
-            exists &&
-            (importable.chatSpeed === undefined ||
-                permissions?.chatSpeed === importable.chatSpeed),
+            importable.chatSpeed === undefined ||
+            (exists && permissions?.chatSpeed === importable.chatSpeed),
         defaultGameModeHandled:
-            exists &&
-            (importable.defaultGameMode === undefined ||
-                permissions?.defaultGameMode === importable.defaultGameMode),
+            importable.defaultGameMode === undefined ||
+            (exists && permissions?.defaultGameMode === importable.defaultGameMode),
+        permissions,
     };
 }
 
 export async function applyImportableGroupPlan(
     ctx: TaskContext,
     plan: GroupImportPlan,
-    _session: ImportContext
+    _session: ImportContext,
+    application: ApplicationProgress
 ): Promise<void> {
     const { importable } = plan;
+    if (groupPlanIsNoOp(plan)) return;
     if (!plan.exists) {
-        await createGroup(ctx, importable.name);
+        await application.run("create", () => createGroup(ctx, importable.name));
     }
 
-    await openEditGroup(ctx, importable.name);
+    await application.run("openEdit", () => openEditGroup(ctx, importable.name));
 
-    if (importable.tag !== undefined && !plan.tagHandled) {
-        await setGroupTag(ctx, importable.tag);
+    const tag = importable.tag;
+    if (tag !== undefined && !plan.tagHandled) {
+        await application.run("tag", () => setGroupTag(ctx, tag));
     }
-    if (importable.tagShownInChat !== undefined && !plan.tagShownInChatHandled) {
-        await setGroupTagShownInChat(ctx, importable.tagShownInChat);
+    const tagShownInChat = importable.tagShownInChat;
+    if (tagShownInChat !== undefined && !plan.tagShownInChatHandled) {
+        await application.run("tagShownInChat", () =>
+            setGroupTagShownInChat(ctx, tagShownInChat)
+        );
     }
-    if (importable.color !== undefined && !plan.colorHandled) {
-        await setGroupColor(ctx, importable.color);
+    const color = importable.color;
+    if (color !== undefined && !plan.colorHandled) {
+        await application.run("color", () => setGroupColor(ctx, color));
     }
-    if (importable.priority !== undefined && !plan.priorityHandled) {
-        await setGroupPriority(ctx, importable.priority);
+    const priority = importable.priority;
+    if (priority !== undefined && !plan.priorityHandled) {
+        await application.run("priority", () => setGroupPriority(ctx, priority));
     }
     if (!permissionMenuHandled(plan)) {
-        await applyGroupPermissionMenu(
-            ctx,
-            importable.permissions,
-            importable.chatSpeed,
-            importable.defaultGameMode
+        await application.run("permissions", () =>
+            applyGroupPermissionMenu(
+                ctx,
+                importable.permissions,
+                importable.chatSpeed,
+                importable.defaultGameMode
+            )
         );
     }
 }
@@ -160,4 +176,61 @@ export function groupPlanIsNoOp(plan: GroupImportPlan): boolean {
         plan.priorityHandled &&
         permissionMenuHandled(plan)
     );
+}
+
+export function groupPlanApplicationUnits(plan: GroupImportPlan): number {
+    return groupApplicationPlan(plan).totalUnits;
+}
+
+export function groupApplicationPlan(plan: GroupImportPlan): ApplicationPlan {
+    const steps: ApplicationStep[] = [];
+    if (!groupPlanIsNoOp(plan)) {
+        if (!plan.exists) {
+            steps.push(
+                workStep(
+                    "create",
+                    COST.commandInterval +
+                        COST.commandMenuWait +
+                        COST.menuClickWait +
+                        COST.anvilInput
+                )
+            );
+        }
+        steps.push(
+            workStep(
+                "openEdit",
+                COST.commandInterval + COST.commandMenuWait + COST.menuClickWait
+            )
+        );
+        if (!plan.tagHandled) steps.push(workStep("tag", COST.chatInput));
+        if (!plan.tagShownInChatHandled) {
+            steps.push(workStep("tagShownInChat", COST.menuClickWait));
+        }
+        if (!plan.colorHandled) {
+            steps.push(workStep("color", COST.menuClickWait * 2));
+        }
+        if (!plan.priorityHandled) {
+            steps.push(workStep("priority", COST.chatInput));
+        }
+        if (!permissionMenuHandled(plan)) {
+            let permissionUnits = COST.menuClickWait + COST.goBackWait;
+            const desiredPermissions = plan.importable.permissions ?? {};
+            const currentPermissions = plan.permissions?.permissions ?? {};
+            const permissionNames = Object.keys(desiredPermissions) as Array<
+                keyof typeof desiredPermissions
+            >;
+            for (const name of permissionNames) {
+                if (currentPermissions[name] !== desiredPermissions[name]) {
+                    permissionUnits += COST.menuClickWait;
+                }
+            }
+            if (!plan.chatSpeedHandled) permissionUnits += COST.menuClickWait;
+            if (!plan.defaultGameModeHandled) {
+                permissionUnits += COST.menuClickWait;
+            }
+            steps.push(workStep("permissions", permissionUnits));
+        }
+    }
+    steps.push(workStep("cache", COST.cacheWrite));
+    return defineApplicationPlan(steps);
 }

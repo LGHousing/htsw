@@ -1,11 +1,62 @@
-import type { Action, Condition } from "htsw/types";
+import type { Condition } from "htsw/types";
 
 import type { ChildActionListName, ChildConditionListName } from "../../actionPath";
 import type { Observed } from "../../observedActions";
+import type { ChildAction, RootAction } from "../childActions";
+
+export type { ChildAction, RootAction } from "../childActions";
+
+export type ChildActionListOperation =
+    | {
+          kind: "move";
+          entryId: number;
+          fromIndex: number;
+          toIndex: number;
+          action: ChildAction;
+      }
+    | {
+          kind: "edit";
+          entryId: number;
+          fromIndex: number;
+          desiredIndex: number;
+          baselineAction: Observed<ChildAction>;
+          desired: ChildAction;
+          noteOnly: boolean;
+          noteDiffers: boolean;
+          childListDiffs: ChildConditionListDiff[];
+      }
+    | {
+          kind: "add";
+          desiredIndex: number;
+          desired: ChildAction;
+          toIndex: number;
+          childListDiffs: ChildConditionListDiff[];
+      }
+    | {
+          kind: "delete";
+          entryId: number;
+          fromIndex: number;
+          baselineAction: Observed<ChildAction> | null;
+      };
+
+export type ChildActionListDiff = {
+    operations: ChildActionListOperation[];
+    desiredLength: number;
+};
+
+export type ChildConditionListDiff = {
+    kind: "conditions";
+    prop: ChildConditionListName;
+    diff: ConditionListDiff;
+};
 
 export type ChildListDiff =
-    | { prop: ChildConditionListName; diff: ConditionListDiff }
-    | { prop: ChildActionListName; diff: ActionListDiff };
+    | ChildConditionListDiff
+    | {
+          kind: "actions";
+          prop: ChildActionListName;
+          diff: ChildActionListDiff;
+      };
 
 export type ActionListOperation =
     | {
@@ -13,25 +64,31 @@ export type ActionListOperation =
           entryId: number;
           fromIndex: number;
           toIndex: number;
-          action: Action;
+          action: RootAction;
       }
     | {
           kind: "edit";
           entryId: number;
           fromIndex: number;
           desiredIndex: number;
-          baselineAction: Observed;
-          desired: Action;
+          baselineAction: Observed<RootAction>;
+          desired: RootAction;
           noteOnly: boolean;
           noteDiffers: boolean;
           childListDiffs: ChildListDiff[];
       }
-    | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
+    | {
+          kind: "add";
+          desiredIndex: number;
+          desired: RootAction;
+          toIndex: number;
+          childListDiffs: ChildListDiff[];
+      }
     | {
           kind: "delete";
           entryId: number;
           fromIndex: number;
-          baselineAction: Observed | null;
+          baselineAction: Observed<RootAction> | null;
       };
 
 export type ActionListDiff = {

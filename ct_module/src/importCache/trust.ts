@@ -1,4 +1,4 @@
-import type { Action, Importable } from "htsw/types";
+import type { Action, Condition, Importable } from "htsw/types";
 
 import {
     cacheEntryHash,
@@ -24,6 +24,7 @@ import {
     hasItemClickActions,
     hasRequiredInteractDataCache,
 } from "../importables/items/interactDataCache";
+import { getChildListFields } from "../housingSync/fields/actionMappings";
 
 export type {
     TrustedChildListPath,
@@ -255,46 +256,32 @@ function collectTrustedActionListSnapshots(
 
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
-        if (action.type === "CONDITIONAL" && cachedAction.type === "CONDITIONAL") {
-            const conditions = action.conditions;
-            const desiredConditionsPath = `${desiredChildBase}.conditions`;
-            const cachedConditionsPath = `${cachedChildBase}.conditions`;
-            if (
-                sameHashList(
-                    cachedLists[cachedConditionsPath],
-                    conditions.map(conditionHash)
-                )
-            ) {
-                trusted.set(desiredConditionsPath, {
+        for (const field of getChildListFields(action.type)) {
+            const desiredValue = (
+                action as unknown as Record<string, unknown>
+            )[field.prop];
+            const cachedValue = (
+                cachedAction as unknown as Record<string, unknown>
+            )[field.prop];
+            if (!Array.isArray(desiredValue) || !Array.isArray(cachedValue)) continue;
+            const desiredChildPath = `${desiredChildBase}.${field.prop}`;
+            const cachedChildPath = `${cachedChildBase}.${field.prop}`;
+            const hashes =
+                field.kind === "conditionList"
+                    ? (desiredValue as Condition[]).map(conditionHash)
+                    : (desiredValue as Action[]).map(actionHash);
+            if (!sameHashList(cachedLists[cachedChildPath], hashes)) continue;
+            if (field.kind === "conditionList") {
+                trusted.set(desiredChildPath, {
                     kind: "conditions",
-                    conditions: cachedAction.conditions,
+                    conditions: cachedValue as Condition[],
+                });
+            } else {
+                trusted.set(desiredChildPath, {
+                    kind: "actions",
+                    actions: cachedValue as Action[],
                 });
             }
-            collectTrustedActionListSnapshots(
-                trusted,
-                `${desiredChildBase}.ifActions`,
-                `${cachedChildBase}.ifActions`,
-                action.ifActions,
-                cachedAction.ifActions,
-                cachedLists
-            );
-            collectTrustedActionListSnapshots(
-                trusted,
-                `${desiredChildBase}.elseActions`,
-                `${cachedChildBase}.elseActions`,
-                action.elseActions,
-                cachedAction.elseActions,
-                cachedLists
-            );
-        } else if (action.type === "RANDOM" && cachedAction.type === "RANDOM") {
-            collectTrustedActionListSnapshots(
-                trusted,
-                `${desiredChildBase}.actions`,
-                `${cachedChildBase}.actions`,
-                action.actions,
-                cachedAction.actions,
-                cachedLists
-            );
         }
     }
 }
@@ -319,40 +306,20 @@ function collectTrustedActionListPaths(
         const action = desiredActions[i];
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
-        if (action.type === "CONDITIONAL") {
-            const conditions = action.conditions;
-            const desiredConditionsPath = `${desiredChildBase}.conditions`;
-            const cachedConditionsPath = `${cachedChildBase}.conditions`;
-            if (
-                sameHashList(
-                    cachedLists[cachedConditionsPath],
-                    conditions.map(conditionHash)
-                )
-            ) {
-                trusted.add(desiredConditionsPath);
+        for (const field of getChildListFields(action.type)) {
+            const value = (
+                action as unknown as Record<string, unknown>
+            )[field.prop];
+            if (!Array.isArray(value)) continue;
+            const desiredChildPath = `${desiredChildBase}.${field.prop}`;
+            const cachedChildPath = `${cachedChildBase}.${field.prop}`;
+            const hashes =
+                field.kind === "conditionList"
+                    ? (value as Condition[]).map(conditionHash)
+                    : (value as Action[]).map(actionHash);
+            if (sameHashList(cachedLists[cachedChildPath], hashes)) {
+                trusted.add(desiredChildPath);
             }
-            collectTrustedActionListPaths(
-                trusted,
-                `${desiredChildBase}.ifActions`,
-                `${cachedChildBase}.ifActions`,
-                action.ifActions,
-                cachedLists
-            );
-            collectTrustedActionListPaths(
-                trusted,
-                `${desiredChildBase}.elseActions`,
-                `${cachedChildBase}.elseActions`,
-                action.elseActions,
-                cachedLists
-            );
-        } else if (action.type === "RANDOM") {
-            collectTrustedActionListPaths(
-                trusted,
-                `${desiredChildBase}.actions`,
-                `${cachedChildBase}.actions`,
-                action.actions,
-                cachedLists
-            );
         }
     }
 }

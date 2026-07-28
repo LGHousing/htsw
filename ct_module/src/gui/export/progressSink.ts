@@ -57,8 +57,8 @@ export function createExportProgressSink(
     let currentIndex: number | null = null;
     /** True once the current item reached a terminal status (failed early). */
     let currentClosed = false;
-    /** True between `scanStarted` and the first pass-2 reactivation. */
-    let scanPass = false;
+    /** True after a staged reader announces that it is scanning. */
+    let stagedScanActive = false;
     let totalsLocked = false;
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
     const livePreview = createExportLivePreview(type, canonicalImportJsonPath);
@@ -70,10 +70,10 @@ export function createExportProgressSink(
         setTaskProgress(state.progress);
     };
 
-    // Exports have no apply pass, so per-item costs are final once the last
-    // pass begins: after the scan for staged reads, immediately for direct
-    // ones. Locking then lets the footer show a real total ETA instead of
-    // "total estimating…" forever (only imports emit this event otherwise).
+    // Exports never apply changes, so per-item costs are final once hydration
+    // begins for staged reads, or immediately for direct reads. Locking then
+    // lets the footer show a real total ETA instead of "total estimating…"
+    // forever (only imports emit this event otherwise).
     const lockTotals = (): void => {
         if (totalsLocked) return;
         totalsLocked = true;
@@ -172,7 +172,7 @@ export function createExportProgressSink(
         },
         scanStarted() {
             if (names.length === 0) return;
-            scanPass = true;
+            stagedScanActive = true;
             setEtaEstimating(true);
         },
         item(index, name) {
@@ -180,7 +180,7 @@ export function createExportProgressSink(
             currentIndex = index;
             currentClosed = false;
             livePreview.activate(index, true);
-            if (!scanPass) lockTotals();
+            if (!stagedScanActive) lockTotals();
             emit({
                 kind: "importableStarted",
                 key: keyFor(name),

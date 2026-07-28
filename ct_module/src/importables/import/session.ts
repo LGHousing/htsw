@@ -45,6 +45,7 @@ import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import type { TaskProgressEntry } from "../../housingSync/progress/types";
 import { queueRowKey } from "../../housingSync/progress/queueRowKey";
 import {
+    COST,
     estimateImportableUnits,
     setupUnitsForImportable,
 } from "../../housingSync/progress/costs";
@@ -56,14 +57,22 @@ import {
 import { writeImportFailureLog } from "../../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer";
 import type { ImportConflict } from "./conflicts";
-import { applyReferencedShellPlan, planMissingReferencedShells } from "./references";
+import {
+    applyReferencedShellPlan,
+    planMissingReferencedShells,
+    referencedShellApplicationUnits,
+    referencedShellPlanApplicationUnits,
+} from "./references";
 import { createImportedItemPlacementSession } from "../../housingSync/items/heldItem";
 import { recordEmptyFunctionShell } from "./emptyShells";
 import { readInteractDataCache } from "../items/interactDataCache";
+import { getOverwriteWarningMode, type OverwriteWarningMode } from "../overwriteWarning";
 import {
-    getOverwriteWarningMode,
-    type OverwriteWarningMode,
-} from "../overwriteWarning";
+    ApplicationProgress,
+    defineApplicationPlan,
+    type ApplicationPlan,
+    workStep,
+} from "./applicationProgress";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -221,6 +230,10 @@ async function runImportSessionInner(
         itemVerification
     );
 
+    const referencedShellPlan = await planMissingReferencedShells(
+        ctx,
+        orderedImportables
+    );
     const events = selection.events;
     const session: ImportContext = {
         parsed,
@@ -251,6 +264,15 @@ async function runImportSessionInner(
             menus: new Set(),
             regions: new Set(),
         },
+        plannedReferencedShells: {
+            functions: new Set(
+                referencedShellPlan.functions.map((name) => name.toLowerCase())
+            ),
+            menus: new Set(referencedShellPlan.menus.map((name) => name.toLowerCase())),
+            regions: new Set(
+                referencedShellPlan.regions.map((name) => name.toLowerCase())
+            ),
+        },
     };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
@@ -265,16 +287,16 @@ async function runImportSessionInner(
                 tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
                     ? 1
                     : estimateImportableUnits(
-                      importable,
-                      tp?.entry ?? null,
-                      tp?.trustMode === true,
-                      importable.type === "ITEM" &&
-                          readInteractDataCache(
-                              importable,
-                              itemDependencies,
-                              selection.housingUuid
-                          ) !== undefined
-                  ),
+                          importable,
+                          tp?.entry ?? null,
+                          tp?.trustMode === true,
+                          importable.type === "ITEM" &&
+                              readInteractDataCache(
+                                  importable,
+                                  itemDependencies,
+                                  selection.housingUuid
+                              ) !== undefined
+                      ),
         };
     });
 
@@ -288,15 +310,11 @@ async function runImportSessionInner(
     if (initialTotalUnits === 0) initialTotalUnits = 1;
     events?.emit({ kind: "sessionStarted", rows, initialTotalUnits });
 
-    const referencedShellPlan = await planMissingReferencedShells(
-        ctx,
-        orderedImportables
-    );
-
     const plans: Array<{ row: (typeof rowsMeta)[number]; plan: ImportablePlan }> = [];
     const noOpRows: Array<{ row: (typeof rowsMeta)[number]; plan: ImportablePlan }> = [];
     const observedPlans: Array<{ plan: ImportablePlan }> = [];
     const trustedRows: (typeof rowsMeta)[number][] = [];
+    const plannedApplicationUnits = new Map<string, ImportablePlan["applicationUnits"]>();
     const reads: Array<{ row: (typeof rowsMeta)[number]; read: ImportableRead }> = [];
     const pendingHouseLockEntries: PendingHouseLockEntry[] = [];
     const verifiedDependencyContext: VerifiedDependencyContext = {
@@ -316,10 +334,7 @@ async function runImportSessionInner(
         chunkStart += SCAN_HYDRATE_CHUNK_SIZE
     ) {
         const chunkReads: typeof reads = [];
-        const chunkEnd = Math.min(
-            rowsMeta.length,
-            chunkStart + SCAN_HYDRATE_CHUNK_SIZE
-        );
+        const chunkEnd = Math.min(rowsMeta.length, chunkStart + SCAN_HYDRATE_CHUNK_SIZE);
         for (let i = chunkStart; i < chunkEnd; i++) {
             const row = rowsMeta[i];
             const cacheEntry = row.trustPlan?.entry ?? null;
@@ -333,12 +348,10 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            if (
-                row.trustPlan?.wholeImportableTrusted &&
-                row.importable.type !== "ITEM"
-            ) {
+            if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
                 trustedRows.push(row);
+                plannedApplicationUnits.set(row.key, COST.cacheWrite);
                 continue;
             }
 
@@ -464,10 +477,9 @@ async function runImportSessionInner(
         }
     }
 
-    // ── Planning: convert complete observations into exact apply plans
-    // (in-memory, instant — not a pass over the house). ─────────────────
     for (const { row, read } of reads) {
         const plan = read.plan(session);
+        plannedApplicationUnits.set(row.key, plan.applicationUnits);
         observedPlans.push({ plan });
         if (plan.isNoOp()) {
             noOpRows.push({ row, plan });
@@ -502,13 +514,50 @@ async function runImportSessionInner(
 
     let activePlanIndex: number | null = null;
     try {
-        events?.emit({ kind: "sessionTotalsLocked" });
-        await applyReferencedShellPlan(ctx, referencedShellPlan, async (kind, name) => {
-            ctx.displayMessage(`&7[htsw] Created referenced ${kind} '&f${name}&7'.`);
-            if (kind === "function") {
-                await recordEmptyFunctionShell(ctx, session, name);
-            }
+        events?.emit({
+            kind: "sessionTotalsLocked",
+            plannedRows: rowsMeta.map((row) => {
+                const applicationUnits = plannedApplicationUnits.get(row.key);
+                if (applicationUnits === undefined) {
+                    throw new Error(
+                        `Missing application total for ${row.importable.type} ${row.identity}.`
+                    );
+                }
+                return { key: row.key, applicationUnits };
+            }),
+            sessionApplicationUnits:
+                referencedShellPlanApplicationUnits(referencedShellPlan),
         });
+        let completedSessionApplicationUnits = 0;
+        await applyReferencedShellPlan(
+            ctx,
+            referencedShellPlan,
+            async (kind, name, created) => {
+                if (created) {
+                    ctx.displayMessage(
+                        `&7[htsw] Created referenced ${kind} '&f${name}&7'.`
+                    );
+                }
+                if (created && kind === "function") {
+                    await recordEmptyFunctionShell(ctx, session, name);
+                }
+                completedSessionApplicationUnits += referencedShellApplicationUnits(kind);
+                events?.emit({
+                    kind: "sessionApplicationProgress",
+                    completedUnits: completedSessionApplicationUnits,
+                });
+            }
+        );
+        const plannedSessionApplicationUnits =
+            referencedShellPlanApplicationUnits(referencedShellPlan);
+        if (
+            Math.abs(completedSessionApplicationUnits - plannedSessionApplicationUnits) >
+            1e-6
+        ) {
+            throw new Error(
+                `Referenced shell application completed ${completedSessionApplicationUnits} of ${plannedSessionApplicationUnits} planned units.`
+            );
+        }
         for (const name of referencedShellPlan.functions) {
             session.ensuredReferencedShells.functions.add(name.toLowerCase());
         }
@@ -530,6 +579,7 @@ async function runImportSessionInner(
                 ctx,
                 row,
                 "skipped",
+                defineApplicationPlan([workStep("cache", COST.cacheWrite)]),
                 selection,
                 itemDependencies,
                 events,
@@ -537,7 +587,7 @@ async function runImportSessionInner(
             );
         }
 
-        for (const { row } of noOpRows) {
+        for (const { row, plan } of noOpRows) {
             events?.emit({
                 kind: "importableReactivated",
                 key: row.key,
@@ -548,6 +598,7 @@ async function runImportSessionInner(
                 ctx,
                 row,
                 "imported",
+                plan.applicationPlan,
                 selection,
                 itemDependencies,
                 events,
@@ -555,7 +606,6 @@ async function runImportSessionInner(
             );
         }
 
-        // ── Apply pass: apply every collected plan in original order. ──────
         for (let planIndex = 0; planIndex < plans.length; planIndex++) {
             activePlanIndex = planIndex;
             const { row, plan } = plans[planIndex];
@@ -566,18 +616,20 @@ async function runImportSessionInner(
                 phase: "applying",
             });
             try {
-                await plan.apply(ctx, session);
-                // ITEM manages its own per-NBT cache during apply.
-                let cacheSaved = true;
-                if (plan.kind !== "ITEM") {
-                    cacheSaved = await tryWriteImportableCache(
+                const application = new ApplicationProgress(plan.applicationPlan, events);
+                await plan.apply(ctx, session, application);
+                const cacheSaved = await application.run("cache", () =>
+                    tryWriteImportableCache(
                         ctx,
                         row.importable,
                         "importer",
                         selection.housingUuid,
-                        { itemDependencies: itemDependencies.snapshotOf(row.importable) }
-                    );
-                }
+                        {
+                            itemDependencies: itemDependencies.snapshotOf(row.importable),
+                        }
+                    )
+                );
+                application.assertComplete();
                 if (cacheSaved) {
                     pendingHouseLockEntries.push({
                         importable: row.importable,
@@ -710,19 +762,20 @@ async function finishWithoutApply(
         key: string;
     },
     status: "imported" | "skipped",
+    applicationPlan: ApplicationPlan,
     selection: ImportSessionRequest,
     itemDependencies: ItemDependencyIndex,
     events: SyncEventHandler | undefined,
     pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
+    const application = new ApplicationProgress(applicationPlan, events);
     const dependencies = itemDependencies.snapshotOf(row.importable);
-    const cacheSaved = await tryWriteImportableCache(
-        ctx,
-        row.importable,
-        "importer",
-        selection.housingUuid,
-        { itemDependencies: dependencies }
+    const cacheSaved = await application.run("cache", () =>
+        tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid, {
+            itemDependencies: dependencies,
+        })
     );
+    application.assertComplete();
     if (cacheSaved) {
         pendingHouseLockEntries.push({
             importable: row.importable,
@@ -804,10 +857,7 @@ async function maybeWritePartialImportCache(
 ): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
     if (partial === null) return false;
-    const itemDependencies = verifiedSnapshotFor(
-        plan.importable,
-        verifiedContext
-    );
+    const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
     if (
         !(await tryWriteImportableCache(ctx, partial, "importer", housingUuid, {
             itemDependencies,
@@ -837,10 +887,7 @@ async function writeObservedPlanCaches(
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
-        const itemDependencies = verifiedSnapshotFor(
-            plan.importable,
-            verifiedContext
-        );
+        const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
         if (
             !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
                 itemDependencies,
