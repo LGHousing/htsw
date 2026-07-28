@@ -229,9 +229,9 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "heap",
-        summary: "JVM heap summary; heap dump [live] writes an .hprof",
+        summary: "JVM heap summary; heap dump [live|all] writes an .hprof",
         run: commandHeap,
-        usage: "heap [dump [live]]",
+        usage: "heap [dump [live|all]]",
     },
     {
         name: "trace",

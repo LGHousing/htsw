@@ -32,14 +32,21 @@ function printHeapSummary(): void {
     const used = committed - free;
     const max = Number(runtime.maxMemory());
     ChatLib.chat(
-        `&7[heap] used &f${mb(used)} MB&7 / committed &f${mb(committed)} MB&7 / max &f${mb(max)} MB`
+        `&7[heap] Java heap used &f${mb(used)} MB&7 / committed &f${mb(committed)} MB&7 / limit &f${mb(max)} MB`
     );
 
-    const beans = javaType(
-        "java.lang.management.ManagementFactory"
-    ).getGarbageCollectorMXBeans();
-    for (let i = 0; i < beans.size(); i++) {
-        const bean = beans.get(i);
+    const ManagementFactory = javaType("java.lang.management.ManagementFactory");
+    const nonHeap = ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage();
+    ChatLib.chat(
+        `&7[heap] JVM non-heap used &f${mb(Number(nonHeap.getUsed()))} MB&7 / committed &f${mb(Number(nonHeap.getCommitted()))} MB`
+    );
+    ChatLib.chat(
+        "&7[heap] Activity Monitor also counts native, graphics, mapped, and compressed memory outside the Java heap limit."
+    );
+
+    const beans = ManagementFactory.getGarbageCollectorMXBeans();
+    for (let i = 0; i < beans.length; i++) {
+        const bean = beans[i];
         ChatLib.chat(
             `&7[heap] GC &f${String(bean.getName())}&7: ` +
                 `&f${Number(bean.getCollectionCount())}&7 collections, ` +
@@ -61,13 +68,11 @@ function dumpHeap(live: boolean): void {
     );
 
     const ManagementFactory = javaType("java.lang.management.ManagementFactory");
-    const ObjectName = javaType("javax.management.ObjectName");
-    ManagementFactory.getPlatformMBeanServer().invoke(
-        new ObjectName("com.sun.management:type=HotSpotDiagnostic"),
-        "dumpHeap",
-        Java.to([path, live], "java.lang.Object[]"),
-        Java.to(["java.lang.String", "boolean"], "java.lang.String[]")
+    const HotSpotDiagnosticMXBean = javaType(
+        "com.sun.management.HotSpotDiagnosticMXBean"
     );
+    const diagnostic = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean);
+    diagnostic.dumpHeap(path, live);
 
     ChatLib.chat(`&a[heap] wrote &f${path} &7(${mb(Number(file.length()))} MB)`);
 }

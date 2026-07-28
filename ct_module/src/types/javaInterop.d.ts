@@ -3,8 +3,6 @@ export {};
 declare global {
     interface Java {
         to(values: readonly number[], type: "byte[]" | "int[]"): HtswJavaNumberArray;
-        to(values: readonly unknown[], type: "java.lang.Object[]"): HtswJavaObjectArray<unknown>;
-        to(values: readonly string[], type: "java.lang.String[]"): HtswJavaObjectArray<string>;
     }
 
     interface HtswJavaIterator<T> {
@@ -350,27 +348,27 @@ declare global {
         getName(): unknown;
     }
 
+    interface HtswMemoryUsage {
+        getCommitted(): unknown;
+        getUsed(): unknown;
+    }
+
+    interface HtswMemoryMxBean {
+        getNonHeapMemoryUsage(): HtswMemoryUsage;
+    }
+
+    interface HtswHotSpotDiagnosticMxBean {
+        dumpHeap(path: string, live: boolean): void;
+    }
+
+    type HtswHotSpotDiagnosticMxBeanClass = object;
+
     interface HtswJavaManagementFactoryClass {
-        getGarbageCollectorMXBeans(): {
-            get(index: number): HtswGarbageCollectorMxBean;
-            size(): number;
-        };
-        getPlatformMBeanServer(): HtswMBeanServer;
-    }
-
-    type HtswObjectName = object;
-
-    interface HtswObjectNameClass {
-        new (name: string): HtswObjectName;
-    }
-
-    interface HtswMBeanServer {
-        invoke(
-            name: HtswObjectName,
-            operationName: string,
-            params: HtswJavaObjectArray<unknown>,
-            signature: HtswJavaObjectArray<string>
-        ): unknown;
+        getGarbageCollectorMXBeans(): HtswJavaObjectArray<HtswGarbageCollectorMxBean>;
+        getMemoryMXBean(): HtswMemoryMxBean;
+        getPlatformMXBean(
+            beanClass: HtswHotSpotDiagnosticMxBeanClass
+        ): HtswHotSpotDiagnosticMxBean;
     }
 
     interface HtswJavaDesktop {
@@ -691,6 +689,7 @@ declare global {
     }
 
     interface HtswJavaTypeMap {
+        "com.sun.management.HotSpotDiagnosticMXBean": HtswHotSpotDiagnosticMxBeanClass;
         "java.awt.Desktop": HtswJavaDesktopClass;
         "java.awt.Toolkit": HtswJavaToolkitClass;
         "java.awt.datatransfer.StringSelection": HtswJavaStringSelectionClass;
@@ -709,7 +708,6 @@ declare global {
         "java.lang.System": HtswJavaSystemClass;
         "java.lang.Thread": HtswJavaThreadClass;
         "java.lang.management.ManagementFactory": HtswJavaManagementFactoryClass;
-        "javax.management.ObjectName": HtswObjectNameClass;
         "java.net.URL": HtswJavaUrlClass;
         "java.net.URLClassLoader": HtswJavaUrlClassLoaderClass;
         "java.nio.charset.StandardCharsets": HtswJavaCharsetClass;
