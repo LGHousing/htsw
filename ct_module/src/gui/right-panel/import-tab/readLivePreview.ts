@@ -5,6 +5,7 @@ import type { ObservedNode } from "../../../housingSync/observedActions";
 import {
     getCurrentPath,
     markReadComplete,
+    markPreviewCompleted,
     resetPreview,
     setCurrent,
     setObservedTopLevel,
@@ -92,6 +93,7 @@ export function createReadLivePreview(
                 setObservedTopLevel(path, snapshot, { force: true });
             }
             if (getCurrentPath(path) !== null) setCurrent(path, null);
+            markPreviewCompleted(path);
         },
         clear() {
             activeIndex = null;
