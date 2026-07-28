@@ -241,4 +241,33 @@ describe("house lock scan hashes", () => {
             },
         });
     });
+
+    it("refuses to seed a lock with incompatible hash versions", () => {
+        const raw = JSON.stringify({
+            schemaVersion: 1,
+            houseUuid: "current-house",
+            scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION + 1,
+            contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION + 1,
+            importables: {
+                "FUNCTION:Debug": {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    hash: "0xfuture",
+                    listScanHashes: { actions: "0xfuture-scan" },
+                    listContentHashes: { actions: "0xfuture-content" },
+                    futureField: { preserved: true },
+                },
+            },
+        });
+        const files: Partial<Record<string, string>> = { [lockPath]: raw };
+        stubFiles(files);
+        const live = functionEntry();
+
+        expect(
+            seedMissingHouseLockActionLists(importJsonPath, "current-house", [
+                { importable: live, basePath: "actions", actions: live.actions! },
+            ])
+        ).toBe(false);
+        expect(files[lockPath]).toBe(raw);
+    });
 });

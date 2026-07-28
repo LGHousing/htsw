@@ -400,6 +400,7 @@ describe("readActionListPlan conflict detection", () => {
                     scanHash: actionListScanHashFromActions(cached),
                     contentHash: actionListContentHashFromActions(cached),
                     actions: cached,
+                    validUntil: Date.now() + 60_000,
                 },
             ],
         ]);
@@ -445,6 +446,7 @@ describe("readActionListPlan conflict detection", () => {
                     ),
                     contentHash: actionListContentHashFromActions([message("cached")]),
                     actions: [message("cached")],
+                    validUntil: Date.now() + 60_000,
                 },
             ],
         ]);

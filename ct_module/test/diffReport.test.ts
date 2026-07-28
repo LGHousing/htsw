@@ -12,7 +12,11 @@ import {
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
 import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
-import { evaluateDiffReport, formatDiffReport } from "../src/slashCommands/diffReport";
+import {
+    evaluateDiffReport,
+    formatDiffReport,
+    matchDiffActionLists,
+} from "../src/slashCommands/diffReport";
 import { changeVar, message, playSound } from "./utils";
 
 function func(name: string, actions: ImportableFunction["actions"]): ImportableFunction {
@@ -32,6 +36,14 @@ function liveMap(...importables: Importable[]): Map<string, Importable> {
             importable,
         ])
     );
+}
+
+function evaluate(
+    source: readonly Importable[],
+    live: ReadonlyMap<string, Importable>,
+    lock: HouseLock | null
+) {
+    return evaluateDiffReport("house", matchDiffActionLists(source, live), lock);
 }
 
 function lockFor(
@@ -70,27 +82,22 @@ describe("diff report", () => {
         const source = func("Debug", [message("source")]);
 
         expect(
-            evaluateDiffReport(
-                "house",
+            evaluate(
                 [source],
                 liveMap(func("Debug", baseline)),
                 lockFor("Debug", baseline)
             )
         ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
-        expect(
-            evaluateDiffReport(
-                "house",
-                [source],
-                liveMap(source),
-                lockFor("Debug", baseline)
-            )
-        ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
+        expect(evaluate([source], liveMap(source), lockFor("Debug", baseline))).toEqual({
+            clean: 1,
+            conflicts: [],
+            unknown: 0,
+        });
     });
 
     it("classifies live changes from both baseline and source as conflicts", () => {
         const source = func("Debug", [message("source")]);
-        const report = evaluateDiffReport(
-            "house",
+        const report = evaluate(
             [source],
             liveMap(func("Debug", [message("live")])),
             lockFor("Debug", [message("baseline")])
@@ -128,21 +135,18 @@ describe("diff report", () => {
     it("keeps only missing live reads unknown and compares missing baselines to source", () => {
         const source = func("Debug", [message("source")]);
 
-        expect(
-            evaluateDiffReport("house", [source], new Map(), lockFor("Debug", []))
-        ).toEqual({ clean: 0, conflicts: [], unknown: 1 });
-        expect(evaluateDiffReport("house", [source], liveMap(source), null)).toEqual({
+        expect(evaluate([source], new Map(), lockFor("Debug", []))).toEqual({
+            clean: 0,
+            conflicts: [],
+            unknown: 1,
+        });
+        expect(evaluate([source], liveMap(source), null)).toEqual({
             clean: 1,
             conflicts: [],
             unknown: 0,
         });
         expect(
-            evaluateDiffReport(
-                "house",
-                [source],
-                liveMap(func("Debug", [message("live")])),
-                null
-            )
+            evaluate([source], liveMap(func("Debug", [message("live")])), null)
         ).toMatchObject({
             clean: 0,
             conflicts: [{ type: "FUNCTION", identity: "Debug", basePath: "actions" }],
@@ -187,7 +191,7 @@ describe("diff report", () => {
             },
         };
 
-        expect(evaluateDiffReport("house", [source], liveMap(live), lock)).toEqual({
+        expect(evaluate([source], liveMap(live), lock)).toEqual({
             clean: 0,
             conflicts: [],
             unknown: 1,
@@ -196,8 +200,7 @@ describe("diff report", () => {
 
     it("falls back to v1 scan hashes when content hashes are absent", () => {
         const source = func("Debug", [playSound()]);
-        const report = evaluateDiffReport(
-            "house",
+        const report = evaluate(
             [source],
             liveMap(func("Debug", [changeVar()])),
             lockFor("Debug", [message("baseline")], false)
@@ -222,8 +225,7 @@ describe("diff report", () => {
 
     it("keeps multiline note conflicts actionable in the details file", () => {
         const source = func("Debug", [message("same", { note: "a\nb" })]);
-        const report = evaluateDiffReport(
-            "house",
+        const report = evaluate(
             [source],
             liveMap(func("Debug", [message("same", { note: "a b" })])),
             lockFor("Debug", [message("same", { note: "baseline" })])
@@ -242,8 +244,7 @@ describe("diff report", () => {
 
     it("omits default-equivalent fields from canonical details", () => {
         const source = func("Debug", [playSound({ sound: "random.anvil_land" })]);
-        const report = evaluateDiffReport(
-            "house",
+        const report = evaluate(
             [source],
             liveMap(
                 func("Debug", [
@@ -282,8 +283,7 @@ describe("diff report", () => {
             type: "REMOVE_ITEM",
             note: "live",
         };
-        const report = evaluateDiffReport(
-            "house",
+        const report = evaluate(
             [func("Debug", [sourceAction])],
             liveMap(func("Debug", [liveAction])),
             lockFor("Debug", [{ type: "REMOVE_ITEM", note: "baseline" }])

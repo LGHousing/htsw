@@ -20,6 +20,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
 }));
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     mocks.atomicWriteText.mockClear();
 });
@@ -57,10 +58,38 @@ describe("staged hydration cache", () => {
                     schemaVersion: 1,
                     scanHashVersion: 1,
                     contentHashVersion: 1,
-                    writtenAt: "now",
+                    writtenAt: new Date().toISOString(),
                     scanHash: actionListScanHashFromActions(actions),
                     contentHash: actionListContentHashFromActions(actions),
                     actions: [message("tampered")],
+                }),
+        });
+
+        expect(
+            readStagedActionListHydration(
+                "house",
+                "FUNCTION",
+                "Debug",
+                "actions"
+            )
+        ).toBeNull();
+    });
+
+    it("rejects a snapshot more than ten minutes old", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-07-28T12:10:00.001Z"));
+        const actions = [message("live")];
+        vi.stubGlobal("FileLib", {
+            exists: () => true,
+            read: () =>
+                JSON.stringify({
+                    schemaVersion: 1,
+                    scanHashVersion: 1,
+                    contentHashVersion: 1,
+                    writtenAt: "2026-07-28T12:00:00.000Z",
+                    scanHash: actionListScanHashFromActions(actions),
+                    contentHash: actionListContentHashFromActions(actions),
+                    actions,
                 }),
         });
 

@@ -140,11 +140,11 @@ export async function scanActionListForPlan(
     if (
         options.sync.freshHydration !== true &&
         staged !== undefined &&
+        Date.now() <= staged.validUntil &&
         actionListScanHashFromSlots(scan.slots) === staged.scanHash
     ) {
-        // Freshness is certified at scan level: action types and child-list
-        // structure, the same profile as trusted mode. Conflict comparison
-        // still uses the staged list's fully hydrated content below.
+        // The scan only verifies action types and child-list structure.
+        // Scalar fields and notes come from the staged actions.
         phaseUnits.hydrating = 0;
         const plan = knownActionListPlan(desired, staged.actions, options, phaseUnits);
         if (options.listPath === undefined) {

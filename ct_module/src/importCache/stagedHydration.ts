@@ -10,14 +10,16 @@ import { atomicWriteText, encodeFilesystemComponent } from "../utils/filesystem"
 import { cacheDirFor, IMPORT_CACHE_ROOT } from "./paths";
 
 const STAGED_HYDRATION_SCHEMA_VERSION = 1;
+const STAGED_HYDRATION_MAX_AGE_MS = 10 * 60 * 1000;
 
 export type StagedActionListHydration = {
     scanHash: string;
     contentHash: string;
     actions: readonly Action[];
+    validUntil: number;
 };
 
-type StoredStagedActionListHydration = StagedActionListHydration & {
+type StoredStagedActionListHydration = Omit<StagedActionListHydration, "validUntil"> & {
     schemaVersion: typeof STAGED_HYDRATION_SCHEMA_VERSION;
     scanHashVersion: typeof ACTION_LIST_SCAN_HASH_VERSION;
     contentHashVersion: typeof ACTION_LIST_CONTENT_HASH_VERSION;
@@ -77,10 +79,16 @@ export function readStagedActionListHydration(
         stored.schemaVersion !== STAGED_HYDRATION_SCHEMA_VERSION ||
         stored.scanHashVersion !== ACTION_LIST_SCAN_HASH_VERSION ||
         stored.contentHashVersion !== ACTION_LIST_CONTENT_HASH_VERSION ||
+        typeof stored.writtenAt !== "string" ||
         typeof stored.scanHash !== "string" ||
         typeof stored.contentHash !== "string" ||
         !Array.isArray(stored.actions)
     ) {
+        return null;
+    }
+    const writtenAt = new Date(stored.writtenAt).getTime();
+    const age = Date.now() - writtenAt;
+    if (!Number.isFinite(writtenAt) || age < 0 || age > STAGED_HYDRATION_MAX_AGE_MS) {
         return null;
     }
     if (
@@ -93,5 +101,6 @@ export function readStagedActionListHydration(
         scanHash: stored.scanHash,
         contentHash: stored.contentHash,
         actions: stored.actions,
+        validUntil: writtenAt + STAGED_HYDRATION_MAX_AGE_MS,
     };
 }

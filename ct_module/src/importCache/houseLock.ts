@@ -244,8 +244,19 @@ export function seedMissingHouseLockActionLists(
 ): boolean {
     if (seeds.length === 0) return true;
     const path = houseLockPathForImportJson(importJsonPath);
-    const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
+    const lockExists = FileLib.exists(path);
+    const existingLock = readHouseLock(importJsonPath);
+    if (lockExists && existingLock === null) return false;
+    const lock = existingLock ?? emptyHouseLock(housingUuid);
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
+    if (
+        (lock.scanHashVersion !== undefined &&
+            lock.scanHashVersion !== ACTION_LIST_SCAN_HASH_VERSION) ||
+        (lock.contentHashVersion !== undefined &&
+            lock.contentHashVersion !== ACTION_LIST_CONTENT_HASH_VERSION)
+    ) {
+        return false;
+    }
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;

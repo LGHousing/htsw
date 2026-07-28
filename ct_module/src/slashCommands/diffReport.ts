@@ -51,43 +51,39 @@ function liveActionsFor(
     return liveListsByPath.get(sourceList.basePath);
 }
 
-export type MatchedLiveActionList = {
+export type DiffActionListMatch = {
     source: Importable;
-    live: Importable;
+    live: Importable | undefined;
     identity: string;
     basePath: string;
-    actions: readonly Action[];
+    sourceActions: readonly Action[];
+    liveActions: readonly Action[] | undefined;
 };
 
-export function matchedLiveActionLists(
+export function matchDiffActionLists(
     sourceImportables: readonly Importable[],
     liveImportables: ReadonlyMap<string, Importable>
-): MatchedLiveActionList[] {
-    const matched: MatchedLiveActionList[] = [];
+): DiffActionListMatch[] {
+    const matches: DiffActionListMatch[] = [];
     for (const source of sourceImportables) {
         const identity = importableIdentity(source);
         const live = liveImportables.get(importableKey(source.type, identity));
-        if (live === undefined) continue;
-        const liveListsByPath = actionListsByPath(live);
+        const liveListsByPath = live === undefined ? null : actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {
-            const actions = liveActionsFor(
+            matches.push({
                 source,
                 live,
-                sourceList,
-                liveListsByPath
-            );
-            if (actions !== undefined) {
-                matched.push({
-                    source,
-                    live,
-                    identity,
-                    basePath: sourceList.basePath,
-                    actions,
-                });
-            }
+                identity,
+                basePath: sourceList.basePath,
+                sourceActions: sourceList.actions,
+                liveActions:
+                    live === undefined || liveListsByPath === null
+                        ? undefined
+                        : liveActionsFor(source, live, sourceList, liveListsByPath),
+            });
         }
     }
-    return matched;
+    return matches;
 }
 
 function actionListsByPath(importable: Importable): Map<string, readonly Action[]> {
@@ -100,8 +96,7 @@ function actionListsByPath(importable: Importable): Map<string, readonly Action[
 
 export function evaluateDiffReport(
     housingUuid: string,
-    sourceImportables: readonly Importable[],
-    liveImportables: ReadonlyMap<string, Importable>,
+    matches: readonly DiffActionListMatch[],
     lock: HouseLock | null
 ): DiffReport {
     const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
@@ -110,57 +105,51 @@ export function evaluateDiffReport(
             ? lock
             : null;
 
-    for (const source of sourceImportables) {
-        const identity = importableIdentity(source);
-        const live = liveImportables.get(importableKey(source.type, identity));
-        const lockEntry = houseLockEntryFor(matchingLock, source.type, identity);
-        const liveListsByPath = live === undefined ? null : actionListsByPath(live);
-        for (const sourceList of actionListsOfImportable(source)) {
-            const liveActions =
-                live === undefined || liveListsByPath === null
-                    ? undefined
-                    : liveActionsFor(source, live, sourceList, liveListsByPath);
-            if (liveActions === undefined) {
-                result.unknown++;
-                continue;
-            }
-            const verdict = actionListConflictVerdict(
-                { actions: liveActions },
-                {
-                    contentHash: lockEntry?.listContentHashes?.[sourceList.basePath],
-                    scanHash: lockEntry?.listScanHashes?.[sourceList.basePath],
-                },
-                sourceList.actions,
-                "content"
+    for (const match of matches) {
+        const liveActions = match.liveActions;
+        if (liveActions === undefined) {
+            result.unknown++;
+            continue;
+        }
+        const lockEntry = houseLockEntryFor(
+            matchingLock,
+            match.source.type,
+            match.identity
+        );
+        const verdict = actionListConflictVerdict(
+            { actions: liveActions },
+            {
+                contentHash: lockEntry?.listContentHashes?.[match.basePath],
+                scanHash: lockEntry?.listScanHashes?.[match.basePath],
+            },
+            match.sourceActions,
+            "content"
+        );
+        if (
+            verdict === "conflict" ||
+            (verdict === "no-baseline" &&
+                actionListContentHashFromActions(liveActions) !==
+                    actionListContentHashFromActions(match.sourceActions))
+        ) {
+            const canonicalDifferences = actionListConflictDifferences(
+                liveActions,
+                match.sourceActions
             );
-            if (
-                verdict === "conflict" ||
-                (verdict === "no-baseline" &&
-                    actionListContentHashFromActions(liveActions) !==
-                        actionListContentHashFromActions(sourceList.actions))
-            ) {
-                const canonicalDifferences = actionListConflictDifferences(
-                    liveActions,
-                    sourceList.actions
-                );
-                result.conflicts.push({
-                    type: source.type,
-                    identity,
-                    basePath: sourceList.basePath,
-                    ...summarizeActionListConflictDifferences(
-                        canonicalDifferences
-                    ),
-                    canonicalDifferences,
-                    printerDiagnostics: [
-                        ...printerDiagnosticsForDiff("source", sourceList.actions),
-                        ...printerDiagnosticsForDiff("live", liveActions),
-                    ],
-                });
-            } else if (verdict === null) {
-                result.unknown++;
-            } else {
-                result.clean++;
-            }
+            result.conflicts.push({
+                type: match.source.type,
+                identity: match.identity,
+                basePath: match.basePath,
+                ...summarizeActionListConflictDifferences(canonicalDifferences),
+                canonicalDifferences,
+                printerDiagnostics: [
+                    ...printerDiagnosticsForDiff("source", match.sourceActions),
+                    ...printerDiagnosticsForDiff("live", liveActions),
+                ],
+            });
+        } else if (verdict === null) {
+            result.unknown++;
+        } else {
+            result.clean++;
         }
     }
     return result;

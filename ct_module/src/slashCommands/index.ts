@@ -593,7 +593,7 @@ function commandEta(args: string[]): void {
     printOpKindStats();
 }
 
-function commandImport(args: string[]) {
+export function commandImport(args: string[]) {
     const parsedArgs = parseImportCommandArgs(args);
     const commandArgs = parsedArgs.pathArgs;
     if (commandArgs.length === 0) {
