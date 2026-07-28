@@ -339,6 +339,8 @@ describe("diff report", () => {
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
+            '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
+            "[htsw]   …and 2 more differences",
             "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });

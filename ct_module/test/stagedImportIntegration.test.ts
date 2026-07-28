@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     scanActionList: vi.fn(),
     hydrateActionListScan: vi.fn(async () => undefined),
     progress: {
+        start: vi.fn(),
         sinkFor: vi.fn(() => undefined),
         complete: vi.fn(),
         clear: vi.fn(),
@@ -162,6 +163,7 @@ beforeEach(() => {
     mocks.task = undefined;
     mocks.scanActionList.mockReset();
     mocks.hydrateActionListScan.mockClear();
+    mocks.progress.start.mockClear();
     mocks.progress.complete.mockClear();
     mocks.progress.clear.mockClear();
     mocks.progress.fail.mockClear();
