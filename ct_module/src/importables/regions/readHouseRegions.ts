@@ -4,6 +4,7 @@ import * as htsw from "htsw";
 import { readActionListFully } from "../../housingSync/actions/hydration/run";
 import { ItemCaptureRegistry } from "../items/captureRegistry";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import { tryWriteImportableCache } from "../../importCache";
@@ -31,7 +32,8 @@ async function readRegionActionList(
     regionName: string,
     slotName: "Entry Actions" | "Exit Actions",
     itemCaptures: ItemCaptureRegistry,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<Action[] | undefined> {
     if ((await openRegionEditor(ctx, regionName)) === "missing") {
         throw new Error(`No region named "${regionName}" exists in this housing.`);
@@ -45,6 +47,7 @@ async function readRegionActionList(
     const actions = await readActionListFully(ctx, {
         itemReadMode: "export",
         itemCaptures,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -73,7 +76,8 @@ async function readRegion(
     ctx: TaskContext,
     entry: RegionListEntry,
     itemCaptures: ItemCaptureRegistry,
-    onReadProgress?: ProgressHandler
+    onReadProgress?: ProgressHandler,
+    events?: SyncEventHandler
 ): Promise<ImportableRegion> {
     const bounds = requireRegionBounds(entry);
     const enterActions = await readRegionActionList(
@@ -81,7 +85,8 @@ async function readRegion(
         entry.name,
         "Entry Actions",
         itemCaptures,
-        onReadProgress
+        onReadProgress,
+        events
     );
     ctx.checkCancelled();
     const exitActions = await readRegionActionList(
@@ -89,7 +94,8 @@ async function readRegion(
         entry.name,
         "Exit Actions",
         itemCaptures,
-        onReadProgress
+        onReadProgress,
+        events
     );
 
     const importable: ImportableRegion = {
@@ -158,8 +164,8 @@ export const readRegions = defineHouseExporter({
     },
     reader: {
         kind: "direct",
-        read: (ctx, entry, _options, state, onReadProgress) =>
-            readRegion(ctx, entry, state.itemCaptures, onReadProgress),
+        read: (ctx, entry, options, state, onReadProgress) =>
+            readRegion(ctx, entry, state.itemCaptures, onReadProgress, options.progress?.events),
     },
     importableOf: (importable) => importable,
     export: async (ctx, entry, importable, options) => {
