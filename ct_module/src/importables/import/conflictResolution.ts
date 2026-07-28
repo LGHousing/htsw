@@ -17,6 +17,22 @@ export type ImportConflictResolution = {
     skipped: ImportConflict[];
 };
 
+export function resolveSelectedImportConflicts(
+    conflicts: readonly ImportConflict[],
+    acceptedIdentifiers: ReadonlySet<string>
+): ImportConflictResolution {
+    const accepted: ImportConflict[] = [];
+    const skipped: ImportConflict[] = [];
+    for (const conflict of conflicts) {
+        if (acceptedIdentifiers.has(actionSyncConflictIdentifier(conflict))) {
+            accepted.push(conflict);
+        } else {
+            skipped.push(conflict);
+        }
+    }
+    return { accepted, skipped };
+}
+
 function conflictImportableIdentifier(conflict: ImportConflict): string {
     return `${conflict.type}:${conflict.identity}`;
 }
@@ -25,7 +41,6 @@ export function resolveImportConflicts(
     conflicts: readonly ImportConflict[],
     accepts: readonly string[]
 ): ImportConflictResolution {
-    const accepted: ImportConflict[] = [];
     const acceptedKeys = new Set<string>();
     for (const identifier of accepts) {
         const matches = conflicts.filter(
@@ -44,13 +59,7 @@ export function resolveImportConflicts(
             acceptedKeys.add(actionSyncConflictIdentifier(conflict));
         }
     }
-    const skipped: ImportConflict[] = [];
-    for (const conflict of conflicts) {
-        if (acceptedKeys.has(actionSyncConflictIdentifier(conflict))) {
-            accepted.push(conflict);
-        } else skipped.push(conflict);
-    }
-    return { accepted, skipped };
+    return resolveSelectedImportConflicts(conflicts, acceptedKeys);
 }
 
 export type ImportConflictPolicyDecision =

@@ -5,6 +5,7 @@ import {
     importableWithSkippedConflictLists,
     resolveImportConflictPolicy,
     resolveImportConflicts,
+    resolveSelectedImportConflicts,
 } from "../src/importables/import/conflictResolution";
 import { actionSyncConflictIdentifier } from "../src/housingSync/actions/syncContext";
 import { message, observedSlot } from "./utils";
@@ -71,6 +72,18 @@ describe("per-list import conflict resolution", () => {
                 accepted: [conflicts[0]],
                 skipped: [conflicts[1]],
             },
+        });
+    });
+
+    it("resolves the lists selected in the GUI and skips the rest", () => {
+        expect(
+            resolveSelectedImportConflicts(
+                conflicts,
+                new Set([actionSyncConflictIdentifier(conflicts[1])])
+            )
+        ).toEqual({
+            accepted: [conflicts[1]],
+            skipped: [conflicts[0], conflicts[2]],
         });
     });
 

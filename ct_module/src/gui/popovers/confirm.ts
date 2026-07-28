@@ -65,10 +65,6 @@ function closeSelf(): void {
     }
 }
 
-export function closeConfirmPopover(): void {
-    closeSelf();
-}
-
 function buttonWidths(labels: string[], popoverWidth: number): number[] {
     const widths = labels.map((label) => Renderer.getStringWidth(label) + BUTTON_PAD_X);
     const rowWidth = popoverWidth - PAD * 2 - GAP * Math.max(0, labels.length - 1);
