@@ -2,8 +2,10 @@ import type { Action, Importable } from "htsw/types";
 
 import { actionListConflictVerdict } from "../housingSync/actions/conflicts";
 import {
-    actionListConflictDetails,
+    actionListConflictDifferences,
+    summarizeActionListConflictDifferences,
     type ActionListConflictDetails,
+    type ActionListConflictDifference,
 } from "../housingSync/actions/conflictDetails";
 import type { ActionSyncConflict } from "../housingSync/actions/syncContext";
 import {
@@ -12,12 +14,12 @@ import {
 } from "../importCache/actionLists";
 import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { renderActionsForDiff } from "./diffDetails";
+import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
 
 type DiffReportConflict = ActionSyncConflict &
     ActionListConflictDetails & {
-        sourceText: string;
-        liveText: string;
+        canonicalDifferences: ActionListConflictDifference[];
+        printerDiagnostics: DiffPrinterDiagnostic[];
     };
 
 export type DiffReport = {
@@ -92,13 +94,22 @@ export function evaluateDiffReport(
                 "content"
             );
             if (verdict === "conflict") {
+                const canonicalDifferences = actionListConflictDifferences(
+                    liveActions,
+                    sourceList.actions
+                );
                 result.conflicts.push({
                     type: source.type,
                     identity,
                     basePath: sourceList.basePath,
-                    ...actionListConflictDetails(liveActions, sourceList.actions),
-                    sourceText: renderActionsForDiff(sourceList.actions),
-                    liveText: renderActionsForDiff(liveActions),
+                    ...summarizeActionListConflictDifferences(
+                        canonicalDifferences
+                    ),
+                    canonicalDifferences,
+                    printerDiagnostics: [
+                        ...printerDiagnosticsForDiff("source", sourceList.actions),
+                        ...printerDiagnosticsForDiff("live", liveActions),
+                    ],
                 });
             } else if (verdict === "no-baseline" || verdict === null) {
                 result.unknown++;

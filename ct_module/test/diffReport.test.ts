@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { Importable, ImportableFunction, ImportableRegion } from "htsw/types";
+import type {
+    Action,
+    Importable,
+    ImportableFunction,
+    ImportableRegion,
+} from "htsw/types";
 
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
+import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
 import { evaluateDiffReport, formatDiffReport } from "../src/slashCommands/diffReport";
 import { changeVar, message, playSound } from "./utils";
 
@@ -105,8 +111,14 @@ describe("diff report", () => {
                         },
                     ],
                     moreCount: 0,
-                    sourceText: 'chat "source"\n',
-                    liveText: 'chat "live"\n',
+                    canonicalDifferences: [
+                        {
+                            path: "action 1 (message) · message",
+                            live: '"live"',
+                            source: '"source"',
+                        },
+                    ],
+                    printerDiagnostics: [],
                 },
             ],
             unknown: 0,
@@ -196,6 +208,89 @@ describe("diff report", () => {
         ]);
     });
 
+    it("keeps multiline note conflicts actionable in the details file", () => {
+        const source = func("Debug", [message("same", { note: "a\nb" })]);
+        const report = evaluateDiffReport(
+            "house",
+            [source],
+            liveMap(func("Debug", [message("same", { note: "a b" })])),
+            lockFor("Debug", [message("same", { note: "baseline" })])
+        );
+
+        const details = formatDiffDetailsFile(
+            report,
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(details).toContain("action 1 (message) · note");
+        expect(details).toContain('-  "a\\nb"');
+        expect(details).toContain('+  "a b"');
+    });
+
+    it("omits default-equivalent fields from canonical details", () => {
+        const source = func("Debug", [playSound({ sound: "random.anvil_land" })]);
+        const report = evaluateDiffReport(
+            "house",
+            [source],
+            liveMap(
+                func("Debug", [
+                    playSound({
+                        sound: "random.orb",
+                        volume: 0.7,
+                        pitch: 1,
+                    }),
+                ])
+            ),
+            lockFor("Debug", [playSound({ sound: "mob.cat.meow" })])
+        );
+
+        expect(report.conflicts[0].canonicalDifferences).toEqual([
+            {
+                path: "action 1 (play sound) · sound",
+                live: '{"type":"random.orb"}',
+                source: '{"type":"random.anvil_land"}',
+            },
+        ]);
+        expect(
+            formatDiffDetailsFile(
+                report,
+                "/project/import.json",
+                "2026-07-27T12:00:00.000Z"
+            )
+        ).not.toContain("volume");
+    });
+
+    it("includes printer diagnostics for a conflicting item action", () => {
+        const sourceAction: Action = {
+            type: "REMOVE_ITEM",
+            note: "source",
+        };
+        const liveAction: Action = {
+            type: "REMOVE_ITEM",
+            note: "live",
+        };
+        const report = evaluateDiffReport(
+            "house",
+            [func("Debug", [sourceAction])],
+            liveMap(func("Debug", [liveAction])),
+            lockFor("Debug", [{ type: "REMOVE_ITEM", note: "baseline" }])
+        );
+
+        const details = formatDiffDetailsFile(
+            report,
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(details).toContain(
+            "# HTSL printer warning (source): REMOVE_ITEM was emitted with a placeholder item name"
+        );
+        expect(details).toContain(
+            "# HTSL printer warning (live): REMOVE_ITEM was emitted with a placeholder item name"
+        );
+    });
+
     it("includes the action-list base path in conflict output", () => {
         expect(
             formatDiffReport(
@@ -214,8 +309,14 @@ describe("diff report", () => {
                                 },
                             ],
                             moreCount: 2,
-                            sourceText: 'chat "source"\n',
-                            liveText: 'chat "live"\n',
+                            canonicalDifferences: [
+                                {
+                                    path: "action 1 (message) · message",
+                                    live: '"live"',
+                                    source: '"source"',
+                                },
+                            ],
+                            printerDiagnostics: [],
                         },
                     ],
                     unknown: 0,

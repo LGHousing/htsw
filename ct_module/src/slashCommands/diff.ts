@@ -133,12 +133,20 @@ export function commandDiff(args: string[]): void {
             live,
             readHouseLock(manifest)
         );
-        const detailsPath =
-            report.conflicts.length === 0
-                ? undefined
-                : writeDiffDetailsFile(report, manifest, new Date().toISOString());
-        for (const line of formatDiffReport(report, manifest, detailsPath)) {
+        for (const line of formatDiffReport(report, manifest)) {
             ChatLib.chat(line);
+        }
+        try {
+            const detailsPath = writeDiffDetailsFile(
+                report,
+                manifest,
+                new Date().toISOString()
+            );
+            ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
+        } catch (error) {
+            ChatLib.chat(
+                `[htsw] Diff details not written: ${errorReason(error)}`
+            );
         }
         progress.complete(
             `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`

@@ -4,7 +4,7 @@ import { getActionScalarLoreFields, getChildListFields } from "../fields/actionM
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
 
-type ActionListConflictDifference = {
+export type ActionListConflictDifference = {
     path: string;
     live: string;
     source: string;
@@ -20,7 +20,6 @@ const MAX_VALUE_LENGTH = 48;
 
 type DifferenceCollector = {
     differences: ActionListConflictDifference[];
-    total: number;
 };
 
 function actionLabel(index: number, type: string): string {
@@ -43,12 +42,10 @@ function addDifference(
     live: string | undefined,
     source: string | undefined
 ): void {
-    collector.total++;
-    if (collector.differences.length === MAX_DIFFERENCES) return;
     collector.differences.push({
         path,
-        live: compact(live),
-        source: compact(source),
+        live: live ?? "<unset>",
+        source: source ?? "<unset>",
     });
 }
 
@@ -256,10 +253,29 @@ export function actionListConflictDetails(
     live: readonly Action[],
     source: readonly Action[]
 ): ActionListConflictDetails {
-    const collector: DifferenceCollector = { differences: [], total: 0 };
-    compareEntries(collector, "", live, source, compareAction, actionLabel);
+    return summarizeActionListConflictDifferences(
+        actionListConflictDifferences(live, source)
+    );
+}
+
+export function summarizeActionListConflictDifferences(
+    differences: readonly ActionListConflictDifference[]
+): ActionListConflictDetails {
     return {
-        differences: collector.differences,
-        moreCount: collector.total - collector.differences.length,
+        differences: differences.slice(0, MAX_DIFFERENCES).map((difference) => ({
+            path: difference.path,
+            live: compact(difference.live),
+            source: compact(difference.source),
+        })),
+        moreCount: Math.max(0, differences.length - MAX_DIFFERENCES),
     };
+}
+
+export function actionListConflictDifferences(
+    live: readonly Action[],
+    source: readonly Action[]
+): ActionListConflictDifference[] {
+    const collector: DifferenceCollector = { differences: [] };
+    compareEntries(collector, "", live, source, compareAction, actionLabel);
+    return collector.differences;
 }
