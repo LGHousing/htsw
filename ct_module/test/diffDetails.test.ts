@@ -76,7 +76,6 @@ describe("diff details", () => {
                 '# FUNCTION "Debug" · actions\n' +
                 "--- source/actions\n" +
                 "+++ live/actions\n" +
-                "@@ -1,2 +1,2 @@\n" +
                 " action 1 (message) · message\n" +
                 '-  "source"\n' +
                 '+  "live"\n' +
@@ -85,10 +84,44 @@ describe("diff details", () => {
                 "# HTSL printer warning (source): serialized source is lossy\n" +
                 "--- source/onEnterActions\n" +
                 "+++ live/onEnterActions\n" +
-                "@@ -1,2 +1,2 @@\n" +
                 " action 1 (message) · note\n" +
                 '-  "a\\nb"\n' +
                 '+  "a b"\n'
         );
+    });
+
+    it("keeps repeated values attached to their canonical difference", () => {
+        const source = ["a", "a", "a", "b"];
+        const live = ["b", "b", "b", "a"];
+        const details = formatDiffDetailsFile(
+            {
+                clean: 0,
+                conflicts: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Repeated values",
+                        basePath: "actions",
+                        canonicalDifferences: source.map((sourceValue, index) => ({
+                            path: `action ${index + 1} (message) · message`,
+                            source: `"${sourceValue}"`,
+                            live: `"${live[index]}"`,
+                        })),
+                        printerDiagnostics: [],
+                    },
+                ],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        for (let index = 0; index < source.length; index++) {
+            expect(details).toContain(
+                ` action ${index + 1} (message) · message\n` +
+                    `-  "${source[index]}"\n` +
+                    `+  "${live[index]}"`
+            );
+        }
+        expect(details).not.toMatch(/^   "[ab]"$/m);
     });
 });

@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
     complete: vi.fn(),
     fail: vi.fn(),
     clear: vi.fn(),
+    files: new Set<string>(),
 }));
 
 vi.mock("htsw", async (importOriginal) => {
@@ -128,10 +129,13 @@ describe("/htsw diff report persistence", () => {
         state.complete.mockReset();
         state.fail.mockReset();
         state.clear.mockReset();
+        state.files.clear();
         vi.stubGlobal("FileLib", {
-            exists: () => true,
+            exists: (path: string) =>
+                path === "/project/import.json" || state.files.has(path),
             read: () => null,
             write: () => undefined,
+            delete: (path: string) => state.files.delete(path),
         });
         vi.stubGlobal("ChatLib", {
             chat: vi.fn(),
@@ -172,6 +176,19 @@ describe("/htsw diff report persistence", () => {
         expect(chat.some((line) => line.startsWith("[htsw] Diff failed:"))).toBe(
             false
         );
+        expect(state.complete).toHaveBeenCalledWith(
+            "0 clean / 2 conflicts / 0 unknown"
+        );
+        expect(state.fail).not.toHaveBeenCalled();
+    });
+
+    it("removes a stale latest report when writing its replacement fails", async () => {
+        state.files.add("/project/htsw-diff/latest.diff");
+        state.atomicWriteText.mockReturnValue(false);
+
+        await runCommand();
+
+        expect(state.files.has("/project/htsw-diff/latest.diff")).toBe(false);
         expect(state.complete).toHaveBeenCalledWith(
             "0 clean / 2 conflicts / 0 unknown"
         );
