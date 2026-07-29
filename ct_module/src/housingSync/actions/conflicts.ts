@@ -7,6 +7,7 @@ import {
     actionListScanHashFromActions,
     actionListScanHashFromSlots,
 } from "./scanHash";
+import type { ItemFieldContent } from "../items/fieldContent";
 
 export function scanConflictVerdict(
     liveHash: string,
@@ -31,7 +32,9 @@ export function actionListConflictVerdict(
         scanHash: string | undefined;
     },
     source: readonly Action[],
-    hashFamily: "scan" | "content"
+    hashFamily: "scan" | "content",
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
 ): ActionListConflictVerdict | null {
     if (hashFamily === "scan") {
         return scanConflictVerdict(
@@ -45,14 +48,14 @@ export function actionListConflictVerdict(
 
     const liveContentHash =
         "slots" in live
-            ? actionListContentHashFromSlots(live.slots)
-            : actionListContentHashFromActions(live.actions);
+            ? actionListContentHashFromSlots(live.slots, liveItemContent)
+            : actionListContentHashFromActions(live.actions, liveItemContent);
     if (liveContentHash === undefined) return null;
     if (lock.contentHash !== undefined || lock.scanHash === undefined) {
         return scanConflictVerdict(
             liveContentHash,
             lock.contentHash,
-            actionListContentHashFromActions(source)
+            actionListContentHashFromActions(source, sourceItemContent)
         );
     }
     return scanConflictVerdict(

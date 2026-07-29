@@ -23,6 +23,7 @@ import { readParsedImportablesForExport } from "../export/projectDestination";
 import { itemEditorOpened } from "../waiters";
 import { type CapturedItem, type ItemCaptureRegistry } from "./captureRegistry";
 import { hasItemClickActions, writeInteractDataCache } from "./interactDataCache";
+import { sourceItemFieldContent } from "../../housingSync/items/fieldContent";
 
 type ExportedClickActions = {
     left?: Action[];
@@ -182,8 +183,11 @@ export async function exportCapturedItems(
             upsertHouseLockImportable(
                 importJsonPath,
                 housingUuid,
-                importable,
-                itemDependencies
+                {
+                    importable,
+                    itemDependencies,
+                    itemContent: sourceItemFieldContent(importable, items),
+                }
             );
         }
     }

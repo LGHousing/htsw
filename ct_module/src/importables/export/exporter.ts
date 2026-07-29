@@ -22,6 +22,10 @@ import { createItemDependencyIndex } from "../items/dependencyIndex";
 import { hasRequiredInteractDataCache } from "../items/interactDataCache";
 import { importableIdentity } from "../identity";
 import { exportedItemDependencies } from "../items/exportedDependencies";
+import {
+    capturedItemFieldContent,
+    sourceItemFieldContent,
+} from "../../housingSync/items/fieldContent";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -154,8 +158,14 @@ export function refreshExportedItemDependencies(
                     upsertHouseLockImportable(
                         importJsonPath,
                         housingUuid,
-                        cached.importable,
-                        itemDependencies
+                        {
+                            importable: cached.importable,
+                            itemDependencies,
+                            itemContent: sourceItemFieldContent(
+                                cached.importable,
+                                items
+                            ),
+                        }
                     );
                 }
             }
@@ -308,7 +318,13 @@ export function defineHouseExporter<
                         true
                     );
                 } else if (options.output.kind === "memory") {
-                    options.output.accept(importable);
+                    options.output.accept(
+                        importable,
+                        capturedItemFieldContent(
+                            importable,
+                            state.itemCaptures.entries()
+                        )
+                    );
                 } else {
                     await spec.export(acceptCtx, entry, result, options, state);
                 }
@@ -319,7 +335,13 @@ export function defineHouseExporter<
                         upsertHouseLockImportable(
                             options.importJsonPath,
                             lockHousingUuid,
-                            cached.importable
+                            {
+                                importable: cached.importable,
+                                itemContent: capturedItemFieldContent(
+                                    cached.importable,
+                                    state.itemCaptures.entries()
+                                ),
+                            }
                         );
                     }
                 }

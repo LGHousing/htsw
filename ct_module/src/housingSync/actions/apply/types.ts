@@ -1,6 +1,7 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
+import type { ItemFieldContent } from "../../items/fieldContent";
 import type { ProgressScope } from "../../syncEvents";
 import type { Observed } from "../../observedActions";
 import type { ChildAction, ChildActionListDiff } from "../diff/types";
@@ -24,4 +25,5 @@ export type ApplyChildActionList = (
 
 export type ActionListApplyResult = {
     readonly currentSnapshot: ReadonlyArray<Action | Observed | null>;
+    readonly itemContent?: ItemFieldContent;
 };

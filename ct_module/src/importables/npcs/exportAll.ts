@@ -29,6 +29,7 @@ import {
     type NpcListEntry,
 } from "./listNpcs";
 import { refreshExportedItemDependencies } from "../export/exporter";
+import { capturedItemFieldContent } from "../../housingSync/items/fieldContent";
 
 export type ExportAllNpcsOptions = {
     importJsonPath: string;
@@ -194,7 +195,13 @@ async function exportAllNpcsInner(
                         upsertHouseLockImportable(
                             importJsonPath,
                             lockHousingUuid,
-                            cached.importable
+                            {
+                                importable: cached.importable,
+                                itemContent: capturedItemFieldContent(
+                                    cached.importable,
+                                    itemCaptures.entries()
+                                ),
+                            }
                         );
                     }
                 }

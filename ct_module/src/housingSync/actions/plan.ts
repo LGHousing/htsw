@@ -26,6 +26,7 @@ import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import { actionListScanHashFromSlots } from "./scanHash";
+import { itemFieldContentFromSnapshot, type ItemFieldContent } from "../items/fieldContent";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -146,7 +147,13 @@ export async function scanActionListForPlan(
         // The scan only verifies action types and child-list structure.
         // Scalar fields and notes come from the staged actions.
         phaseUnits.hydrating = 0;
-        const plan = knownActionListPlan(desired, staged.actions, options, phaseUnits);
+        const plan = knownActionListPlan(
+            desired,
+            staged.actions,
+            options,
+            phaseUnits,
+            itemFieldContentFromSnapshot(staged.itemFields)
+        );
         if (options.listPath === undefined) {
             emitObservedSnapshot(plan.observed, options.sync.events);
         }
@@ -230,7 +237,8 @@ function knownActionListPlan(
     desired: Action[],
     current: readonly Action[],
     options: ActionListPlanOptions,
-    phaseUnits: PhaseUnits
+    phaseUnits: PhaseUnits,
+    liveItemContent?: ItemFieldContent
 ): ActionListPlan {
     const observed = current.map((action, index) => ({
         index,
@@ -249,7 +257,8 @@ function knownActionListPlan(
             actions: observed.map((entry) => entry.action),
         },
         desired,
-        options
+        options,
+        liveItemContent
     );
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
@@ -267,7 +276,8 @@ function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
 function recordActionListConflict(
     live: { slots: readonly ObservedActionSlot[] } | { actions: readonly Action[] },
     desired: readonly Action[],
-    options: ActionListPlanOptions
+    options: ActionListPlanOptions,
+    liveItemContent?: ItemFieldContent
 ): ReturnType<typeof actionListConflictVerdict> {
     const target = options.conflictTarget;
     const trustedImport = options.sync.trust.trustMode;
@@ -280,6 +290,11 @@ function recordActionListConflict(
     const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
+    const itemContent =
+        options.sync.itemDiff?.fieldContent === undefined
+            ? undefined
+            : (owner: Action | import("htsw/types").Condition, property: string) =>
+                  options.sync.itemDiff?.fieldContent?.(owner, property);
     const verdict = actionListConflictVerdict(
         live,
         {
@@ -287,7 +302,9 @@ function recordActionListConflict(
             scanHash: trustPlan?.lockListScanHashes?.[target.basePath],
         },
         desired,
-        trustedImport ? "scan" : "content"
+        trustedImport ? "scan" : "content",
+        liveItemContent ?? itemContent,
+        itemContent
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);

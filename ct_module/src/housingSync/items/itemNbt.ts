@@ -52,6 +52,12 @@ export function prettySnbt(snbt: string): string {
     }
 }
 
+export function prettyCanonicalItemTag(tag: TagLike): string {
+    return htsw.nbt.printSnbt(canonicalItemShellTag(tag) as Tag, {
+        pretty: true,
+    });
+}
+
 export function portableItemSnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);

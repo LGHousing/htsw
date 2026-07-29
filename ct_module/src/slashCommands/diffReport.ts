@@ -2,6 +2,7 @@ import type { Action, Importable } from "htsw/types";
 
 import { actionListConflictVerdict } from "../housingSync/actions/conflicts";
 import {
+    actionListConflictDetails,
     actionListConflictDifferences,
     summarizeActionListConflictDifferences,
     type ActionListConflictDetails,
@@ -16,6 +17,11 @@ import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
 import { actionListContentHashFromActions } from "../housingSync/actions/scanHash";
+import {
+    sourceItemFieldContent,
+    type ItemFieldContent,
+} from "../housingSync/items/fieldContent";
+import type { ProjectItemIndex } from "../importables/items/projectItems";
 
 type DiffReportConflict = ActionSyncConflict &
     ActionListConflictDetails & {
@@ -27,6 +33,11 @@ export type DiffReport = {
     clean: number;
     conflicts: DiffReportConflict[];
     unknown: number;
+};
+
+export type LiveDiffImportable = {
+    importable: Importable;
+    itemContent: ItemFieldContent;
 };
 
 function liveActionsFor(
@@ -54,6 +65,7 @@ function liveActionsFor(
 export type DiffActionListMatch = {
     source: Importable;
     live: Importable | undefined;
+    liveItemContent: ItemFieldContent | undefined;
     identity: string;
     basePath: string;
     sourceActions: readonly Action[];
@@ -62,17 +74,19 @@ export type DiffActionListMatch = {
 
 export function matchDiffActionLists(
     sourceImportables: readonly Importable[],
-    liveImportables: ReadonlyMap<string, Importable>
+    liveImportables: ReadonlyMap<string, LiveDiffImportable>
 ): DiffActionListMatch[] {
     const matches: DiffActionListMatch[] = [];
     for (const source of sourceImportables) {
         const identity = importableIdentity(source);
-        const live = liveImportables.get(importableKey(source.type, identity));
+        const liveEntry = liveImportables.get(importableKey(source.type, identity));
+        const live = liveEntry?.importable;
         const liveListsByPath = live === undefined ? null : actionListsByPath(live);
         for (const sourceList of actionListsOfImportable(source)) {
             matches.push({
                 source,
                 live,
+                liveItemContent: liveEntry?.itemContent,
                 identity,
                 basePath: sourceList.basePath,
                 sourceActions: sourceList.actions,
@@ -97,7 +111,8 @@ function actionListsByPath(importable: Importable): Map<string, readonly Action[
 export function evaluateDiffReport(
     housingUuid: string,
     matches: readonly DiffActionListMatch[],
-    lock: HouseLock | null
+    lock: HouseLock | null,
+    projectItems?: ProjectItemIndex
 ): DiffReport {
     const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
     const matchingLock =
@@ -116,6 +131,10 @@ export function evaluateDiffReport(
             match.source.type,
             match.identity
         );
+        const sourceItemContent =
+            projectItems === undefined
+                ? undefined
+                : sourceItemFieldContent(match.source, projectItems);
         const verdict = actionListConflictVerdict(
             { actions: liveActions },
             {
@@ -123,23 +142,40 @@ export function evaluateDiffReport(
                 scanHash: lockEntry?.listScanHashes?.[match.basePath],
             },
             match.sourceActions,
-            "content"
+            "content",
+            match.liveItemContent,
+            sourceItemContent
         );
         if (
             verdict === "conflict" ||
             (verdict === "no-baseline" &&
-                actionListContentHashFromActions(liveActions) !==
-                    actionListContentHashFromActions(match.sourceActions))
+                actionListContentHashFromActions(
+                    liveActions,
+                    match.liveItemContent
+                ) !==
+                    actionListContentHashFromActions(
+                        match.sourceActions,
+                        sourceItemContent
+                    ))
         ) {
             const canonicalDifferences = actionListConflictDifferences(
                 liveActions,
-                match.sourceActions
+                match.sourceActions,
+                match.liveItemContent,
+                sourceItemContent
             );
+            const itemDifferences = actionListConflictDetails(
+                liveActions,
+                match.sourceActions,
+                match.liveItemContent,
+                sourceItemContent
+            ).itemDifferences;
             result.conflicts.push({
                 type: match.source.type,
                 identity: match.identity,
                 basePath: match.basePath,
                 ...summarizeActionListConflictDifferences(canonicalDifferences),
+                ...(itemDifferences === undefined ? {} : { itemDifferences }),
                 canonicalDifferences,
                 printerDiagnostics: [
                     ...printerDiagnosticsForDiff("source", match.sourceActions),

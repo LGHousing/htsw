@@ -14,6 +14,7 @@ import type {
     ItemDependencySnapshot,
     ItemDependencyTarget,
 } from "../importables/items/dependencyIndex";
+import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -229,12 +230,14 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 export type HouseLockImportableUpdate = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
+    itemContent: ItemFieldContent | undefined;
 };
 
 export type HouseLockActionListSeed = {
     importable: Importable;
     basePath: string;
     actions: readonly import("htsw/types").Action[];
+    itemContent?: ItemFieldContent;
 };
 
 export function seedMissingHouseLockActionLists(
@@ -279,16 +282,25 @@ export function seedMissingHouseLockActionLists(
         }
         entry.listScanHashes ??= {};
         entry.listContentHashes ??= {};
-        if (
-            Object.prototype.hasOwnProperty.call(entry.listScanHashes, seed.basePath) ||
-            Object.prototype.hasOwnProperty.call(entry.listContentHashes, seed.basePath)
-        ) {
+        const hasScan = Object.prototype.hasOwnProperty.call(
+            entry.listScanHashes,
+            seed.basePath
+        );
+        const hasContent = Object.prototype.hasOwnProperty.call(
+            entry.listContentHashes,
+            seed.basePath
+        );
+        if (hasScan && hasContent) {
             continue;
         }
-        entry.listScanHashes[seed.basePath] =
-            actionListScanHashFromActions(seed.actions);
-        entry.listContentHashes[seed.basePath] =
-            actionListContentHashFromActions(seed.actions);
+        if (!hasScan) {
+            entry.listScanHashes[seed.basePath] =
+                actionListScanHashFromActions(seed.actions);
+        }
+        if (!hasContent) {
+            entry.listContentHashes[seed.basePath] =
+                actionListContentHashFromActions(seed.actions, seed.itemContent);
+        }
         changed = true;
     }
     return !changed || writeHouseLock(path, lock);
@@ -297,12 +309,9 @@ export function seedMissingHouseLockActionLists(
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
-    importable: Importable,
-    itemDependencies?: ItemDependencySnapshot
+    update: HouseLockImportableUpdate
 ): boolean {
-    return upsertHouseLockImportables(importJsonPath, housingUuid, [
-        { importable, itemDependencies },
-    ]);
+    return upsertHouseLockImportables(importJsonPath, housingUuid, [update]);
 }
 
 export function upsertHouseLockImportables(
@@ -324,7 +333,10 @@ export function upsertHouseLockImportables(
         for (const { basePath, actions } of actionListsOfImportable(importable)) {
             listScanHashes[basePath] = actionListScanHashFromActions(actions);
             listContentHashes[basePath] =
-                actionListContentHashFromActions(actions);
+                actionListContentHashFromActions(
+                    actions,
+                    update.itemContent
+                );
         }
         lock.importables[importableKey(importable.type, identity)] = {
             type: importable.type,

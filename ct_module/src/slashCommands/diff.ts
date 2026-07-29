@@ -13,6 +13,7 @@ import { readHouseLock, seedMissingHouseLockActionLists } from "../importCache/h
 import { writeStagedActionListHydration } from "../importCache/stagedHydration";
 import { HOUSE_READERS } from "../importables/export/readers";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
+import { createProjectItemIndex } from "../importables/items/projectItems";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
@@ -22,7 +23,12 @@ import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "./diffDetails";
-import { evaluateDiffReport, formatDiffReport, matchDiffActionLists } from "./diffReport";
+import {
+    evaluateDiffReport,
+    formatDiffReport,
+    matchDiffActionLists,
+    type LiveDiffImportable,
+} from "./diffReport";
 
 function diffFailure(reason: string): void {
     ChatLib.chat(`[htsw] Diff failed: ${reason}`);
@@ -40,14 +46,15 @@ function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
     return count;
 }
 
-async function readDiffImportables(
+export async function readDiffImportables(
     ctx: TaskContext,
     manifest: string,
     housingUuid: string,
     parsed: ImportablesParseResult,
-    progress: ReturnType<typeof createDiffProgressSession>
-): Promise<Map<string, Importable>> {
-    const live = new Map<string, Importable>();
+    progress: ReturnType<typeof createDiffProgressSession>,
+    readers: Partial<typeof HOUSE_READERS> = HOUSE_READERS
+): Promise<Map<string, LiveDiffImportable>> {
+    const live = new Map<string, LiveDiffImportable>();
     const namesByType = new Map<Importable["type"], string[]>();
     for (const importable of parsed.value) {
         if (actionListsOfImportable(importable).length === 0) continue;
@@ -60,8 +67,8 @@ async function readDiffImportables(
     }
 
     for (const [type, names] of namesByType) {
-        const reader = HOUSE_READERS[type];
-        if (reader === null) continue;
+        const reader = readers[type];
+        if (reader === null || reader === undefined) continue;
         await reader(ctx, {
             importJsonPath: manifest,
             rootDir: "",
@@ -72,10 +79,10 @@ async function readDiffImportables(
             output: {
                 kind: "memory",
                 housingUuid,
-                accept: (importable) => {
+                accept: (importable, itemContent) => {
                     live.set(
                         importableKey(importable.type, importableIdentity(importable)),
-                        importable
+                        { importable, itemContent }
                     );
                 },
             },
@@ -130,6 +137,7 @@ export function commandDiff(args: string[]): void {
             progress
         );
         const matchedLists = matchDiffActionLists(parsed.value, live);
+        const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
         const existingLock = readHouseLock(manifest);
         for (const list of matchedLists) {
             if (
@@ -139,7 +147,8 @@ export function commandDiff(args: string[]): void {
                     list.source.type,
                     list.identity,
                     list.basePath,
-                    list.liveActions
+                    list.liveActions,
+                    list.liveItemContent
                 )
             ) {
                 throw new Error(
@@ -154,13 +163,19 @@ export function commandDiff(args: string[]): void {
                     importable: list.live,
                     basePath: list.basePath,
                     actions: list.liveActions,
+                    itemContent: list.liveItemContent,
                 });
             }
         }
         if (!seedMissingHouseLockActionLists(manifest, housingUuid, seeds)) {
             throw new Error("could not update house.lock.json");
         }
-        const report = evaluateDiffReport(housingUuid, matchedLists, existingLock);
+        const report = evaluateDiffReport(
+            housingUuid,
+            matchedLists,
+            existingLock,
+            projectItems
+        );
         for (const line of formatDiffReport(report, manifest)) {
             ChatLib.chat(line);
         }

@@ -8,8 +8,15 @@ import {
 } from "../housingSync/actions/scanHash";
 import { atomicWriteText, encodeFilesystemComponent } from "../utils/filesystem";
 import { cacheDirFor, IMPORT_CACHE_ROOT } from "./paths";
+import {
+    itemFieldContentFromSnapshot,
+    itemFieldContentSnapshot,
+    parseItemFieldContentSnapshot,
+    type ItemFieldContent,
+    type ItemFieldContentSnapshot,
+} from "../housingSync/items/fieldContent";
 
-const STAGED_HYDRATION_SCHEMA_VERSION = 1;
+const STAGED_HYDRATION_SCHEMA_VERSION = 2;
 const STAGED_HYDRATION_MAX_AGE_MS = 10 * 60 * 1000;
 
 export type StagedActionListHydration = {
@@ -17,13 +24,18 @@ export type StagedActionListHydration = {
     contentHash: string;
     actions: readonly Action[];
     validUntil: number;
+    itemFields?: ItemFieldContentSnapshot;
 };
 
-type StoredStagedActionListHydration = Omit<StagedActionListHydration, "validUntil"> & {
+type StoredStagedActionListHydration = Omit<
+    StagedActionListHydration,
+    "itemFields" | "validUntil"
+> & {
     schemaVersion: typeof STAGED_HYDRATION_SCHEMA_VERSION;
     scanHashVersion: typeof ACTION_LIST_SCAN_HASH_VERSION;
     contentHashVersion: typeof ACTION_LIST_CONTENT_HASH_VERSION;
     writtenAt: string;
+    itemFields: ItemFieldContentSnapshot;
 };
 
 function stagedHydrationPath(
@@ -42,16 +54,21 @@ export function writeStagedActionListHydration(
     type: Importable["type"],
     identity: string,
     basePath: string,
-    actions: readonly Action[]
+    actions: readonly Action[],
+    itemContent?: ItemFieldContent
 ): boolean {
+    const itemFields =
+        itemContent === undefined ? {} : itemFieldContentSnapshot(actions, itemContent);
+    const stagedItemContent = itemFieldContentFromSnapshot(itemFields);
     const stored: StoredStagedActionListHydration = {
         schemaVersion: STAGED_HYDRATION_SCHEMA_VERSION,
         scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION,
         contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION,
         writtenAt: new Date().toISOString(),
         scanHash: actionListScanHashFromActions(actions),
-        contentHash: actionListContentHashFromActions(actions),
+        contentHash: actionListContentHashFromActions(actions, stagedItemContent),
         actions,
+        itemFields,
     };
     return atomicWriteText(
         stagedHydrationPath(housingUuid, type, identity, basePath),
@@ -91,9 +108,14 @@ export function readStagedActionListHydration(
     if (!Number.isFinite(writtenAt) || age < 0 || age > STAGED_HYDRATION_MAX_AGE_MS) {
         return null;
     }
+    const itemFields = parseItemFieldContentSnapshot(stored.itemFields);
+    if (itemFields === null) return null;
     if (
         actionListScanHashFromActions(stored.actions) !== stored.scanHash ||
-        actionListContentHashFromActions(stored.actions) !== stored.contentHash
+        actionListContentHashFromActions(
+            stored.actions,
+            itemFieldContentFromSnapshot(itemFields)
+        ) !== stored.contentHash
     ) {
         return null;
     }
@@ -102,5 +124,6 @@ export function readStagedActionListHydration(
         contentHash: stored.contentHash,
         actions: stored.actions,
         validUntil: writtenAt + STAGED_HYDRATION_MAX_AGE_MS,
+        itemFields,
     };
 }

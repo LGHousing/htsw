@@ -2,8 +2,99 @@ import { describe, expect, it } from "vitest";
 
 import { actionListConflictDetails } from "../src/housingSync/actions/conflictDetails";
 import { conditional, message, playSound } from "./utils";
+import type { Action } from "htsw/types";
 
 describe("action-list conflict details", () => {
+    it("ignores item operand aliases and reports canonical item changes", () => {
+        const source = {
+            type: "GIVE_ITEM",
+            itemName: "ingredient_bag.snbt",
+        } as Action;
+        const live = {
+            type: "GIVE_ITEM",
+            itemName: "ingredient_bag",
+        } as Action;
+        const cookie = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:cookie" } },
+        };
+        const apple = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:apple" } },
+        };
+
+        expect(
+            actionListConflictDetails(
+                [live],
+                [source],
+                () => ({ key: "cookie", tag: cookie }),
+                () => ({ key: "cookie", tag: cookie })
+            )
+        ).toEqual({ differences: [], moreCount: 0 });
+
+        expect(
+            actionListConflictDetails(
+                [live],
+                [source],
+                () => ({ key: "apple", tag: apple }),
+                () => ({ key: "cookie", tag: cookie })
+            )
+        ).toMatchObject({
+            differences: [
+                {
+                    path: "action 1 (give item) · itemName",
+                    live: "<item>",
+                    source: "<item>",
+                },
+            ],
+            itemDifferences: [
+                {
+                    path: "action 1 (give item) · itemName",
+                },
+            ],
+            moreCount: 0,
+        });
+    });
+
+    it("keeps item sections within the general difference cap", () => {
+        const live: Action[] = Array.from(
+            { length: 6 },
+            (_, index): Action =>
+                ({
+                    type: "GIVE_ITEM",
+                    itemName: `live-${index}`,
+                })
+        );
+        const source: Action[] = Array.from(
+            { length: 6 },
+            (_, index): Action =>
+                ({
+                    type: "GIVE_ITEM",
+                    itemName: `source-${index}`,
+                })
+        );
+        const tag = {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        };
+        const result = actionListConflictDetails(
+            live,
+            source,
+            (owner) => ({
+                key: `live-${live.indexOf(owner as Action)}`,
+                tag,
+            }),
+            (owner) => ({
+                key: `source-${source.indexOf(owner as Action)}`,
+                tag,
+            })
+        );
+
+        expect(result.differences).toHaveLength(5);
+        expect(result.itemDifferences).toHaveLength(5);
+        expect(result.moreCount).toBe(1);
+    });
+
     it("reports scalar changes", () => {
         expect(actionListConflictDetails([message("live")], [message("source")])).toEqual(
             {

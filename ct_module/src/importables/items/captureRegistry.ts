@@ -22,6 +22,7 @@ export type CapturedItem = {
     displayName: string;
     seeded: boolean;
     expectedInteractData?: InteractDataExpectation;
+    canonicalTagKey?: string;
 };
 
 type RegistryItem = CapturedItem & {
@@ -91,6 +92,7 @@ export class ItemCaptureRegistry {
             displayName: displayName ?? "",
             seeded: true,
             expectedInteractData,
+            canonicalTagKey: shellKey,
             shellKey,
             exactKey,
         };
