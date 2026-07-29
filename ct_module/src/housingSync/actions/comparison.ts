@@ -294,6 +294,10 @@ function serializeCompareValue(value: unknown): string {
 type CachedDefault = { value: unknown; key: string; scalar: boolean };
 const canonicalDefaultCache = new Map<string, CachedDefault | null>();
 
+export function canonicalDefaultCacheSize(): number {
+    return canonicalDefaultCache.size;
+}
+
 function fieldValueMatchesDefault(type: string, prop: string, value: unknown): boolean {
     const cachedDef = canonicalDefaultFor(type, prop);
     if (cachedDef === null) return false;

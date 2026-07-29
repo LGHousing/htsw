@@ -279,6 +279,10 @@ function cacheListPrefix(match: FileTarget, cached: Importable): string {
 let fileTargetCacheRev = -1;
 const fileTargetCache = new Map<string, FileTarget | null>();
 
+export function sourceDiffCacheSizes(): { entries: number; fileTargets: number } {
+    return { entries: entries.size, fileTargets: fileTargetCache.size };
+}
+
 export function findFileTarget(
     filePath: string,
     importJsonPath?: string | null

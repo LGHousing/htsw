@@ -623,6 +623,18 @@ function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): voi
 const enumIndex = new Map<string, HouseImportable[]>();
 const scanMarkerCache = new Map<string, boolean>();
 
+export function importCacheMemorySizes(): {
+    reads: number;
+    enumerations: number;
+    scanMarkers: number;
+} {
+    return {
+        reads: readCache.size,
+        enumerations: enumIndex.size,
+        scanMarkers: scanMarkerCache.size,
+    };
+}
+
 function enumKey(uuid: string, type: Importable["type"]): string {
     return `${uuid}|${type}`;
 }

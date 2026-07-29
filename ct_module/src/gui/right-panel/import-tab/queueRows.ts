@@ -186,6 +186,16 @@ let skipPredictionHousingUuid: string | null = null;
 let skipPredictionTrusted = false;
 const skipPredictions = new Map<string, boolean>();
 
+export function queueRowCacheSizes(): {
+    sourceIndexes: number;
+    skipPredictions: number;
+} {
+    return {
+        sourceIndexes: queueSourceIndexes.size,
+        skipPredictions: skipPredictions.size,
+    };
+}
+
 function currentSkipPredictionContext(): SkipPredictionContext {
     const parseRevision = getParseCacheRevision();
     const cacheRevision = getImportCacheWriteRevision();

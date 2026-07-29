@@ -14,6 +14,10 @@ type Entry = { rect: Rect; at: number };
 const STALE_MS = 300;
 const entries = new Map<string, Entry>();
 
+export function anchorCacheSize(): number {
+    return entries.size;
+}
+
 export function reportAnchorRect(key: string, rect: Rect): void {
     entries.set(key, { rect, at: Date.now() });
 }

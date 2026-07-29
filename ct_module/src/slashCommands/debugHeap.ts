@@ -9,14 +9,27 @@ export function commandHeap(args: string[]): void {
             return;
         }
 
+        if (args[0].toLowerCase() === "gc") {
+            if (args.length > 1) {
+                ChatLib.chat(
+                    "&c[heap] Usage: /htsw debug heap [gc|dump [live|all]]"
+                );
+                return;
+            }
+            requestFullGc();
+            return;
+        }
+
         if (args[0].toLowerCase() !== "dump") {
-            ChatLib.chat("&c[heap] Usage: /htsw debug heap [dump [live|all]]");
+            ChatLib.chat("&c[heap] Usage: /htsw debug heap [gc|dump [live|all]]");
             return;
         }
 
         const mode = args.length > 1 ? args[1].toLowerCase() : "live";
         if (args.length > 2 || (mode !== "live" && mode !== "all")) {
-            ChatLib.chat("&c[heap] Usage: /htsw debug heap dump [live|all]");
+            ChatLib.chat(
+                "&c[heap] Usage: /htsw debug heap [gc|dump [live|all]]"
+            );
             return;
         }
         dumpHeap(mode !== "all");
@@ -53,6 +66,64 @@ function printHeapSummary(): void {
                 `&f${Number(bean.getCollectionTime())} ms&7 total`
         );
     }
+}
+
+function requestFullGc(): void {
+    const beforeUsed = heapUsed();
+    const beforeOldCollections = g1OldGenerationCollectionCount();
+    ChatLib.chat(
+        `&7[heap] Before GC request: used &f${mb(beforeUsed)} MB&7; ` +
+            `G1 Old Generation collections &f${collectionCount(beforeOldCollections)}`
+    );
+
+    const System = javaType("java.lang.System") as HtswJavaSystemClass & {
+        gc(): void;
+    };
+    System.gc();
+
+    const afterUsed = heapUsed();
+    const afterOldCollections = g1OldGenerationCollectionCount();
+    ChatLib.chat(
+        `&7[heap] After GC request: used &f${mb(afterUsed)} MB&7 ` +
+            `(delta &f${signedMb(afterUsed - beforeUsed)} MB&7); ` +
+            `G1 Old Generation collections &f${collectionCount(beforeOldCollections)}` +
+            `&7 -> &f${collectionCount(afterOldCollections)}&7 ` +
+            `(${oldGenerationCollectionResult(beforeOldCollections, afterOldCollections)})`
+    );
+}
+
+function heapUsed(): number {
+    const runtime = javaType("java.lang.Runtime").getRuntime();
+    return Number(runtime.totalMemory()) - Number(runtime.freeMemory());
+}
+
+function g1OldGenerationCollectionCount(): number | null {
+    const ManagementFactory = javaType("java.lang.management.ManagementFactory");
+    const beans = ManagementFactory.getGarbageCollectorMXBeans();
+    for (let i = 0; i < beans.length; i++) {
+        if (String(beans[i].getName()) === "G1 Old Generation") {
+            return Number(beans[i].getCollectionCount());
+        }
+    }
+    return null;
+}
+
+function collectionCount(count: number | null): string {
+    return count === null ? "unavailable" : String(count);
+}
+
+function oldGenerationCollectionResult(before: number | null, after: number | null): string {
+    if (before === null || after === null) {
+        return "old-generation collector unavailable";
+    }
+    return after > before
+        ? "old-generation collection observed"
+        : "no old-generation collection observed";
+}
+
+function signedMb(bytes: number): string {
+    const value = bytes / BYTES_PER_MB;
+    return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 function dumpHeap(live: boolean): void {

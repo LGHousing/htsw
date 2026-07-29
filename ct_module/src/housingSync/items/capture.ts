@@ -129,6 +129,7 @@ async function recaptureCurrentItem(
     const inventoryView: InventoryView = "openContainer";
     const originalInventory = snapshotOpenContainerInventory();
     try {
+        await clearMergeCandidates(ctx, inventoryView, originalInventory, targetKey);
         if (inventoryIsFull(inventoryView)) {
             await clearInventorySlot(ctx, FULL_INVENTORY_CAPTURE_SLOT, inventoryView);
         }
@@ -150,6 +151,19 @@ async function recaptureCurrentItem(
         return captured;
     } finally {
         await restoreInventorySlots(ctx, originalInventory, inventoryView);
+    }
+}
+
+async function clearMergeCandidates(
+    ctx: TaskContext,
+    view: InventoryView,
+    snapshot: readonly InventorySlotSnapshot[],
+    targetKey: string
+): Promise<void> {
+    for (let index = 0; index < snapshot.length; index++) {
+        const entry = snapshot[index];
+        if (mergeKey(entry.nbt) !== targetKey) continue;
+        await clearInventorySlot(ctx, entry.slotId, view);
     }
 }
 

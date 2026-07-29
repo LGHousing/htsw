@@ -308,6 +308,10 @@ export function queueItemsForPath(filePath: string, importJsonPath?: string | nu
 let queueItemsCacheRev = -1;
 const queueItemsCache = new Map<string, QueueItem[]>();
 
+export function queueItemsCacheSize(): number {
+    return queueItemsCache.size;
+}
+
 /**
  * Locate every importable across every cached parse whose source file
  * matches `target` (canonical). Returns one queue item per match.
