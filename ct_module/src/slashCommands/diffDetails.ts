@@ -4,7 +4,6 @@ import type { Action, Importable } from "htsw/types";
 import type { ActionListConflictDifference } from "../housingSync/actions/conflictDetails";
 import { parentDirOf } from "../project/paths";
 import { atomicWriteText } from "../utils/filesystem";
-import { unifiedDiff } from "./unifiedDiff";
 
 export type DiffPrinterDiagnostic = {
     side: "source" | "live";
@@ -25,10 +24,6 @@ type DiffDetailsReport = {
     conflicts: readonly DiffDetailsConflict[];
     unknown: number;
 };
-
-function withoutFinalNewline(text: string): string {
-    return text.endsWith("\n") ? text.substring(0, text.length - 1) : text;
-}
 
 export function printerDiagnosticsForDiff(
     side: DiffPrinterDiagnostic["side"],
@@ -62,41 +57,31 @@ export function formatDiffDetailsFile(
         "# Values use the canonical field comparison that determined the verdict.",
     ];
     for (const conflict of report.conflicts) {
-        const sourceText = canonicalDifferenceText(
-            conflict.canonicalDifferences,
-            "source"
-        );
-        const liveText = canonicalDifferenceText(conflict.canonicalDifferences, "live");
-        const diff = unifiedDiff(
-            sourceText,
-            liveText,
-            `source/${conflict.basePath}`,
-            `live/${conflict.basePath}`
-        );
         lines.push("", `# ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`);
         for (const diagnostic of conflict.printerDiagnostics) {
             lines.push(
                 `# HTSL printer ${diagnostic.level} (${diagnostic.side}): ${diagnostic.message}`
             );
         }
+        if (conflict.canonicalDifferences.length === 0) {
+            lines.push(
+                "# Conflict verdict had no renderable canonical field difference."
+            );
+            continue;
+        }
         lines.push(
-            diff === ""
-                ? "# Conflict verdict had no renderable canonical field difference."
-                : withoutFinalNewline(diff)
+            `--- source/${conflict.basePath}`,
+            `+++ live/${conflict.basePath}`
         );
+        for (const difference of conflict.canonicalDifferences) {
+            lines.push(
+                ` ${difference.path}`,
+                `-  ${difference.source}`,
+                `+  ${difference.live}`
+            );
+        }
     }
     return lines.join("\n") + "\n";
-}
-
-function canonicalDifferenceText(
-    differences: readonly ActionListConflictDifference[],
-    side: "source" | "live"
-): string {
-    const lines: string[] = [];
-    for (const difference of differences) {
-        lines.push(difference.path, `  ${difference[side]}`);
-    }
-    return lines.join("\n") + (lines.length === 0 ? "" : "\n");
 }
 
 export function writeDiffDetailsFile(
@@ -106,6 +91,9 @@ export function writeDiffDetailsFile(
 ): string {
     const path = diffDetailsPath(manifest);
     if (!atomicWriteText(path, formatDiffDetailsFile(report, manifest, timestamp))) {
+        try {
+            if (FileLib.exists(path)) FileLib.delete(path);
+        } catch (_error) {}
         throw new Error(`could not write diff details '${path}'`);
     }
     return path;
