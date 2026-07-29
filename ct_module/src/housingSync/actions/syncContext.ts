@@ -14,12 +14,20 @@ export type ActionSyncConflict = {
     basePath: string;
 };
 
+export type ActionSyncConflictEvidence = ActionSyncConflict & {
+    expectedActions: readonly Action[];
+    liveActions?: readonly Action[];
+    liveScanHash: string;
+    expectedScanHash: string;
+};
+
 export type ActionSyncContext = {
     canonicalizeItemName: CanonicalizeItemName;
     resolveItem: ResolveItemField;
     trust: TrustPlan;
     overwriteWarningMode: OverwriteWarningMode;
     conflicts: ActionSyncConflict[];
+    conflictEvidence?: ActionSyncConflictEvidence[];
     events?: SyncEventHandler;
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
     itemDiff?: ItemDiffContext;

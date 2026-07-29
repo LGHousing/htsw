@@ -73,8 +73,31 @@ import {
     type ApplicationPlan,
     workStep,
 } from "./applicationProgress";
+import {
+    appendImportCancelEvidence,
+    type ImportCancelEvidence,
+} from "../../slashCommands/diffDetails";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
+
+export function importCancelEvidenceMessages(
+    conflicts: readonly ImportConflict[]
+): string[] {
+    const shown = Math.min(conflicts.length, 5);
+    const messages: string[] = [];
+    for (let i = 0; i < shown; i++) {
+        const conflict = conflicts[i];
+        messages.push(
+            `[htsw] Cancelled by: ${conflict.type} "${conflict.identity}" · ${conflict.basePath} — see report`
+        );
+    }
+    if (conflicts.length > shown) {
+        messages.push(
+            `[htsw] …and ${conflicts.length - shown} more apply-time conflicts — see report`
+        );
+    }
+    return messages;
+}
 
 export type ImportSessionRequest = {
     importables: Importable[];
@@ -253,6 +276,7 @@ async function runImportSessionInner(
             overwriteWarningMode:
                 selection.overwriteWarningMode ?? getOverwriteWarningMode(),
             conflicts: [],
+            conflictEvidence: [],
             events,
             itemRead: { mode: "sync" },
             itemDiff,
@@ -504,6 +528,14 @@ async function runImportSessionInner(
             ctx.displayMessage(
                 "&c[htsw] Import cancelled — Housing changed since the last import."
             );
+            const cancelEvidence = cancellationEvidence(
+                session.actions.conflicts,
+                session.actions.conflictEvidence ?? []
+            );
+            appendImportCancelEvidence(selection.sourcePath, cancelEvidence);
+            for (const message of importCancelEvidenceMessages(cancelEvidence)) {
+                ctx.displayMessage(message);
+            }
             ctx.displayMessage(
                 "&7[htsw] Review the conflicting action lists in Housing, then retry."
             );
@@ -972,4 +1004,26 @@ function reportCancellationCache(
             "&c[htsw] The current importable stopped during an unverified change and its stale cache entry could not be removed. Retry with Trusted disabled."
         );
     }
+}
+
+function cancellationEvidence(
+    conflicts: readonly ImportConflict[],
+    captured: readonly ImportCancelEvidence[]
+): ImportCancelEvidence[] {
+    return conflicts.map((conflict) => {
+        const evidence = captured.find(
+            (entry) =>
+                entry.type === conflict.type &&
+                entry.identity === conflict.identity &&
+                entry.basePath === conflict.basePath
+        );
+        return (
+            evidence ?? {
+                ...conflict,
+                expectedActions: [],
+                liveScanHash: "<unavailable>",
+                expectedScanHash: "<unavailable>",
+            }
+        );
+    });
 }

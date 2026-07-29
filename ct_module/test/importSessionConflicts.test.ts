@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     tryWriteImportableCache: vi.fn(async () => true),
     deleteImportableCache: vi.fn(() => true),
     upsertHouseLockImportables: vi.fn(() => true),
+    appendImportCancelEvidence: vi.fn(() => "./project/htsw-diff/latest.diff"),
 }));
 
 vi.mock("../src/importables/import/importers", () => ({
@@ -56,7 +57,14 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
     writeImportFailureLog: () => "./failure.log",
 }));
 
-import { runImportSession } from "../src/importables/import/session";
+vi.mock("../src/slashCommands/diffDetails", () => ({
+    appendImportCancelEvidence: mocks.appendImportCancelEvidence,
+}));
+
+import {
+    importCancelEvidenceMessages,
+    runImportSession,
+} from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
@@ -76,6 +84,9 @@ describe("import conflict gate", () => {
         mocks.tryWriteImportableCache.mockResolvedValue(true);
         mocks.deleteImportableCache.mockReturnValue(true);
         mocks.upsertHouseLockImportables.mockReturnValue(true);
+        mocks.appendImportCancelEvidence.mockReturnValue(
+            "./project/htsw-diff/latest.diff"
+        );
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -88,12 +99,25 @@ describe("import conflict gate", () => {
             async (
                 _ctx: unknown,
                 _importable: unknown,
-                session: { actions: { conflicts: unknown[] } }
+                session: {
+                    actions: {
+                        conflicts: unknown[];
+                        conflictEvidence: unknown[];
+                    };
+                }
             ) => {
-                session.actions.conflicts.push({
+                const conflict = {
                     type: "FUNCTION",
                     identity: "Debug",
                     basePath: "actions",
+                } as const;
+                session.actions.conflicts.push(conflict);
+                session.actions.conflictEvidence.push({
+                    ...conflict,
+                    expectedActions: importable.actions,
+                    liveActions: [message("live")],
+                    liveScanHash: "live-scan",
+                    expectedScanHash: "expected-scan",
                 });
                 return {
                     kind: "FUNCTION",
@@ -142,6 +166,40 @@ describe("import conflict gate", () => {
         expect(messages).toContain(
             "&c[htsw] Import cancelled — Housing changed since the last import."
         );
+        expect(messages).toContain(
+            '[htsw] Cancelled by: FUNCTION "Debug" · actions — see report'
+        );
+        expect(mocks.appendImportCancelEvidence).toHaveBeenCalledWith(
+            "./project/import.json",
+            [
+                {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                    expectedActions: importable.actions,
+                    liveActions: [message("live")],
+                    liveScanHash: "live-scan",
+                    expectedScanHash: "expected-scan",
+                },
+            ]
+        );
+    });
+
+    it("bounds apply-time conflict evidence chat at five lists", () => {
+        const conflicts = Array.from({ length: 7 }, (_, index) => ({
+            type: "FUNCTION" as const,
+            identity: `List ${index + 1}`,
+            basePath: "actions",
+        }));
+
+        expect(importCancelEvidenceMessages(conflicts)).toEqual([
+            '[htsw] Cancelled by: FUNCTION "List 1" · actions — see report',
+            '[htsw] Cancelled by: FUNCTION "List 2" · actions — see report',
+            '[htsw] Cancelled by: FUNCTION "List 3" · actions — see report',
+            '[htsw] Cancelled by: FUNCTION "List 4" · actions — see report',
+            '[htsw] Cancelled by: FUNCTION "List 5" · actions — see report',
+            "[htsw] …and 2 more apply-time conflicts — see report",
+        ]);
     });
 
     it("saves completed observations when hydration is cancelled", async () => {

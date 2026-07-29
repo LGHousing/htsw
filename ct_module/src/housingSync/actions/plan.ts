@@ -1,7 +1,11 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import type { ActionSyncConflict, ActionSyncContext } from "./syncContext";
+import type {
+    ActionSyncConflict,
+    ActionSyncConflictEvidence,
+    ActionSyncContext,
+} from "./syncContext";
 import type { ActionListTrust } from "./applyTrust";
 import type { ActionListDiff } from "./diff/types";
 import type { ObservedActionSlot } from "../observedActions";
@@ -25,6 +29,11 @@ import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
+import {
+    actionListScanHashFromActions,
+    actionListScanHashFromSlots,
+} from "./scanHash";
+import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -172,6 +181,16 @@ export async function hydrateActionListForPlan(
     }
     if (!options.sync.trust.trustMode) {
         recordActionListConflict({ slots: observed }, desired, options);
+    } else if (
+        options.conflictTarget !== undefined &&
+        hasActionListConflict(options.sync, options.conflictTarget)
+    ) {
+        recordActionListConflictEvidence(
+            { slots: observed },
+            desired,
+            options.conflictTarget,
+            options.sync
+        );
     }
     const diff = diffActionList(
         baselineActionListFromSlots(observed),
@@ -265,6 +284,54 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
+        recordActionListConflictEvidence(live, desired, target, options.sync);
     }
     return verdict;
+}
+
+function hasActionListConflict(
+    sync: ActionSyncContext,
+    target: ActionSyncConflict
+): boolean {
+    return sync.conflicts.some(
+        (conflict) =>
+            conflict.type === target.type &&
+            conflict.identity === target.identity &&
+            conflict.basePath === target.basePath
+    );
+}
+
+function recordActionListConflictEvidence(
+    live: { slots: readonly ObservedActionSlot[] } | { actions: readonly Action[] },
+    desired: readonly Action[],
+    target: ActionSyncConflict,
+    sync: ActionSyncContext
+): void {
+    if (sync.conflictEvidence === undefined) return;
+    const evidence: ActionSyncConflictEvidence = {
+        ...target,
+        expectedActions: desired.slice(),
+        ...("slots" in live
+            ? {
+                  liveActions:
+                      fullyHydratedActionsFromSlots(live.slots) ?? undefined,
+                  liveScanHash: actionListScanHashFromSlots(live.slots),
+              }
+            : {
+                  liveActions: live.actions.slice(),
+                  liveScanHash: actionListScanHashFromActions(live.actions),
+              }),
+        expectedScanHash: actionListScanHashFromActions(desired),
+    };
+    const existingIndex = sync.conflictEvidence.findIndex(
+        (entry) =>
+            entry.type === target.type &&
+            entry.identity === target.identity &&
+            entry.basePath === target.basePath
+    );
+    if (existingIndex < 0) {
+        sync.conflictEvidence.push(evidence);
+    } else {
+        sync.conflictEvidence[existingIndex] = evidence;
+    }
 }

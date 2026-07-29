@@ -88,6 +88,7 @@ function sessionWithLock(
         },
         overwriteWarningMode,
         conflicts: [],
+        conflictEvidence: [],
         events: undefined,
         itemRead: { mode: "sync" },
     };
@@ -133,7 +134,51 @@ describe("readActionListPlan conflict detection", () => {
         expect(session.conflicts).toEqual([
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
+        expect(session.conflictEvidence).toEqual([
+            {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                expectedActions: importable.actions,
+                liveActions: [changeVar()],
+                liveScanHash: actionListScanHashFromActions([changeVar()]),
+                expectedScanHash: actionListScanHashFromActions(importable.actions!),
+            },
+        ]);
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
+
+    it("keeps scan hashes when a trusted conflict cannot be fully hydrated", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        const live = observedSlot(0, changeVar());
+        live.hydrated = false;
+        mocks.scanActionList.mockResolvedValue({ slots: [live] });
+        const session = sessionWithLock(importable, [message("baseline")]);
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: importable.type,
+                identity: importable.name,
+                basePath: "actions",
+            },
+        });
+
+        expect(session.conflictEvidence).toEqual([
+            {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                expectedActions: importable.actions,
+                liveActions: undefined,
+                liveScanHash: actionListScanHashFromActions([changeVar()]),
+                expectedScanHash: actionListScanHashFromActions(importable.actions!),
+            },
+        ]);
     });
 
     it("detects an untrusted content conflict without an import cache entry", async () => {

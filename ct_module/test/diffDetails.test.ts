@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Action } from "htsw/types";
 
 import {
+    formatImportCancelEvidence,
     formatDiffDetailsFile,
     printerDiagnosticsForDiff,
 } from "../src/slashCommands/diffDetails";
+import { message } from "./utils";
 
 describe("diff details", () => {
     it("surfaces diagnostics from lossy HTSL printing", () => {
@@ -89,6 +91,50 @@ describe("diff details", () => {
                 " action 1 (message) · note\n" +
                 '-  "a\\nb"\n' +
                 '+  "a b"\n'
+        );
+    });
+
+    it("renders hydrated apply-time cancellation evidence as a unified diff", () => {
+        const output = formatImportCancelEvidence([
+            {
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                expectedActions: [message("expected")],
+                liveActions: [message("live")],
+                liveScanHash: "live-scan",
+                expectedScanHash: "expected-scan",
+            },
+        ]);
+
+        expect(output).toContain(
+            "# IMPORT CANCELLED - CONFLICT AT APPLY TIME\n\n" +
+                '# FUNCTION "Debug" · actions\n' +
+                "--- expected/actions\n" +
+                "+++ live/actions\n" +
+                "@@ -1 +1 @@\n" +
+                '-chat "expected"\n' +
+                '+chat "live"\n'
+        );
+    });
+
+    it("labels apply-time cancellation evidence when content is scan-only", () => {
+        const output = formatImportCancelEvidence([
+            {
+                type: "MENU",
+                identity: "Shop",
+                basePath: "slots[3].actions",
+                expectedActions: [message("expected")],
+                liveScanHash: "live-scan",
+                expectedScanHash: "expected-scan",
+            },
+        ]);
+
+        expect(output).toContain(
+            '# MENU "Shop" · slots[3].actions\n' +
+                "# Full live content was not hydrated at cancellation; scan-level evidence only.\n" +
+                "# live scan hash: live-scan\n" +
+                "# expected scan hash: expected-scan\n"
         );
     });
 });
