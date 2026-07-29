@@ -258,11 +258,7 @@ function recordActionListConflict(
     const trustPlan = options.sync.trust.importables.get(
         importableKey(target.type, target.identity)
     );
-    const itemContent =
-        options.sync.itemDiff?.fieldContent === undefined
-            ? undefined
-            : (owner: Action | import("htsw/types").Condition, property: string) =>
-                  options.sync.itemDiff?.fieldContent?.(owner, property);
+    const itemContent = options.sync.itemDiff?.fieldContent;
     const verdict = actionListConflictVerdict(
         live,
         {

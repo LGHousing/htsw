@@ -1,10 +1,7 @@
 export class BoundedMap<K, V> {
     protected readonly entries = new Map<K, V>();
 
-    constructor(
-        private readonly maxEntries: number,
-        private readonly evictionCallback?: (key: K, value: V) => void
-    ) {}
+    constructor(private readonly maxEntries: number) {}
 
     get size(): number {
         return this.entries.size;
@@ -14,10 +11,6 @@ export class BoundedMap<K, V> {
         return this.entries.get(key);
     }
 
-    has(key: K): boolean {
-        return this.entries.has(key);
-    }
-
     set(key: K, value: V): void {
         const existing = this.entries.has(key);
         this.entries.set(key, value);
@@ -25,9 +18,8 @@ export class BoundedMap<K, V> {
         while (this.entries.size > this.maxEntries) {
             const oldest = this.entries.entries().next();
             if (oldest.done) return;
-            const [evictedKey, evictedValue] = oldest.value;
+            const evictedKey = oldest.value[0];
             this.entries.delete(evictedKey);
-            this.evictionCallback?.(evictedKey, evictedValue);
         }
     }
 
@@ -37,10 +29,6 @@ export class BoundedMap<K, V> {
 
     clear(): void {
         this.entries.clear();
-    }
-
-    values(): IterableIterator<V> {
-        return this.entries.values();
     }
 
     deleteWhere(predicate: (key: K, value: V) => boolean): number {
@@ -61,10 +49,6 @@ export class BoundedLruMap<K, V> extends BoundedMap<K, V> {
         this.entries.delete(key);
         this.entries.set(key, value as V);
         return value;
-    }
-
-    peek(key: K): V | undefined {
-        return this.entries.get(key);
     }
 
     override set(key: K, value: V): void {

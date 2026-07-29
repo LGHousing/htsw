@@ -141,7 +141,7 @@ describe("house lock scan hashes", () => {
             tag: TagLike
         ): ItemFieldContent => (owner, property) =>
             owner === action && property === "itemName"
-                ? { key: canonicalItemShellTagKey(tag), tag }
+                ? canonicalItemShellTagKey(tag)
                 : undefined;
         const cachedContent = contentFor(cachedItem, cookie);
         const reconstructedContent = contentFor(reconstructedItem, apple);
@@ -184,13 +184,13 @@ describe("house lock scan hashes", () => {
             [action],
             (owner, property) =>
                 owner === action && property === "itemName"
-                    ? { key, tag }
+                    ? key
                     : undefined
         );
         const clonedAction = cloned.actions[0]!;
 
         expect(clonedAction).not.toBe(action);
-        expect(cloned.itemContent?.(clonedAction, "itemName")?.key).toBe(key);
+        expect(cloned.itemContent?.(clonedAction, "itemName")).toBe(key);
     });
 
     it("hides entry scan hashes from a different scan-hash version", () => {

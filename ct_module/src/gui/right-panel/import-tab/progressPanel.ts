@@ -29,7 +29,7 @@ import {
     PHASE_READING,
     PHASE_SCANNED,
 } from "./phaseColors";
-import { requestTaskCancellation } from "./cancelTask";
+import { cancelActiveTask } from "../../../tasks/activeTask";
 import {
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
@@ -624,7 +624,7 @@ function cancelButton(): Element {
         },
         onClick: () => {
             if (getTaskProgress() === null) return;
-            requestTaskCancellation();
+            cancelActiveTask();
             ChatLib.chat(`&c[htsw] cancelling task…`);
         },
     });

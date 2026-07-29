@@ -88,7 +88,3 @@ export function uploadDiagnosticsFile(
         t.start();
     } catch (_e) {}
 }
-
-export function uploadImportFailureLog(path: string): void {
-    uploadDiagnosticsFile(path, { chatUploadedId: true });
-}

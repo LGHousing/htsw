@@ -359,14 +359,14 @@ describe("import conflict gate", () => {
                 itemContent: (
                     owner: Action,
                     property: string
-                ) => { key: string; tag: TagLike } | undefined;
+                ) => string | undefined;
             };
         };
         cancellation.__htswActionListApplyResult = {
             currentSnapshot: [partialItem],
             itemContent: (owner, property) =>
                 owner === partialItem && property === "itemName"
-                    ? { key: observedKey, tag: observedTag }
+                    ? observedKey
                     : undefined,
         };
         mocks.scanImportable.mockResolvedValue({
@@ -417,15 +417,13 @@ describe("import conflict gate", () => {
             itemContent: (
                 owner: Action,
                 property: string
-            ) => { key: string } | undefined;
+            ) => string | undefined;
         }>;
         const update = updates.find(
             (entry) => entry.importable.name === "Partial"
         )!;
         const reconstructedItem = update.importable.actions![0];
-        expect(update.itemContent(reconstructedItem, "itemName")?.key).toBe(
-            observedKey
-        );
+        expect(update.itemContent(reconstructedItem, "itemName")).toBe(observedKey);
     });
 
     it("invalidates the current cache when cancellation leaves its state unverified", async () => {

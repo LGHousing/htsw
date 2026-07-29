@@ -12,9 +12,9 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatPanel } from "./chat";
-import { areTaskWideGatesActive } from "./taskGates";
 import { COLOR_PANEL } from "./lib/theme";
 import { getShowChatPanel, getShowInventoryButtons } from "../settings";
+import { isTaskRunning } from "../tasks/runningState";
 
 // Smallest chat panel we'll render (input bar + a couple scrollback rows) and
 // the minimum height the left rail keeps above it, so a short window degrades
@@ -53,7 +53,7 @@ let cachedImportBounds: ContainerBounds | null = null;
 
 function getStableBounds(): ContainerBounds | null {
     const live = getContainerBoundsOverlay();
-    const importing = areTaskWideGatesActive();
+    const importing = isTaskRunning();
     if (!importing) {
         cachedImportBounds = null;
         return live;

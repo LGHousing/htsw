@@ -128,7 +128,7 @@ describe("action-list content hashes", () => {
                 id: { type: "string", value: "minecraft:cookie" },
             },
         };
-        const itemContent = () => ({ key: JSON.stringify(tag), tag });
+        const itemContent = () => JSON.stringify(tag);
 
         expect(actionListContentHashFromActions([source], itemContent)).toBe(
             actionListContentHashFromActions([live], itemContent)
@@ -136,10 +136,7 @@ describe("action-list content hashes", () => {
         expect(
             actionListContentHashFromActions([source], itemContent)
         ).not.toBe(
-            actionListContentHashFromActions([live], () => ({
-                key: "different-content",
-                tag,
-            }))
+            actionListContentHashFromActions([live], () => "different-content")
         );
     });
 

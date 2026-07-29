@@ -4,21 +4,10 @@ import type { Action } from "htsw/types";
 import { actionListConflictVerdict } from "../src/housingSync/actions/conflicts";
 import { actionListContentHashFromActions, actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
 import type { ItemFieldContent } from "../src/housingSync/items/fieldContent";
-import type { TagLike } from "../src/housingSync/items/itemTag";
 import { observedSlot } from "./utils";
 
-const cookie: TagLike = {
-    type: "compound",
-    value: { id: { type: "string", value: "minecraft:cookie" } },
-};
-
-const apple: TagLike = {
-    type: "compound",
-    value: { id: { type: "string", value: "minecraft:apple" } },
-};
-
-function itemContent(key: string, tag: TagLike): ItemFieldContent {
-    return () => ({ key, tag });
+function itemContent(key: string): ItemFieldContent {
+    return () => key;
 }
 
 function verdicts(
@@ -67,8 +56,8 @@ describe("item conflict parity", () => {
             verdicts(
                 live,
                 source,
-                itemContent("cookie", cookie),
-                itemContent("cookie", cookie)
+                itemContent("cookie"),
+                itemContent("cookie")
             )
         ).toEqual({ diff: "unchanged", importGate: "unchanged" });
     });
@@ -87,8 +76,8 @@ describe("item conflict parity", () => {
             verdicts(
                 live,
                 source,
-                itemContent("apple", apple),
-                itemContent("cookie", cookie)
+                itemContent("apple"),
+                itemContent("cookie")
             )
         ).toEqual({ diff: "conflict", importGate: "conflict" });
     });

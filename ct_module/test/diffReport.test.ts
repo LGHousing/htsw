@@ -44,7 +44,8 @@ function evaluate(
     live: ReadonlyMap<string, LiveDiffImportable>,
     lock: HouseLock | null
 ) {
-    return evaluateDiffReport("house", matchDiffActionLists(source, live), lock);
+    return evaluateDiffReport("house", matchDiffActionLists(source, live), lock)
+        .report;
 }
 
 function lockFor(
@@ -368,8 +369,7 @@ describe("diff report", () => {
                     ],
                     unknown: 0,
                 },
-                "./htsw/projects/shop/import.json",
-                "./htsw/projects/shop/htsw-diff/latest.diff"
+                "./htsw/projects/shop/import.json"
             )
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
@@ -379,7 +379,6 @@ describe("diff report", () => {
             "[htsw] Pending changes: 1",
             '[htsw] Pending: FUNCTION "Debug" · actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
-            "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });
 });

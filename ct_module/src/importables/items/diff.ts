@@ -12,7 +12,6 @@ import { visitItemReferences } from "./dependencies";
 import type { ProjectItemIndex, ProjectItem } from "./projectItems";
 import { itemFieldObservationMatches } from "./observationMatches";
 import type { ItemVerificationTracker } from "./verifiedDependencies";
-import * as htsw from "htsw";
 import { canonicalItemShellTagKey } from "../../housingSync/items/itemNbt";
 
 type DesiredItemFields = Map<string, ProjectItem>;
@@ -192,17 +191,10 @@ export function createItemDiffContext(
         fieldContent(owner, property) {
             const desired = desiredFields.get(owner)?.get(property);
             if (desired !== undefined) {
-                return {
-                    key: canonicalItemShellTagKey(desired.nbt),
-                    tag: desired.nbt,
-                };
+                return canonicalItemShellTagKey(desired.nbt);
             }
             const observation = observations?.get(owner, property);
-            if (observation === undefined) return undefined;
-            return {
-                key: observation.canonicalKey,
-                tag: htsw.nbt.parseSnbtText(observation.snbt),
-            };
+            return observation?.canonicalKey;
         },
     };
 }

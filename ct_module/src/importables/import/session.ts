@@ -593,6 +593,7 @@ async function runImportSessionInner(
                 defineApplicationPlan([workStep("cache", COST.cacheWrite)]),
                 selection,
                 itemDependencies,
+                itemContentForLock(row.importable, items, itemDiff.fieldContent),
                 events,
                 pendingHouseLockEntries
             );
@@ -612,6 +613,7 @@ async function runImportSessionInner(
                 plan.applicationPlan,
                 selection,
                 itemDependencies,
+                itemContentForLock(row.importable, items, itemDiff.fieldContent),
                 events,
                 pendingHouseLockEntries
             );
@@ -777,6 +779,7 @@ async function finishWithoutApply(
     applicationPlan: ApplicationPlan,
     selection: ImportSessionRequest,
     itemDependencies: ItemDependencyIndex,
+    itemContent: ItemFieldContent,
     events: SyncEventHandler | undefined,
     pendingHouseLockEntries: PendingHouseLockEntry[]
 ): Promise<void> {
@@ -792,8 +795,7 @@ async function finishWithoutApply(
         pendingHouseLockEntries.push({
             importable: row.importable,
             itemDependencies: dependencies,
-            itemContent: (owner, property) =>
-                itemDependencies.fieldContent(owner, property),
+            itemContent,
         });
     }
     events?.emit({ kind: "importableFinished", key: row.key, status });

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import { createExportProgressSink } from "../src/gui/export/progressSink";
-import { requestTaskCancellation } from "../src/gui/right-panel/import-tab/cancelTask";
 import {
     clearTaskProgress,
     getTaskProgress,
 } from "../src/gui/right-panel/import-tab/taskProgress";
-import { areTaskWideGatesActive } from "../src/gui/taskGates";
 import { runHousingSyncTask } from "../src/housingSync/taskRunner";
+import { cancelActiveTask } from "../src/tasks/activeTask";
+import { isTaskRunning } from "../src/tasks/runningState";
 
 function deferred(): {
     promise: Promise<void>;
@@ -34,11 +34,11 @@ describe("task-wide gates", () => {
 
             expect(getTaskProgress()).not.toBeNull();
             for (const phase of ["captured-item export", "inventory restore"]) {
-                expect(areTaskWideGatesActive(), phase).toBe(true);
+                expect(isTaskRunning(), phase).toBe(true);
             }
 
             clearTaskProgress();
-            expect(areTaskWideGatesActive()).toBe(true);
+            expect(isTaskRunning()).toBe(true);
 
             const second = createExportProgressSink("REGION", "");
             second.start(["second"]);
@@ -46,11 +46,11 @@ describe("task-wide gates", () => {
             second.done();
 
             expect(getTaskProgress()).not.toBeNull();
-            expect(areTaskWideGatesActive()).toBe(true);
+            expect(isTaskRunning()).toBe(true);
         });
 
         expect(getTaskProgress()).toBeNull();
-        expect(areTaskWideGatesActive()).toBe(false);
+        expect(isTaskRunning()).toBe(false);
     });
 
     test("stay active until cancellation cleanup completes", async () => {
@@ -71,21 +71,21 @@ describe("task-wide gates", () => {
                 progress.done();
                 cleanupStarted.resolve();
                 await cleanupRelease.promise;
-                expect(areTaskWideGatesActive()).toBe(true);
+                expect(isTaskRunning()).toBe(true);
             }
         });
 
         await started.promise;
-        expect(requestTaskCancellation()).toBe(true);
+        expect(cancelActiveTask()).toBe(true);
         expect(getTaskProgress()).not.toBeNull();
         work.resolve();
         await cleanupStarted.promise;
         expect(getTaskProgress()).not.toBeNull();
-        expect(areTaskWideGatesActive()).toBe(true);
+        expect(isTaskRunning()).toBe(true);
 
         cleanupRelease.resolve();
         await expect(task).resolves.toBeUndefined();
         expect(getTaskProgress()).toBeNull();
-        expect(areTaskWideGatesActive()).toBe(false);
+        expect(isTaskRunning()).toBe(false);
     });
 });

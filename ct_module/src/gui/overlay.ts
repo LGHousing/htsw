@@ -79,7 +79,6 @@ import {
     resetHousingPresence,
 } from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
-import { areTaskWideGatesActive } from "./taskGates";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
@@ -136,7 +135,7 @@ function frameBounds(): Rect {
     // Mid-import gap (Hypixel closed the housing menu to prompt for chat
     // input). Reuse the bounds we captured the last time the menu was open
     // so the panel layout stays put instead of collapsing to nothing.
-    if (areTaskWideGatesActive()) {
+    if (isTaskRunning()) {
         const cached = getImportCachedBounds();
         if (cached !== null) return getFullscreenPanelRect(cached);
     }
@@ -149,7 +148,7 @@ function frameVisible(): boolean {
     // only decides whether the frame appears over idle containers.
     if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
-    return areTaskWideGatesActive() && getImportCachedBounds() !== null;
+    return isTaskRunning() && getImportCachedBounds() !== null;
 }
 
 function inventoryToolbarBounds(): Rect {
@@ -337,7 +336,7 @@ const COLOR_IMPORT_GAP_SHADE = 0xc0101010 | 0;
 
 function paintImportShade(rawX: number, rawY: number, frame: Panel): void {
     if (!enabled) return;
-    if (!areTaskWideGatesActive()) return;
+    if (!isTaskRunning()) return;
     if (getContainerBounds() !== null) return;
     const cached = getImportCachedBounds();
     if (cached === null) return;
@@ -493,7 +492,7 @@ export function initHtswGui(): void {
     // and the scrim already dims them like any inventory would.
     function inImportGap(): boolean {
         if (!enabled) return false;
-        if (!areTaskWideGatesActive()) return false;
+        if (!isTaskRunning()) return false;
         if (getImportCachedBounds() === null) return false;
         if (getContainerBounds() !== null) return false;
         return true;
@@ -543,7 +542,7 @@ export function initHtswGui(): void {
         // misses brief grab→ungrab cycles.
         const mc = getMinecraft();
         const inGame = mc.field_71415_G;
-        if (prevInGameHasFocus && !inGame && areTaskWideGatesActive()) {
+        if (prevInGameHasFocus && !inGame && isTaskRunning()) {
             // Just transitioned grab → ungrab while an import is in flight:
             // MC just centered the cursor inside `ungrabMouseCursor`. Put
             // it back where the user had it before the grab. Don't update
@@ -576,7 +575,7 @@ export function initHtswGui(): void {
         const current = getMinecraft().field_71462_r;
         if (!enabled) return;
         if (incoming !== null && incoming !== undefined) return;
-        if (!areTaskWideGatesActive()) return;
+        if (!isTaskRunning()) return;
         if (getImportCachedBounds() === null) return;
         const isInterceptable =
             isPlaceholderScreen(current) || getContainerBounds() !== null;
@@ -600,7 +599,7 @@ export function initHtswGui(): void {
         event: ForgePlaySoundEvent
     ) => {
         if (!enabled) return;
-        if (!areTaskWideGatesActive()) return;
+        if (!isTaskRunning()) return;
         if (!areTaskSoundsMuted()) return;
         cancel(event);
     });
@@ -793,7 +792,7 @@ export function initHtswGui(): void {
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.
-        if (frameVisible() && !areTaskWideGatesActive()) {
+        if (frameVisible() && !isTaskRunning()) {
             maybeAutoStartTour();
         }
         if (isGuiDebugArmed()) {
@@ -818,7 +817,7 @@ export function initHtswGui(): void {
         // in a phantom GUI. Going placeholder → null calls
         // `grabMouseCursor` which doesn't move the cursor, so this is
         // snap-free even at import end.
-        if (!areTaskWideGatesActive()) {
+        if (!isTaskRunning()) {
             const mc = getMinecraft();
             if (isPlaceholderScreen(mc.field_71462_r)) {
                 mc.func_147108_a(null);

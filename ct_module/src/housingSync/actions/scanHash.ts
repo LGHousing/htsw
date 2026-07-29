@@ -96,7 +96,7 @@ function canonicalScalarContent(
                 value as unknown as Action | Condition,
                 field.prop
             );
-            if (item !== undefined) canonical[field.prop] = item.key;
+            if (item !== undefined) canonical[field.prop] = item;
             continue;
         }
         const key = scalarFieldCompareKey(type, field.prop, value[field.prop]);

@@ -2,7 +2,6 @@ import type { Action, Importable } from "htsw/types";
 
 import { compareActionList } from "../housingSync/actions/conflicts";
 import {
-    actionListConflictDetails,
     actionListConflictDifferences,
     summarizeActionListConflictDifferences,
     type ActionListConflictDetails,
@@ -81,6 +80,11 @@ export type DiffAdoptionList = Omit<
     reason: "drifted" | "untracked";
 };
 
+export type DiffEvaluation = {
+    report: DiffReport;
+    adoptionLists: DiffAdoptionList[];
+};
+
 export function matchDiffActionLists(
     sourceImportables: readonly Importable[],
     liveImportables: ReadonlyMap<string, LiveDiffImportable>
@@ -122,18 +126,19 @@ export function evaluateDiffReport(
     matches: readonly DiffActionListMatch[],
     lock: HouseLock | null,
     projectItems?: ProjectItemIndex
-): DiffReport {
-    const result: DiffReport = {
+): DiffEvaluation {
+    const report: DiffReport = {
         clean: 0,
         conflicts: [],
         pending: [],
         unknown: 0,
     };
+    const adoptionLists: DiffAdoptionList[] = [];
 
     for (const match of matches) {
         const liveActions = match.liveActions;
         if (liveActions === undefined) {
-            result.unknown++;
+            report.unknown++;
             continue;
         }
         const { comparison, sourceItemContent } = diffActionListComparison(
@@ -143,27 +148,41 @@ export function evaluateDiffReport(
             projectItems
         );
         if (comparison === null) {
-            result.unknown++;
+            report.unknown++;
             continue;
         }
         const verdict = comparison.verdict;
+        const adoptionReason =
+            verdict === "no-baseline"
+                ? "untracked"
+                : verdict === "conflict" || verdict === "already-applied"
+                  ? "drifted"
+                  : null;
+        if (match.live !== undefined && adoptionReason !== null) {
+            adoptionLists.push({
+                ...match,
+                live: match.live,
+                liveActions,
+                reason: adoptionReason,
+            });
+        }
         if (
             verdict === "conflict" ||
             (verdict === "no-baseline" && comparison.sourceDiffersFromLive)
         ) {
-            result.conflicts.push(
+            report.conflicts.push(
                 diffReportList(match, liveActions, sourceItemContent)
             );
         } else {
-            result.clean++;
+            report.clean++;
             if (comparison.sourceDiffersFromLive) {
-                result.pending.push(
+                report.pending.push(
                     diffReportList(match, liveActions, sourceItemContent)
                 );
             }
         }
     }
-    return result;
+    return { report, adoptionLists };
 }
 
 function diffReportList(
@@ -177,50 +196,17 @@ function diffReportList(
         match.liveItemContent,
         sourceItemContent
     );
-    const itemDifferences = actionListConflictDetails(
-        liveActions,
-        match.sourceActions,
-        match.liveItemContent,
-        sourceItemContent
-    ).itemDifferences;
     return {
         type: match.source.type,
         identity: match.identity,
         basePath: match.basePath,
         ...summarizeActionListConflictDifferences(canonicalDifferences),
-        ...(itemDifferences === undefined ? {} : { itemDifferences }),
         canonicalDifferences,
         printerDiagnostics: [
             ...printerDiagnosticsForDiff("source", match.sourceActions),
             ...printerDiagnosticsForDiff("live", liveActions),
         ],
     };
-}
-
-export function collectDiffAdoptionLists(
-    housingUuid: string,
-    matches: readonly DiffActionListMatch[],
-    lock: HouseLock | null,
-    projectItems?: ProjectItemIndex
-): DiffAdoptionList[] {
-    const lists: DiffAdoptionList[] = [];
-    for (const match of matches) {
-        const live = match.live;
-        const liveActions = match.liveActions;
-        if (live === undefined || liveActions === undefined) continue;
-        const verdict = diffActionListComparison(
-            housingUuid,
-            match,
-            lock,
-            projectItems
-        ).comparison?.verdict;
-        if (verdict === "no-baseline") {
-            lists.push({ ...match, live, liveActions, reason: "untracked" });
-        } else if (verdict === "conflict" || verdict === "already-applied") {
-            lists.push({ ...match, live, liveActions, reason: "drifted" });
-        }
-    }
-    return lists;
 }
 
 function diffActionListComparison(
@@ -264,8 +250,7 @@ function diffActionListComparison(
 
 export function formatDiffReport(
     report: DiffReport,
-    manifest: string,
-    detailsPath?: string
+    manifest: string
 ): string[] {
     const lines = [
         `[htsw] Diff complete: ${report.clean} clean, ${report.conflicts.length} conflicts, ${report.unknown} unknown · ${manifest}`,
@@ -279,9 +264,6 @@ export function formatDiffReport(
             "Pending",
             "pending changes"
         );
-    }
-    if (detailsPath !== undefined) {
-        lines.push(`[htsw] Diff details: ${detailsPath}`);
     }
     return lines;
 }

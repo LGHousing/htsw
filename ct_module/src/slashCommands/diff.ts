@@ -41,7 +41,6 @@ import { writeDiffDetailsFile } from "./diffDetails";
 import {
     evaluateDiffReport,
     formatDiffReport,
-    collectDiffAdoptionLists,
     matchDiffActionLists,
     type DiffAdoptionList,
     type LiveDiffImportable,
@@ -298,7 +297,7 @@ export function commandDiff(args: string[]): void {
         const matchedLists = matchDiffActionLists(parsed.value, live);
         const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
         const existingLock = readHouseLock(manifest);
-        const report = evaluateDiffReport(
+        const { report, adoptionLists } = evaluateDiffReport(
             housingUuid,
             matchedLists,
             existingLock,
@@ -319,12 +318,6 @@ export function commandDiff(args: string[]): void {
                 `[htsw] Diff details not written: ${errorReason(error)}`
             );
         }
-        const adoptionLists = collectDiffAdoptionLists(
-            housingUuid,
-            matchedLists,
-            existingLock,
-            projectItems
-        );
         if (adoptionLists.length > 0) {
             const shouldAdopt =
                 adoptWithoutPrompt ||

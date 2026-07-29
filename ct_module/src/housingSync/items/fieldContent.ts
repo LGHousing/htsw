@@ -12,21 +12,16 @@ import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { canonicalItemShellTagKey } from "./itemNbt";
 import type { TagLike } from "./itemTag";
 
-export type CanonicalItemField = {
-    key: string;
-    tag: TagLike;
-};
-
 export type ItemFieldContent = (
     owner: Action | Condition,
     property: string
-) => CanonicalItemField | undefined;
+) => string | undefined;
 
 export function sourceItemFieldContent(
     importable: Importable,
     projectItems: ProjectItemIndex
 ): ItemFieldContent {
-    const fields = new WeakMap<Action | Condition, Map<string, CanonicalItemField>>();
+    const fields = new WeakMap<Action | Condition, Map<string, string>>();
     visitItemReferences(importable, (use) => {
         const entry =
             projectItems.resolveFromSourcePath(
@@ -40,10 +35,7 @@ export function sourceItemFieldContent(
             ownerFields = new Map();
             fields.set(use.owner, ownerFields);
         }
-        ownerFields.set(use.property, {
-            key: canonicalItemShellTagKey(entry.nbt),
-            tag: entry.nbt,
-        });
+        ownerFields.set(use.property, canonicalItemShellTagKey(entry.nbt));
     });
     return (owner, property) => fields.get(owner)?.get(property);
 }
@@ -54,7 +46,7 @@ export function capturedItemFieldContent(
 ): ItemFieldContent {
     const capturesByName = new Map<string, CapturedItem>();
     for (const item of captures) capturesByName.set(item.name, item);
-    const fields = new WeakMap<Action | Condition, Map<string, CanonicalItemField>>();
+    const fields = new WeakMap<Action | Condition, Map<string, string>>();
     visitItemReferences(importable, (use) => {
         const captured = capturesByName.get(use.itemName);
         if (captured === undefined) return;
@@ -70,10 +62,7 @@ export function capturedItemFieldContent(
             ownerFields = new Map();
             fields.set(use.owner, ownerFields);
         }
-        ownerFields.set(use.property, {
-            key: canonicalItemShellTagKey(tag),
-            tag,
-        });
+        ownerFields.set(use.property, canonicalItemShellTagKey(tag));
     });
     return (owner, property) => fields.get(owner)?.get(property);
 }
@@ -92,7 +81,7 @@ export function cloneActionsWithItemFieldContent(
     );
     if (sourceItemContent === undefined) return { actions };
 
-    const fields = new WeakMap<Action | Condition, Map<string, CanonicalItemField>>();
+    const fields = new WeakMap<Action | Condition, Map<string, string>>();
     const copyFields = (
         sourceOwner: Action | Condition,
         targetOwner: Action | Condition,

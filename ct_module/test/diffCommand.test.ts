@@ -84,7 +84,7 @@ vi.mock("../src/slashCommands/diffReport", async (importOriginal) => {
         await importOriginal<typeof import("../src/slashCommands/diffReport")>();
     return {
         ...actual,
-        evaluateDiffReport: () => state.report,
+        evaluateDiffReport: () => ({ report: state.report, adoptionLists: [] }),
     };
 });
 

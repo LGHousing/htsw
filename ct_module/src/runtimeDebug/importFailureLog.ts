@@ -9,7 +9,7 @@ import {
     describeRecentWindowOpens,
     getEventContainerCounts,
 } from "../tasks/specifics/waitFor";
-import { uploadImportFailureLog } from "./importFailureUpload";
+import { uploadDiagnosticsFile } from "./importFailureUpload";
 import { readLocalVersion } from "../autoUpdate";
 
 export type ImportFailureDetails = {
@@ -79,6 +79,6 @@ export function writeImportFailureLog(
     };
     ensureParentDirs(path);
     FileLib.write(path, JSON.stringify(body, null, 2), true);
-    uploadImportFailureLog(path);
+    uploadDiagnosticsFile(path, { chatUploadedId: true });
     return path;
 }

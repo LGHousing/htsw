@@ -7,7 +7,6 @@ import {
     type ActionPathKey,
 } from "../../../housingSync/actionPath";
 import {
-    disposePreview,
     getCurrentPath,
     hasPreviewState,
     markReadComplete,
@@ -137,7 +136,7 @@ export function createReadLivePreview(
             markPreviewCompleted(path);
         },
         clear() {
-            for (let i = 0; i < paths.length; i++) disposePreview(paths[i]);
+            for (let i = 0; i < paths.length; i++) resetPreview(paths[i]);
             paths = [];
             latestSnapshots.length = 0;
             completedPaths.length = 0;

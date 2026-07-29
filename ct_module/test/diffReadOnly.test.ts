@@ -200,7 +200,7 @@ describe("diff live reads", () => {
 
         expect(firstAction.itemName).toBe("collision");
         expect(secondAction.itemName).toBe("collision");
-        expect(first.itemContent(firstAction, "itemName")?.key).toBe(
+        expect(first.itemContent(firstAction, "itemName")).toBe(
             canonicalItemShellTagKey({
                 type: "compound",
                 value: {
@@ -208,7 +208,7 @@ describe("diff live reads", () => {
                 },
             })
         );
-        expect(second.itemContent(secondAction, "itemName")?.key).toBe(
+        expect(second.itemContent(secondAction, "itemName")).toBe(
             canonicalItemShellTagKey({
                 type: "compound",
                 value: {
@@ -267,10 +267,10 @@ describe("diff live reads", () => {
             itemContent: (
                 owner: Action,
                 property: string
-            ) => { key: string } | undefined;
+            ) => string | undefined;
         };
         expect(update.importable).toBe(cached);
-        expect(update.itemContent(cachedItem, "itemName")?.key).toBe(
+        expect(update.itemContent(cachedItem, "itemName")).toBe(
             canonicalItemShellTagKey({
                 type: "compound",
                 value: {

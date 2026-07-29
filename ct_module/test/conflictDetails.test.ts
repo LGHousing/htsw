@@ -14,21 +14,12 @@ describe("action-list conflict details", () => {
             type: "GIVE_ITEM",
             itemName: "ingredient_bag",
         } as Action;
-        const cookie = {
-            type: "compound",
-            value: { id: { type: "string", value: "minecraft:cookie" } },
-        };
-        const apple = {
-            type: "compound",
-            value: { id: { type: "string", value: "minecraft:apple" } },
-        };
-
         expect(
             actionListConflictDetails(
                 [live],
                 [source],
-                () => ({ key: "cookie", tag: cookie }),
-                () => ({ key: "cookie", tag: cookie })
+                () => "cookie",
+                () => "cookie"
             )
         ).toEqual({ differences: [], moreCount: 0 });
 
@@ -36,8 +27,8 @@ describe("action-list conflict details", () => {
             actionListConflictDetails(
                 [live],
                 [source],
-                () => ({ key: "apple", tag: apple }),
-                () => ({ key: "cookie", tag: cookie })
+                () => "apple",
+                () => "cookie"
             )
         ).toMatchObject({
             differences: [
@@ -45,11 +36,6 @@ describe("action-list conflict details", () => {
                     path: "action 1 (give item) · itemName",
                     live: "<item>",
                     source: "<item>",
-                },
-            ],
-            itemDifferences: [
-                {
-                    path: "action 1 (give item) · itemName",
                 },
             ],
             moreCount: 0,
@@ -73,25 +59,14 @@ describe("action-list conflict details", () => {
                     itemName: `source-${index}`,
                 })
         );
-        const tag = {
-            type: "compound",
-            value: { id: { type: "string", value: "minecraft:stone" } },
-        };
         const result = actionListConflictDetails(
             live,
             source,
-            (owner) => ({
-                key: `live-${live.indexOf(owner as Action)}`,
-                tag,
-            }),
-            (owner) => ({
-                key: `source-${source.indexOf(owner as Action)}`,
-                tag,
-            })
+            (owner) => `live-${live.indexOf(owner as Action)}`,
+            (owner) => `source-${source.indexOf(owner as Action)}`
         );
 
         expect(result.differences).toHaveLength(5);
-        expect(result.itemDifferences).toHaveLength(5);
         expect(result.moreCount).toBe(1);
     });
 

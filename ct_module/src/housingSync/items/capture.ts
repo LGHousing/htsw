@@ -93,7 +93,7 @@ async function withCapturedEditorItem<T>(
 
         return useCapturedItem({
             editorSnbt: currentSnbt,
-            recapturedSnbt: captured.snbt,
+            recapturedSnbt: captured,
         });
     } finally {
         await clickGoBack(ctx);
@@ -125,7 +125,7 @@ async function recaptureCurrentItem(
     targetKey: string,
     actionItemCount: number,
     displayNameHint: string
-): Promise<{ snbt: string; slotId: number } | null> {
+): Promise<string | null> {
     const inventoryView: InventoryView = "openContainer";
     const originalInventory = snapshotOpenContainerInventory();
     try {
@@ -172,20 +172,17 @@ function diffForCapture(
     after: readonly InventorySlotSnapshot[],
     targetKey: string,
     actionItemCount: number
-): { snbt: string; slotId: number } | null {
-    let found: { snbt: string; slotId: number } | null = null;
+): string | null {
+    let found: string | null = null;
     for (let index = 0; index < before.length; index++) {
         const previous = before[index];
         const current = index < after.length ? after[index] : undefined;
         if (current === undefined || current.nbt === null) continue;
         if (current.nbt === previous.nbt && current.count === previous.count) continue;
         if (found !== null) return null;
-        found = {
-            snbt: rewriteSnbtCount(current.nbt, actionItemCount),
-            slotId: current.slotId,
-        };
+        found = rewriteSnbtCount(current.nbt, actionItemCount);
     }
-    return found !== null && mergeKey(found.snbt) === targetKey ? found : null;
+    return found !== null && mergeKey(found) === targetKey ? found : null;
 }
 
 function mergeKey(snbt: string | null): string | null {
@@ -203,7 +200,7 @@ async function waitForCapturedInventoryChange(
     baseline: readonly InventorySlotSnapshot[],
     targetKey: string,
     actionItemCount: number
-): Promise<{ snbt: string; slotId: number } | null> {
+): Promise<string | null> {
     for (let tick = 0; tick < SET_SLOT_ACK_MAX_TICKS; tick++) {
         const captured = capturedFromInventory(
             baseline,
@@ -227,7 +224,7 @@ function capturedFromInventory(
     current: readonly InventorySlotSnapshot[],
     targetKey: string,
     actionItemCount: number
-): { snbt: string; slotId: number } | null {
+): string | null {
     const changed = diffForCapture(baseline, current, targetKey, actionItemCount);
     if (changed !== null) return changed;
     if (snapshotHasMatchingStack(baseline, targetKey)) return null;
@@ -248,16 +245,13 @@ function findCapturedMatchingStack(
     snapshot: readonly InventorySlotSnapshot[],
     targetKey: string,
     actionItemCount: number
-): { snbt: string; slotId: number } | null {
-    let found: { snbt: string; slotId: number } | null = null;
+): string | null {
+    let found: string | null = null;
     for (let index = 0; index < snapshot.length; index++) {
         const entry = snapshot[index];
         if (entry.nbt === null || mergeKey(entry.nbt) !== targetKey) continue;
         if (found !== null) return null;
-        found = {
-            snbt: rewriteSnbtCount(entry.nbt, actionItemCount),
-            slotId: entry.slotId,
-        };
+        found = rewriteSnbtCount(entry.nbt, actionItemCount);
     }
     return found;
 }

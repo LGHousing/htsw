@@ -782,10 +782,6 @@ export function hasPreviewState(path: string): boolean {
     return states.has(keyForFile(path));
 }
 
-export function disposePreview(path: string): void {
-    removeState(keyForFile(path));
-}
-
 export function beginPreviewRead(path: string): void {
     const state = states.get(keyForFile(path));
     if (state === undefined) return;

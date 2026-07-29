@@ -6,7 +6,6 @@ import { hashHex } from "../../utils/hash";
 import { stableStringify } from "../../utils/helpers";
 import { type ItemReferenceUse, visitItemReferences } from "./dependencies";
 import type { ProjectItemIndex, ProjectItem } from "./projectItems";
-import type { CanonicalItemField } from "../../housingSync/items/fieldContent";
 
 export type ItemDependencyTarget =
     | { kind: "named"; name: string }
@@ -120,10 +119,6 @@ export interface ItemDependencyIndex {
     fingerprintOfItem(item: ImportableItem): string | undefined;
     itemByName(name: string): ImportableItem | undefined;
     clickActionsFingerprint(item: ImportableItem): string;
-    fieldContent(
-        owner: Action | Condition,
-        property: string
-    ): CanonicalItemField | undefined;
 }
 
 const indexByImportable = new WeakMap<Importable, ItemDependencyIndex>();
@@ -156,27 +151,11 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     private readonly graphEntries = new Map<string, readonly ProjectItem[]>();
     private readonly clickActionFingerprints = new WeakMap<ImportableItem, string>();
     private readonly snapshots = new WeakMap<object, ItemDependencySnapshot>();
-    private readonly itemFields = new WeakMap<
-        Action | Condition,
-        Map<string, ProjectItem>
-    >();
 
     public constructor(
         importables: readonly Importable[],
         private readonly projectItems: ProjectItemIndex
     ) {
-        for (const importable of importables) {
-            visitItemReferences(importable, (use) => {
-                const resolved = this.resolveUse(use);
-                if (resolved === undefined) return;
-                let fields = this.itemFields.get(use.owner);
-                if (fields === undefined) {
-                    fields = new Map();
-                    this.itemFields.set(use.owner, fields);
-                }
-                fields.set(use.property, resolved.entry);
-            });
-        }
         for (const importable of importables) {
             if (importable.type !== "ITEM") continue;
             const entry = projectItems.get(importable.name);
@@ -274,16 +253,6 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
             );
         this.clickActionFingerprints.set(item, fingerprint);
         return fingerprint;
-    }
-
-    public fieldContent(
-        owner: Action | Condition,
-        property: string
-    ): CanonicalItemField | undefined {
-        const entry = this.itemFields.get(owner)?.get(property);
-        return entry === undefined
-            ? undefined
-            : { key: canonicalItemShellTagKey(entry.nbt), tag: entry.nbt };
     }
 
     private graphFromEntries(entries: readonly ProjectItem[]): GraphNode[] {
