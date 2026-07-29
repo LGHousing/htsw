@@ -4,7 +4,7 @@ import type TaskContext from "../tasks/context";
 import { importableIdentity } from "../importables/identity";
 import { importableHash } from "./hash";
 import { houseLockEntryFor, readHouseLock } from "./houseLock";
-import { writeImportableCache } from "./cache";
+import { readImportableCache, writeImportableCache, writePresence } from "./cache";
 import {
     itemDependencyIndexFor,
     sameItemDependencySnapshot,
@@ -22,6 +22,7 @@ export type AcceptHouseLockResult =
           ok: true;
           housingUuid: string;
           accepted: Importable[];
+          markedPresent: number;
           skipped: number;
           failed: number;
       };
@@ -38,6 +39,7 @@ export function acceptHouseLockAsCurrent(
     const housingUuid = lock.houseUuid;
 
     const accepted: Importable[] = [];
+    let markedPresent = 0;
     let skipped = 0;
     let failed = 0;
     for (const importable of importables) {
@@ -63,7 +65,22 @@ export function acceptHouseLockAsCurrent(
             !dependenciesMatch ||
             !itemBlobAvailable
         ) {
-            skipped++;
+            const identity = importableIdentity(importable);
+            if (
+                entry !== null &&
+                readImportableCache(housingUuid, importable.type, identity) === null &&
+                writePresence(
+                    housingUuid,
+                    importable.type,
+                    identity,
+                    undefined,
+                    importable.type === "FUNCTION" ? importable.icon : undefined
+                )
+            ) {
+                markedPresent++;
+            } else {
+                skipped++;
+            }
             continue;
         }
         if (
@@ -78,5 +95,5 @@ export function acceptHouseLockAsCurrent(
         }
     }
 
-    return { ok: true, housingUuid, accepted, skipped, failed };
+    return { ok: true, housingUuid, accepted, markedPresent, skipped, failed };
 }

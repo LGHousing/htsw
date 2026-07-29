@@ -64,7 +64,8 @@ describe("acceptHouseLockAsCurrent", () => {
         if (!result.ok) return;
         expect(result.housingUuid).toBe(uuid);
         expect(result.accepted).toEqual([accepted]);
-        expect(result.skipped).toBe(1);
+        expect(result.markedPresent).toBe(1);
+        expect(result.skipped).toBe(0);
         expect(result.failed).toBe(0);
         expect(
             JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted.knowledge.json`]!)
@@ -73,7 +74,13 @@ describe("acceptHouseLockAsCurrent", () => {
             importable: accepted,
             hash: importableHash(accepted),
         });
-        expect(files[changedPath]).toBe("older-local-knowledge");
+        expect(JSON.parse(files[changedPath]!)).toMatchObject({
+            schemaVersion: 2,
+            name: "Changed",
+            verified: false,
+        });
+        expect(JSON.parse(files[changedPath]!)).not.toHaveProperty("importable");
+        expect(JSON.parse(files[changedPath]!)).not.toHaveProperty("writer");
         expect(files[undeclaredPath]).toBe("house-only");
         expect(files[lockPath]).toBe(lockText);
     });
@@ -160,8 +167,13 @@ describe("acceptHouseLockAsCurrent", () => {
             itemDependencies
         );
 
-        expect(result).toMatchObject({ ok: true, accepted: [], skipped: 1 });
-        expect(write).not.toHaveBeenCalled();
+        expect(result).toMatchObject({
+            ok: true,
+            accepted: [],
+            markedPresent: 1,
+            skipped: 0,
+        });
+        expect(write).toHaveBeenCalled();
     });
 
     it("only accepts action-bearing item knowledge when its interaction blob exists", () => {
@@ -228,16 +240,140 @@ describe("acceptHouseLockAsCurrent", () => {
         expect(result).toMatchObject({
             ok: true,
             accepted: [cached],
-            skipped: 1,
+            markedPresent: 1,
+            skipped: 0,
             failed: 0,
         });
         expect(
             files[`./htsw/.cache/${uuid}/item/Missing_0020Blob.knowledge.json`]
-        ).toBeUndefined();
+        ).toBeDefined();
         expect(
             JSON.parse(
                 files[`./htsw/.cache/${uuid}/item/Cached_0020Blob.knowledge.json`]!
             )
         ).toMatchObject({ importable: cached, writer: "project-lock" });
+    });
+
+    it("does not write knowledge for a project importable absent from the lock", () => {
+        const uuid = "missing-entry-house";
+        const importJsonPath = "./projects/missing/import.json";
+        const importable = fn("Not Locked", "current");
+        const cachePath = `./htsw/.cache/${uuid}/function/Not_0020Locked.knowledge.json`;
+        const files: Partial<Record<string, string>> = {
+            "./projects/missing/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {},
+            }),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: (path: string, content: string) => {
+                files[path] = content;
+            },
+        });
+
+        const result = acceptHouseLockAsCurrent(
+            { displayMessage: vi.fn() } as unknown as TaskContext,
+            importJsonPath,
+            [importable]
+        );
+
+        expect(result).toMatchObject({
+            ok: true,
+            accepted: [],
+            markedPresent: 0,
+            skipped: 1,
+            failed: 0,
+        });
+        expect(files[cachePath]).toBeUndefined();
+    });
+
+    it("keeps verified knowledge unchanged when recording locked presence", () => {
+        const uuid = "verified-entry-house";
+        const importJsonPath = "./projects/verified/import.json";
+        const importable = fn("Verified", "working tree");
+        const cachePath = `./htsw/.cache/${uuid}/function/Verified.knowledge.json`;
+        const verified = JSON.stringify({
+            schemaVersion: 2,
+            version: 1,
+            writtenAt: "2026-07-29T00:00:00.000Z",
+            name: "Verified",
+            verified: true,
+            writer: "reader",
+            importable: fn("Verified", "house"),
+            hash: "existing-hash",
+            lists: { actions: ["existing-list-hash"] },
+        });
+        const files: Partial<Record<string, string>> = {
+            "./projects/verified/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {
+                    "FUNCTION:Verified": {
+                        type: "FUNCTION",
+                        identity: "Verified",
+                        hash: importableHash(fn("Verified", "locked")),
+                    },
+                },
+            }),
+            [cachePath]: verified,
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: (path: string, content: string) => {
+                files[path] = content;
+            },
+        });
+        vi.stubGlobal("Java", {
+            type: (name: string) => {
+                if (name === "java.nio.file.Paths") {
+                    return { get: (path: string) => path };
+                }
+                if (name === "java.nio.file.Files") {
+                    return {
+                        exists: (path: string) =>
+                            path === `./htsw/.cache/${uuid}/function`,
+                        isDirectory: () => true,
+                        newDirectoryStream: () => ({
+                            iterator: () => {
+                                let hasNext = true;
+                                return {
+                                    hasNext: () => hasNext,
+                                    next: () => {
+                                        hasNext = false;
+                                        return {
+                                            getFileName: () => ({
+                                                toString: () =>
+                                                    "Verified.knowledge.json",
+                                            }),
+                                        };
+                                    },
+                                };
+                            },
+                            close: () => undefined,
+                        }),
+                    };
+                }
+                throw new Error(`Unexpected Java type: ${name}`);
+            },
+        });
+
+        const result = acceptHouseLockAsCurrent(
+            { displayMessage: vi.fn() } as unknown as TaskContext,
+            importJsonPath,
+            [importable]
+        );
+
+        expect(result).toMatchObject({
+            ok: true,
+            accepted: [],
+            markedPresent: 0,
+            skipped: 1,
+            failed: 0,
+        });
+        expect(files[cachePath]).toBe(verified);
     });
 });

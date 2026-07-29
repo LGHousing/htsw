@@ -69,12 +69,15 @@ function acceptProjectLock(importJsonPath: string): void {
             return;
         }
         const trustSaved = setHouseTrust(result.housingUuid, true);
-        const skipped =
-            result.skipped > 0 ? `; ${result.skipped} changed or unlocked` : "";
+        const skipped = result.skipped > 0 ? `; ${result.skipped} skipped` : "";
+        const markedPresent =
+            result.markedPresent > 0
+                ? `; ${result.markedPresent} changed (in house, not read)`
+                : "";
         showToast(
             trustSaved
-                ? `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}${skipped}`
-                : `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}, but couldn't save house trust${skipped}`,
+                ? `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}${markedPresent}${skipped}`
+                : `Accepted ${result.accepted.length} locked project entr${result.accepted.length === 1 ? "y" : "ies"}, but couldn't save house trust${markedPresent}${skipped}`,
             trustSaved ? 0xff5cb85c : 0xffe85c5c,
             8000
         );
