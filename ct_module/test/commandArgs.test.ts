@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import { parseCommandArgs, quoteCommandArg } from "../src/utils/commandArgs";
-import { parseImportCommandArgs } from "../src/slashCommands/importArgs";
 
 describe("parseCommandArgs", () => {
     test("keeps normal split args unchanged", () => {
@@ -43,20 +42,5 @@ describe("parseCommandArgs", () => {
 describe("quoteCommandArg", () => {
     test("quotes spaces and escapes quotes", () => {
         expect(quoteCommandArg("folder with \"quote\"")).toBe("\"folder with \\\"quote\\\"\"");
-    });
-});
-
-describe("parseImportCommandArgs", () => {
-    test("strips the cancel policy flag from the import path", () => {
-        expect(
-            parseImportCommandArgs([
-                "projects/My",
-                "--on-conflict=cancel",
-                "House/import.json",
-            ])
-        ).toEqual({
-            pathArgs: ["projects/My", "House/import.json"],
-            onConflict: "cancel",
-        });
     });
 });

@@ -58,7 +58,10 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
     writeImportFailureLog: () => "./failure.log",
 }));
 
-import { runImportSession } from "../src/importables/import/session";
+import {
+    runImportSession,
+    type ImportSessionRequest,
+} from "../src/importables/import/session";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 import { createTaskCancelledError } from "../src/tasks/cancellation";
 import type TaskContext from "../src/tasks/context";
@@ -66,6 +69,15 @@ import { message } from "./utils";
 import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import type { TagLike } from "../src/housingSync/items/itemTag";
+
+// @ts-expect-error Every import caller must choose conflict handling.
+const requestWithoutConflictHandling: ImportSessionRequest = {
+    importables: [],
+    trustMode: false,
+    housingUuid: "test-house",
+    sourcePath: "./project/import.json",
+};
+void requestWithoutConflictHandling;
 
 const cacheApplicationPlan = {
     steps: [{ key: "cache", kind: "work", units: 0.25 }] as const,
@@ -131,7 +143,10 @@ describe("import conflict gate", () => {
             sourcePath: "./project/import.json",
             parsed: { value: [importable] } as never,
             events: { emit: (event) => events.push(event) },
-            confirmConflicts: async () => false,
+            conflictHandling: {
+                kind: "prompt",
+                decide: async () => false,
+            },
         });
 
         expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
@@ -189,6 +204,7 @@ describe("import conflict gate", () => {
                 housingUuid: "test-house",
                 sourcePath: "./project/import.json",
                 parsed: { value: importables } as never,
+                conflictHandling: { kind: "proceed" },
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
@@ -248,6 +264,7 @@ describe("import conflict gate", () => {
             housingUuid: "test-house",
             sourcePath: "./project/import.json",
             parsed: { value: importables } as never,
+            conflictHandling: { kind: "proceed" },
         });
 
         expect(mocks.hydrateImportable).toHaveBeenCalledTimes(25);
@@ -306,6 +323,7 @@ describe("import conflict gate", () => {
                 housingUuid: "test-house",
                 sourcePath: "./project/import.json",
                 parsed: { value: importables } as never,
+                conflictHandling: { kind: "proceed" },
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
@@ -390,6 +408,7 @@ describe("import conflict gate", () => {
                 housingUuid: "test-house",
                 sourcePath: "./project/import.json",
                 parsed: { value: [importable] } as never,
+                conflictHandling: { kind: "proceed" },
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
@@ -446,6 +465,7 @@ describe("import conflict gate", () => {
                 housingUuid: "test-house",
                 sourcePath: "./project/import.json",
                 parsed: { value: [importable] } as never,
+                conflictHandling: { kind: "proceed" },
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 

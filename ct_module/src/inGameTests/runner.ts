@@ -134,6 +134,7 @@ async function runFixture(
             sourcePath: fixture.importJsonPath,
             parsed: fixture.parsed,
             events,
+            conflictHandling: { kind: "proceed" },
         });
         for (let i = 0; i < importFailures.length; i++) {
             failures.push(importFailures[i]);
@@ -811,6 +812,7 @@ async function cleanupFixture(
             housingUuid,
             sourcePath: fixture.importJsonPath,
             parsed: fixture.parsed,
+            conflictHandling: { kind: "proceed" },
         });
     }
 

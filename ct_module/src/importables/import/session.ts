@@ -91,7 +91,12 @@ export type ImportSessionRequest = {
     overwriteWarningMode?: OverwriteWarningMode;
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
-    confirmConflicts?: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
+    conflictHandling:
+        | { kind: "proceed" }
+        | {
+              kind: "prompt";
+              decide: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
+          };
     /** Called for dependencies that were not already included by the caller. */
     onImportableAutoAdded?: (importable: Importable) => void;
 };
@@ -496,9 +501,9 @@ async function runImportSessionInner(
 
     if (session.actions.conflicts.length > 0) {
         const proceed =
-            selection.confirmConflicts === undefined
+            selection.conflictHandling.kind === "proceed"
                 ? true
-                : await selection.confirmConflicts(session.actions.conflicts);
+                : await selection.conflictHandling.decide(session.actions.conflicts);
         if (!proceed) {
             for (const row of rowsMeta) {
                 events?.emit({

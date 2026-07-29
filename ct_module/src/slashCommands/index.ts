@@ -50,8 +50,8 @@ import { commandQueue } from "./queue";
 import { commandWatch } from "./watch";
 import { commandTrust } from "./trust";
 import { commandWarnMode } from "./warnMode";
-import { parseImportCommandArgs } from "./importArgs";
 import { commandDiff } from "./diff";
+import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
 
 type HtswSubcommand = {
     name: string;
@@ -67,7 +67,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "import",
         summary: "Import an import.json or .htsl file",
         run: commandImport,
-        usage: "import <import.json|actions.htsl> [--on-conflict=cancel]",
+        usage: "import <import.json|actions.htsl>",
     },
     {
         name: "trust",
@@ -105,6 +105,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Explain what the importer will trust from cache for a project",
         run: commandCacheReport,
         usage: "cache <import.json>",
+    },
+    {
+        name: "answer",
+        summary: "Answer an active conflict prompt",
+        run: answerConflictPrompt,
+        hidden: true,
     },
     {
         name: "queue",
@@ -600,14 +606,13 @@ function commandEta(args: string[]): void {
 }
 
 function commandImport(args: string[]) {
-    const parsedArgs = parseImportCommandArgs(args);
-    const commandArgs = parsedArgs.pathArgs;
+    const commandArgs = args;
     if (commandArgs.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
-        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel]");
+        ChatLib.chat("&f/htsw import <import.json|actions.htsl>");
         ChatLib.chat(
             "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
         );
@@ -645,17 +650,14 @@ function commandImport(args: string[]) {
     // progress UI. buildBatches parses the file on demand via the parse
     // cache and gates on diagnostics, so no separate parse pass is needed.
     const canon = canonicalPath(importPath);
-    startImport(
-        [
-            {
-                operation: "import",
-                kind: "importJson",
-                sourcePath: canon,
-                label: compactFileLabel(canon),
-            },
-        ],
-        { onConflict: parsedArgs.onConflict }
-    );
+    startImport([
+        {
+            operation: "import",
+            kind: "importJson",
+            sourcePath: canon,
+            label: compactFileLabel(canon),
+        },
+    ]);
 }
 
 function isRawImportToken(token: string | undefined): boolean {

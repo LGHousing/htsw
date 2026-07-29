@@ -30,7 +30,6 @@ const mocks = vi.hoisted(() => ({
     fileWriteSucceeds: true,
     chats: [] as string[],
     task: undefined as Promise<unknown> | undefined,
-    guiAvailable: true,
     promptDecision: "confirm",
     promptOptions: [] as Array<{
         lines?: string[];
@@ -65,15 +64,19 @@ vi.mock("../src/project/paths", async (importOriginal) => ({
     resolveModuleRelativePath: (path: string) => path,
 }));
 
-vi.mock("../src/gui/lib/bounds", () => ({
-    getContainerBounds: () => (mocks.guiAvailable ? {} : null),
-}));
-
 vi.mock("../src/gui/popovers/confirm", () => ({
     openConfirmPopover: (options: (typeof mocks.promptOptions)[number]) => {
         mocks.promptOptions.push(options);
         if (mocks.promptDecision === "confirm") options.onConfirm();
         else if (mocks.promptDecision === "decline") options.onClose?.();
+        else if (mocks.promptDecision === "chat-confirm") {
+            const instruction = mocks.chats.find((line) =>
+                line.startsWith("[htsw] Type /htsw answer ")
+            );
+            const id = instruction?.match(/answer ([^ ]+) yes/)?.[1];
+            if (id === undefined) throw new Error("missing prompt ID");
+            answerConflictPrompt([id, "yes"]);
+        }
     },
     closeConfirmPopover: () => undefined,
 }));
@@ -172,6 +175,7 @@ import {
 } from "../src/importCache/houseLock";
 import { readImportableCache } from "../src/importCache/cache";
 import { commandDiff } from "../src/slashCommands/diff";
+import { answerConflictPrompt } from "../src/gui/popovers/conflictPrompt";
 
 const manifest = "import.json";
 const lockPath = "./house.lock.json";
@@ -204,7 +208,6 @@ beforeEach(() => {
     mocks.fileWriteSucceeds = true;
     mocks.chats = [];
     mocks.task = undefined;
-    mocks.guiAvailable = true;
     mocks.promptDecision = "confirm";
     mocks.promptOptions = [];
     mocks.scanActionList.mockReset();
@@ -296,6 +299,16 @@ describe("/htsw diff live-state adoption", () => {
             "These have never been tracked by HTSW:",
             'FUNCTION "Other" · actions',
         ]);
+        expect(mocks.chats).toContain(
+            "[htsw] Diff conflict: 2 live action lists differ from tracked state — awaiting confirmation\n" +
+                '[htsw] Conflict: FUNCTION "Debug" · actions\n' +
+                '[htsw] Conflict: FUNCTION "Other" · actions'
+        );
+        expect(mocks.chats).toContainEqual(
+            expect.stringMatching(
+                /^\[htsw] Type \/htsw answer \S+ yes to adopt live state or \/htsw answer \S+ no to leave it unchanged\.$/
+            )
+        );
         expect(mocks.files.has(lockPath)).toBe(true);
         expect(mocks.files.get(lockPath)).toBe(lockBefore);
         expect(readHouseLock(manifest)?.importables["FUNCTION:Debug"].hash).not.toBe(
@@ -314,20 +327,12 @@ describe("/htsw diff live-state adoption", () => {
         expect(mocks.files).toEqual(before);
     });
 
-    it("requires --adopt when no GUI is available", async () => {
-        mocks.guiAvailable = false;
+    it("accepts the adoption prompt from typed chat", async () => {
+        mocks.promptDecision = "chat-confirm";
 
         await runDiff();
 
-        expect(mocks.promptOptions).toHaveLength(0);
-        expect(readHouseLock(manifest)).toBeNull();
-        expect(readImportableCache("house", "FUNCTION", "Debug")).toBeNull();
-        expect(mocks.chats).toContain(
-            "[htsw] Live state not adopted: no GUI available; rerun with --adopt to opt in"
-        );
-
-        await runDiff(["--adopt"]);
-
+        expect(mocks.promptOptions).toHaveLength(1);
         expect(readHouseLock(manifest)?.importables["FUNCTION:Debug"]).toBeDefined();
         expect(readImportableCache("house", "FUNCTION", "Debug")).not.toBeNull();
     });

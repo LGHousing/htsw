@@ -7,11 +7,7 @@ import {
 import type { Importable } from "htsw/types";
 
 import { canonicalPath } from "../gui/parsing/parses";
-import { getContainerBounds } from "../gui/lib/bounds";
-import {
-    closeConfirmPopover,
-    openConfirmPopover,
-} from "../gui/popovers/confirm";
+import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { actionListsOfImportable } from "../importCache/actionLists";
 import {
@@ -140,33 +136,33 @@ function formatDiffAdoptionLines(
     return lines;
 }
 
+function diffAdoptionChatMessage(lists: readonly DiffAdoptionList[]): string {
+    const differenceVerb = lists.length === 1 ? "differs" : "differ";
+    return (
+        `[htsw] Diff conflict: ${lists.length} live action list${lists.length === 1 ? "" : "s"} ` +
+        `${differenceVerb} from tracked state — awaiting confirmation\n` +
+        lists
+            .map(
+                (list) =>
+                    `[htsw] Conflict: ${list.source.type} "${list.identity}" · ${list.basePath}`
+            )
+            .join("\n")
+    );
+}
+
 async function confirmDiffAdoption(
     ctx: TaskContext,
     lists: readonly DiffAdoptionList[]
 ): Promise<boolean> {
-    if (getContainerBounds() === null) return false;
-    let decision: boolean | null = null;
-    const decide = (value: boolean): void => {
-        if (decision === null) decision = value;
-    };
-    const currentDecision = (): boolean | null => decision;
-    openConfirmPopover({
+    return openAnswerableConflictPrompt(ctx, {
+        chatMessage: diffAdoptionChatMessage(lists),
+        chatConfirmAction: "adopt live state",
+        chatRefuseAction: "leave it unchanged",
         title: "Adopt live Housing state?",
         lines: formatDiffAdoptionLines(lists),
         confirmLabel: "Adopt live state",
         cancelLabel: "Leave unchanged",
-        onConfirm: () => decide(true),
-        onClose: () => decide(false),
     });
-    try {
-        for (;;) {
-            const current = currentDecision();
-            if (current !== null) return current;
-            await ctx.sleep(50);
-        }
-    } finally {
-        closeConfirmPopover();
-    }
 }
 
 function adoptDiffLists(
@@ -350,10 +346,6 @@ export function commandDiff(args: string[]): void {
                         `[htsw] Adoption failed: ${errorReason(error)}`
                     );
                 }
-            } else if (getContainerBounds() === null) {
-                ChatLib.chat(
-                    "[htsw] Live state not adopted: no GUI available; rerun with --adopt to opt in"
-                );
             }
         }
         progress.complete(

@@ -77,7 +77,7 @@ import { createImportPreviewReplay } from "./importPreviewReplay";
 import { ActionPath } from "../../../housingSync/actionPath";
 import { setFocusPath } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
-import { closeConfirmPopover, openConfirmPopover } from "../../popovers/confirm";
+import { openAnswerableConflictPrompt } from "../../popovers/conflictPrompt";
 import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
@@ -181,35 +181,19 @@ async function confirmImportConflicts(
     conflicts: readonly ImportConflict[],
     onReview: () => void
 ): Promise<boolean> {
-    let decision: boolean | null = null;
-    const decide = (value: boolean): void => {
-        if (decision === null) decision = value;
-    };
-    const currentDecision = (): boolean | null => decision;
-
-    ChatLib.chat(conflictAwaitingConfirmationMessage(conflicts));
-    openConfirmPopover({
+    return openAnswerableConflictPrompt(ctx, {
+        chatMessage: conflictAwaitingConfirmationMessage(conflicts),
+        chatConfirmAction: "import anyway",
+        chatRefuseAction: "cancel the import",
         title: "Housing changed since your last import",
         lines: conflictLines(conflicts),
         confirmLabel: "Import anyway",
         extraLabel: "See changes",
         danger: true,
-        onConfirm: () => decide(true),
         onExtra: () => {
             onReview();
-            decide(false);
         },
-        onClose: () => decide(false),
     });
-    try {
-        for (;;) {
-            const current = currentDecision();
-            if (current !== null) return current;
-            await ctx.sleep(50);
-        }
-    } finally {
-        closeConfirmPopover();
-    }
 }
 
 const BODY_LIST_PROPS: Record<string, true | undefined> = {
@@ -601,7 +585,6 @@ export function startImport(
 }
 
 type ImportStartOptions = {
-    onConflict?: "prompt" | "cancel";
     silentBusy?: boolean;
     onStarted?: () => void;
     onComplete?: (successful: boolean) => void;
@@ -805,32 +788,28 @@ async function prepareAndStartImport(
                     sourcePath: batch.sourcePath,
                     parsed: batch.parsed,
                     events,
-                    confirmConflicts: async (conflicts) => {
-                        if (options.onConflict === "cancel") {
-                            cancelled = true;
-                            ChatLib.chat(
-                                `[htsw] Import cancelled: conflicts detected · ${totalImported} imported`
+                    conflictHandling: {
+                        kind: "prompt",
+                        decide: async (conflicts) => {
+                            const proceed = await confirmImportConflicts(
+                                ctx,
+                                conflicts,
+                                () => {
+                                    reviewRequest = {
+                                        batch,
+                                        conflicts: conflicts.slice(),
+                                        housingUuid,
+                                    };
+                                }
                             );
-                            return false;
-                        }
-                        const proceed = await confirmImportConflicts(
-                            ctx,
-                            conflicts,
-                            () => {
-                                reviewRequest = {
-                                    batch,
-                                    conflicts: conflicts.slice(),
-                                    housingUuid,
-                                };
+                            if (!proceed) {
+                                cancelled = true;
+                                ChatLib.chat(
+                                    `[htsw] Import cancelled by user · ${totalImported} imported`
+                                );
                             }
-                        );
-                        if (!proceed) {
-                            cancelled = true;
-                            ChatLib.chat(
-                                `[htsw] Import cancelled by user · ${totalImported} imported`
-                            );
-                        }
-                        return proceed;
+                            return proceed;
+                        },
                     },
                     onImportableAutoAdded: (importable) => {
                         const queueItem = makeImportableQueueItem(
