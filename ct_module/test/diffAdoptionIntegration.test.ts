@@ -16,11 +16,27 @@ const mocks = vi.hoisted(() => ({
         name: "Debug",
         actions: [{ type: "MESSAGE", message: "live at diff" }],
     } satisfies ImportableFunction,
+    otherSource: {
+        type: "FUNCTION",
+        name: "Other",
+        actions: [{ type: "MESSAGE", message: "other source" }],
+    } satisfies ImportableFunction,
+    otherLive: {
+        type: "FUNCTION",
+        name: "Other",
+        actions: [{ type: "MESSAGE", message: "other live" }],
+    } satisfies ImportableFunction,
     files: new Map<string, string>(),
-    atomicWriteSucceeds: true,
     fileWriteSucceeds: true,
     chats: [] as string[],
     task: undefined as Promise<unknown> | undefined,
+    guiAvailable: true,
+    promptDecision: "confirm",
+    promptOptions: [] as Array<{
+        lines?: string[];
+        onConfirm: () => void;
+        onClose?: () => void;
+    }>,
     scanActionList: vi.fn(),
     hydrateActionListScan: vi.fn(async () => undefined),
     progress: {
@@ -35,7 +51,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("htsw", async (importOriginal) => ({
     ...(await importOriginal<typeof import("htsw")>()),
     parseImportablesResult: () => ({
-        value: [mocks.source],
+        value: [mocks.source, mocks.otherSource],
         diagnostics: [],
     }),
 }));
@@ -47,6 +63,19 @@ vi.mock("../src/gui/parsing/parses", () => ({
 vi.mock("../src/project/paths", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/project/paths")>()),
     resolveModuleRelativePath: (path: string) => path,
+}));
+
+vi.mock("../src/gui/lib/bounds", () => ({
+    getContainerBounds: () => (mocks.guiAvailable ? {} : null),
+}));
+
+vi.mock("../src/gui/popovers/confirm", () => ({
+    openConfirmPopover: (options: (typeof mocks.promptOptions)[number]) => {
+        mocks.promptOptions.push(options);
+        if (mocks.promptDecision === "confirm") options.onConfirm();
+        else if (mocks.promptDecision === "decline") options.onClose?.();
+    },
+    closeConfirmPopover: () => undefined,
 }));
 
 vi.mock("../src/importCache/housingId", () => ({
@@ -62,10 +91,17 @@ vi.mock("../src/importables/export/readers", () => ({
         FUNCTION: async (
             _ctx: unknown,
             options: {
-                output: { accept: (importable: ImportableFunction) => void };
+                names: readonly string[];
+                output: {
+                    accept: (importable: ImportableFunction) => void;
+                };
             }
         ) => {
-            options.output.accept(mocks.live);
+            for (const name of options.names) {
+                options.output.accept(
+                    name === mocks.live.name ? mocks.live : mocks.otherLive
+                );
+            }
         },
     },
 }));
@@ -81,11 +117,17 @@ vi.mock("../src/housingSync/taskRunner", () => ({
         run: (ctx: {
             checkCancelled: () => undefined;
             displayMessage: () => undefined;
+            sleep: () => Promise<void>;
         }) => Promise<unknown>
     ) => {
         mocks.task = run({
             checkCancelled: () => undefined,
             displayMessage: () => undefined,
+            sleep: async () => {
+                if (mocks.promptDecision === "cancel") {
+                    throw new Error("cancelled");
+                }
+            },
         });
         return mocks.task;
     },
@@ -103,10 +145,11 @@ vi.mock("../src/slashCommands/diffDetails", async (importOriginal) => ({
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     atomicWriteText: (path: string, content: string) => {
-        if (!mocks.atomicWriteSucceeds) return false;
         mocks.files.set(path, content);
         return true;
     },
+    getFileMtimeMs: (path: string) =>
+        mocks.files.has(path) ? (mocks.files.get(path)?.length ?? 1) : 0,
 }));
 
 vi.mock("../src/housingSync/actions/readList", async (importOriginal) => ({
@@ -122,18 +165,19 @@ vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
 }));
 
 import { readActionListPlan } from "../src/housingSync/actions/plan";
-import {
-    ACTION_LIST_CONTENT_HASH_VERSION,
-    ACTION_LIST_SCAN_HASH_VERSION,
-} from "../src/housingSync/actions/scanHash";
 import { buildTrustPlan, type TrustPlan } from "../src/importCache/trust";
+import {
+    readHouseLock,
+    upsertHouseLockImportable,
+} from "../src/importCache/houseLock";
+import { readImportableCache } from "../src/importCache/cache";
 import { commandDiff } from "../src/slashCommands/diff";
-import { parseImportCommandArgs } from "../src/slashCommands/importArgs";
 
 const manifest = "import.json";
 const lockPath = "./house.lock.json";
+let testClock = 0;
 
-function actionSession(trust: TrustPlan, freshHydration = false): ActionSyncContext {
+function actionSession(trust: TrustPlan): ActionSyncContext {
     return {
         canonicalizeItemName: (name) => name,
         resolveItem: async () => null as never,
@@ -142,25 +186,27 @@ function actionSession(trust: TrustPlan, freshHydration = false): ActionSyncCont
         conflicts: [],
         events: undefined,
         itemRead: { mode: "sync" },
-        freshHydration,
     };
 }
 
-async function runDiff(): Promise<void> {
-    commandDiff([manifest]);
+async function runDiff(args: string[] = []): Promise<void> {
+    commandDiff([...args, manifest]);
     await mocks.task?.catch(() => undefined);
     await Promise.resolve();
 }
 
 beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-28T12:00:00.000Z"));
+    testClock += 2000;
+    vi.setSystemTime(new Date(1_800_000_000_000 + testClock));
     mocks.files.clear();
     mocks.files.set(manifest, "{}");
-    mocks.atomicWriteSucceeds = true;
     mocks.fileWriteSucceeds = true;
     mocks.chats = [];
     mocks.task = undefined;
+    mocks.guiAvailable = true;
+    mocks.promptDecision = "confirm";
+    mocks.promptOptions = [];
     mocks.scanActionList.mockReset();
     mocks.hydrateActionListScan.mockClear();
     mocks.progress.start.mockClear();
@@ -185,29 +231,36 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-describe("staged diff import wiring", () => {
-    it("writes through diff, loads through trust, reuses once scanned, and honors --fresh", async () => {
+describe("/htsw diff live-state adoption", () => {
+    it("writes matching cache and lock entries only after one confirmation", async () => {
         await runDiff();
 
-        expect(mocks.chats.some((line) => line.includes("Diff complete"))).toBe(true);
-        const trust = buildTrustPlan("house", [mocks.source], false, manifest);
-        expect(
-            trust.importables.get("FUNCTION:Debug")?.stagedActionLists?.get("actions")
-                ?.actions
-        ).toEqual(mocks.live.actions);
+        expect(mocks.promptOptions).toHaveLength(1);
+        const cache = readImportableCache("house", "FUNCTION", "Debug");
+        const lock = readHouseLock(manifest);
+        expect(cache?.importable).toEqual(mocks.live);
+        expect(lock?.importables["FUNCTION:Debug"].hash).toBe(cache?.hash);
+        expect(lock?.importables["FUNCTION:Debug"].itemDependencies).toEqual(
+            cache?.itemDependencies
+        );
 
-        const changedAfterDiff = {
-            type: "MESSAGE",
-            message: "changed after diff",
-        } as const;
+        const trust = buildTrustPlan("house", [mocks.source], true, manifest);
+        expect(trust.importables.get("FUNCTION:Debug")?.cacheMatchesLock).toBe(true);
         mocks.scanActionList.mockResolvedValue({
-            slots: [observedSlot(0, changedAfterDiff)],
+            slots: [
+                observedSlot(0, {
+                    type: "MESSAGE",
+                    message: "shallow scan value",
+                }),
+            ],
         });
-        const reused = await readActionListPlan(
+        const plan = await readActionListPlan(
             null as unknown as TaskContext,
             mocks.source.actions,
             {
                 sync: actionSession(trust),
+                baselineCurrent: mocks.live.actions,
+                trustedBaselineAfterUnchangedScan: mocks.live.actions,
                 conflictTarget: {
                     type: "FUNCTION",
                     identity: "Debug",
@@ -217,106 +270,75 @@ describe("staged diff import wiring", () => {
         );
 
         expect(mocks.hydrateActionListScan).not.toHaveBeenCalled();
-        expect(reused.observed[0].action).toEqual(mocks.live.actions[0]);
-
-        const parsedArgs = parseImportCommandArgs(["--fresh", manifest]);
-        const fresh = await readActionListPlan(
-            null as unknown as TaskContext,
-            mocks.source.actions,
-            {
-                sync: actionSession(trust, parsedArgs.fresh),
-                conflictTarget: {
-                    type: "FUNCTION",
-                    identity: "Debug",
-                    basePath: "actions",
-                },
-            }
-        );
-
-        expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
-        expect(fresh.observed[0].action).toEqual(changedAfterDiff);
-
-        mocks.hydrateActionListScan.mockClear();
-        vi.setSystemTime(new Date("2026-07-28T12:10:00.001Z"));
-        await readActionListPlan(null as unknown as TaskContext, mocks.source.actions, {
-            sync: actionSession(trust),
-            conflictTarget: {
-                type: "FUNCTION",
-                identity: "Debug",
-                basePath: "actions",
-            },
-        });
-
-        expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+        expect(plan.observed[0].action).toEqual(mocks.live.actions[0]);
     });
 
-    it("reports a staged hydration write failure instead of completing", async () => {
-        mocks.atomicWriteSucceeds = false;
+    it("batches drifted and untracked lists into one grouped prompt", async () => {
+        const baseline: ImportableFunction = {
+            ...mocks.source,
+            actions: [{ type: "MESSAGE", message: "baseline" }],
+        };
+        expect(
+            upsertHouseLockImportable(manifest, "house", {
+                importable: baseline,
+                itemContent: undefined,
+            })
+        ).toBe(true);
+        const lockBefore = mocks.files.get(lockPath);
+        mocks.promptDecision = "decline";
 
         await runDiff();
 
-        expect(mocks.chats).toContain(
-            '[htsw] Diff failed: could not stage FUNCTION "Debug" · actions'
+        expect(mocks.promptOptions).toHaveLength(1);
+        expect(mocks.promptOptions[0].lines).toEqual([
+            "Someone changed these since your last import:",
+            'FUNCTION "Debug" · actions',
+            "These have never been tracked by HTSW:",
+            'FUNCTION "Other" · actions',
+        ]);
+        expect(mocks.files.has(lockPath)).toBe(true);
+        expect(mocks.files.get(lockPath)).toBe(lockBefore);
+        expect(readHouseLock(manifest)?.importables["FUNCTION:Debug"].hash).not.toBe(
+            readImportableCache("house", "FUNCTION", "Debug")?.hash
         );
-        expect(mocks.chats.some((line) => line.includes("Diff complete"))).toBe(false);
-        expect(mocks.files.has(lockPath)).toBe(false);
+        expect(readImportableCache("house", "FUNCTION", "Other")).toBeNull();
     });
 
-    it("reports an incompatible lock instead of rewriting or completing", async () => {
-        const rawLock = JSON.stringify({
-            schemaVersion: 1,
-            houseUuid: "house",
-            scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION + 1,
-            contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION + 1,
-            importables: {
-                "FUNCTION:Debug": {
-                    type: "FUNCTION",
-                    identity: "Debug",
-                    hash: "future",
-                    listScanHashes: { actions: "future-scan" },
-                    listContentHashes: { actions: "future-content" },
-                },
-            },
-        });
-        mocks.files.set(lockPath, rawLock);
+    it("leaves cache and lock untouched when the prompt is declined", async () => {
+        mocks.promptDecision = "decline";
+        const before = new Map(mocks.files);
 
         await runDiff();
 
-        expect(mocks.chats).toContain(
-            "[htsw] Diff failed: could not update house.lock.json"
-        );
-        expect(mocks.chats.some((line) => line.includes("Diff complete"))).toBe(false);
-        expect(mocks.files.get(lockPath)).toBe(rawLock);
+        expect(mocks.promptOptions).toHaveLength(1);
+        expect(mocks.files).toEqual(before);
     });
 
-    it("reports a lock write failure instead of completing", async () => {
-        mocks.fileWriteSucceeds = false;
+    it("requires --adopt when no GUI is available", async () => {
+        mocks.guiAvailable = false;
 
         await runDiff();
 
+        expect(mocks.promptOptions).toHaveLength(0);
+        expect(readHouseLock(manifest)).toBeNull();
+        expect(readImportableCache("house", "FUNCTION", "Debug")).toBeNull();
         expect(mocks.chats).toContain(
-            "[htsw] Diff failed: could not update house.lock.json"
+            "[htsw] Live state not adopted: no GUI available; rerun with --adopt to opt in"
         );
-        expect(mocks.chats.some((line) => line.includes("Diff complete"))).toBe(false);
-        expect(mocks.files.has(lockPath)).toBe(false);
+
+        await runDiff(["--adopt"]);
+
+        expect(readHouseLock(manifest)?.importables["FUNCTION:Debug"]).toBeDefined();
+        expect(readImportableCache("house", "FUNCTION", "Debug")).not.toBeNull();
     });
 
-    it("reports a lock for another house without rewriting or completing", async () => {
-        const rawLock = JSON.stringify({
-            schemaVersion: 1,
-            houseUuid: "another-house",
-            scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION,
-            contentHashVersion: ACTION_LIST_CONTENT_HASH_VERSION,
-            importables: {},
-        });
-        mocks.files.set(lockPath, rawLock);
+    it("does not write the cache or lock when the task is cancelled at the prompt", async () => {
+        mocks.promptDecision = "cancel";
 
         await runDiff();
 
-        expect(mocks.chats).toContain(
-            "[htsw] Diff failed: could not update house.lock.json"
-        );
-        expect(mocks.chats.some((line) => line.includes("Diff complete"))).toBe(false);
-        expect(mocks.files.get(lockPath)).toBe(rawLock);
+        expect(mocks.promptOptions).toHaveLength(1);
+        expect(readHouseLock(manifest)).toBeNull();
+        expect(readImportableCache("house", "FUNCTION", "Debug")).toBeNull();
     });
 });

@@ -67,7 +67,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "import",
         summary: "Import an import.json or .htsl file",
         run: commandImport,
-        usage: "import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]",
+        usage: "import <import.json|actions.htsl> [--on-conflict=cancel]",
     },
     {
         name: "trust",
@@ -79,7 +79,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "diff",
         summary: "Scan a manifest for live Housing divergence",
         run: commandDiff,
-        usage: "diff <manifest-path>",
+        usage: "diff <manifest-path> [--adopt]",
     },
     {
         name: "warnmode",
@@ -599,7 +599,7 @@ function commandEta(args: string[]): void {
     printOpKindStats();
 }
 
-export function commandImport(args: string[]) {
+function commandImport(args: string[]) {
     const parsedArgs = parseImportCommandArgs(args);
     const commandArgs = parsedArgs.pathArgs;
     if (commandArgs.length === 0) {
@@ -607,7 +607,7 @@ export function commandImport(args: string[]) {
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
         ChatLib.chat("");
-        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel] [--fresh]");
+        ChatLib.chat("&f/htsw import <import.json|actions.htsl> [--on-conflict=cancel]");
         ChatLib.chat(
             "&f/htsw import raw <actions.htsl> &7- Append into the open action menu"
         );
@@ -654,7 +654,7 @@ export function commandImport(args: string[]) {
                 label: compactFileLabel(canon),
             },
         ],
-        { onConflict: parsedArgs.onConflict, fresh: parsedArgs.fresh }
+        { onConflict: parsedArgs.onConflict }
     );
 }
 

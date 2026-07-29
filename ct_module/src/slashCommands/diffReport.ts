@@ -72,6 +72,15 @@ export type DiffActionListMatch = {
     liveActions: readonly Action[] | undefined;
 };
 
+export type DiffAdoptionList = Omit<
+    DiffActionListMatch,
+    "live" | "liveActions"
+> & {
+    live: Importable;
+    liveActions: readonly Action[];
+    reason: "drifted" | "untracked";
+};
+
 export function matchDiffActionLists(
     sourceImportables: readonly Importable[],
     liveImportables: ReadonlyMap<string, LiveDiffImportable>
@@ -115,10 +124,6 @@ export function evaluateDiffReport(
     projectItems?: ProjectItemIndex
 ): DiffReport {
     const result: DiffReport = { clean: 0, conflicts: [], unknown: 0 };
-    const matchingLock =
-        lock !== null && (lock.houseUuid === null || lock.houseUuid === housingUuid)
-            ? lock
-            : null;
 
     for (const match of matches) {
         const liveActions = match.liveActions;
@@ -126,25 +131,11 @@ export function evaluateDiffReport(
             result.unknown++;
             continue;
         }
-        const lockEntry = houseLockEntryFor(
-            matchingLock,
-            match.source.type,
-            match.identity
-        );
-        const sourceItemContent =
-            projectItems === undefined
-                ? undefined
-                : sourceItemFieldContent(match.source, projectItems);
-        const verdict = actionListConflictVerdict(
-            { actions: liveActions },
-            {
-                contentHash: lockEntry?.listContentHashes?.[match.basePath],
-                scanHash: lockEntry?.listScanHashes?.[match.basePath],
-            },
-            match.sourceActions,
-            "content",
-            match.liveItemContent,
-            sourceItemContent
+        const { verdict, sourceItemContent } = diffActionListVerdict(
+            housingUuid,
+            match,
+            lock,
+            projectItems
         );
         if (
             verdict === "conflict" ||
@@ -189,6 +180,71 @@ export function evaluateDiffReport(
         }
     }
     return result;
+}
+
+export function collectDiffAdoptionLists(
+    housingUuid: string,
+    matches: readonly DiffActionListMatch[],
+    lock: HouseLock | null,
+    projectItems?: ProjectItemIndex
+): DiffAdoptionList[] {
+    const lists: DiffAdoptionList[] = [];
+    for (const match of matches) {
+        const live = match.live;
+        const liveActions = match.liveActions;
+        if (live === undefined || liveActions === undefined) continue;
+        const verdict = diffActionListVerdict(
+            housingUuid,
+            match,
+            lock,
+            projectItems
+        ).verdict;
+        if (verdict === "no-baseline") {
+            lists.push({ ...match, live, liveActions, reason: "untracked" });
+        } else if (verdict === "conflict" || verdict === "already-applied") {
+            lists.push({ ...match, live, liveActions, reason: "drifted" });
+        }
+    }
+    return lists;
+}
+
+function diffActionListVerdict(
+    housingUuid: string,
+    match: DiffActionListMatch,
+    lock: HouseLock | null,
+    projectItems?: ProjectItemIndex
+) {
+    const matchingLock =
+        lock !== null && (lock.houseUuid === null || lock.houseUuid === housingUuid)
+            ? lock
+            : null;
+    const lockEntry = houseLockEntryFor(
+        matchingLock,
+        match.source.type,
+        match.identity
+    );
+    const sourceItemContent =
+        projectItems === undefined
+            ? undefined
+            : sourceItemFieldContent(match.source, projectItems);
+    return {
+        verdict:
+            match.liveActions === undefined
+                ? null
+                : actionListConflictVerdict(
+                      { actions: match.liveActions },
+                      {
+                          contentHash:
+                              lockEntry?.listContentHashes?.[match.basePath],
+                          scanHash: lockEntry?.listScanHashes?.[match.basePath],
+                      },
+                      match.sourceActions,
+                      "content",
+                      match.liveItemContent,
+                      sourceItemContent
+                  ),
+        sourceItemContent,
+    };
 }
 
 export function formatDiffReport(

@@ -89,7 +89,6 @@ export type ImportSessionRequest = {
     housingUuid: string;
     sourcePath: string;
     overwriteWarningMode?: OverwriteWarningMode;
-    freshHydration?: boolean;
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
     confirmConflicts?: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
@@ -264,7 +263,6 @@ async function runImportSessionInner(
             itemDiff,
             itemFieldObservations,
             trustedItemOwners,
-            freshHydration: selection.freshHydration,
         },
         ensuredReferencedShells: {
             functions: new Set(),

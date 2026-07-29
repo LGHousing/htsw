@@ -9,7 +9,7 @@ export const IMPORT_CACHE_ROOT = "./htsw/.cache";
  * Lowercase and singular by convention (e.g. the ITEM importable cache lives
  * under `item/`).
  */
-export function cacheDirFor(type: Importable["type"]): string {
+function cacheDirFor(type: Importable["type"]): string {
     switch (type) {
         case "FUNCTION":
             return "function";

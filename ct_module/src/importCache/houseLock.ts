@@ -217,6 +217,23 @@ export function houseLockEntryFor(
     return lock.importables[importableKey(type, identity)] ?? null;
 }
 
+export function houseLockAcceptsUpdate(
+    importJsonPath: string,
+    housingUuid: string
+): boolean {
+    const path = houseLockPathForImportJson(importJsonPath);
+    if (!FileLib.exists(path)) return true;
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return false;
+    if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
+    return (
+        (lock.scanHashVersion === undefined ||
+            lock.scanHashVersion === ACTION_LIST_SCAN_HASH_VERSION) &&
+        (lock.contentHashVersion === undefined ||
+            lock.contentHashVersion === ACTION_LIST_CONTENT_HASH_VERSION)
+    );
+}
+
 function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     try {
         ensureParentDirs(lockPath);
@@ -232,79 +249,6 @@ export type HouseLockImportableUpdate = {
     itemDependencies?: ItemDependencySnapshot;
     itemContent: ItemFieldContent | undefined;
 };
-
-export type HouseLockActionListSeed = {
-    importable: Importable;
-    basePath: string;
-    actions: readonly import("htsw/types").Action[];
-    itemContent?: ItemFieldContent;
-};
-
-export function seedMissingHouseLockActionLists(
-    importJsonPath: string,
-    housingUuid: string,
-    seeds: readonly HouseLockActionListSeed[]
-): boolean {
-    if (seeds.length === 0) return true;
-    const path = houseLockPathForImportJson(importJsonPath);
-    const lockExists = FileLib.exists(path);
-    const existingLock = readHouseLock(importJsonPath);
-    if (lockExists && existingLock === null) return false;
-    const lock = existingLock ?? emptyHouseLock(housingUuid);
-    if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
-    if (
-        (lock.scanHashVersion !== undefined &&
-            lock.scanHashVersion !== ACTION_LIST_SCAN_HASH_VERSION) ||
-        (lock.contentHashVersion !== undefined &&
-            lock.contentHashVersion !== ACTION_LIST_CONTENT_HASH_VERSION)
-    ) {
-        return false;
-    }
-    lock.houseUuid = housingUuid;
-    lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
-    lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
-    let changed = false;
-    for (const seed of seeds) {
-        const identity = importableIdentity(seed.importable);
-        const key = importableKey(seed.importable.type, identity);
-        let entry: HouseLockEntry;
-        if (Object.prototype.hasOwnProperty.call(lock.importables, key)) {
-            entry = lock.importables[key];
-        } else {
-            entry = {
-                type: seed.importable.type,
-                identity,
-                hash: importableHash(seed.importable),
-                listScanHashes: {},
-                listContentHashes: {},
-            };
-            lock.importables[key] = entry;
-        }
-        entry.listScanHashes ??= {};
-        entry.listContentHashes ??= {};
-        const hasScan = Object.prototype.hasOwnProperty.call(
-            entry.listScanHashes,
-            seed.basePath
-        );
-        const hasContent = Object.prototype.hasOwnProperty.call(
-            entry.listContentHashes,
-            seed.basePath
-        );
-        if (hasScan && hasContent) {
-            continue;
-        }
-        if (!hasScan) {
-            entry.listScanHashes[seed.basePath] =
-                actionListScanHashFromActions(seed.actions);
-        }
-        if (!hasContent) {
-            entry.listContentHashes[seed.basePath] =
-                actionListContentHashFromActions(seed.actions, seed.itemContent);
-        }
-        changed = true;
-    }
-    return !changed || writeHouseLock(path, lock);
-}
 
 export function upsertHouseLockImportable(
     importJsonPath: string,

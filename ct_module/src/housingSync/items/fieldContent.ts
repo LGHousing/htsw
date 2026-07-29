@@ -22,8 +22,6 @@ export type ItemFieldContent = (
     property: string
 ) => CanonicalItemField | undefined;
 
-export type ItemFieldContentSnapshot = Record<string, CanonicalItemField>;
-
 export function sourceItemFieldContent(
     importable: Importable,
     projectItems: ProjectItemIndex
@@ -78,40 +76,6 @@ export function capturedItemFieldContent(
         });
     });
     return (owner, property) => fields.get(owner)?.get(property);
-}
-
-export function parseItemFieldContentSnapshot(
-    value: unknown
-): ItemFieldContentSnapshot | null {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-        return null;
-    }
-    const snapshot: ItemFieldContentSnapshot = {};
-    for (const name in value as Record<string, unknown>) {
-        const entry = (value as Record<string, unknown>)[name];
-        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-            return null;
-        }
-        const record = entry as { key?: unknown; tag?: unknown };
-        if (
-            typeof record.key !== "string" ||
-            record.tag === null ||
-            typeof record.tag !== "object" ||
-            Array.isArray(record.tag) ||
-            typeof (record.tag as { type?: unknown }).type !== "string" ||
-            !Object.prototype.hasOwnProperty.call(record.tag, "value")
-        ) {
-            return null;
-        }
-        const tag = record.tag as TagLike;
-        try {
-            if (canonicalItemShellTagKey(tag) !== record.key) return null;
-        } catch (_error) {
-            return null;
-        }
-        snapshot[name] = { key: record.key, tag };
-    }
-    return snapshot;
 }
 
 export function cloneActionsWithItemFieldContent(
@@ -202,51 +166,5 @@ export function cloneActionsWithItemFieldContent(
     return {
         actions,
         itemContent: (owner, property) => fields.get(owner)?.get(property),
-    };
-}
-
-export function itemFieldContentSnapshot(
-    actions: readonly Action[],
-    itemContent: ItemFieldContent
-): ItemFieldContentSnapshot {
-    const snapshot: ItemFieldContentSnapshot = {};
-    const addFields = (owner: Action | Condition, fields: readonly { prop: string; kind?: string }[]) => {
-        for (const field of fields) {
-            if (field.kind !== "item") continue;
-            const name = (owner as Record<string, unknown>)[field.prop];
-            const item = itemContent(owner, field.prop);
-            if (typeof name === "string" && item !== undefined) {
-                snapshot[name] = item;
-            }
-        }
-    };
-    const visitConditions = (conditions: readonly Condition[]) => {
-        for (const condition of conditions) {
-            addFields(condition, getConditionScalarLoreFields(condition.type));
-        }
-    };
-    const visitActions = (list: readonly Action[]) => {
-        for (const action of list) {
-            addFields(action, getActionScalarLoreFields(action.type));
-            if (action.type === "CONDITIONAL") {
-                visitConditions(action.conditions);
-                visitActions(action.ifActions);
-                visitActions(action.elseActions);
-            } else if (action.type === "RANDOM") {
-                visitActions(action.actions);
-            }
-        }
-    };
-    visitActions(actions);
-    return snapshot;
-}
-
-export function itemFieldContentFromSnapshot(
-    snapshot: ItemFieldContentSnapshot | undefined
-): ItemFieldContent | undefined {
-    if (snapshot === undefined) return undefined;
-    return (owner, property) => {
-        const name = (owner as Record<string, unknown>)[property];
-        return typeof name === "string" ? snapshot[name] : undefined;
     };
 }
