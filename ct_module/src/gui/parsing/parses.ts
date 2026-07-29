@@ -34,7 +34,7 @@ import {
     type OffThreadParseResult,
 } from "./offThreadParse";
 import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
-import { BoundedLruMap, BoundedMap } from "../lib/boundedLruMap";
+import { BoundedMap } from "../lib/boundedLruMap";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -121,9 +121,7 @@ export function canonicalPath(p: string): string {
     return result;
 }
 
-const cache = new BoundedLruMap<string, CachedParse>(128, (_path, entry) => {
-    invalidateParseDerivedCaches(entry);
-});
+const cache = new Map<string, CachedParse>();
 
 type ParseCacheListener = (entry: CachedParse) => void;
 const parseCacheListeners: ParseCacheListener[] = [];
@@ -146,7 +144,7 @@ function notifyParseCacheEntryChanged(entry: CachedParse): void {
 
 /**
  * Bumped whenever the SET of cached parses (or an entry's parsed value)
- * changes — a parse is added, re-parsed, or evicted. Cache-wide scans over
+ * changes — a parse is added, re-parsed, or removed. Cache-wide scans over
  * `forEachCachedParse` (the tab strip's per-frame file→importable lookups)
  * memoize against this so they recompute only on an actual change instead of
  * every frame. Freshness/mtime touches don't bump it: they leave the parsed
@@ -420,7 +418,7 @@ export async function parseImportJsonCurrent(rawPath: string): Promise<CachedPar
 /** Look up a previously-parsed import.json by canonical path. */
 export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);
-    return cache.peek(canon) ?? null;
+    return cache.get(canon) ?? null;
 }
 
 // ── Deferred parse scheduler ──────────────────────────────────────────────
@@ -746,12 +744,13 @@ export function disposeParseCachesUnder(rawPath: string): void {
     const root = canonicalPath(rawPath);
     const prefix = root.endsWith("/") ? root : `${root}/`;
     const matches = (path: string): boolean => path === root || path.startsWith(prefix);
-    const disposed: CachedParse[] = [];
+    let removed = 0;
     for (const entry of cache.values()) {
-        if (matches(entry.canonicalPath)) disposed.push(entry);
+        if (!matches(entry.canonicalPath)) continue;
+        invalidateParseDerivedCaches(entry);
+        cache.delete(entry.canonicalPath);
+        removed++;
     }
-    for (const entry of disposed) invalidateParseDerivedCaches(entry);
-    const removed = cache.deleteWhere(matches);
     canonicalPathCache.deleteWhere(
         (raw, canonical) => matches(raw) || matches(canonical)
     );

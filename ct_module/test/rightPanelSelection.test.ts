@@ -33,6 +33,7 @@ describe("right-panel live import tab", () => {
             { kind: "live", path: "C:/project/functions/foo.htsl" },
         ]);
         expect(selection.isLiveTabActive()).toBe(true);
+        livePreview.primeWithCache(livePath, functionImportable());
 
         livePath = null;
         selection.onTaskRunningChanged(true, false);
@@ -40,6 +41,7 @@ describe("right-panel live import tab", () => {
         expect(selection.getTabs()).toEqual([]);
         expect(selection.isLiveTabActive()).toBe(false);
         expect(selection.getActivePath()).toBe(null);
+        expect(livePreview.livePreviewCacheSize()).toBe(0);
     });
 
     test("does not revive the last live path after finish", () => {
@@ -54,14 +56,19 @@ describe("right-panel live import tab", () => {
         expect(selection.getTabs()).toEqual([]);
     });
 
-    test("keeps a failed task tab available for attention", () => {
+    test("keeps a failed import preview available for attention", async () => {
+        const taskProgress = await import(
+            "../src/gui/right-panel/import-tab/taskProgress"
+        );
         livePath = "C:/project/functions/foo.htsl";
-        selection.onTaskRunningChanged(false, true);
+        taskProgress.startTaskProgress({
+            progress: taskProgress.createTaskProgress({}),
+            verb: "import",
+            path: livePath,
+        });
         livePreview.primeWithCache(livePath, functionImportable());
-        selection.rememberLiveTaskPath(livePath);
 
-        livePath = null;
-        selection.onTaskRunningChanged(true, false, true);
+        taskProgress.finishTaskProgress("Housing rejected the edit");
 
         expect(selection.getTabs()).toEqual([
             { kind: "live", path: "C:/project/functions/foo.htsl" },
@@ -70,6 +77,7 @@ describe("right-panel live import tab", () => {
         expect(
             livePreview.previewLinesForFile("C:/project/functions/foo.htsl")
         ).toHaveLength(1);
+        expect(livePreview.livePreviewCacheSize()).toBe(1);
     });
 
     test("disposes a failed preview when its live tab is dismissed", () => {

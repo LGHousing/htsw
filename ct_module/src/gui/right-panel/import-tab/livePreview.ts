@@ -92,12 +92,17 @@ function evictCompletedPreview(): boolean {
     return false;
 }
 
+function evictOldestPreview(): void {
+    const oldest = states.keys().next();
+    if (!oldest.done) removeState(oldest.value);
+}
+
 function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states.get(k);
     if (!s) {
         while (states.size >= MAX_PREVIEW_STATES) {
-            if (!evictCompletedPreview()) break;
+            if (!evictCompletedPreview()) evictOldestPreview();
         }
         s = {
             lines: [],
@@ -114,6 +119,8 @@ function ensure(path: string): FileState {
         states.set(k, s);
     } else {
         s.evictionEligible = false;
+        states.delete(k);
+        states.set(k, s);
     }
     return s;
 }
@@ -769,6 +776,23 @@ export function previewRevision(path: string): number {
 
 export function resetPreview(path: string): void {
     removeState(keyForFile(path));
+}
+
+export function hasPreviewState(path: string): boolean {
+    return states.has(keyForFile(path));
+}
+
+export function disposePreview(path: string): void {
+    removeState(keyForFile(path));
+}
+
+export function beginPreviewRead(path: string): void {
+    const state = states.get(keyForFile(path));
+    if (state === undefined) return;
+    state.readCompletedPaths.clear();
+    state.pendingNodes = undefined;
+    state.rebasedListKeys.clear();
+    state.lastObservedAt = 0;
 }
 
 export function markPreviewCompleted(path: string): void {
