@@ -218,6 +218,10 @@ const ICON_DEFAULT_SIZE = 16;
 // /ct reload — accepted.)
 const textWidthCache = new Map<string, number>();
 
+export function textWidthCacheSize(): number {
+    return textWidthCache.size;
+}
+
 function measureStringWidth(text: string): number {
     const cached = textWidthCache.get(text);
     if (cached !== undefined) return cached;

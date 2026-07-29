@@ -11,6 +11,10 @@ type FileState = {
 
 const states: { [key: string]: FileState | undefined } = {};
 
+export function focusedLineCacheSize(): number {
+    return Object.keys(states).length;
+}
+
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
 }

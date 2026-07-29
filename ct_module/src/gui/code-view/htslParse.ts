@@ -69,6 +69,10 @@ export function actionLineRange(
 const MAX_PARSE_CACHE_ENTRIES = 64;
 const parseCache = new BoundedMap<string, ParsedFile>(MAX_PARSE_CACHE_ENTRIES);
 
+export function htslParseCacheSize(): number {
+    return parseCache.size;
+}
+
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
     const cached = parseCache.get(path);
