@@ -11,7 +11,7 @@ export type DiffPrinterDiagnostic = {
     message: string;
 };
 
-type DiffDetailsConflict = {
+type DiffDetailsList = {
     type: Importable["type"];
     identity: string;
     basePath: string;
@@ -21,7 +21,8 @@ type DiffDetailsConflict = {
 
 type DiffDetailsReport = {
     clean: number;
-    conflicts: readonly DiffDetailsConflict[];
+    conflicts: readonly DiffDetailsList[];
+    pending: readonly DiffDetailsList[];
     unknown: number;
 };
 
@@ -53,27 +54,40 @@ export function formatDiffDetailsFile(
         `# manifest: ${manifest}`,
         `# clean: ${report.clean}`,
         `# conflicts: ${report.conflicts.length}`,
+        `# pending changes: ${report.pending.length}`,
         `# unknown: ${report.unknown}`,
         "# Values use the canonical field comparison that determined the verdict.",
     ];
-    for (const conflict of report.conflicts) {
-        lines.push("", `# ${conflict.type} "${conflict.identity}" · ${conflict.basePath}`);
-        for (const diagnostic of conflict.printerDiagnostics) {
+    appendDiffDetailsLists(lines, report.conflicts);
+    if (report.pending.length > 0) {
+        lines.push("", "# PENDING CHANGES");
+        appendDiffDetailsLists(lines, report.pending);
+    }
+    return lines.join("\n") + "\n";
+}
+
+function appendDiffDetailsLists(
+    lines: string[],
+    lists: readonly DiffDetailsList[]
+): void {
+    for (const list of lists) {
+        lines.push("", `# ${list.type} "${list.identity}" · ${list.basePath}`);
+        for (const diagnostic of list.printerDiagnostics) {
             lines.push(
                 `# HTSL printer ${diagnostic.level} (${diagnostic.side}): ${diagnostic.message}`
             );
         }
-        if (conflict.canonicalDifferences.length === 0) {
+        if (list.canonicalDifferences.length === 0) {
             lines.push(
                 "# Conflict verdict had no renderable canonical field difference."
             );
             continue;
         }
         lines.push(
-            `--- source/${conflict.basePath}`,
-            `+++ live/${conflict.basePath}`
+            `--- source/${list.basePath}`,
+            `+++ live/${list.basePath}`
         );
-        for (const difference of conflict.canonicalDifferences) {
+        for (const difference of list.canonicalDifferences) {
             lines.push(
                 ` ${difference.path}`,
                 `-  ${difference.source}`,
@@ -81,7 +95,6 @@ export function formatDiffDetailsFile(
             );
         }
     }
-    return lines.join("\n") + "\n";
 }
 
 export function writeDiffDetailsFile(

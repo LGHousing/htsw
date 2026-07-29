@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
     report: null as unknown as {
         clean: number;
         conflicts: unknown[];
+        pending: unknown[];
         unknown: number;
     },
     atomicWriteText: vi.fn<(path: string, content: string) => boolean>(),
@@ -121,6 +122,7 @@ describe("/htsw diff report persistence", () => {
         state.report = {
             clean: 0,
             conflicts: [conflict("One"), conflict("Two")],
+            pending: [],
             unknown: 0,
         };
         state.atomicWriteText.mockReset();
@@ -197,7 +199,7 @@ describe("/htsw diff report persistence", () => {
 
     it("replaces a conflict report with a clean-run report", async () => {
         await runCommand();
-        state.report = { clean: 1, conflicts: [], unknown: 0 };
+        state.report = { clean: 1, conflicts: [], pending: [], unknown: 0 };
 
         commandDiff(["/project/import.json"]);
         await vi.waitFor(() => expect(state.complete).toHaveBeenCalledTimes(2));

@@ -59,6 +59,21 @@ describe("diff details", () => {
                             ],
                         },
                     ],
+                    pending: [
+                        {
+                            type: "FUNCTION",
+                            identity: "Pending",
+                            basePath: "actions",
+                            canonicalDifferences: [
+                                {
+                                    path: "action 1 (message) · message",
+                                    live: '"live pending"',
+                                    source: '"source pending"',
+                                },
+                            ],
+                            printerDiagnostics: [],
+                        },
+                    ],
                     unknown: 1,
                 },
                 "/project/import.json",
@@ -70,6 +85,7 @@ describe("diff details", () => {
                 "# manifest: /project/import.json\n" +
                 "# clean: 2\n" +
                 "# conflicts: 2\n" +
+                "# pending changes: 1\n" +
                 "# unknown: 1\n" +
                 "# Values use the canonical field comparison that determined the verdict.\n" +
                 "\n" +
@@ -86,7 +102,16 @@ describe("diff details", () => {
                 "+++ live/onEnterActions\n" +
                 " action 1 (message) · note\n" +
                 '-  "a\\nb"\n' +
-                '+  "a b"\n'
+                '+  "a b"\n' +
+                "\n" +
+                "# PENDING CHANGES\n" +
+                "\n" +
+                '# FUNCTION "Pending" · actions\n' +
+                "--- source/actions\n" +
+                "+++ live/actions\n" +
+                " action 1 (message) · message\n" +
+                '-  "source pending"\n' +
+                '+  "live pending"\n'
         );
     });
 
@@ -109,6 +134,7 @@ describe("diff details", () => {
                         printerDiagnostics: [],
                     },
                 ],
+                pending: [],
                 unknown: 0,
             },
             "/project/import.json",

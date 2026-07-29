@@ -78,25 +78,51 @@ function lockFor(
 }
 
 describe("diff report", () => {
-    it("classifies unchanged and already-applied lists as clean", () => {
+    it("reports a source change against unchanged live state as pending", () => {
         const baseline = [message("baseline")];
         const source = func("Debug", [message("source")]);
 
-        expect(
-            evaluate(
-                [source],
-                liveMap(func("Debug", baseline)),
-                lockFor("Debug", baseline)
-            )
-        ).toEqual({ clean: 1, conflicts: [], unknown: 0 });
-        expect(evaluate([source], liveMap(source), lockFor("Debug", baseline))).toEqual({
+        const report = evaluate(
+            [source],
+            liveMap(func("Debug", baseline)),
+            lockFor("Debug", baseline)
+        );
+
+        expect(report).toMatchObject({
             clean: 1,
             conflicts: [],
+            pending: [
+                {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                    differences: [
+                        {
+                            path: "action 1 (message) · message",
+                            live: '"baseline"',
+                            source: '"source"',
+                        },
+                    ],
+                    moreCount: 0,
+                },
+            ],
             unknown: 0,
         });
     });
 
-    it("classifies live changes from both baseline and source as conflicts", () => {
+    it("does not report a list as pending when source matches live", () => {
+        const actions = [message("same")];
+        const source = func("Debug", actions);
+
+        expect(evaluate([source], liveMap(source), lockFor("Debug", actions))).toEqual({
+            clean: 1,
+            conflicts: [],
+            pending: [],
+            unknown: 0,
+        });
+    });
+
+    it("reports a conflicted list only as a conflict", () => {
         const source = func("Debug", [message("source")]);
         const report = evaluate(
             [source],
@@ -129,6 +155,7 @@ describe("diff report", () => {
                     printerDiagnostics: [],
                 },
             ],
+            pending: [],
             unknown: 0,
         });
     });
@@ -139,11 +166,13 @@ describe("diff report", () => {
         expect(evaluate([source], new Map(), lockFor("Debug", []))).toEqual({
             clean: 0,
             conflicts: [],
+            pending: [],
             unknown: 1,
         });
         expect(evaluate([source], liveMap(source), null)).toEqual({
             clean: 1,
             conflicts: [],
+            pending: [],
             unknown: 0,
         });
         expect(
@@ -195,6 +224,7 @@ describe("diff report", () => {
         expect(evaluate([source], liveMap(live), lock)).toEqual({
             clean: 0,
             conflicts: [],
+            pending: [],
             unknown: 1,
         });
     });
@@ -304,7 +334,12 @@ describe("diff report", () => {
         );
     });
 
-    it("includes the action-list base path in conflict output", () => {
+    it("keeps existing summary and conflict chat lines byte-identical", () => {
+        const difference = {
+            path: "action 1 (message) · message",
+            live: '"live"',
+            source: '"source"',
+        };
         expect(
             formatDiffReport(
                 {
@@ -314,21 +349,20 @@ describe("diff report", () => {
                             type: "MENU",
                             identity: "Shop",
                             basePath: "slots[3].actions",
-                            differences: [
-                                {
-                                    path: "action 1 (message) · message",
-                                    live: '"live"',
-                                    source: '"source"',
-                                },
-                            ],
+                            differences: [difference],
                             moreCount: 2,
-                            canonicalDifferences: [
-                                {
-                                    path: "action 1 (message) · message",
-                                    live: '"live"',
-                                    source: '"source"',
-                                },
-                            ],
+                            canonicalDifferences: [difference],
+                            printerDiagnostics: [],
+                        },
+                    ],
+                    pending: [
+                        {
+                            type: "FUNCTION",
+                            identity: "Debug",
+                            basePath: "actions",
+                            differences: [difference],
+                            moreCount: 0,
+                            canonicalDifferences: [difference],
                             printerDiagnostics: [],
                         },
                     ],
@@ -342,6 +376,9 @@ describe("diff report", () => {
             '[htsw] Conflict: MENU "Shop" · slots[3].actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
             "[htsw]   …and 2 more differences",
+            "[htsw] Pending changes: 1",
+            '[htsw] Pending: FUNCTION "Debug" · actions',
+            '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
             "[htsw] Diff details: ./htsw/projects/shop/htsw-diff/latest.diff",
         ]);
     });
