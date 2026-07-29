@@ -42,7 +42,8 @@ async function readMenu(
     name: string,
     actionItemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler,
-    events?: SyncEventHandler
+    events?: SyncEventHandler,
+    eventsForList?: (label: string) => SyncEventHandler
 ): Promise<MenuReadResult> {
     if ((await openMenuEditor(ctx, name)) === "missing") {
         throw new Error(`No menu named "${name}" exists in this housing.`);
@@ -55,7 +56,8 @@ async function readMenu(
             itemCaptures: actionItemCaptures,
         },
         onReadProgress,
-        events
+        events,
+        eventsForList
     );
     const cacheSlots: MenuSlot[] = [];
     for (const liveSlot of live.slots) {
@@ -156,7 +158,14 @@ export const readMenus = defineHouseExporter<string, "MENU", never, MenuReadResu
     reader: {
         kind: "direct",
         read: (ctx, name, options, state, onReadProgress) =>
-            readMenu(ctx, name, state.itemCaptures, onReadProgress, options.progress?.events),
+            readMenu(
+                ctx,
+                name,
+                state.itemCaptures,
+                onReadProgress,
+                options.progress?.events,
+                options.progress?.eventsForList
+            ),
     },
     importableOf: (result) => result.importable,
     export: async (ctx, name, result, options, state) => {

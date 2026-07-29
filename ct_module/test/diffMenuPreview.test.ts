@@ -27,7 +27,14 @@ vi.mock("../src/tasks/specifics/slots", () => ({
             getSlotId: () => 0,
             getItem: () => ({
                 getLore: () => [],
-                getName: () => "Preview Button",
+                getName: () => "First Button",
+            }),
+        },
+        {
+            getSlotId: () => 1,
+            getItem: () => ({
+                getLore: () => [],
+                getName: () => "Second Button",
             }),
         },
     ],
@@ -45,9 +52,11 @@ import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/dif
 import { previewLinesForFile, resetPreview } from "../src/gui/right-panel/import-tab/livePreview";
 import {
     clearTaskProgress,
+    getActiveTaskListLabel,
     getActiveTaskPath,
 } from "../src/gui/right-panel/import-tab/taskProgress";
 import type { SyncEventHandler } from "../src/housingSync/syncEvents";
+import { ActionListPath, ActionPath } from "../src/housingSync/actionPath";
 import { readMenus } from "../src/importables/menus/readHouseMenus";
 import type TaskContext from "../src/tasks/context";
 import { message } from "./utils";
@@ -75,20 +84,37 @@ describe("diff menu preview", () => {
         vi.stubGlobal("Player", {
             getName: () => "tester",
             getContainer: () => ({
-                getSize: () => 37,
+                getSize: () => 38,
                 click: () => undefined,
             }),
         });
+        let listIndex = 0;
         mocks.readActionListFully.mockImplementation(
             async (
                 _ctx: unknown,
                 options: { events?: SyncEventHandler }
             ) => {
-                const observed = message("observed");
+                options.events?.emit({
+                    kind: "readStarted",
+                    listPath: ActionListPath.root(),
+                });
+                if (listIndex === 1) {
+                    expect(getActiveTaskListLabel()).toBe("Slot 1");
+                    expect(previewLinesForFile(getActiveTaskPath()!)).toEqual([]);
+                }
+                const observed = message(`observed ${listIndex}`);
                 options.events?.emit({
                     kind: "observedSnapshot",
                     nodes: [{ kind: "action", action: observed }],
                 });
+                if (listIndex === 0) {
+                    options.events?.emit({
+                        kind: "actionReadCompleted",
+                        path: ActionPath.fromParts([0]),
+                        hydrated: false,
+                    });
+                }
+                listIndex++;
                 return [observed];
             }
         );
@@ -101,7 +127,7 @@ describe("diff menu preview", () => {
         vi.unstubAllGlobals();
     });
 
-    test("forwards menu action snapshots into the active diff preview", async () => {
+    test("clears and identifies each menu slot preview", async () => {
         const progress = createDiffProgressSession([sourceMenu()], MANIFEST);
         progress.start();
 
@@ -126,12 +152,14 @@ describe("diff menu preview", () => {
 
         const path = getActiveTaskPath();
         expect(path).toContain(".live-menu-0.htsl");
+        expect(getActiveTaskListLabel()).toBe("Slot 1");
         expect(
             previewLinesForFile(path!)
                 .map((line) => line.tokens.map((token) => token.text).join(""))
                 .join("")
-        ).toContain("observed");
-        expect(mocks.readActionListFully).toHaveBeenCalledOnce();
+        ).toContain("observed 1");
+        expect(previewLinesForFile(path!)[0].completed).toBeUndefined();
+        expect(mocks.readActionListFully).toHaveBeenCalledTimes(2);
 
         progress.clear();
     });

@@ -12,7 +12,7 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatPanel } from "./chat";
-import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
+import { areTaskWideGatesActive } from "./taskGates";
 import { COLOR_PANEL } from "./lib/theme";
 import { getShowChatPanel, getShowInventoryButtons } from "../settings";
 
@@ -53,7 +53,7 @@ let cachedImportBounds: ContainerBounds | null = null;
 
 function getStableBounds(): ContainerBounds | null {
     const live = getContainerBoundsOverlay();
-    const importing = getTaskProgress() !== null;
+    const importing = areTaskWideGatesActive();
     if (!importing) {
         cachedImportBounds = null;
         return live;

@@ -30,7 +30,6 @@ import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
 import {
-    clearTaskProgress,
     setEtaEstimating,
     setTaskProgress,
     startTaskProgress,
@@ -136,6 +135,7 @@ export function createExportProgressSink(
 
     return {
         events: livePreview.events,
+        eventsForList: livePreview.eventsForList,
         start(ns) {
             names = ns;
             if (ns.length === 0) return;
@@ -240,7 +240,6 @@ export function createExportProgressSink(
                 finishCurrent("imported");
                 emit({ kind: "sessionFinished" });
             }
-            clearTaskProgress();
             livePreview.clear();
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;

@@ -38,6 +38,7 @@ import {
 } from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
 import { getActiveTaskElapsedMs } from "../../../tasks/activeTask";
+import { observeTaskRunning } from "../../../tasks/runningState";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -78,8 +79,12 @@ let etaCalc: EtaCalculator | null = null;
  * Cleared when the task finishes.
  */
 let activeTaskPath: string | null = null;
+let activeTaskListLabel: string | null = null;
 
 setLiveTaskPathProvider(() => activeTaskPath);
+observeTaskRunning((running) => {
+    if (!running && taskProgress !== null) clearTaskProgress();
+});
 
 export function getTaskProgress(): TaskProgress | null {
     return taskProgress;
@@ -183,9 +188,18 @@ export function getTaskElapsedMs(): number | null {
 export function getActiveTaskPath(): string | null {
     return activeTaskPath;
 }
+export function getActiveTaskListLabel(): string | null {
+    return activeTaskListLabel;
+}
+export function setActiveTaskListLabel(label: string | null): void {
+    if (activeTaskListLabel === label) return;
+    activeTaskListLabel = label;
+    markGuiDirty();
+}
 export function setActiveTaskPath(p: string | null): void {
     if (activeTaskPath === p) return;
     activeTaskPath = p;
+    activeTaskListLabel = null;
     if (p !== null) rememberLiveTaskPath(p);
     markGuiDirty();
 }

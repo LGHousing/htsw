@@ -24,7 +24,10 @@ import {
     setObservedTopLevel,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
-import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
+import {
+    getActiveTaskListLabel,
+    getActiveTaskPath,
+} from "../src/gui/right-panel/import-tab/taskProgress";
 import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
 import { createImportPreviewReplay } from "../src/gui/right-panel/import-tab/importPreviewReplay";
 import {
@@ -279,6 +282,29 @@ describe("read live preview", () => {
                 line.tokens.map((token) => token.text).join("")
             )
         ).toEqual(['chat "scan-0"']);
+        preview.clear();
+    });
+
+    test("keeps a menu-heavy sibling read in one preview state", () => {
+        const preview = createReadLivePreview("MENU", "./project/import.json");
+        preview.start(["menu"]);
+        preview.activate(0, true);
+
+        for (let slot = 0; slot < 512; slot++) {
+            const events = preview.eventsForList(`Slot ${slot}`);
+            events.emit({
+                kind: "readStarted",
+                listPath: ActionListPath.root(),
+            });
+            expect(previewLinesForFile(getActiveTaskPath()!)).toEqual([]);
+            events.emit({
+                kind: "observedSnapshot",
+                nodes: nodes(message(`slot-${slot}`)),
+            });
+        }
+
+        expect(livePreviewCacheSize()).toBe(1);
+        expect(getActiveTaskListLabel()).toBe("Slot 511");
         preview.clear();
     });
 

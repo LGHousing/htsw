@@ -77,7 +77,8 @@ async function readRegion(
     entry: RegionListEntry,
     itemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler,
-    events?: SyncEventHandler
+    events?: SyncEventHandler,
+    eventsForList?: (label: string) => SyncEventHandler
 ): Promise<ImportableRegion> {
     const bounds = requireRegionBounds(entry);
     const enterActions = await readRegionActionList(
@@ -86,7 +87,7 @@ async function readRegion(
         "Entry Actions",
         itemCaptures,
         onReadProgress,
-        events
+        eventsForList?.("Entry") ?? events
     );
     ctx.checkCancelled();
     const exitActions = await readRegionActionList(
@@ -95,7 +96,7 @@ async function readRegion(
         "Exit Actions",
         itemCaptures,
         onReadProgress,
-        events
+        eventsForList?.("Exit") ?? events
     );
 
     const importable: ImportableRegion = {
@@ -165,7 +166,14 @@ export const readRegions = defineHouseExporter({
     reader: {
         kind: "direct",
         read: (ctx, entry, options, state, onReadProgress) =>
-            readRegion(ctx, entry, state.itemCaptures, onReadProgress, options.progress?.events),
+            readRegion(
+                ctx,
+                entry,
+                state.itemCaptures,
+                onReadProgress,
+                options.progress?.events,
+                options.progress?.eventsForList
+            ),
     },
     importableOf: (importable) => importable,
     export: async (ctx, entry, importable, options) => {

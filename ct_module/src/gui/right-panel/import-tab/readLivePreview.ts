@@ -7,7 +7,6 @@ import {
     type ActionPathKey,
 } from "../../../housingSync/actionPath";
 import {
-    beginPreviewRead,
     disposePreview,
     getCurrentPath,
     hasPreviewState,
@@ -17,10 +16,14 @@ import {
     setCurrent,
     setObservedTopLevel,
 } from "./livePreview";
-import { setActiveTaskPath } from "./taskProgress";
+import {
+    setActiveTaskListLabel,
+    setActiveTaskPath,
+} from "./taskProgress";
 
 export type ReadLivePreview = {
     events: SyncEventHandler;
+    eventsForList: (label: string) => SyncEventHandler;
     start(names: readonly string[]): void;
     activate(index: number, reset: boolean): void;
     finish(index: number): void;
@@ -57,7 +60,7 @@ export function createReadLivePreview(
         }
     };
 
-    const events: SyncEventHandler = {
+    const eventHandler = (listLabel: string | null): SyncEventHandler => ({
         emit(event) {
             const path = activePath();
             const index = activeIndex;
@@ -66,7 +69,8 @@ export function createReadLivePreview(
                 if (event.listPath.parts.length === 0) {
                     latestSnapshots[index] = null;
                     completedPaths[index].clear();
-                    beginPreviewRead(path);
+                    resetPreview(path);
+                    setActiveTaskListLabel(listLabel);
                 }
                 setCurrent(path, null);
             } else if (event.kind === "childListReadStarted") {
@@ -86,13 +90,16 @@ export function createReadLivePreview(
                 setCurrent(path, null);
             }
         },
-    };
+    });
+    const events = eventHandler(null);
 
     return {
         events,
+        eventsForList: eventHandler,
         start(names) {
             paths = names.map((_name, index) => previewPath(basePath, type, index));
             activeIndex = null;
+            setActiveTaskListLabel(null);
             latestSnapshots.length = names.length;
             completedPaths.length = names.length;
             for (let i = 0; i < latestSnapshots.length; i++) latestSnapshots[i] = null;
@@ -135,6 +142,7 @@ export function createReadLivePreview(
             latestSnapshots.length = 0;
             completedPaths.length = 0;
             activeIndex = null;
+            setActiveTaskListLabel(null);
             setActiveTaskPath(null);
         },
     };

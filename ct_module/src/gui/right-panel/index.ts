@@ -46,7 +46,10 @@ import {
     queueItemsForPath,
     type QueueItem,
 } from "./import-tab/queue";
-import { getSessionVerb } from "./import-tab/taskProgress";
+import {
+    getActiveTaskListLabel,
+    getSessionVerb,
+} from "./import-tab/taskProgress";
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;
@@ -343,7 +346,11 @@ function displayPath(p: string): string {
 function displayedActivePath(p: string): string {
     if (isLiveTabActive() && getSessionVerb() !== "import") {
         const marker = p.lastIndexOf(".live-");
-        if (marker >= 0) return displayPath(p.substring(0, marker));
+        if (marker >= 0) {
+            const base = displayPath(p.substring(0, marker));
+            const listLabel = getActiveTaskListLabel();
+            return listLabel === null ? base : `${base} · ${listLabel}`;
+        }
     }
     return displayPath(p);
 }

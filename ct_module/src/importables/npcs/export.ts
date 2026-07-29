@@ -36,6 +36,7 @@ export type ExportNpcWithSharedStateOptions = {
     rootDir: string;
     onReadProgress?: ProgressHandler;
     events?: SyncEventHandler;
+    eventsForList?: (label: string) => SyncEventHandler;
     output: ReadOutput;
     quiet?: boolean;
 };
@@ -120,7 +121,7 @@ export async function exportNpcWithSharedState(
             ctx,
             shared.itemCaptures,
             options.onReadProgress,
-            options.events
+            options.eventsForList?.("Left Click") ?? options.events
         );
         if (actions.length > 0) {
             leftActions = actions;
@@ -136,7 +137,7 @@ export async function exportNpcWithSharedState(
             shared.itemCaptures,
             shared.npcLookup,
             options.onReadProgress,
-            options.events
+            options.eventsForList?.("Right Click") ?? options.events
         );
         if (actions.length > 0) {
             rightActions = actions;

@@ -147,6 +147,8 @@ export type ProgressHandler = (progress: ProgressPayload) => void;
 export type ExportProgressSink = {
     /** Receives the reader's shallow and hydrated action snapshots for the live code view. */
     events?: SyncEventHandler;
+    /** Scopes sibling action lists that each number their actions from zero. */
+    eventsForList?: (label: string) => SyncEventHandler;
     /** Called once the full list of names to export is known. */
     start(names: readonly string[]): void;
     scanStarted?(): void;

@@ -198,7 +198,8 @@ export async function readLiveMenu(
     ctx: TaskContext,
     itemRead: ItemReadOptions,
     onReadProgress?: ProgressHandler,
-    events?: SyncEventHandler
+    events?: SyncEventHandler,
+    eventsForList?: (label: string) => SyncEventHandler
 ): Promise<LiveMenu> {
     const grid = await snapshotLiveMenuGrid(ctx);
     const { size, gridSize } = grid;
@@ -270,7 +271,7 @@ export async function readLiveMenu(
                           COST.menuClickWait + payload.completedUnits;
                       emitProgress();
                   },
-            events
+            eventsForList?.(`Slot ${slot}`) ?? events
         );
         doneReadingUnits += currentSlotReadingUnits;
         doneHydratingUnits += currentSlotHydratingUnits;

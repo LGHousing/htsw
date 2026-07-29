@@ -87,6 +87,7 @@ export function createDiffProgressSession(
             const rowKeyFor = (name: string): string => queueRowKey(type, name, manifest);
             return {
                 events: livePreview.events,
+                eventsForList: livePreview.eventsForList,
                 start(batchNames) {
                     names = batchNames;
                     livePreview.start(batchNames);

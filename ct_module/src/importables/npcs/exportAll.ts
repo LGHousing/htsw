@@ -185,6 +185,7 @@ async function exportAllNpcsInner(
                                 ? undefined
                                 : (payload) => itemProgress(i, payload),
                         events: sink?.events,
+                        eventsForList: sink?.eventsForList,
                     },
                     { itemCaptures, inventorySnapshot, npcLookup }
                 );
