@@ -18,7 +18,10 @@ import {
     tryWriteImportableCache,
     type ImportableCacheLoadRequest,
 } from "../../importCache";
-import { upsertHouseLockImportables } from "../../importCache/houseLock";
+import {
+    upsertHouseLockImportables,
+    type HouseLockImportableUpdate,
+} from "../../importCache/houseLock";
 import { importableIdentity, importableKey } from "../identity";
 import {
     type ItemDependencyIndex,
@@ -73,6 +76,10 @@ import {
     type ApplicationPlan,
     workStep,
 } from "./applicationProgress";
+import {
+    sourceItemFieldContent,
+    type ItemFieldContent,
+} from "../../housingSync/items/fieldContent";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -89,10 +96,7 @@ export type ImportSessionRequest = {
     onImportableAutoAdded?: (importable: Importable) => void;
 };
 
-type PendingHouseLockEntry = {
-    importable: Importable;
-    itemDependencies?: ItemDependencySnapshot;
-};
+type PendingHouseLockEntry = HouseLockImportableUpdate;
 
 const SCAN_HYDRATE_CHUNK_SIZE = 25;
 
@@ -102,6 +106,7 @@ type VerifiedDependencyContext = {
     housingUuid: string;
     tracker: ItemVerificationTracker;
     observations: ItemFieldObservationRecorder | undefined;
+    itemContent: ItemFieldContent | undefined;
     trustPlan: ReturnType<typeof buildTrustPlan>;
     trustedItemOwners: WeakSet<Action | Condition>;
 };
@@ -323,6 +328,7 @@ async function runImportSessionInner(
         housingUuid: selection.housingUuid,
         tracker: itemVerification,
         observations: itemFieldObservations,
+        itemContent: itemDiff.fieldContent,
         trustPlan,
         trustedItemOwners,
     };
@@ -634,6 +640,7 @@ async function runImportSessionInner(
                     pendingHouseLockEntries.push({
                         importable: row.importable,
                         itemDependencies: itemDependencies.snapshotOf(row.importable),
+                        itemContent: itemDiff.fieldContent,
                     });
                 }
                 events?.emit({
@@ -780,6 +787,8 @@ async function finishWithoutApply(
         pendingHouseLockEntries.push({
             importable: row.importable,
             itemDependencies: dependencies,
+            itemContent: (owner, property) =>
+                itemDependencies.fieldContent(owner, property),
         });
     }
     events?.emit({ kind: "importableFinished", key: row.key, status });
@@ -865,7 +874,15 @@ async function maybeWritePartialImportCache(
     ) {
         return false;
     }
-    pendingHouseLockEntries.push({ importable: partial, itemDependencies });
+    pendingHouseLockEntries.push({
+        importable: partial,
+        itemDependencies,
+        itemContent: itemContentForLock(
+            partial,
+            verifiedContext.projectItems,
+            result?.itemContent ?? verifiedContext.itemContent
+        ),
+    });
     return true;
 }
 
@@ -895,10 +912,29 @@ async function writeObservedPlanCaches(
         ) {
             continue;
         }
-        pendingHouseLockEntries.push({ importable: observed, itemDependencies });
+        pendingHouseLockEntries.push({
+            importable: observed,
+            itemDependencies,
+            itemContent: itemContentForLock(
+                observed,
+                verifiedContext.projectItems,
+                verifiedContext.itemContent
+            ),
+        });
         savedCount++;
     }
     return savedCount;
+}
+
+function itemContentForLock(
+    importable: Importable,
+    projectItems: ProjectItemIndex,
+    preferred: ItemFieldContent | undefined
+): ItemFieldContent {
+    const fallback = sourceItemFieldContent(importable, projectItems);
+    if (preferred === undefined) return fallback;
+    return (owner, property) =>
+        preferred(owner, property) ?? fallback(owner, property);
 }
 
 function flushHouseLockEntries(

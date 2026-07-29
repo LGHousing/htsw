@@ -6,6 +6,7 @@ import type {
     ExportProgressSink,
     ProgressHandler,
 } from "../../housingSync/progress/types";
+import type { ItemFieldContent } from "../../housingSync/items/fieldContent";
 
 export type ReadResult = { total: number; succeeded: number; failed: number };
 
@@ -15,7 +16,7 @@ export type ReadOutput =
     | {
           kind: "memory";
           housingUuid: string;
-          accept: (importable: Importable) => void;
+          accept: (importable: Importable, itemContent: ItemFieldContent) => void;
       };
 
 /**

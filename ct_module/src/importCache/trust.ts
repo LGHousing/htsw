@@ -87,7 +87,6 @@ export function buildTrustPlan(
             TrustedChildListPath,
             TrustedChildListSnapshot
         >();
-
         let sourceHash: string | null = null;
         let wholeImportableTrusted = false;
 

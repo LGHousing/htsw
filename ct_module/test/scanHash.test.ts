@@ -113,6 +113,36 @@ describe("action-list scan hashes", () => {
 });
 
 describe("action-list content hashes", () => {
+    it("uses canonical item content instead of operand names", () => {
+        const source = {
+            type: "GIVE_ITEM",
+            itemName: "mvp_cookies.snbt",
+        } as Action;
+        const live = {
+            type: "GIVE_ITEM",
+            itemName: "mvp_002b_cookies__0028right_click_0029",
+        } as Action;
+        const tag = {
+            type: "compound",
+            value: {
+                id: { type: "string", value: "minecraft:cookie" },
+            },
+        };
+        const itemContent = () => ({ key: JSON.stringify(tag), tag });
+
+        expect(actionListContentHashFromActions([source], itemContent)).toBe(
+            actionListContentHashFromActions([live], itemContent)
+        );
+        expect(
+            actionListContentHashFromActions([source], itemContent)
+        ).not.toBe(
+            actionListContentHashFromActions([live], () => ({
+                key: "different-content",
+                tag,
+            }))
+        );
+    });
+
     it("includes scalar fields, notes, and child-list content", () => {
         const base = [
             conditional({

@@ -1,5 +1,5 @@
 import { Element } from "../lib/layout";
-import { Button, Col, Row, Text } from "../lib/components";
+import { Button, Col, Row, Scroll, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 import {
     COLOR_BUTTON,
@@ -27,6 +27,7 @@ const BUTTON_ROW_H = 18;
 const BUTTON_PAD_X = 8;
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 380;
+const MAX_VISIBLE_LINES = 10;
 
 // Fit the widest line (MC's font is proportional, so a fixed width either
 // wastes space or lets a long line spill past the box). Truncation on the
@@ -79,11 +80,32 @@ function buttonWidths(labels: string[], popoverWidth: number): number[] {
 
 function content(opts: ConfirmOptions, widths: number[]): Element {
     const lines = opts.lines ?? [];
+    const lineElements = lines.map((line) =>
+        Text({ text: line, color: COLOR_TEXT_DIM, truncate: true })
+    );
+    const body =
+        lines.length > MAX_VISIBLE_LINES
+            ? [
+                  Scroll({
+                      id: "confirm-lines",
+                      style: {
+                          gap: GAP,
+                          height: {
+                              kind: "px",
+                              value:
+                                  MAX_VISIBLE_LINES * TEXT_H +
+                                  (MAX_VISIBLE_LINES - 1) * GAP,
+                          },
+                      },
+                      children: lineElements,
+                  }),
+              ]
+            : lineElements;
     return Col({
         style: { padding: PAD, gap: GAP },
         children: [
             Text({ text: opts.title, color: COLOR_TEXT, truncate: true }),
-            ...lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM, truncate: true })),
+            ...body,
             Row({
                 style: { gap: 4, height: { kind: "px", value: BUTTON_ROW_H } },
                 children: [
@@ -150,9 +172,16 @@ export function openConfirmPopover(opts: ConfirmOptions): void {
         opts.cancelLabel ?? "Cancel",
     ];
     const width = fitWidth(opts.title, lines, labels);
-    // Mirrors content(): title text, then each line and the button row each
-    // preceded by one gap, inside the Col's padding.
-    const height = PAD * 2 + TEXT_H + lines.length * (GAP + TEXT_H) + GAP + BUTTON_ROW_H;
+    const bodyHeight =
+        lines.length > MAX_VISIBLE_LINES
+            ? MAX_VISIBLE_LINES * TEXT_H + (MAX_VISIBLE_LINES - 1) * GAP
+            : lines.length * TEXT_H;
+    const childCount = 2 + (lines.length === 0 ? 0 : 1);
+    const gapHeight =
+        lines.length > MAX_VISIBLE_LINES
+            ? GAP * (childCount - 1)
+            : GAP * (lines.length + 1);
+    const height = PAD * 2 + TEXT_H + bodyHeight + gapHeight + BUTTON_ROW_H;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
         content: content(

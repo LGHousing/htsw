@@ -79,7 +79,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "diff",
         summary: "Scan a manifest for live Housing divergence",
         run: commandDiff,
-        usage: "diff <manifest-path>",
+        usage: "diff <manifest-path> [--adopt]",
     },
     {
         name: "warnmode",

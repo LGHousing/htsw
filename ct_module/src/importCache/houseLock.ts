@@ -14,6 +14,7 @@ import type {
     ItemDependencySnapshot,
     ItemDependencyTarget,
 } from "../importables/items/dependencyIndex";
+import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -216,6 +217,23 @@ export function houseLockEntryFor(
     return lock.importables[importableKey(type, identity)] ?? null;
 }
 
+export function houseLockAcceptsUpdate(
+    importJsonPath: string,
+    housingUuid: string
+): boolean {
+    const path = houseLockPathForImportJson(importJsonPath);
+    if (!FileLib.exists(path)) return true;
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return false;
+    if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
+    return (
+        (lock.scanHashVersion === undefined ||
+            lock.scanHashVersion === ACTION_LIST_SCAN_HASH_VERSION) &&
+        (lock.contentHashVersion === undefined ||
+            lock.contentHashVersion === ACTION_LIST_CONTENT_HASH_VERSION)
+    );
+}
+
 function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     try {
         ensureParentDirs(lockPath);
@@ -229,17 +247,15 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 export type HouseLockImportableUpdate = {
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
+    itemContent: ItemFieldContent | undefined;
 };
 
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
-    importable: Importable,
-    itemDependencies?: ItemDependencySnapshot
+    update: HouseLockImportableUpdate
 ): boolean {
-    return upsertHouseLockImportables(importJsonPath, housingUuid, [
-        { importable, itemDependencies },
-    ]);
+    return upsertHouseLockImportables(importJsonPath, housingUuid, [update]);
 }
 
 export function upsertHouseLockImportables(
@@ -261,7 +277,10 @@ export function upsertHouseLockImportables(
         for (const { basePath, actions } of actionListsOfImportable(importable)) {
             listScanHashes[basePath] = actionListScanHashFromActions(actions);
             listContentHashes[basePath] =
-                actionListContentHashFromActions(actions);
+                actionListContentHashFromActions(
+                    actions,
+                    update.itemContent
+                );
         }
         lock.importables[importableKey(importable.type, identity)] = {
             type: importable.type,

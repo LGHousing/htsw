@@ -3,6 +3,8 @@ import type { Action, Condition } from "htsw/types";
 import { getActionScalarLoreFields, getChildListFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
+import type { ItemFieldContent } from "../items/fieldContent";
+import { prettyCanonicalItemTag } from "../items/itemNbt";
 
 export type ActionListConflictDifference = {
     path: string;
@@ -12,6 +14,11 @@ export type ActionListConflictDifference = {
 
 export type ActionListConflictDetails = {
     differences: ActionListConflictDifference[];
+    itemDifferences?: {
+        path: string;
+        liveSnbt: string;
+        sourceSnbt: string;
+    }[];
     moreCount: number;
 };
 
@@ -20,6 +27,9 @@ const MAX_VALUE_LENGTH = 48;
 
 type DifferenceCollector = {
     differences: ActionListConflictDifference[];
+    itemDifferences: NonNullable<ActionListConflictDetails["itemDifferences"]>;
+    liveItemContent?: ItemFieldContent;
+    sourceItemContent?: ItemFieldContent;
 };
 
 function actionLabel(index: number, type: string): string {
@@ -55,9 +65,31 @@ function compareScalarFields(
     type: string,
     live: Record<string, unknown>,
     source: Record<string, unknown>,
-    fields: readonly { prop: string }[]
+    fields: readonly { prop: string; kind?: string }[]
 ): void {
     for (const field of fields) {
+        if (field.kind === "item") {
+            const liveItem = collector.liveItemContent?.(
+                live as unknown as Action | Condition,
+                field.prop
+            );
+            const sourceItem = collector.sourceItemContent?.(
+                source as unknown as Action | Condition,
+                field.prop
+            );
+            if (liveItem?.key !== sourceItem?.key) {
+                const itemPath = `${path} · ${field.prop}`;
+                addDifference(collector, itemPath, "<item>", "<item>");
+                if (liveItem !== undefined && sourceItem !== undefined) {
+                    collector.itemDifferences.push({
+                        path: itemPath,
+                        liveSnbt: prettyCanonicalItemTag(liveItem.tag),
+                        sourceSnbt: prettyCanonicalItemTag(sourceItem.tag),
+                    });
+                }
+            }
+            continue;
+        }
         const liveKey = scalarFieldCompareKey(type, field.prop, live[field.prop]);
         const sourceKey = scalarFieldCompareKey(type, field.prop, source[field.prop]);
         if (liveKey !== sourceKey) {
@@ -251,11 +283,27 @@ function compareCondition(
 
 export function actionListConflictDetails(
     live: readonly Action[],
-    source: readonly Action[]
+    source: readonly Action[],
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
 ): ActionListConflictDetails {
-    return summarizeActionListConflictDifferences(
-        actionListConflictDifferences(live, source)
+    const collector = collectActionListConflictDifferences(
+        live,
+        source,
+        liveItemContent,
+        sourceItemContent
     );
+    const summary = summarizeActionListConflictDifferences(collector.differences);
+    const shownPaths = new Set(
+        summary.differences.map((difference) => difference.path)
+    );
+    const itemDifferences = collector.itemDifferences.filter((difference) =>
+        shownPaths.has(difference.path)
+    );
+    return {
+        ...summary,
+        ...(itemDifferences.length > 0 ? { itemDifferences } : {}),
+    };
 }
 
 export function summarizeActionListConflictDifferences(
@@ -273,9 +321,30 @@ export function summarizeActionListConflictDifferences(
 
 export function actionListConflictDifferences(
     live: readonly Action[],
-    source: readonly Action[]
+    source: readonly Action[],
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
 ): ActionListConflictDifference[] {
-    const collector: DifferenceCollector = { differences: [] };
+    return collectActionListConflictDifferences(
+        live,
+        source,
+        liveItemContent,
+        sourceItemContent
+    ).differences;
+}
+
+function collectActionListConflictDifferences(
+    live: readonly Action[],
+    source: readonly Action[],
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
+): DifferenceCollector {
+    const collector: DifferenceCollector = {
+        differences: [],
+        itemDifferences: [],
+        liveItemContent,
+        sourceItemContent,
+    };
     compareEntries(collector, "", live, source, compareAction, actionLabel);
-    return collector.differences;
+    return collector;
 }
