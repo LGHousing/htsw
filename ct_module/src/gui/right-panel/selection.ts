@@ -69,6 +69,7 @@ export function onTaskRunningChanged(
         markGuiDirty();
     } else if (wasRunning && !isRunning) {
         if (finishedTaskNeedsAttention) return;
+        disposeLivePreviews();
         dismissedLiveImport = false;
         lastLivePath = null;
         liveTabActive = false;

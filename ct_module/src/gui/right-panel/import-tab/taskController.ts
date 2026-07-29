@@ -73,6 +73,7 @@ import {
     setLiveSummary,
     setObservedTopLevel,
 } from "./livePreview";
+import { createImportPreviewReplay } from "./importPreviewReplay";
 import { ActionPath } from "../../../housingSync/actionPath";
 import { setFocusPath } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
@@ -251,6 +252,8 @@ function createSyncEventHandler(args: {
             imp
         );
     }
+    const previewReplay = createImportPreviewReplay(args.trustMode);
+    let activeViewKey: string | null = null;
 
     // Mapped type: one handler per event kind, parameter narrowed to the
     // specific event shape. TS enforces exhaustiveness — a new kind on the
@@ -262,12 +265,14 @@ function createSyncEventHandler(args: {
         sessionStarted: () => {},
         importableStarted: (e) => {
             const imp = importablesByKey.get(e.key) ?? null;
+            activeViewKey = e.key;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
             if (activeViewPath !== null) {
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
                 resetLivePreviewScroll();
             }
+            previewReplay.start(e.key, activeViewPath, e.cached);
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
@@ -279,16 +284,16 @@ function createSyncEventHandler(args: {
             if (e.status === "imported") invalidateSourceDiffForImportable(imp);
         },
         importableReactivated: (e) => {
-            // Application reactivates an importable parked after observation.
-            // Re-bind the preview to this row's source file so the applying
-            // diff overlay lands in the right pane.
             const imp = importablesByKey.get(e.key) ?? null;
+            activeViewKey = e.key;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
+            previewReplay.restore(e.key, activeViewPath);
         },
         sessionTotalsLocked: () => {},
         sessionApplicationProgress: () => {},
         applicationProgress: () => {},
         sessionFinished: () => {
+            activeViewKey = null;
             activeViewPath = null;
         },
         progress: () => {},
@@ -297,7 +302,12 @@ function createSyncEventHandler(args: {
         // panel reads it from there. Nothing to mirror into the code view.
         menuSlotStarted: () => {},
         setupStep: () => {},
-        readStarted: () => {},
+        readStarted: (e) => {
+            if (activeViewPath === null || e.listPath.parts.length !== 0) return;
+            if (activeViewKey !== null) {
+                previewReplay.beginRead(activeViewKey, activeViewPath);
+            }
+        },
         childListReadStarted: (e) => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, e.path);
@@ -361,6 +371,7 @@ function createSyncEventHandler(args: {
             setFocusPath(activeViewPath, null);
         },
         observedSnapshot: (e) => {
+            if (activeViewKey !== null) previewReplay.observe(activeViewKey, e.nodes);
             if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.nodes);
         },
         actionReadCompleted: () => {},

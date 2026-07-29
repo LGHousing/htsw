@@ -292,7 +292,7 @@ export function finishTaskProgress(
     setActiveTaskPath(null);
     finishedTaskFailure = failure;
     finishedTaskSummary = summary;
-    updateTaskProgress(null, failure !== null);
+    updateTaskProgress(null, failure !== null && sessionVerb === "import");
 }
 
 export function clearTaskProgress(): void {

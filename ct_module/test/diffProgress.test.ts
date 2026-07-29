@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
 import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
+import { livePreviewCacheSize } from "../src/gui/right-panel/import-tab/livePreview";
 import {
     clearLastFinishedProgress,
     clearTaskProgress,
@@ -57,5 +58,23 @@ describe("diff progress", () => {
         expect(getTaskProgress()).toBeNull();
         expect(getActiveTaskPath()).toBeNull();
         expect(getFinishedTaskSummary()).toBeNull();
+    });
+
+    test("releases preview state when a diff fails", () => {
+        const progress = createDiffProgressSession([sourceFunction()], MANIFEST);
+        const sink = progress.sinkFor("FUNCTION");
+        progress.start();
+        sink.start(["Example"]);
+        sink.item(0, "Example");
+        sink.events?.emit({
+            kind: "observedSnapshot",
+            nodes: [{ kind: "action", action: message("live") }],
+        });
+
+        expect(livePreviewCacheSize()).toBe(1);
+        progress.fail("Housing read failed");
+
+        expect(livePreviewCacheSize()).toBe(0);
+        expect(getTaskProgress()).toBeNull();
     });
 });

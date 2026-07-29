@@ -26,6 +26,7 @@ import {
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
 import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
+import { createImportPreviewReplay } from "../src/gui/right-panel/import-tab/importPreviewReplay";
 import {
     ActionListPath,
     type ActionPathPart,
@@ -201,18 +202,99 @@ describe("setObservedTopLevel", () => {
 });
 
 describe("read live preview", () => {
-    test("keeps a large batch within the completed-preview cache bound", () => {
-        const names = Array.from({ length: 130 }, (_value, index) => String(index));
+    test("restores the right importable when source paths are shared", () => {
+        const sharedPath = "./project/import.json";
+        const replay = createImportPreviewReplay(false);
+
+        primeWithCache(sharedPath, func([message("cached-a")]));
+        replay.start("a", sharedPath, func([message("cached-a")]));
+        const observedA = nodes(message("observed-a"));
+        replay.observe("a", observedA);
+        setObservedTopLevel(sharedPath, observedA, { force: true });
+
+        primeWithCache(sharedPath, func([message("cached-b")]));
+        replay.start("b", sharedPath, func([message("cached-b")]));
+        setObservedTopLevel(sharedPath, nodes(message("observed-b")), { force: true });
+
+        replay.restore("a", sharedPath);
+
+        expect(
+            previewLinesForFile(sharedPath)[0].tokens
+                .map((token) => token.text)
+                .join("")
+        ).toBe('chat "observed-a"');
+    });
+
+    test("does not carry completion state between menu slot action lists", () => {
+        const preview = createReadLivePreview("MENU", "./project/import.json");
+        preview.start(["menu"]);
+        preview.activate(0, true);
+        const path = getActiveTaskPath()!;
+
+        preview.events.emit({
+            kind: "readStarted",
+            listPath: ActionListPath.root(),
+        });
+        preview.events.emit({
+            kind: "observedSnapshot",
+            nodes: nodes(message("first slot")),
+        });
+        preview.events.emit({
+            kind: "actionReadCompleted",
+            path: p(0),
+            hydrated: false,
+        });
+        expect(previewLinesForFile(path)[0].completed).toBe(true);
+
+        preview.events.emit({
+            kind: "readStarted",
+            listPath: ActionListPath.root(),
+        });
+        preview.events.emit({
+            kind: "observedSnapshot",
+            nodes: nodes(message("second slot")),
+        });
+
+        expect(previewLinesForFile(path)[0].completed).toBeUndefined();
+        preview.clear();
+    });
+
+    test("keeps staged scanning within the preview cache bound and rebuilds an evicted item", () => {
+        const names = Array.from({ length: 512 }, (_value, index) => String(index));
         const preview = createReadLivePreview("FUNCTION", "./project/import.json");
         preview.start(names);
 
         for (let i = 0; i < names.length; i++) {
             preview.activate(i, true);
-            preview.finish(i);
+            preview.events.emit({
+                kind: "observedSnapshot",
+                nodes: nodes(message(`scan-${i}`)),
+            });
         }
 
         expect(livePreviewCacheSize()).toBe(128);
+        preview.activate(0, false);
+        expect(
+            previewLinesForFile(getActiveTaskPath()!).map((line) =>
+                line.tokens.map((token) => token.text).join("")
+            )
+        ).toEqual(['chat "scan-0"']);
         preview.clear();
+    });
+
+    test("releases a completed export preview when the operation clears", () => {
+        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        preview.start(["a"]);
+        preview.activate(0, true);
+        preview.events.emit({
+            kind: "observedSnapshot",
+            nodes: nodes(message("done")),
+        });
+        preview.finish(0);
+
+        expect(livePreviewCacheSize()).toBe(1);
+        preview.clear();
+        expect(livePreviewCacheSize()).toBe(0);
     });
 
     test("shows the shallow scan, follows hydration, and forces the final snapshot", () => {
