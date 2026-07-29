@@ -6,7 +6,9 @@ import "./tasks/manager";
 import { registerSlashCommands } from "./slashCommands";
 import { initHtswGui } from "./gui/overlay";
 import { initAutoUpdate } from "./autoUpdate";
+import { initSessionHeartbeat } from "./runtimeDebug/sessionHeartbeat";
 
 registerSlashCommands();
 initHtswGui();
 initAutoUpdate();
+initSessionHeartbeat();
