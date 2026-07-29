@@ -10,7 +10,7 @@ import { anchorCacheSize } from "./lib/anchors";
 import { imageCacheSizes } from "./lib/images";
 import { textWidthCacheSize } from "./lib/layout";
 import { truncateCacheSize } from "./lib/render";
-import { parseCacheSizes } from "./parsing/parses";
+import { forEachCachedParse, parseCacheSizes } from "./parsing/parses";
 import { rightPanelFileCacheSize } from "./right-panel";
 import { focusedLineCacheSize } from "./right-panel/import-tab/focusedLine";
 import { livePreviewCacheSize } from "./right-panel/import-tab/livePreview";
@@ -18,31 +18,77 @@ import { queueItemsCacheSize } from "./right-panel/import-tab/queue";
 import { queueRowCacheSizes } from "./right-panel/import-tab/queueRows";
 import { debugLog } from "./lib/debugLog";
 
-export function logGuiCacheSizes(): void {
+export function guiCacheSizes() {
     const parse = parseCacheSizes();
     const lines = lineModelCacheSizes();
     const images = imageCacheSizes();
     const sourceDiff = sourceDiffCacheSizes();
     const queueRows = queueRowCacheSizes();
     const importCache = importCacheMemorySizes();
+    return {
+        boundedParses: parse.parses,
+        boundedCanonicalPaths: parse.canonicalPaths,
+        boundedLinePlain: lines.plain,
+        boundedLineHtsl: lines.htsl,
+        boundedLineJson: lines.json,
+        boundedLineSnbt: lines.snbt,
+        boundedLineHtslRaw: lines.htslRaw,
+        boundedProjectEnumeration: enumerationCacheSize(),
+        boundedSubtreeAggregates: subtreeAggregateCacheSize(),
+        boundedLivePreviews: livePreviewCacheSize(),
+        boundedTextWidths: textWidthCacheSize(),
+        boundedTruncations: truncateCacheSize(),
+        boundedHtslParses: htslParseCacheSize(),
+        unboundedMcItems: images.mcItems,
+        unboundedIcons: images.icons,
+        unboundedAnchors: anchorCacheSize(),
+        unboundedCodeViewModels: codeViewModelCacheSize(),
+        unboundedSourceDiffEntries: sourceDiff.entries,
+        unboundedSourceDiffFileTargets: sourceDiff.fileTargets,
+        unboundedRightPanelFiles: rightPanelFileCacheSize(),
+        unboundedQueueItems: queueItemsCacheSize(),
+        unboundedQueueSourceIndexes: queueRows.sourceIndexes,
+        unboundedQueueSkipPredictions: queueRows.skipPredictions,
+        unboundedImportCacheReads: importCache.reads,
+        unboundedImportCacheEnumerations: importCache.enumerations,
+        unboundedImportCacheScanMarkers: importCache.scanMarkers,
+        unboundedCanonicalDefaults: canonicalDefaultCacheSize(),
+        unboundedFocusedLines: focusedLineCacheSize(),
+    };
+}
+
+export type GuiCacheSizes = ReturnType<typeof guiCacheSizes>;
+
+export function parsedManifestCount(): number {
+    let count = 0;
+    forEachCachedParse((entry) => {
+        if (entry.parsed !== null) count++;
+    });
+    return count;
+}
+
+export function logGuiCacheSizes(): void {
+    const sizes = guiCacheSizes();
     debugLog(
-        `cache sizes bounded={parse:${parse.parses},canonicalPaths:${parse.canonicalPaths},` +
-            `linePlain:${lines.plain},lineHtsl:${lines.htsl},lineJson:${lines.json},` +
-            `lineSnbt:${lines.snbt},lineHtslRaw:${lines.htslRaw},` +
-            `projectEnumeration:${enumerationCacheSize()},` +
-            `subtreeAggregates:${subtreeAggregateCacheSize()},` +
-            `livePreviews:${livePreviewCacheSize()},textWidths:${textWidthCacheSize()},` +
-            `truncations:${truncateCacheSize()},htslParses:${htslParseCacheSize()}} ` +
-            `unbounded={mcItems:${images.mcItems},icons:${images.icons},` +
-            `anchors:${anchorCacheSize()},codeViewModels:${codeViewModelCacheSize()},` +
-            `sourceDiffEntries:${sourceDiff.entries},sourceDiffFileTargets:${sourceDiff.fileTargets},` +
-            `rightPanelFiles:${rightPanelFileCacheSize()},queueItems:${queueItemsCacheSize()},` +
-            `queueSourceIndexes:${queueRows.sourceIndexes},` +
-            `queueSkipPredictions:${queueRows.skipPredictions},` +
-            `importCacheReads:${importCache.reads},` +
-            `importCacheEnumerations:${importCache.enumerations},` +
-            `importCacheScanMarkers:${importCache.scanMarkers},` +
-            `canonicalDefaults:${canonicalDefaultCacheSize()},` +
-            `focusedLines:${focusedLineCacheSize()}}`
+        `cache sizes bounded={parse:${sizes.boundedParses},canonicalPaths:${sizes.boundedCanonicalPaths},` +
+            `linePlain:${sizes.boundedLinePlain},lineHtsl:${sizes.boundedLineHtsl},` +
+            `lineJson:${sizes.boundedLineJson},lineSnbt:${sizes.boundedLineSnbt},` +
+            `lineHtslRaw:${sizes.boundedLineHtslRaw},` +
+            `projectEnumeration:${sizes.boundedProjectEnumeration},` +
+            `subtreeAggregates:${sizes.boundedSubtreeAggregates},` +
+            `livePreviews:${sizes.boundedLivePreviews},textWidths:${sizes.boundedTextWidths},` +
+            `truncations:${sizes.boundedTruncations},htslParses:${sizes.boundedHtslParses}} ` +
+            `unbounded={mcItems:${sizes.unboundedMcItems},icons:${sizes.unboundedIcons},` +
+            `anchors:${sizes.unboundedAnchors},codeViewModels:${sizes.unboundedCodeViewModels},` +
+            `sourceDiffEntries:${sizes.unboundedSourceDiffEntries},` +
+            `sourceDiffFileTargets:${sizes.unboundedSourceDiffFileTargets},` +
+            `rightPanelFiles:${sizes.unboundedRightPanelFiles},queueItems:${sizes.unboundedQueueItems},` +
+            `queueSourceIndexes:${sizes.unboundedQueueSourceIndexes},` +
+            `queueSkipPredictions:${sizes.unboundedQueueSkipPredictions},` +
+            `importCacheReads:${sizes.unboundedImportCacheReads},` +
+            `importCacheEnumerations:${sizes.unboundedImportCacheEnumerations},` +
+            `importCacheScanMarkers:${sizes.unboundedImportCacheScanMarkers},` +
+            `canonicalDefaults:${sizes.unboundedCanonicalDefaults},` +
+            `focusedLines:${sizes.unboundedFocusedLines}}`
     );
 }

@@ -16,6 +16,7 @@ type Settings = {
     smoothScrolling: boolean;
     watchMode: boolean;
     uploadSlowParseDiagnostics: boolean;
+    uploadSessionHeartbeat: boolean;
     autoUpdate: AutoUpdatePreference;
 };
 
@@ -27,6 +28,7 @@ let state: Settings = {
     smoothScrolling: true,
     watchMode: false,
     uploadSlowParseDiagnostics: true,
+    uploadSessionHeartbeat: true,
     autoUpdate: "unset",
 };
 let loaded = false;
@@ -64,6 +66,7 @@ function load(): void {
             watchMode: parsed.watchMode === true,
             uploadSlowParseDiagnostics:
                 parsed.uploadSlowParseDiagnostics !== false,
+            uploadSessionHeartbeat: parsed.uploadSessionHeartbeat !== false,
             autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
         };
     } catch (_e) {
@@ -148,6 +151,11 @@ export function setWatchMode(value: boolean): void {
 export function getUploadSlowParseDiagnostics(): boolean {
     load();
     return state.uploadSlowParseDiagnostics;
+}
+
+export function getUploadSessionHeartbeat(): boolean {
+    load();
+    return state.uploadSessionHeartbeat;
 }
 
 export function getAutoUpdatePreference(): AutoUpdatePreference {
