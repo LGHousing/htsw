@@ -98,6 +98,10 @@ type ModelCacheEntry = {
 
 const modelCache: { [scrollId: string]: ModelCacheEntry | undefined } = {};
 
+export function codeViewModelCacheSize(): number {
+    return Object.keys(modelCache).length;
+}
+
 function buildLineModel(
     scrollId: string,
     lines: readonly RenderableLine[],

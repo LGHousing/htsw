@@ -90,6 +90,10 @@ let frameFontRenderer: HtswMinecraftFontRenderer;
 // fully determines the result.
 const truncateCache = new Map<string, string>();
 
+export function truncateCacheSize(): number {
+    return truncateCache.size;
+}
+
 function truncateToWidth(text: string, maxW: number): string {
     const key = `${maxW}|${text}`;
     const cached = truncateCache.get(key);

@@ -60,6 +60,10 @@ const fileLoader = new FileSystemFileLoader();
 type CachedFile = { mtime: number; lines: string[] };
 const fileCache = new Map<string, CachedFile>();
 
+export function rightPanelFileCacheSize(): number {
+    return fileCache.size;
+}
+
 const TAB_H = 13;
 const TAB_CLOSE_W = 11;
 const TAB_LABEL_PAD_X = 5;

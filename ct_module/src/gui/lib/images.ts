@@ -81,6 +81,14 @@ declare const javax: { imageio: { ImageIO: { read: (f: unknown) => unknown } } }
 declare const java: { io: { File: new (path: string) => unknown } };
 
 const iconCache: { [name: string]: unknown } = {};
+
+export function imageCacheSizes(): { mcItems: number; icons: number } {
+    return {
+        mcItems: Object.keys(mcItemCache).length,
+        icons: Object.keys(iconCache).length,
+    };
+}
+
 let iconsPendingWarm: string[] = [];
 export function getIconImage(name: string): unknown {
     const cached = iconCache[name];

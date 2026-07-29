@@ -42,6 +42,7 @@ import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
+import { commandCaches } from "./debugCaches";
 import { commandHeap } from "./debugHeap";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 import { commandCacheReport } from "./cacheReport";
@@ -229,9 +230,14 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "heap",
-        summary: "JVM heap summary; heap dump [live|all] writes an .hprof",
+        summary: "JVM heap summary, full GC, or .hprof dump",
         run: commandHeap,
-        usage: "heap [dump [live|all]]",
+        usage: "heap [gc|dump [live|all]]",
+    },
+    {
+        name: "caches",
+        summary: "Write GUI and importer cache sizes to gui-debug.log",
+        run: commandCaches,
     },
     {
         name: "trace",
