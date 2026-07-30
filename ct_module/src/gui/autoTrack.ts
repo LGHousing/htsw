@@ -3,7 +3,11 @@
 import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { isAnyAutoTrackEnabled, getHousingUuid } from "./state";
+import {
+    isAnyAutoTrackEnabled,
+    getHousingUuid,
+    isCurrentHouseTrusted,
+} from "./state";
 import { getActiveAutoTrackSources } from "./autoTrackScope";
 import {
     canonicalPath,
@@ -52,7 +56,10 @@ export function queueModifiedImportables(
     const expansion =
         housingUuid === null
             ? null
-            : expandImportDependencies(parsed, modified, housingUuid);
+            : expandImportDependencies(parsed, modified, housingUuid, {
+                  trustMode: isCurrentHouseTrusted(),
+                  importJsonPath: canonicalSourcePath,
+              });
     const work = expansion?.importables ?? modified;
     const required = expansion?.addedImportables ?? [];
     const requiredKeys = new Set<string>();

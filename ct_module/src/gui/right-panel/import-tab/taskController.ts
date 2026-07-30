@@ -676,7 +676,11 @@ async function prepareAndStartImport(
             const expansion = expandImportDependencies(
                 batch.parsed,
                 batch.importables,
-                knownHousingUuid
+                knownHousingUuid,
+                {
+                    trustMode,
+                    importJsonPath: batch.sourcePath,
+                }
             );
             batch.importables = expansion.importables;
             addedItemCount += expansion.addedItems.length;
@@ -703,7 +707,6 @@ async function prepareAndStartImport(
         }),
         verb: "import",
         path: batches[0].sourcePath,
-        trustMode,
     });
 
     // A command import (`explicit`) gets reflected into the visible queue so
@@ -716,9 +719,7 @@ async function prepareAndStartImport(
         for (const item of explicit) addToQueue(item);
     }
     for (const addition of dependencyAdditions) {
-        addToQueue(
-            makeImportableQueueItem(addition.importable, addition.sourcePath)
-        );
+        addToQueue(makeImportableQueueItem(addition.importable, addition.sourcePath));
     }
     beginQueueSession();
 

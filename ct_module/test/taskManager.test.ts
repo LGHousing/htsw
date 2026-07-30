@@ -50,3 +50,32 @@ test("defers cancellation until the active mutation finishes", async () => {
     expect(mutationFinished).toBe(true);
     expect(continuedAfterMutation).toBe(false);
 });
+
+test("forced cancellation interrupts an active mutation", async () => {
+    let mutationFinished = false;
+
+    await TaskManager.run(async (ctx) => {
+        await ctx.finishBeforeCancelling(async () => {
+            ctx.forceCancel();
+            ctx.checkCancelled();
+            mutationFinished = true;
+        });
+    });
+
+    expect(mutationFinished).toBe(false);
+});
+
+test("normal cancellation allows explicit cleanup", async () => {
+    let cleanupReachedSafePoint = false;
+
+    await TaskManager.run(async (ctx) => {
+        ctx.cancel();
+        await ctx.finishCancellationCleanup(async () => {
+            ctx.checkCancelled();
+            cleanupReachedSafePoint = true;
+        });
+        ctx.checkCancelled();
+    });
+
+    expect(cleanupReachedSafePoint).toBe(true);
+});

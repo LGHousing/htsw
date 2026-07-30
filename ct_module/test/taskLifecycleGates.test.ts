@@ -76,7 +76,7 @@ describe("task-wide gates", () => {
         });
 
         await started.promise;
-        expect(cancelActiveTask()).toBe(true);
+        expect(cancelActiveTask()).toBe("requested");
         expect(getTaskProgress()).not.toBeNull();
         work.resolve();
         await cleanupStarted.promise;

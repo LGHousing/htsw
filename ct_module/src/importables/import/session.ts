@@ -101,7 +101,7 @@ export type ImportSessionRequest = {
     onImportableAutoAdded?: (importable: Importable) => void;
 };
 
-type PendingHouseLockEntry = HouseLockImportableUpdate;
+type PendingHouseLockEntries = Map<string, HouseLockImportableUpdate>;
 
 const SCAN_HYDRATE_CHUNK_SIZE = 25;
 
@@ -181,7 +181,11 @@ async function runImportSessionInner(
     const expansion = expandImportDependencies(
         parsed,
         selection.importables,
-        selection.housingUuid
+        selection.housingUuid,
+        {
+            trustMode: selection.trustMode,
+            importJsonPath: selection.sourcePath,
+        }
     );
     const { items, itemDependencies } = expansion;
     if (itemDependencies.cycles.length > 0) {
@@ -326,7 +330,7 @@ async function runImportSessionInner(
     const trustedRows: (typeof rowsMeta)[number][] = [];
     const plannedApplicationUnits = new Map<string, ImportablePlan["applicationUnits"]>();
     const reads: Array<{ row: (typeof rowsMeta)[number]; read: ImportableRead }> = [];
-    const pendingHouseLockEntries: PendingHouseLockEntry[] = [];
+    const pendingHouseLockEntries: PendingHouseLockEntries = new Map();
     const verifiedDependencyContext: VerifiedDependencyContext = {
         dependencies: itemDependencies,
         projectItems: items,
@@ -523,6 +527,26 @@ async function runImportSessionInner(
         }
     }
 
+    await writeObservedPlanCaches(
+        ctx,
+        observedPlans,
+        selection.housingUuid,
+        pendingHouseLockEntries,
+        verifiedDependencyContext,
+        true
+    );
+    if (
+        !flushHouseLockEntries(
+            selection.sourcePath,
+            selection.housingUuid,
+            pendingHouseLockEntries
+        )
+    ) {
+        ctx.displayMessage(
+            "&e[htsw] Hydrated house state was cached, but house.lock could not be updated; retry may need to read it again."
+        );
+    }
+
     let activePlanIndex: number | null = null;
     try {
         events?.emit({
@@ -644,7 +668,7 @@ async function runImportSessionInner(
                 );
                 application.assertComplete();
                 if (cacheSaved) {
-                    pendingHouseLockEntries.push({
+                    setPendingHouseLockEntry(pendingHouseLockEntries, {
                         importable: row.importable,
                         itemDependencies: itemDependencies.snapshotOf(row.importable),
                         itemContent: itemDiff.fieldContent,
@@ -666,19 +690,17 @@ async function runImportSessionInner(
                     verifiedDependencyContext
                 );
                 if (!partialSaved) {
+                    removePendingHouseLockEntry(
+                        pendingHouseLockEntries,
+                        row.importable.type,
+                        row.identity
+                    );
                     deleteImportableCache(
                         selection.housingUuid,
                         row.importable.type,
                         row.identity
                     );
                 }
-                await writeObservedPlanCaches(
-                    ctx,
-                    plans.slice(planIndex + 1),
-                    selection.housingUuid,
-                    pendingHouseLockEntries,
-                    verifiedDependencyContext
-                );
                 const diag = toImportDiagnostic(error, "import", row.importable.type);
                 events?.emit({
                     kind: "importableFinished",
@@ -713,7 +735,6 @@ async function runImportSessionInner(
     } catch (error) {
         if (!isTaskCancelled(error)) throw error;
 
-        await session.itemPlacement.restore(ctx);
         let invalidatedCurrent = false;
         let invalidationFailed = false;
         if (activePlanIndex !== null) {
@@ -727,6 +748,11 @@ async function runImportSessionInner(
                 verifiedDependencyContext
             );
             if (!partialSaved) {
+                removePendingHouseLockEntry(
+                    pendingHouseLockEntries,
+                    active.row.importable.type,
+                    active.row.identity
+                );
                 const invalidated = deleteImportableCache(
                     selection.housingUuid,
                     active.row.importable.type,
@@ -737,21 +763,13 @@ async function runImportSessionInner(
             }
         }
 
-        const remainingPlans =
-            activePlanIndex === null ? observedPlans : plans.slice(activePlanIndex + 1);
-        await writeObservedPlanCaches(
-            ctx,
-            remainingPlans,
-            selection.housingUuid,
-            pendingHouseLockEntries,
-            verifiedDependencyContext
-        );
-        const savedCount = countPendingHouseLockEntries(pendingHouseLockEntries);
+        const savedCount = pendingHouseLockEntries.size;
         const lockUpdated = flushHouseLockEntries(
             selection.sourcePath,
             selection.housingUuid,
             pendingHouseLockEntries
         );
+        await restoreItemPlacementAfterCancellation(ctx, session);
         reportCancellationCache(ctx, error, {
             savedCount,
             lockUpdated,
@@ -769,6 +787,20 @@ async function runImportSessionInner(
     events?.emit({ kind: "sessionFinished" });
 }
 
+async function restoreItemPlacementAfterCancellation(
+    ctx: TaskContext,
+    session: ImportContext
+): Promise<void> {
+    try {
+        await ctx.finishCancellationCleanup(() => session.itemPlacement.restore(ctx));
+    } catch (error) {
+        if (isTaskCancelled(error)) return;
+        ctx.displayMessage(
+            `&e[htsw] Could not finish inventory cleanup after cancellation: ${String(error)}`
+        );
+    }
+}
+
 async function finishWithoutApply(
     ctx: TaskContext,
     row: {
@@ -781,7 +813,7 @@ async function finishWithoutApply(
     itemDependencies: ItemDependencyIndex,
     itemContent: ItemFieldContent,
     events: SyncEventHandler | undefined,
-    pendingHouseLockEntries: PendingHouseLockEntry[]
+    pendingHouseLockEntries: PendingHouseLockEntries
 ): Promise<void> {
     const application = new ApplicationProgress(applicationPlan, events);
     const dependencies = itemDependencies.snapshotOf(row.importable);
@@ -792,7 +824,7 @@ async function finishWithoutApply(
     );
     application.assertComplete();
     if (cacheSaved) {
-        pendingHouseLockEntries.push({
+        setPendingHouseLockEntry(pendingHouseLockEntries, {
             importable: row.importable,
             itemDependencies: dependencies,
             itemContent,
@@ -825,7 +857,7 @@ async function persistHydratedReads(
     hydrated: ReadonlyArray<{ read: ImportableRead }>,
     session: ImportContext,
     selection: ImportSessionRequest,
-    pendingHouseLockEntries: PendingHouseLockEntry[],
+    pendingHouseLockEntries: PendingHouseLockEntries,
     verifiedContext: VerifiedDependencyContext
 ): Promise<CancellationCacheOutcome> {
     const plans = hydrated.map(({ read }) => ({ plan: read.plan(session) }));
@@ -868,7 +900,7 @@ async function maybeWritePartialImportCache(
     plan: ImportablePlan,
     housingUuid: string,
     result: ActionListApplyResult | null,
-    pendingHouseLockEntries: PendingHouseLockEntry[],
+    pendingHouseLockEntries: PendingHouseLockEntries,
     verifiedContext: VerifiedDependencyContext
 ): Promise<boolean> {
     const partial = plan.reconstructPartial(result);
@@ -881,7 +913,7 @@ async function maybeWritePartialImportCache(
     ) {
         return false;
     }
-    pendingHouseLockEntries.push({
+    setPendingHouseLockEntry(pendingHouseLockEntries, {
         importable: partial,
         itemDependencies,
         itemContent: itemContentForLock(
@@ -893,33 +925,32 @@ async function maybeWritePartialImportCache(
     return true;
 }
 
-/**
- * An aborted session drops its remaining plans, but each plan's Reader
- * already walked the house menus. Persist what was observed so the retry can
- * trust unchanged action lists instead of re-reading them. The house lock
- * entry must be written too — without it the next run's trust plan discards
- * the cache entry as untraceable (`cacheMatchesLock`).
- */
 async function writeObservedPlanCaches(
     ctx: TaskContext,
     plans: ReadonlyArray<{ plan: ImportablePlan }>,
     housingUuid: string,
-    pendingHouseLockEntries: PendingHouseLockEntry[],
-    verifiedContext: VerifiedDependencyContext
+    pendingHouseLockEntries: PendingHouseLockEntries,
+    verifiedContext: VerifiedDependencyContext,
+    quiet: boolean = false
 ): Promise<number> {
     let savedCount = 0;
     for (const { plan } of plans) {
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
         const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
+        const options = quiet ? { itemDependencies, quiet: true } : { itemDependencies };
         if (
-            !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
-                itemDependencies,
-            }))
+            !(await tryWriteImportableCache(
+                ctx,
+                observed,
+                "importer",
+                housingUuid,
+                options
+            ))
         ) {
             continue;
         }
-        pendingHouseLockEntries.push({
+        setPendingHouseLockEntry(pendingHouseLockEntries, {
             importable: observed,
             itemDependencies,
             itemContent: itemContentForLock(
@@ -940,26 +971,37 @@ function itemContentForLock(
 ): ItemFieldContent {
     const fallback = sourceItemFieldContent(importable, projectItems);
     if (preferred === undefined) return fallback;
-    return (owner, property) =>
-        preferred(owner, property) ?? fallback(owner, property);
+    return (owner, property) => preferred(owner, property) ?? fallback(owner, property);
 }
 
 function flushHouseLockEntries(
     sourcePath: string,
     housingUuid: string,
-    entries: readonly PendingHouseLockEntry[]
+    entries: PendingHouseLockEntries
 ): boolean {
-    return upsertHouseLockImportables(sourcePath, housingUuid, entries);
+    return upsertHouseLockImportables(
+        sourcePath,
+        housingUuid,
+        Array.from(entries.values())
+    );
 }
 
-function countPendingHouseLockEntries(entries: readonly PendingHouseLockEntry[]): number {
-    const keys = new Set<string>();
-    for (const entry of entries) {
-        keys.add(
-            importableKey(entry.importable.type, importableIdentity(entry.importable))
-        );
-    }
-    return keys.size;
+function setPendingHouseLockEntry(
+    entries: PendingHouseLockEntries,
+    entry: HouseLockImportableUpdate
+): void {
+    entries.set(
+        importableKey(entry.importable.type, importableIdentity(entry.importable)),
+        entry
+    );
+}
+
+function removePendingHouseLockEntry(
+    entries: PendingHouseLockEntries,
+    type: Importable["type"],
+    identity: string
+): void {
+    entries.delete(importableKey(type, identity));
 }
 
 type CancellationCacheOutcome = {

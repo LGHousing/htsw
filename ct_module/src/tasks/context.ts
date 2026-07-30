@@ -77,6 +77,7 @@ export type TaskWaiter<T> = {
 export default class TaskContext {
     public readonly startedAt: number = Date.now();
     private cancelled: boolean = false;
+    private forcedCancellation: boolean = false;
     private cancellationDeferrals: number = 0;
     private heatLevel: number = 0;
     private heatLastUpdate: number = 0;
@@ -91,27 +92,42 @@ export default class TaskContext {
         this.cancelled = true;
     }
 
+    public forceCancel() {
+        this.cancelled = true;
+        this.forcedCancellation = true;
+    }
+
     public isCancelled(): boolean {
         return this.cancelled;
     }
 
+    private shouldCancelNow(): boolean {
+        return (
+            this.cancelled &&
+            (this.forcedCancellation || this.cancellationDeferrals === 0)
+        );
+    }
+
     public checkCancelled() {
-        if (this.cancelled && this.cancellationDeferrals === 0) {
+        if (this.shouldCancelNow()) {
             throw createTaskCancelledError();
         }
     }
 
     public async finishBeforeCancelling<T>(run: () => Promise<T>): Promise<T> {
         this.checkCancelled();
+        const result = await this.finishCancellationCleanup(run);
+        this.checkCancelled();
+        return result;
+    }
+
+    public async finishCancellationCleanup<T>(run: () => Promise<T>): Promise<T> {
         this.cancellationDeferrals++;
-        let result: T;
         try {
-            result = await run();
+            return await run();
         } finally {
             this.cancellationDeferrals--;
         }
-        this.checkCancelled();
-        return result;
     }
 
     private decayHeatToNow(): number {
@@ -224,7 +240,7 @@ export default class TaskContext {
         reason: string,
         duration: number = 2000
     ): WaitForPromise<T> {
-        if (this.cancelled && this.cancellationDeferrals === 0) {
+        if (this.shouldCancelNow()) {
             const rejected = Promise.reject(
                 createTaskCancelledError()
             ) as WaitForPromise<T>;
@@ -237,7 +253,7 @@ export default class TaskContext {
         const timeout = waitForTimeout(
             reason,
             duration,
-            () => this.cancelled && this.cancellationDeferrals === 0,
+            () => this.shouldCancelNow(),
             innerCleanup
         );
         timeout.catch(() => {});

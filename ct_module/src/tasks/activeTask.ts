@@ -19,10 +19,14 @@ export function clearActiveTaskContext(kind: ActiveTaskKind, ctx: TaskContext): 
     }
 }
 
-export function cancelActiveTask(): boolean {
-    if (activeTask === null) return false;
+export function cancelActiveTask(): "requested" | "forced" | null {
+    if (activeTask === null) return null;
+    if (activeTask.ctx.isCancelled()) {
+        activeTask.ctx.forceCancel();
+        return "forced";
+    }
     activeTask.ctx.cancel();
-    return true;
+    return "requested";
 }
 
 export function getActiveTaskStartedAt(): number | null {

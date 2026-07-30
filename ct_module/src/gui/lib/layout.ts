@@ -499,20 +499,21 @@ function layoutContainer(
         if (mainSizes[i] === null) growTotal += growFactorOf(children[i], mainAxis);
     }
     if (growTotal > 0) {
-        let assigned = 0,
-            lastGrowIdx = -1;
+        let assigned = 0;
+        const growIndices: number[] = [];
         for (let i = 0; i < n; i++) {
             if (mainSizes[i] === null) {
                 const f = growFactorOf(children[i], mainAxis);
                 const portion = Math.floor((leftover * f) / growTotal);
                 mainSizes[i] = portion;
                 assigned += portion;
-                lastGrowIdx = i;
+                growIndices.push(i);
             }
         }
-        if (lastGrowIdx >= 0) {
-            mainSizes[lastGrowIdx] =
-                (mainSizes[lastGrowIdx] ?? 0) + (leftover - assigned);
+        const remainder = leftover - assigned;
+        for (let i = 0; i < remainder; i++) {
+            const growIndex = growIndices[i];
+            mainSizes[growIndex] = (mainSizes[growIndex] ?? 0) + 1;
         }
     } else {
         for (let i = 0; i < n; i++) if (mainSizes[i] === null) mainSizes[i] = 0;

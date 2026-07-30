@@ -99,7 +99,13 @@ export class ApplicationProgress {
                                           event.progress
                                       )
                                   ),
-                              sync: event.progress.sync,
+                              sync:
+                                  event.scope.kind === "topLevel"
+                                      ? event.progress.sync
+                                      : {
+                                            ...event.progress.sync,
+                                            parent: event.scope.parentSync,
+                                        },
                           });
                       },
                   };

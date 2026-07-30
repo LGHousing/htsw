@@ -46,10 +46,8 @@ describe("application progress", () => {
                 .filter(
                     (
                         event
-                    ): event is Extract<
-                        SyncEvent,
-                        { kind: "applicationProgress" }
-                    > => event.kind === "applicationProgress"
+                    ): event is Extract<SyncEvent, { kind: "applicationProgress" }> =>
+                        event.kind === "applicationProgress"
                 )
                 .map((event) => event.completedUnits)
         ).toEqual([3, 13, 43, 43, 45, 45, 65, 65, 65.25]);
@@ -57,14 +55,14 @@ describe("application progress", () => {
     });
 
     test("maps child-list progress onto its parent action-list step", async () => {
-        const completed: number[] = [];
+        const progressEvents: Extract<SyncEvent, { kind: "applicationProgress" }>[] = [];
         const plan = actionPlan(30, 12, 8);
         const application = new ApplicationProgress(
             defineApplicationPlan([workStep("open", 4), actionListStep("actions", plan)]),
             {
                 emit: (event) => {
                     if (event.kind === "applicationProgress") {
-                        completed.push(event.completedUnits);
+                        progressEvents.push(event);
                     }
                 },
             }
@@ -74,24 +72,23 @@ describe("application progress", () => {
         } as unknown as ActionSyncContext;
 
         await application.run("open", async () => undefined);
-        await application.runActionList(
-            "actions",
-            plan,
-            sync,
-            async (listSync) => {
-                listSync.events?.emit({
-                    ...progress(7, 7, 0, 0),
-                    scope: {
-                        kind: "childList",
-                        path: { kind: "actionList", parts: [0, "ifActions"] },
-                        baselineApplyUnits: 9,
-                        parentSync: { completedUnits: 1, totalUnits: 2 },
-                    },
-                });
-            }
-        );
+        await application.runActionList("actions", plan, sync, async (listSync) => {
+            listSync.events?.emit({
+                ...progress(7, 7, 0, 0),
+                scope: {
+                    kind: "childList",
+                    path: { kind: "actionList", parts: [0, "ifActions"] },
+                    baselineApplyUnits: 9,
+                    parentSync: { completedUnits: 1, totalUnits: 2 },
+                },
+            });
+        });
 
-        expect(completed).toEqual([4, 20, 34]);
+        expect(progressEvents.map((event) => event.completedUnits)).toEqual([4, 20, 34]);
+        expect(progressEvents[1].sync?.parent).toEqual({
+            completedUnits: 1,
+            totalUnits: 2,
+        });
     });
 });
 

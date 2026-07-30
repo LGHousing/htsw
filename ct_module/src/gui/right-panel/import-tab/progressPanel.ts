@@ -15,6 +15,7 @@ import {
     ACCENT_INFO,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
+    ACCENT_WARN,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_PANEL,
@@ -30,6 +31,7 @@ import {
     PHASE_SCANNED,
 } from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
+import { showToast } from "../../toast";
 import {
     getCurrentPhaseEtaSeconds,
     getFinishedTaskFailure,
@@ -39,7 +41,6 @@ import {
     getTaskEtcMs,
     getTaskProgress,
     getTaskProgressFraction,
-    getSessionTrustMode,
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
@@ -462,57 +463,58 @@ function progressTotalEtaLine(): string {
     return `total ${rough}${formatEtaSeconds(secs)}${etcText}`;
 }
 
-function knowledgeSourceText(): string {
+function knowledgeStatusText(): string {
     if (getSessionVerb() !== "import") return "";
-    const knowledge = getTaskProgress()?.active?.knowledge;
-    if (knowledge == null) return "";
+    const active = getTaskProgress()?.active;
+    if (active == null || active.knowledge == null) return "";
+    const knowledge = active.knowledge;
+    if (active.phase === "applying" || active.phase === "done") return "";
+    if (knowledge.currentReason === "known-empty") {
+        return "Nothing to read in Housing";
+    }
+    if (active.phase === "hydrating") {
+        if (knowledge.currentReason === "cache-missing") {
+            return "Reading action details from Housing · cache unavailable";
+        }
+        if (knowledge.currentReason === "lock-conflict") {
+            return "Reading current action details · Housing changed";
+        }
+        if (knowledge.usedHouse && knowledge.usedCache) {
+            return "Reading uncached action details from Housing";
+        }
+        if (knowledge.usedCache) {
+            return "Using verified cached action details";
+        }
+        return "Reading action details from Housing";
+    }
+    if (knowledge.currentReason === "whole-importable") {
+        return "Using verified cache";
+    }
+    if (knowledge.currentReason === "cached-list") {
+        return "Using verified cached action list";
+    }
+    if (knowledge.currentReason === "shell-read") {
+        return "Checking whether it exists in Housing";
+    }
     if (knowledge.currentReason === "lock-verification") {
-        return "Source: Checking house against house.lock";
+        return "Checking Housing against the last import";
+    }
+    if (knowledge.currentReason === "lock-verified") {
+        return "Housing matches the last import · cache verified";
     }
     if (knowledge.currentReason === "cache-missing") {
-        return "Source: No cache saved · rebuilding from house";
+        if (knowledge.lockStatus === "mismatch") {
+            return "Cache differs from the last import · checking Housing";
+        }
+        if (knowledge.lockStatus === "missing") {
+            return "Cache has no matching project record · checking Housing";
+        }
+        return "No cache yet · checking Housing";
     }
     if (knowledge.currentReason === "lock-conflict") {
-        return "Source: House changed since lock · full read";
+        return "Housing changed since the last import · reading current state";
     }
-
-    // An untrusted session was never going to use the cache, so the lock
-    // chips ("cache matches lock", …) only read as a cache problem that
-    // isn't there. Say why the house is being read instead.
-    const trustOff = getSessionTrustMode() === false;
-
-    let source: string;
-    if (knowledge.usedHouse && knowledge.usedCache) {
-        source = "Reading changes, rest from cache";
-    } else if (knowledge.usedCache) {
-        source = "Trusted cache";
-    } else if (!knowledge.usedHouse) {
-        source = "Known empty house state";
-    } else if (knowledge.currentReason === "shell-read") {
-        source = "Reading house shell";
-    } else if (trustOff) {
-        source = "Full read";
-    } else if (knowledge.lockStatus === null) {
-        // Trust is on but this house has nothing cached, so there was no
-        // faster path to take. Without this the bare "Full house read" next
-        // to a lit Trusted badge reads as trust having been ignored.
-        source = "No cache · full read";
-    } else {
-        source = "Full house read";
-    }
-
-    const lock = trustOff
-        ? " · trust off"
-        : knowledge.currentReason === "lock-verified"
-          ? " · house verified"
-          : knowledge.lockStatus === "matched"
-            ? " · cache matches lock"
-            : knowledge.lockStatus === "missing"
-              ? " · no house.lock entry"
-              : knowledge.lockStatus === "mismatch"
-                ? " · cache differs from lock"
-                : "";
-    return `Source: ${source}${lock}`;
+    return "Reading current state from Housing";
 }
 
 type ProgressPosition = {
@@ -624,8 +626,27 @@ function cancelButton(): Element {
         },
         onClick: () => {
             if (getTaskProgress() === null) return;
-            cancelActiveTask();
-            ChatLib.chat(`&c[htsw] cancelling task…`);
+            const cancellation = cancelActiveTask();
+            if (cancellation === null) return;
+            if (cancellation === "forced") {
+                showToast(
+                    "Force stopping… saving any verified cache state available.",
+                    ACCENT_DANGER,
+                    6000
+                );
+                ChatLib.chat(
+                    "&c[htsw] Force stopping; current work or inventory cleanup may be lost."
+                );
+                return;
+            }
+            showToast(
+                "Stopping safely to save cache… Cancel again to force stop; current work may be lost.",
+                ACCENT_WARN,
+                8000
+            );
+            ChatLib.chat(
+                "&e[htsw] Stopping after the current safe point so verified cache can be saved."
+            );
         },
     });
 }
@@ -662,9 +683,9 @@ export function liveTaskFooterPanel(): Element {
                         truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
-                    knowledgeSourceText().length > 0 &&
+                    knowledgeStatusText().length > 0 &&
                         Text({
-                            text: () => knowledgeSourceText(),
+                            text: () => knowledgeStatusText(),
                             color: COLOR_TEXT_DIM,
                             truncate: true,
                             style: { width: { kind: "grow" } },

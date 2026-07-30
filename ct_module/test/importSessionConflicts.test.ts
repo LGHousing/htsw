@@ -327,8 +327,14 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(2);
-        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
+        expect(mocks.upsertHouseLockImportables).toHaveBeenLastCalledWith(
+            "./project/import.json",
+            "test-house",
+            expect.arrayContaining([
+                expect.objectContaining({ importable: importables[0] }),
+                expect.objectContaining({ importable: importables[1] }),
+            ])
+        );
         expect(messages).toContain(
             "&a[htsw] Cancellation saved verified house state for &f2&a importables; retry can reuse the cache."
         );
@@ -356,10 +362,7 @@ describe("import conflict gate", () => {
         const cancellation = createTaskCancelledError() as Error & {
             __htswActionListApplyResult?: {
                 currentSnapshot: Action[];
-                itemContent: (
-                    owner: Action,
-                    property: string
-                ) => string | undefined;
+                itemContent: (owner: Action, property: string) => string | undefined;
             };
         };
         cancellation.__htswActionListApplyResult = {
@@ -384,9 +387,11 @@ describe("import conflict gate", () => {
                     throw cancellation;
                 },
                 reconstructObserved: () => importable,
-                reconstructPartial: (result: {
-                    currentSnapshot: Action[];
-                } | null) =>
+                reconstructPartial: (
+                    result: {
+                        currentSnapshot: Action[];
+                    } | null
+                ) =>
                     result === null
                         ? null
                         : {
@@ -412,16 +417,12 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        const updates = mocks.upsertHouseLockImportables.mock.calls[0][2] as Array<{
+        const lockCalls = mocks.upsertHouseLockImportables.mock.calls;
+        const updates = lockCalls[lockCalls.length - 1][2] as Array<{
             importable: ImportableFunction;
-            itemContent: (
-                owner: Action,
-                property: string
-            ) => string | undefined;
+            itemContent: (owner: Action, property: string) => string | undefined;
         }>;
-        const update = updates.find(
-            (entry) => entry.importable.name === "Partial"
-        )!;
+        const update = updates.find((entry) => entry.importable.name === "Partial")!;
         const reconstructedItem = update.importable.actions![0];
         expect(update.itemContent(reconstructedItem, "itemName")).toBe(observedKey);
     });
@@ -467,7 +468,6 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
         expect(mocks.deleteImportableCache).toHaveBeenCalledWith(
             "test-house",
             "FUNCTION",

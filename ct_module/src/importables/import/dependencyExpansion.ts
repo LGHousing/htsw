@@ -14,6 +14,13 @@ import {
     createProjectItemIndex,
     type ProjectItemIndex,
 } from "../items/projectItems";
+import { buildTrustPlan } from "../../importCache/trust";
+import { importableIdentity, importableKey } from "../identity";
+
+type ImportDependencyExpansionOptions = {
+    trustMode?: boolean;
+    importJsonPath?: string;
+};
 
 export type ImportDependencyExpansion = {
     importables: Importable[];
@@ -63,7 +70,8 @@ export function orderImportablesForSession(
 export function expandImportDependencies(
     parsed: ImportablesParseResult,
     selected: readonly Importable[],
-    housingUuid: string
+    housingUuid: string,
+    options: ImportDependencyExpansionOptions = {}
 ): ImportDependencyExpansion {
     const items = createProjectItemIndex(parsed.value, parsed.gcx);
     const itemDependencies = createItemDependencyIndex(parsed.value, items);
@@ -77,15 +85,41 @@ export function expandImportDependencies(
         teamGroupExpansion.importables,
         housingUuid
     );
-    const addedImportables: Importable[] = [];
-    for (const team of teamGroupExpansion.addedTeams) addedImportables.push(team);
-    for (const group of teamGroupExpansion.addedGroups) addedImportables.push(group);
+    const addedPrerequisites: Importable[] = [];
+    for (const team of teamGroupExpansion.addedTeams) addedPrerequisites.push(team);
+    for (const group of teamGroupExpansion.addedGroups) addedPrerequisites.push(group);
+
+    const trustedDependencies = new WeakSet<Importable>();
+    if (options.trustMode === true && addedPrerequisites.length > 0) {
+        const trust = buildTrustPlan(
+            housingUuid,
+            addedPrerequisites,
+            true,
+            options.importJsonPath,
+            itemDependencies
+        );
+        for (const importable of addedPrerequisites) {
+            if (
+                trust.importables.get(
+                    importableKey(importable.type, importableIdentity(importable))
+                )?.wholeImportableTrusted === true
+            ) {
+                trustedDependencies.add(importable);
+            }
+        }
+    }
+
+    const addedImportables = addedPrerequisites.filter(
+        (importable) => !trustedDependencies.has(importable)
+    );
     for (const item of itemExpansion.addedItems) addedImportables.push(item);
 
     return {
         importables: orderImportablesForSession(
             parsed.value,
-            itemExpansion.importables
+            itemExpansion.importables.filter(
+                (importable) => !trustedDependencies.has(importable)
+            )
         ),
         addedImportables,
         addedItems: itemExpansion.addedItems,
