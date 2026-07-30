@@ -67,6 +67,17 @@ type DecoratedLine = {
     decorations: LineDecorations;
 };
 
+type RowCacheEntry = {
+    decorations: LineDecorations;
+    selKey: string;
+    gutterWidth: number;
+    lineNumDigits: number;
+    bodyMaxWidth: number;
+    showFocusGutter: boolean;
+    showStateGutter: boolean;
+    rows: Element[];
+};
+
 /**
  * The whole-file decoration + row-layout pass: every line's decorations,
  * wrap-derived row offsets, and the id lookup tables. Everything in here is
@@ -87,6 +98,7 @@ type LineModel = {
     gutterW: number;
     lineNumDigits: number;
     bodyMaxWidth: number;
+    rowCache: Map<RenderableLine, RowCacheEntry>;
 };
 
 type ModelCacheEntry = {
@@ -196,37 +208,21 @@ function buildLineModel(
         gutterW,
         lineNumDigits,
         bodyMaxWidth,
+        rowCache: new Map(),
     };
 }
 
 /**
- * Reuse of built row Elements across frames. During a scroll almost the
- * whole visible window repeats from the last frame, and `buildLineRows`
- * re-wraps tokens and allocates a container tree per line — the dominant
- * remaining rebuild cost once the LineModel itself is cached. Everything a
- * row's Elements close over is in the key: the decorations object (stable
- * while the LineModel cache holds, replaced when it rebuilds), the layout
- * inputs, and the line's selection slice. Rows for a line whose inputs
- * changed rebuild on the spot.
+ * Reuse built row Elements while their LineModel is current. During a scroll
+ * almost the whole visible window repeats from the last frame, and
+ * `buildLineRows` re-wraps tokens and allocates a container tree per line.
  */
-type RowCacheEntry = {
-    decorations: LineDecorations;
-    selKey: string;
-    gutterWidth: number;
-    lineNumDigits: number;
-    bodyMaxWidth: number;
-    showFocusGutter: boolean;
-    showStateGutter: boolean;
-    rows: Element[];
-};
-
-const rowCache = new WeakMap<RenderableLine, RowCacheEntry>();
-
 function selectionKey(sel: LineSelection | null): string {
     return sel === null ? "" : `${sel.start}:${sel.end}:${sel.continuesRight ? 1 : 0}`;
 }
 
 function cachedLineRows(
+    rowCache: Map<RenderableLine, RowCacheEntry>,
     line: RenderableLine,
     decorations: LineDecorations,
     opts: {
@@ -402,6 +398,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         gutterW,
         lineNumDigits,
         bodyMaxWidth,
+        rowCache,
     } = model;
 
     const selectStart = Date.now();
@@ -445,6 +442,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
             for (let j = 0; j < dec.extraLinesBefore.length; j++) {
                 const extra = dec.extraLinesBefore[j];
                 const rows = cachedLineRows(
+                    rowCache,
                     extra.line,
                     extra.decorations,
                     {
@@ -462,6 +460,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
             }
         }
         const rows = cachedLineRows(
+            rowCache,
             line,
             dec,
             {
