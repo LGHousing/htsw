@@ -1,8 +1,12 @@
 import { isInCreativeMode } from "../housingSync/sideEffects";
-import { resolveModuleRelativePath } from "../project/paths";
+import { snbtFromItem } from "../housingSync/items/itemNbt";
+import { heldItem, inventorySlotToPacketSlot } from "../housingSync/items/playerInventory";
+import { canonicalSlug, PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
 import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
+import { atomicWriteText } from "../utils/filesystem";
+import { removedFormatting } from "../utils/helpers";
 import { javaType, sendPacket } from "../utils/java";
 
 function javaPath(path: string): HtswJavaPath {
@@ -57,10 +61,6 @@ function emptyInventorySlots(): number[] {
     return slots;
 }
 
-function packetSlotForInventorySlot(slot: number): number {
-    return slot < 9 ? slot + 36 : slot;
-}
-
 function giveItemFromFile(path: string, slot: number): boolean {
     let snbt: string;
     try {
@@ -79,7 +79,7 @@ function giveItemFromFile(path: string, slot: number): boolean {
         const item = getItemFromSnbt(snbt);
         sendPacket(
             new C10PacketCreativeInventoryAction(
-                packetSlotForInventorySlot(slot),
+                inventorySlotToPacketSlot(slot),
                 item.getItemStack()
             )
         );
@@ -91,10 +91,21 @@ function giveItemFromFile(path: string, slot: number): boolean {
     }
 }
 
-function resolveGiveItemFilePath(rawPath: string): string {
-    let path = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    if (!path.toLowerCase().endsWith(".snbt")) path += ".snbt";
-    return path;
+function resolveItemPath(rawPath: string): string {
+    return resolveModuleRelativePath(rawPath).split("\\").join("/");
+}
+
+function resolveItemFilePath(rawPath: string): string {
+    const path = resolveItemPath(rawPath);
+    return path.toLowerCase().endsWith(".snbt") ? path : `${path}.snbt`;
+}
+
+/** Turn a resolved path back into something the user can paste as a `<path>`
+ * argument, so paths inside the projects root stay short. */
+function pathAsCommandArg(path: string): string {
+    const root = `${PROJECTS_ROOT.split("\\").join("/")}/`;
+    const relative = path.indexOf(root) === 0 ? path.substring(root.length) : path;
+    return quoteCommandArg(relative);
 }
 
 function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } | null {
@@ -124,7 +135,7 @@ function giveFolderItems(rawPath: string, skip: number): void {
         return;
     }
 
-    const dirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
+    const dirPath = resolveItemPath(rawPath);
     let files: string[];
     try {
         files = listSnbtFiles(dirPath);
@@ -163,6 +174,65 @@ function giveFolderItems(rawPath: string, skip: number): void {
     }
 }
 
+function saveItemTargetPath(rawPath: string, item: Item): string {
+    const last = rawPath.charAt(rawPath.length - 1);
+    const folderTarget = last === "/" || last === "\\" || isDirectory(resolveItemPath(rawPath));
+    if (!folderTarget) return resolveItemFilePath(rawPath);
+
+    const dirPath = resolveItemPath(rawPath).replace(/\/+$/, "");
+    const name = removedFormatting(item.getName()).trim();
+    return `${dirPath}/${canonicalSlug(name === "" ? "item" : name)}.snbt`;
+}
+
+export function saveItem(args: string[]): void {
+    if (args.length === 0) {
+        ChatLib.chat("&cUsage: /htsw saveitem <path>");
+        ChatLib.chat("&7  Writes the item you're holding to a .snbt file, or into a folder.");
+        return;
+    }
+
+    const parsed = parseCommandArgs(args);
+    if (!parsed.ok) {
+        ChatLib.chat(`&c[htsw] ${parsed.error}`);
+        return;
+    }
+    if (parsed.args.length !== 1) {
+        ChatLib.chat("&cUsage: /htsw saveitem <path>");
+        ChatLib.chat("&7  Quote paths that contain spaces.");
+        return;
+    }
+
+    const rawPath = parsed.args[0].trim();
+    if (rawPath.length === 0) {
+        ChatLib.chat("&c[htsw] saveitem path cannot be empty.");
+        return;
+    }
+
+    const item = heldItem();
+    if (item === null) {
+        ChatLib.chat("&c[htsw] Hold the item you want to save.");
+        return;
+    }
+
+    let snbt: string;
+    let target: string;
+    try {
+        target = saveItemTargetPath(rawPath, item);
+        snbt = snbtFromItem(item, { pretty: true });
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] Could not read the held item: ${String(err)}`);
+        return;
+    }
+
+    if (!atomicWriteText(target, snbt)) {
+        ChatLib.chat(`&c[htsw] Could not write ${target}`);
+        return;
+    }
+
+    ChatLib.chat(`&a[htsw] Saved held item to ${target}`);
+    ChatLib.chat(`&7  Give it back: &f/htsw giveitem ${pathAsCommandArg(target)}`);
+}
+
 export function clearInv(_args: string[]): void {
     if (!isInCreativeMode()) {
         ChatLib.chat("&c[htsw] Must be in creative mode to clear inventory.");
@@ -172,7 +242,7 @@ export function clearInv(_args: string[]): void {
     for (let slot = 9; slot < 36; slot++) {
         if (Player.getInventory()?.getStackInSlot(slot) === null) continue;
         sendPacket(
-            new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), null)
+            new C10PacketCreativeInventoryAction(inventorySlotToPacketSlot(slot), null)
         );
         cleared++;
     }
@@ -210,7 +280,7 @@ export function giveItem(args: string[]): void {
         return;
     }
 
-    const filePath = resolveGiveItemFilePath(rawPath);
+    const filePath = resolveItemFilePath(rawPath);
     if (isRegularFile(filePath)) {
         if (folderArgs.hasSkip) {
             ChatLib.chat("&c[htsw] Skip is only supported for folders, not item files.");
@@ -220,13 +290,13 @@ export function giveItem(args: string[]): void {
         return;
     }
 
-    const literalDirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
+    const literalDirPath = resolveItemPath(rawPath);
     if (isDirectory(literalDirPath)) {
         giveFolderItems(rawPath, folderArgs.skip);
         return;
     }
 
-    const parsedDirPath = resolveModuleRelativePath(folderArgs.rawPath).split("\\").join("/");
+    const parsedDirPath = resolveItemPath(folderArgs.rawPath);
     if (!isDirectory(parsedDirPath)) {
         ChatLib.chat(`&c[htsw] File or folder not found: ${literalDirPath}`);
         ChatLib.chat(`&7  Tried file: ${filePath}`);

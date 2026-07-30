@@ -40,7 +40,7 @@ import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
-import { giveItem, clearInv } from "./debugItems";
+import { giveItem, saveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandCaches } from "./debugCaches";
 import { commandHeap } from "./debugHeap";
@@ -129,6 +129,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Spawn an item from a .snbt file",
         run: giveItem,
         usage: "giveitem <path>",
+    },
+    {
+        name: "saveitem",
+        summary: "Write the item you're holding to a .snbt file",
+        run: saveItem,
+        usage: "saveitem <path>",
     },
     {
         name: "clearinv",
