@@ -67,6 +67,10 @@ export function inventorySlotToOpenContainerSlot(slotId: number): number | null 
     return size - INVENTORY_SIZE + (slotId - 9);
 }
 
+export function heldItem(): Item | null {
+    return Player.getInventory()?.getStackInSlot(selectedHotbarSlot()) ?? null;
+}
+
 export function readInventorySlot(
     slotId: number,
     view: InventoryView

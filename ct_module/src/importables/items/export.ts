@@ -1,19 +1,18 @@
 import { snbtFromItem } from "../../housingSync/items/itemNbt";
 import {
+    heldItem,
     restorePlayerInventory,
     snapshotPlayerInventory,
 } from "../../housingSync/items/playerInventory";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
-import { selectedHotbarSlot } from "../../housingSync/menus/packets";
 import type { ReadFn } from "../export/reader";
 import { removedFormatting } from "../../utils/helpers";
 import { exportCapturedItems } from "./exportCapturedItems";
 import { createExportItemCaptureRegistry } from "../export/projectDestination";
 
 export const exportHeldItem: ReadFn = async (ctx, options) => {
-    const slotId = selectedHotbarSlot();
-    const stack = Player.getInventory()?.getStackInSlot(slotId);
-    if (stack === null || stack === undefined) {
+    const stack = heldItem();
+    if (stack === null) {
         throw new Error("Please hold the item you wish to export!");
     }
     const snbt = snbtFromItem(stack, { pretty: false });

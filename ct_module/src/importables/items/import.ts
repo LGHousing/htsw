@@ -17,7 +17,7 @@ import {
     getItemFromNbt,
     itemWithInteractData,
 } from "../../utils/nbt";
-import { selectedHotbarSlot } from "../../housingSync/menus/packets";
+import { heldItem } from "../../housingSync/items/playerInventory";
 import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
 import { itemEditorOpened } from "../waiters";
@@ -214,9 +214,7 @@ export async function applyImportableItemPlan(
     await application.run("captureInteractData", async () => {
         await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
-        const snbt = Player.getInventory()
-            ?.getStackInSlot(selectedHotbarSlot())
-            ?.getRawNBT();
+        const snbt = heldItem()?.getRawNBT();
         if (!snbt) throw Error("Why don't we have the item?");
 
         interactData = extractInteractDataSnbt(snbt);
