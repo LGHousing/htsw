@@ -82,7 +82,6 @@ import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { previewSelect } from "../selection";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
-import { resetLivePreviewScroll } from "../view-body";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
 
 function errorMessage(error: unknown): string {
@@ -254,7 +253,6 @@ function createSyncEventHandler(args: {
             if (activeViewPath !== null) {
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
-                resetLivePreviewScroll();
             }
             previewReplay.start(e.key, activeViewPath, e.cached);
         },

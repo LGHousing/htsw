@@ -2,11 +2,7 @@
 
 import type { Element } from "../lib/layout";
 import { Button, Col, Container } from "../lib/components";
-import {
-    clearUserScrollOverride,
-    isScrollUserOverridden,
-    setScrollOffset,
-} from "../lib/layout";
+import { isScrollUserOverridden } from "../lib/layout";
 import { Icons } from "../lib/icons.generated";
 import { COLOR_BUTTON, COLOR_BUTTON_HOVER, COLOR_TEXT } from "../lib/theme";
 import {
@@ -20,6 +16,7 @@ import {
     getActiveTaskPath,
     getTaskProgress,
     getSessionVerb,
+    getTaskViewIdentity,
 } from "./import-tab/taskProgress";
 import { CodeView, jumpToFocusedLine } from "../code-view/codeView";
 import { diffDecorator, progressDecorator } from "./decorators";
@@ -28,38 +25,31 @@ import type { RenderableLine } from "../code-view/lineTypes";
 
 const LIVE_PREVIEW_SCROLL_ID = "right-live-preview-scroll";
 
-export function resetLivePreviewScroll(): void {
-    setScrollOffset(LIVE_PREVIEW_SCROLL_ID, 0);
-    clearUserScrollOverride(LIVE_PREVIEW_SCROLL_ID);
-    jumpToFocusedLine(LIVE_PREVIEW_SCROLL_ID);
-}
-
 export function viewBody(): Element {
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" }, gap: 0 },
         children: () =>
             isLiveTabActive()
                 ? [
-                          jumpBackPipRow(),
-                          CodeView({
-                              scrollId: LIVE_PREVIEW_SCROLL_ID,
-                              lines: () => extractLiveLines(),
-                              lineDecorator: () => progressDecorator(getActivePath()),
-                              autoFollow: true,
-                              scrollLocked: () => getActiveTaskPath() !== null,
-                              emptyMessage: () => {
-                                  if (getTaskProgress() !== null) {
-                                      const verb = getSessionVerb();
-                                      if (verb === "export") return "Exporting...";
-                                      if (verb === "read")
-                                          return "Reading house contents...";
-                                      if (verb === "diff")
-                                          return "Scanning Housing...";
-                                      return "Importing...";
-                                  }
-                                  return "No live diff to show.";
-                              },
-                          }),
+                      jumpBackPipRow(),
+                      CodeView({
+                          scrollId: LIVE_PREVIEW_SCROLL_ID,
+                          viewIdentity: () => getTaskViewIdentity(getActivePath()),
+                          lines: () => extractLiveLines(),
+                          lineDecorator: () => progressDecorator(getActivePath()),
+                          autoFollow: true,
+                          scrollLocked: () => getActiveTaskPath() !== null,
+                          emptyMessage: () => {
+                              if (getTaskProgress() !== null) {
+                                  const verb = getSessionVerb();
+                                  if (verb === "export") return "Exporting...";
+                                  if (verb === "read") return "Reading house contents...";
+                                  if (verb === "diff") return "Scanning Housing...";
+                                  return "Importing...";
+                              }
+                              return "No live diff to show.";
+                          },
+                      }),
                   ]
                 : [
                       CodeView({

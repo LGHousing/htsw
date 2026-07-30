@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { firstEntryIntersecting } from "../src/gui/code-view/codeView";
+import { CodeView, firstEntryIntersecting } from "../src/gui/code-view/codeView";
+import { getScrollState, markUserScroll, setScrollOffset } from "../src/gui/lib/layout";
 
 // Mirrors the replaced linear scan: skip while an entry's end row is at or
 // before the first visible row, stop at the first entry that reaches past it.
@@ -53,5 +54,38 @@ describe("firstEntryIntersecting", () => {
         for (let row = 0; row <= total + 2; row++) {
             expect(firstEntryIntersecting(ends, row)).toBe(linearReference(ends, row));
         }
+    });
+});
+
+describe("CodeView identity", () => {
+    test("resets scroll state only when the displayed view changes", () => {
+        const scrollId = "code-view-identity-test";
+        const props = {
+            scrollId,
+            viewIdentity: "first",
+            lines: [],
+            lineDecorator: {
+                decorateLine: () => ({}),
+                focusedLineId: () => null,
+                modelKey: () => null,
+            },
+        };
+        CodeView(props);
+
+        const state = getScrollState(scrollId);
+        state.contentLength = 500;
+        state.viewportRect = { x: 0, y: 0, w: 100, h: 100 };
+        setScrollOffset(scrollId, 200);
+        markUserScroll(scrollId);
+
+        CodeView(props);
+        expect(state.offset).toBe(200);
+        expect(state.target).toBe(200);
+        expect(state.userOverridden).toBe(true);
+
+        CodeView({ ...props, viewIdentity: "second" });
+        expect(state.offset).toBe(0);
+        expect(state.target).toBe(0);
+        expect(state.userOverridden).toBe(false);
     });
 });

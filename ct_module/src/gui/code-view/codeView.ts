@@ -35,6 +35,7 @@ export type CodeViewProps = {
     source?: Extractable<string | null>;
     sourceImportJsonPath?: Extractable<string | null>;
     lines?: Extractable<readonly RenderableLine[] | null>;
+    viewIdentity?: Extractable<string>;
     scrollId: string;
     /**
      * Reactive line decorator (re-extracted each frame).
@@ -109,6 +110,7 @@ type ModelCacheEntry = {
 };
 
 const modelCache: { [scrollId: string]: ModelCacheEntry | undefined } = {};
+const viewIdentities: { [scrollId: string]: string | undefined } = {};
 
 export function codeViewModelCacheSize(): number {
     return Object.keys(modelCache).length;
@@ -299,6 +301,7 @@ function getFollowMeta(scrollId: string): FollowMeta {
 }
 
 export function CodeView(props: CodeViewProps): Element {
+    synchronizeViewIdentity(props.scrollId, extractViewIdentity(props));
     return Scroll({
         id: props.scrollId,
         style: { height: { kind: "grow" }, gap: 0 },
@@ -314,6 +317,39 @@ export function CodeView(props: CodeViewProps): Element {
     });
 }
 
+function extractViewIdentity(props: CodeViewProps): string {
+    if (props.viewIdentity !== undefined) return extract(props.viewIdentity);
+    const sourcePath = props.source !== undefined ? extract(props.source) : null;
+    const sourceImportJsonPath =
+        props.sourceImportJsonPath !== undefined
+            ? extract(props.sourceImportJsonPath)
+            : null;
+    return sourcePath !== null && sourcePath.length > 0
+        ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
+        : "__live__";
+}
+
+function synchronizeViewIdentity(scrollId: string, viewIdentity: string): void {
+    const previousViewIdentity = viewIdentities[scrollId];
+    if (previousViewIdentity !== undefined && previousViewIdentity !== viewIdentity) {
+        resetCodeViewScroll(scrollId);
+    }
+    viewIdentities[scrollId] = viewIdentity;
+}
+
+function resetCodeViewScroll(scrollId: string): void {
+    const state = getScrollState(scrollId);
+    const changed =
+        state.offset !== 0 ||
+        state.target !== 0 ||
+        state.userOverridden ||
+        followStates[scrollId] !== undefined;
+    setScrollOffset(scrollId, 0);
+    clearUserScrollOverride(scrollId);
+    delete followStates[scrollId];
+    if (changed) markGuiDirty();
+}
+
 function buildCodeViewChildren(props: CodeViewProps): Element[] {
     recordPhase("codeview.model", 0);
     recordPhase("codeview.modelmiss", 0);
@@ -324,9 +360,12 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
             ? extract(props.sourceImportJsonPath)
             : null;
     const viewIdentity =
-        sourcePath !== null && sourcePath.length > 0
-            ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
-            : "__live__";
+        props.viewIdentity !== undefined
+            ? extract(props.viewIdentity)
+            : sourcePath !== null && sourcePath.length > 0
+              ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
+              : "__live__";
+    synchronizeViewIdentity(props.scrollId, viewIdentity);
     const linesStart = Date.now();
     let lines: readonly RenderableLine[] | null = null;
     if (props.lines !== undefined) {

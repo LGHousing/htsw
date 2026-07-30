@@ -4,6 +4,7 @@ dist-publish/
 ct_module/generated/
 .vscode
 .idea
+workspace/
 coverage/
 
 # extension

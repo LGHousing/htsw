@@ -80,6 +80,8 @@ let etaCalc: EtaCalculator | null = null;
  */
 let activeTaskPath: string | null = null;
 let activeTaskListLabel: string | null = null;
+let taskSessionId = 0;
+let activeTaskViewKey: string | null = null;
 
 setLiveTaskPathProvider(() => activeTaskPath);
 observeTaskRunning((running) => {
@@ -88,6 +90,10 @@ observeTaskRunning((running) => {
 
 export function getTaskProgress(): TaskProgress | null {
     return taskProgress;
+}
+
+export function getTaskViewIdentity(path: string | null): string {
+    return `${taskSessionId}\n${activeTaskViewKey ?? ""}\n${path ?? ""}`;
 }
 
 export function parkedTaskFor(
@@ -232,6 +238,8 @@ function updateTaskProgress(
     const wasNull = taskProgress === null;
     const previousRows = taskProgress?.rows ?? null;
     if (p !== null && taskProgress === null) {
+        taskSessionId++;
+        activeTaskViewKey = null;
         etaCalc = createEtaCalculator();
         resetSessionTiming();
         lastFinishedTaskProgress = null;
@@ -250,6 +258,9 @@ function updateTaskProgress(
         etaCalc = null;
     }
     taskProgress = p === null ? null : normalizeTaskProgress(p);
+    if (taskProgress?.active !== null && taskProgress?.active !== undefined) {
+        activeTaskViewKey = taskProgress.active.key;
+    }
     if (taskProgress !== null && taskProgress.rows !== previousRows) {
         taskProgressRows = new Map<string, TaskProgressEntry>();
         for (let i = 0; i < taskProgress.rows.length; i++) {
