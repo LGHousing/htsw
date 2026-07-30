@@ -24,7 +24,6 @@ import type TaskContext from "../src/tasks/context";
 import {
     createItemDependencyIndex,
     type ItemDependencyIndex,
-    type ItemDependencySnapshot,
 } from "../src/importables/items/dependencyIndex";
 import { buildCacheStatusRow } from "../src/importCache/status";
 import { exportedItemDependencies } from "../src/importables/items/exportedDependencies";
@@ -109,8 +108,13 @@ describe("exported item dependency trust", () => {
 
         expect(itemDependencies).toEqual(dependencies.snapshotOf(owner));
         expect(
-            buildTrustPlan(uuid, importables, true, undefined, dependencies)
-                .importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
+            buildTrustPlan(
+                uuid,
+                importables,
+                true,
+                undefined,
+                dependencies
+            ).importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
         ).toBe(true);
     });
 
@@ -118,11 +122,7 @@ describe("exported item dependency trust", () => {
         const importables = [referencedItem, owner];
         const items = createProjectItemIndex(importables);
         const dependencies = createItemDependencyIndex(importables, items);
-        const itemDependencies = exportedItemDependencies(
-            owner,
-            dependencies,
-            new Set()
-        );
+        const itemDependencies = exportedItemDependencies(owner, dependencies, new Set());
         const uuid = "export-uncaptured-dependencies";
         const entry = {
             ...cacheEntry(owner),
@@ -141,8 +141,13 @@ describe("exported item dependency trust", () => {
 
         expect(itemDependencies.dependencies).toEqual([]);
         expect(
-            buildTrustPlan(uuid, importables, true, undefined, dependencies)
-                .importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
+            buildTrustPlan(
+                uuid,
+                importables,
+                true,
+                undefined,
+                dependencies
+            ).importables.get("FUNCTION:Use Key")?.wholeImportableTrusted
         ).toBe(false);
     });
 });
@@ -190,9 +195,7 @@ describe("trustedChildListPathsForImportable", () => {
 
     it("omits hydration when every child list remains trusted", () => {
         const cached = fn([conditional([chat("inside")])]);
-        const desired = fn([
-            { ...conditional([chat("inside")]), matchAny: true },
-        ]);
+        const desired = fn([{ ...conditional([chat("inside")]), matchAny: true }]);
         const entry = cacheEntry(cached);
         const emptyCached = fn([conditional([])]);
         const emptyDesired = fn([{ ...conditional([]), matchAny: true }]);
@@ -203,12 +206,8 @@ describe("trustedChildListPathsForImportable", () => {
     });
 
     it("includes hydration when a conditional child list changed", () => {
-        const cached = fn([
-            conditional([], [{ type: "IS_SNEAKING", inverted: false }]),
-        ]);
-        const desired = fn([
-            conditional([], [{ type: "IS_SNEAKING", inverted: true }]),
-        ]);
+        const cached = fn([conditional([], [{ type: "IS_SNEAKING", inverted: false }])]);
+        const desired = fn([conditional([], [{ type: "IS_SNEAKING", inverted: true }])]);
         const entry = cacheEntry(cached);
 
         expect(estimateImportableUnits(desired, entry, true)).toBeCloseTo(
@@ -219,16 +218,10 @@ describe("trustedChildListPathsForImportable", () => {
     it("includes top-level page turns for trusted baselines over 21 actions", () => {
         const actions21 = Array.from({ length: 21 }, (_, i) => chat(`old ${i}`));
         const cached21 = fn(actions21);
-        const desired21 = fn([
-            chat("new"),
-            ...actions21.slice(1),
-        ]);
+        const desired21 = fn([chat("new"), ...actions21.slice(1)]);
         const actions22 = [...actions21, chat("old 21")];
         const cached22 = fn(actions22);
-        const desired22 = fn([
-            chat("new"),
-            ...actions22.slice(1),
-        ]);
+        const desired22 = fn([chat("new"), ...actions22.slice(1)]);
 
         expect(
             estimateImportableUnits(desired22, cacheEntry(cached22), true) -
@@ -334,12 +327,26 @@ describe("buildTrustPlan house lock gating", () => {
         expect(trust?.breakdown.itemBlobAvailable).toBe(false);
     });
 
-    it("exposes a dependency mismatch when cached item metadata is missing", () => {
+    it("keeps the cached Housing baseline when item metadata changed", () => {
         const uuid = "dependency-cache-missing";
-        const desired = fn([chat("same")]);
+        const referencedItem: ImportableItem = {
+            type: "ITEM",
+            name: "Key",
+            nbt: {
+                type: "compound",
+                value: {
+                    id: { type: "string", value: "minecraft:tripwire_hook" },
+                },
+            },
+        };
+        const desired: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Use Key",
+            actions: [{ type: "GIVE_ITEM", itemName: "Key" }],
+        };
         const entry = cacheEntry(desired);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
                 JSON.stringify(entry),
         };
         vi.stubGlobal("FileLib", {
@@ -347,18 +354,9 @@ describe("buildTrustPlan house lock gating", () => {
             read: (path: string) => files[path] ?? null,
             write: () => undefined,
         });
-        const snapshot: ItemDependencySnapshot = {
-            version: 1,
-            dependencies: [
-                {
-                    target: { kind: "named", name: "Key" },
-                    fingerprint: "0x123",
-                },
-            ],
-        };
-        const itemDependencies = {
-            snapshotOf: () => snapshot,
-        } as unknown as ItemDependencyIndex;
+        const importables = [referencedItem, desired];
+        const items = createProjectItemIndex(importables);
+        const itemDependencies = createItemDependencyIndex(importables, items);
 
         const row = buildTrustPlan(
             uuid,
@@ -366,8 +364,9 @@ describe("buildTrustPlan house lock gating", () => {
             true,
             undefined,
             itemDependencies
-        ).importables.get("FUNCTION:Debug");
+        ).importables.get("FUNCTION:Use Key");
 
+        expect(row?.trustMode).toBe(true);
         expect(row?.wholeImportableTrusted).toBe(false);
         expect(row?.trustedChildListPaths.size).toBe(0);
         expect(row?.breakdown.dependenciesMatch).toBe(false);
@@ -487,8 +486,9 @@ describe("buildTrustPlan house lock gating", () => {
         const importJsonPath = "./projects/demo/import.json";
         const cached = fn([chat("same")]);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
-                JSON.stringify(cacheEntry(cached)),
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(
+                cacheEntry(cached)
+            ),
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,
@@ -502,12 +502,9 @@ describe("buildTrustPlan house lock gating", () => {
             write: () => undefined,
         });
 
-        const row = buildTrustPlan(
-            uuid,
-            [cached],
-            true,
-            importJsonPath
-        ).importables.get("FUNCTION:Debug");
+        const row = buildTrustPlan(uuid, [cached], true, importJsonPath).importables.get(
+            "FUNCTION:Debug"
+        );
 
         expect(row?.trustMode).toBe(true);
         expect(row?.wholeImportableTrusted).toBe(true);

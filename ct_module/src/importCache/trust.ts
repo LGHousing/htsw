@@ -1,11 +1,8 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
-import {
-    cacheEntryHash,
-    readImportableCache,
-    type ImportableCacheEntry,
-} from "./cache";
-import { actionHash, conditionHash, importableHash } from "./hash";
+import { cacheEntryHash, readImportableCache, type ImportableCacheEntry } from "./cache";
+import { actionHash, conditionHash } from "./hash";
+import { memoizedImportableHash } from "./hashMemo";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
@@ -19,6 +16,7 @@ import {
     itemDependencyIndexFor,
     sameItemDependencySnapshot,
     type ItemDependencyIndex,
+    type ItemInvalidations,
 } from "../importables/items/dependencyIndex";
 import {
     hasItemClickActions,
@@ -102,6 +100,10 @@ export function buildTrustPlan(
         const dependenciesMatch =
             dependencySnapshot === undefined ||
             sameItemDependencySnapshot(entry?.itemDependencies, dependencySnapshot);
+        const itemInvalidations =
+            dependenciesMatch || dependencyIndex === undefined
+                ? undefined
+                : dependencyIndex.invalidationsFor(importable, entry?.itemDependencies);
         const itemBlobAvailable =
             entry === null ||
             entry.importable.type !== "ITEM" ||
@@ -119,27 +121,27 @@ export function buildTrustPlan(
                     entry?.itemDependencies,
                     lockEntry.itemDependencies
                 ));
-        const trustAllowed =
-            trustMode && cacheMatchesLock && dependenciesMatch && itemBlobAvailable;
+        const trustAllowed = trustMode && cacheMatchesLock && itemBlobAvailable;
 
         if (trustAllowed && entry !== null) {
-            sourceHash = importableHash(importable);
-            // Recompute rather than trust the stored entry.hash — see
-            // cacheEntryHash: a hash-function change must not strand old
-            // entries as permanently untrusted.
-            wholeImportableTrusted = entryHash === sourceHash;
+            sourceHash = memoizedImportableHash(importable);
+            // cacheEntryHash recomputes legacy entries whose normalization
+            // version predates the hashes stored in current cache entries.
+            wholeImportableTrusted = dependenciesMatch && entryHash === sourceHash;
 
             if (!wholeImportableTrusted) {
                 const cachedLists = cacheEntryListHashes(entry);
                 const remapped = trustedChildListPathsForImportable(
                     importable,
-                    cachedLists
+                    cachedLists,
+                    itemInvalidations
                 );
                 remapped.forEach((path) => trustedChildListPaths.add(path));
                 const snapshots = trustedChildListSnapshotsForImportable(
                     importable,
                     entry.importable,
-                    cachedLists
+                    cachedLists,
+                    itemInvalidations
                 );
                 snapshots.forEach((snapshot, path) => {
                     trustedChildListPaths.add(path);
@@ -198,7 +200,8 @@ function lockEntryForImportable(
 export function trustedChildListSnapshotsForImportable(
     importable: Importable,
     cachedImportable: Importable,
-    cachedLists: Partial<Record<string, string[]>>
+    cachedLists: Partial<Record<string, string[]>>,
+    itemInvalidations?: ItemInvalidations
 ): Map<TrustedChildListPath, TrustedChildListSnapshot> {
     const trusted = new Map<TrustedChildListPath, TrustedChildListSnapshot>();
     for (const { basePath, actions } of actionListsOfImportable(importable)) {
@@ -210,7 +213,8 @@ export function trustedChildListSnapshotsForImportable(
             basePath,
             actions,
             cachedActions,
-            cachedLists
+            cachedLists,
+            itemInvalidations
         );
     }
     return trusted;
@@ -218,11 +222,19 @@ export function trustedChildListSnapshotsForImportable(
 
 export function trustedChildListPathsForImportable(
     importable: Importable,
-    cachedLists: Partial<Record<string, string[]>>
+    cachedLists: Partial<Record<string, string[]>>,
+    itemInvalidations?: ItemInvalidations
 ): Set<TrustedChildListPath> {
     const trusted = new Set<TrustedChildListPath>();
     for (const { basePath, actions } of actionListsOfImportable(importable)) {
-        collectTrustedActionListPaths(trusted, basePath, basePath, actions, cachedLists);
+        collectTrustedActionListPaths(
+            trusted,
+            basePath,
+            basePath,
+            actions,
+            cachedLists,
+            itemInvalidations
+        );
     }
     return trusted;
 }
@@ -233,11 +245,15 @@ function collectTrustedActionListSnapshots(
     cachedPath: string,
     desiredActions: readonly Action[],
     cachedActions: readonly Action[],
-    cachedLists: Partial<Record<string, string[]>>
+    cachedLists: Partial<Record<string, string[]>>,
+    itemInvalidations?: ItemInvalidations
 ): void {
     const desiredHashes = desiredActions.map(actionHash);
     const cachedHashes = cachedLists[cachedPath];
-    if (sameHashList(cachedHashes, desiredHashes)) {
+    if (
+        !actionListHasInvalidatedItems(desiredActions, itemInvalidations) &&
+        sameHashList(cachedHashes, desiredHashes)
+    ) {
         trusted.set(desiredPath, {
             kind: "actions",
             actions: cachedActions,
@@ -256,12 +272,12 @@ function collectTrustedActionListSnapshots(
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
         for (const field of getChildListFields(action.type)) {
-            const desiredValue = (
-                action as unknown as Record<string, unknown>
-            )[field.prop];
-            const cachedValue = (
-                cachedAction as unknown as Record<string, unknown>
-            )[field.prop];
+            const desiredValue = (action as unknown as Record<string, unknown>)[
+                field.prop
+            ];
+            const cachedValue = (cachedAction as unknown as Record<string, unknown>)[
+                field.prop
+            ];
             if (!Array.isArray(desiredValue) || !Array.isArray(cachedValue)) continue;
             const desiredChildPath = `${desiredChildBase}.${field.prop}`;
             const cachedChildPath = `${cachedChildBase}.${field.prop}`;
@@ -271,11 +287,20 @@ function collectTrustedActionListSnapshots(
                     : (desiredValue as Action[]).map(actionHash);
             if (!sameHashList(cachedLists[cachedChildPath], hashes)) continue;
             if (field.kind === "conditionList") {
+                if (itemInvalidations?.hasInvalidatedSubtree(action)) continue;
                 trusted.set(desiredChildPath, {
                     kind: "conditions",
                     conditions: cachedValue as Condition[],
                 });
             } else {
+                if (
+                    actionListHasInvalidatedItems(
+                        desiredValue as Action[],
+                        itemInvalidations
+                    )
+                ) {
+                    continue;
+                }
                 trusted.set(desiredChildPath, {
                     kind: "actions",
                     actions: cachedValue as Action[],
@@ -290,11 +315,15 @@ function collectTrustedActionListPaths(
     desiredPath: string,
     cachedPath: string,
     desiredActions: readonly Action[],
-    cachedLists: Partial<Record<string, string[]>>
+    cachedLists: Partial<Record<string, string[]>>,
+    itemInvalidations?: ItemInvalidations
 ): void {
     const desiredHashes = desiredActions.map(actionHash);
     const cachedHashes = cachedLists[cachedPath];
-    if (sameHashList(cachedHashes, desiredHashes)) {
+    if (
+        !actionListHasInvalidatedItems(desiredActions, itemInvalidations) &&
+        sameHashList(cachedHashes, desiredHashes)
+    ) {
         trusted.add(desiredPath);
     }
 
@@ -306,9 +335,7 @@ function collectTrustedActionListPaths(
         const desiredChildBase = `${desiredPath}[${i}]`;
         const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
         for (const field of getChildListFields(action.type)) {
-            const value = (
-                action as unknown as Record<string, unknown>
-            )[field.prop];
+            const value = (action as unknown as Record<string, unknown>)[field.prop];
             if (!Array.isArray(value)) continue;
             const desiredChildPath = `${desiredChildBase}.${field.prop}`;
             const cachedChildPath = `${cachedChildBase}.${field.prop}`;
@@ -316,9 +343,27 @@ function collectTrustedActionListPaths(
                 field.kind === "conditionList"
                     ? (value as Condition[]).map(conditionHash)
                     : (value as Action[]).map(actionHash);
-            if (sameHashList(cachedLists[cachedChildPath], hashes)) {
+            const itemFieldsChanged =
+                field.kind === "conditionList"
+                    ? itemInvalidations?.hasInvalidatedSubtree(action) === true
+                    : actionListHasInvalidatedItems(value as Action[], itemInvalidations);
+            if (
+                !itemFieldsChanged &&
+                sameHashList(cachedLists[cachedChildPath], hashes)
+            ) {
                 trusted.add(desiredChildPath);
             }
         }
     }
+}
+
+function actionListHasInvalidatedItems(
+    actions: readonly Action[],
+    itemInvalidations: ItemInvalidations | undefined
+): boolean {
+    if (itemInvalidations === undefined) return false;
+    for (const action of actions) {
+        if (itemInvalidations.hasInvalidatedSubtree(action)) return true;
+    }
+    return false;
 }

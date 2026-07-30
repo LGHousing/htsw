@@ -19,9 +19,10 @@ import {
     type ImportableCacheLoadRequest,
 } from "../../importCache";
 import {
-    upsertHouseLockImportables,
+    upsertHouseLockImportablesOffThread,
     type HouseLockImportableUpdate,
 } from "../../importCache/houseLock";
+import { warmImportableHashesOffThread } from "../../importCache/hashMemo";
 import { importableIdentity, importableKey } from "../identity";
 import {
     type ItemDependencyIndex,
@@ -140,7 +141,13 @@ function warmImportableCaches(
         });
     }
     return new Promise((resolve) => {
-        loadImportableCachesOffThread(requests, resolve);
+        let remaining = 2;
+        const completeOne = () => {
+            remaining--;
+            if (remaining === 0) resolve();
+        };
+        loadImportableCachesOffThread(requests, completeOne);
+        warmImportableHashesOffThread(importables, completeOne);
     });
 }
 
@@ -536,11 +543,11 @@ async function runImportSessionInner(
         true
     );
     if (
-        !flushHouseLockEntries(
+        !(await flushHouseLockEntries(
             selection.sourcePath,
             selection.housingUuid,
             pendingHouseLockEntries
-        )
+        ))
     ) {
         ctx.displayMessage(
             "&e[htsw] Hydrated house state was cached, but house.lock could not be updated; retry may need to read it again."
@@ -764,7 +771,7 @@ async function runImportSessionInner(
         }
 
         const savedCount = pendingHouseLockEntries.size;
-        const lockUpdated = flushHouseLockEntries(
+        const lockUpdated = await flushHouseLockEntries(
             selection.sourcePath,
             selection.housingUuid,
             pendingHouseLockEntries
@@ -779,7 +786,7 @@ async function runImportSessionInner(
         throw error;
     }
 
-    flushHouseLockEntries(
+    await flushHouseLockEntries(
         selection.sourcePath,
         selection.housingUuid,
         pendingHouseLockEntries
@@ -868,7 +875,7 @@ async function persistHydratedReads(
         pendingHouseLockEntries,
         verifiedContext
     );
-    const lockUpdated = flushHouseLockEntries(
+    const lockUpdated = await flushHouseLockEntries(
         selection.sourcePath,
         selection.housingUuid,
         pendingHouseLockEntries
@@ -974,12 +981,12 @@ function itemContentForLock(
     return (owner, property) => preferred(owner, property) ?? fallback(owner, property);
 }
 
-function flushHouseLockEntries(
+async function flushHouseLockEntries(
     sourcePath: string,
     housingUuid: string,
     entries: PendingHouseLockEntries
-): boolean {
-    return upsertHouseLockImportables(
+): Promise<boolean> {
+    return await upsertHouseLockImportablesOffThread(
         sourcePath,
         housingUuid,
         Array.from(entries.values())

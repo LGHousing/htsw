@@ -17,6 +17,7 @@ import { removedFormatting } from "../utils/helpers";
 import type { ItemDependencySnapshot } from "../importables/items/dependencyIndex";
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
+import { rememberImportableHash } from "./hashMemo";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -104,12 +105,24 @@ export type ImportableCacheEntry = {
 const entryHashCache = new WeakMap<ImportableCacheEntry, string>();
 
 export function cacheEntryHash(entry: ImportableCacheEntry): string {
+    if (cacheEntryHashesAreCurrent(entry)) return entry.hash;
     let hash = entryHashCache.get(entry);
     if (hash === undefined) {
         hash = importableHash(entry.importable);
         entryHashCache.set(entry, hash);
     }
     return hash;
+}
+
+export function cacheEntryHashesAreCurrent(entry: ImportableCacheEntry): boolean {
+    const lists: unknown = entry.lists;
+    return (
+        entry.version === CACHE_ENTRY_VERSION &&
+        typeof entry.hash === "string" &&
+        lists !== null &&
+        typeof lists === "object" &&
+        !Array.isArray(lists)
+    );
 }
 
 export type ImportableCacheWriteOptions = {
@@ -156,6 +169,26 @@ function buildImportableCacheEntry(
     };
 }
 
+type PreparedImportableCacheWrite = {
+    path: string;
+    entry: ImportableCacheEntry;
+    serialized: string;
+};
+
+function prepareImportableCacheWrite(
+    housingUuid: string,
+    importable: Importable,
+    writer: CacheWriter,
+    itemDependencies?: ItemDependencySnapshot
+): PreparedImportableCacheWrite {
+    const entry = buildImportableCacheEntry(importable, writer, itemDependencies);
+    return {
+        path: cachePathFor(housingUuid, importable),
+        entry,
+        serialized: JSON.stringify(entry, null, 4),
+    };
+}
+
 // A house row's display label when its identity isn't itself a name: NPCs are
 // keyed by position but should read as their name in the browser. Every other
 // type's identity already is its name, so they need no separate label.
@@ -188,11 +221,27 @@ export function writeImportableCache(
         typeof quietOrOptions === "boolean"
             ? { quiet: quietOrOptions, itemDependencies }
             : (quietOrOptions ?? {});
-    const path = cachePathFor(housingUuid, importable);
-    const entry = buildImportableCacheEntry(importable, writer, options.itemDependencies);
+    const prepared = prepareImportableCacheWrite(
+        housingUuid,
+        importable,
+        writer,
+        options.itemDependencies
+    );
+    return commitImportableCacheWrite(ctx, housingUuid, importable, options, prepared);
+}
+
+function commitImportableCacheWrite(
+    ctx: TaskContext,
+    housingUuid: string,
+    importable: Importable,
+    options: ImportableCacheWriteOptions,
+    prepared: PreparedImportableCacheWrite
+): boolean {
+    const { path, entry, serialized } = prepared;
     entryHashCache.set(entry, entry.hash);
+    rememberImportableHash(importable, entry.hash);
     try {
-        if (!atomicWriteText(path, JSON.stringify(entry, null, 4))) {
+        if (!atomicWriteText(path, serialized)) {
             throw new Error("write failed");
         }
         readCache.set(path, {
@@ -229,6 +278,61 @@ export function writeImportableCache(
     }
 }
 
+function writeImportableCacheOffThread(
+    ctx: TaskContext,
+    housingUuid: string,
+    importable: Importable,
+    writer: CacheWriter,
+    options: ImportableCacheWriteOptions
+): Promise<boolean> {
+    return new Promise((resolve) => {
+        const Thread = javaType("java.lang.Thread");
+        const Runnable = javaType("java.lang.Runnable");
+        try {
+            const thread = new Thread(
+                new Runnable({
+                    run: function () {
+                        let prepared: PreparedImportableCacheWrite | null = null;
+                        let error: unknown = null;
+                        try {
+                            prepared = prepareImportableCacheWrite(
+                                housingUuid,
+                                importable,
+                                writer,
+                                options.itemDependencies
+                            );
+                        } catch (prepareError) {
+                            error = prepareError;
+                        }
+                        runOnMainThread(() => {
+                            if (prepared === null) {
+                                ctx.displayMessage(
+                                    `&7[cache] &eFailed to prepare cache: ${String(error)}`
+                                );
+                                resolve(false);
+                                return;
+                            }
+                            resolve(
+                                commitImportableCacheWrite(
+                                    ctx,
+                                    housingUuid,
+                                    importable,
+                                    options,
+                                    prepared
+                                )
+                            );
+                        });
+                    },
+                })
+            );
+            thread.setDaemon(true);
+            thread.start();
+        } catch (_error) {
+            resolve(writeImportableCache(ctx, housingUuid, importable, writer, options));
+        }
+    });
+}
+
 /**
  * Best-effort cache write: resolve the housing UUID (falling back to /wtfmap
  * when one isn't supplied), persist the entry, and swallow any failure. The
@@ -247,7 +351,15 @@ export async function tryWriteImportableCache(
 ): Promise<boolean> {
     try {
         const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        return writeImportableCache(ctx, housingUuid, importable, writer, options);
+        return writer === "importer"
+            ? await writeImportableCacheOffThread(
+                  ctx,
+                  housingUuid,
+                  importable,
+                  writer,
+                  options ?? {}
+              )
+            : writeImportableCache(ctx, housingUuid, importable, writer, options);
     } catch (error) {
         if (writer === "exporter") {
             ctx.displayMessage(`&7[export] &eCache write skipped: ${String(error)}`);
@@ -502,8 +614,7 @@ export function loadImportableCachesOffThread(
                             path: plan.path,
                             type: plan.type,
                             entry,
-                            entryHash:
-                                entry === null ? null : importableHash(entry.importable),
+                            entryHash: entry === null ? null : cacheEntryHash(entry),
                             house: parseHouseRecord(raw, plan.type),
                             mtime,
                         });

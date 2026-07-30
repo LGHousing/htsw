@@ -1,8 +1,9 @@
 import type { Importable } from "htsw/types";
 
 import { ensureParentDirs } from "../utils/filesystem";
+import { javaType } from "../utils/java";
+import { runOnMainThread } from "../utils/mainThread";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { importableHash } from "./hash";
 import { actionListsOfImportable } from "./actionLists";
 import {
     ACTION_LIST_CONTENT_HASH_VERSION,
@@ -15,6 +16,7 @@ import type {
     ItemDependencyTarget,
 } from "../importables/items/dependencyIndex";
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
+import { memoizedImportableHash } from "./hashMemo";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -86,9 +88,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
     const scanHashVersion =
         typeof obj.scanHashVersion === "number" ? obj.scanHashVersion : undefined;
     const contentHashVersion =
-        typeof obj.contentHashVersion === "number"
-            ? obj.contentHashVersion
-            : undefined;
+        typeof obj.contentHashVersion === "number" ? obj.contentHashVersion : undefined;
     const exposeListScanHashes = scanHashVersion === ACTION_LIST_SCAN_HASH_VERSION;
     const exposeListContentHashes =
         contentHashVersion === ACTION_LIST_CONTENT_HASH_VERSION;
@@ -250,6 +250,15 @@ export type HouseLockImportableUpdate = {
     itemContent: ItemFieldContent | undefined;
 };
 
+type PreparedHouseLockImportableUpdate = {
+    type: Importable["type"];
+    identity: string;
+    hash: string;
+    listScanHashes: Record<string, string>;
+    listContentHashes: Record<string, string>;
+    itemDependencies?: ItemDependencySnapshot;
+};
+
 export function upsertHouseLockImportable(
     importJsonPath: string,
     housingUuid: string,
@@ -264,30 +273,95 @@ export function upsertHouseLockImportables(
     updates: readonly HouseLockImportableUpdate[]
 ): boolean {
     if (updates.length === 0) return true;
+    return upsertPreparedHouseLockImportables(
+        importJsonPath,
+        housingUuid,
+        updates.map(prepareHouseLockImportableUpdate)
+    );
+}
+
+export function upsertHouseLockImportablesOffThread(
+    importJsonPath: string,
+    housingUuid: string,
+    updates: readonly HouseLockImportableUpdate[]
+): Promise<boolean> {
+    if (updates.length === 0) return Promise.resolve(true);
+    const snapshot = updates.slice();
+    return new Promise((resolve) => {
+        const Thread = javaType("java.lang.Thread");
+        const Runnable = javaType("java.lang.Runnable");
+        try {
+            const thread = new Thread(
+                new Runnable({
+                    run: function () {
+                        let prepared: PreparedHouseLockImportableUpdate[] | null = null;
+                        try {
+                            prepared = snapshot.map(prepareHouseLockImportableUpdate);
+                        } catch (_error) {}
+                        runOnMainThread(() => {
+                            resolve(
+                                prepared !== null &&
+                                    upsertPreparedHouseLockImportables(
+                                        importJsonPath,
+                                        housingUuid,
+                                        prepared
+                                    )
+                            );
+                        });
+                    },
+                })
+            );
+            thread.setDaemon(true);
+            thread.start();
+        } catch (_error) {
+            resolve(upsertHouseLockImportables(importJsonPath, housingUuid, snapshot));
+        }
+    });
+}
+
+function prepareHouseLockImportableUpdate(
+    update: HouseLockImportableUpdate
+): PreparedHouseLockImportableUpdate {
+    const importable = update.importable;
+    const identity = importableIdentity(importable);
+    const listScanHashes: Record<string, string> = {};
+    const listContentHashes: Record<string, string> = {};
+    for (const { basePath, actions } of actionListsOfImportable(importable)) {
+        listScanHashes[basePath] = actionListScanHashFromActions(actions);
+        listContentHashes[basePath] = actionListContentHashFromActions(
+            actions,
+            update.itemContent
+        );
+    }
+    return {
+        type: importable.type,
+        identity,
+        hash: memoizedImportableHash(importable),
+        listScanHashes,
+        listContentHashes,
+        ...(update.itemDependencies !== undefined
+            ? { itemDependencies: update.itemDependencies }
+            : {}),
+    };
+}
+
+function upsertPreparedHouseLockImportables(
+    importJsonPath: string,
+    housingUuid: string,
+    updates: readonly PreparedHouseLockImportableUpdate[]
+): boolean {
     const path = houseLockPathForImportJson(importJsonPath);
     const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
     lock.houseUuid = housingUuid;
     lock.scanHashVersion = ACTION_LIST_SCAN_HASH_VERSION;
     lock.contentHashVersion = ACTION_LIST_CONTENT_HASH_VERSION;
     for (const update of updates) {
-        const importable = update.importable;
-        const identity = importableIdentity(importable);
-        const listScanHashes: Record<string, string> = {};
-        const listContentHashes: Record<string, string> = {};
-        for (const { basePath, actions } of actionListsOfImportable(importable)) {
-            listScanHashes[basePath] = actionListScanHashFromActions(actions);
-            listContentHashes[basePath] =
-                actionListContentHashFromActions(
-                    actions,
-                    update.itemContent
-                );
-        }
-        lock.importables[importableKey(importable.type, identity)] = {
-            type: importable.type,
-            identity,
-            hash: importableHash(importable),
-            listScanHashes,
-            listContentHashes,
+        lock.importables[importableKey(update.type, update.identity)] = {
+            type: update.type,
+            identity: update.identity,
+            hash: update.hash,
+            listScanHashes: update.listScanHashes,
+            listContentHashes: update.listContentHashes,
             ...(update.itemDependencies !== undefined
                 ? { itemDependencies: update.itemDependencies }
                 : {}),

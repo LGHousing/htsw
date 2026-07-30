@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
-import type { ImportableCacheEntry } from "../src/importCache/cache";
+import { cacheEntryHash, type ImportableCacheEntry } from "../src/importCache/cache";
 import { importableHash, listHashes } from "../src/importCache/hash";
 import { cacheEntryListHashes } from "../src/importCache/status";
 import { functionIconsEqual } from "../src/importables/functions/iconComparison";
@@ -211,30 +211,31 @@ describe("importableHash command defaults", () => {
 });
 
 describe("cache entry hashes", () => {
-    test("recomputes list hashes from the cached importable", () => {
-        const importable: ImportableFunction = {
-            type: "FUNCTION",
-            name: "Sound Test",
-            actions: [
-                {
-                    type: "PLAY_SOUND",
-                    sound: "random.orb",
-                    volume: 0.7,
-                    pitch: 1,
-                    location: {
-                        type: "Custom Coordinates",
-                        value: "~ ~ ~",
-                        coordinates: {
-                            x: { kind: "relative", value: "0" },
-                            y: { kind: "relative", value: "0" },
-                            z: { kind: "relative", value: "0" },
-                            yaw: undefined,
-                            pitch: undefined,
-                        },
+    const importable: ImportableFunction = {
+        type: "FUNCTION",
+        name: "Sound Test",
+        actions: [
+            {
+                type: "PLAY_SOUND",
+                sound: "random.orb",
+                volume: 0.7,
+                pitch: 1,
+                location: {
+                    type: "Custom Coordinates",
+                    value: "~ ~ ~",
+                    coordinates: {
+                        x: { kind: "relative", value: "0" },
+                        y: { kind: "relative", value: "0" },
+                        z: { kind: "relative", value: "0" },
+                        yaw: undefined,
+                        pitch: undefined,
                     },
                 },
-            ],
-        };
+            },
+        ],
+    };
+
+    test("recomputes list hashes from a legacy cached importable", () => {
         const entry = {
             schemaVersion: 2,
             writtenAt: "2026-06-19T00:00:00.000Z",
@@ -246,5 +247,20 @@ describe("cache entry hashes", () => {
 
         expect(cacheEntryListHashes(entry)).toEqual(listHashes(importable));
         expect(cacheEntryListHashes(entry).actions).not.toEqual(entry.lists.actions);
+    });
+
+    test("uses stored list hashes from a current cache entry", () => {
+        const entry = {
+            schemaVersion: 2,
+            version: 1,
+            writtenAt: "2026-07-30T00:00:00.000Z",
+            writer: "importer",
+            importable,
+            hash: "current",
+            lists: { actions: ["stored"] },
+        } as ImportableCacheEntry;
+
+        expect(cacheEntryListHashes(entry)).toBe(entry.lists);
+        expect(cacheEntryHash(entry)).toBe("current");
     });
 });

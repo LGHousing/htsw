@@ -7,8 +7,8 @@ const mocks = vi.hoisted(() => ({
     hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
     deleteImportableCache: vi.fn(() => true),
-    upsertHouseLockImportables: vi.fn(
-        (_path: string, _housingUuid: string, _updates: unknown[]) => true
+    upsertHouseLockImportablesOffThread: vi.fn(
+        async (_path: string, _housingUuid: string, _updates: unknown[]) => true
     ),
 }));
 
@@ -51,7 +51,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
 }));
 
 vi.mock("../src/importCache/houseLock", () => ({
-    upsertHouseLockImportables: mocks.upsertHouseLockImportables,
+    upsertHouseLockImportablesOffThread: mocks.upsertHouseLockImportablesOffThread,
 }));
 
 vi.mock("../src/runtimeDebug/importFailureLog", () => ({
@@ -91,7 +91,7 @@ describe("import conflict gate", () => {
         mocks.hydrateImportable.mockResolvedValue(undefined);
         mocks.tryWriteImportableCache.mockResolvedValue(true);
         mocks.deleteImportableCache.mockReturnValue(true);
-        mocks.upsertHouseLockImportables.mockReturnValue(true);
+        mocks.upsertHouseLockImportablesOffThread.mockResolvedValue(true);
     });
 
     it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
@@ -151,7 +151,7 @@ describe("import conflict gate", () => {
 
         expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
         expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
-        expect(mocks.upsertHouseLockImportables).not.toHaveBeenCalled();
+        expect(mocks.upsertHouseLockImportablesOffThread).not.toHaveBeenCalled();
         expect(events).toContainEqual({
             kind: "importableFinished",
             key: "./project/import.json|FUNCTION:Debug",
@@ -216,7 +216,7 @@ describe("import conflict gate", () => {
             "test-house",
             { itemDependencies: { version: 1, dependencies: [] } }
         );
-        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledTimes(1);
+        expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenCalledTimes(1);
         expect(messages).toContain(
             "&a[htsw] Cancellation saved verified house state for &f1&a importable; retry can reuse the cache."
         );
@@ -269,7 +269,7 @@ describe("import conflict gate", () => {
 
         expect(mocks.hydrateImportable).toHaveBeenCalledTimes(25);
         expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(25);
-        expect(mocks.upsertHouseLockImportables).toHaveBeenCalledWith(
+        expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenCalledWith(
             "./project/import.json",
             "test-house",
             expect.arrayContaining([
@@ -327,7 +327,7 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        expect(mocks.upsertHouseLockImportables).toHaveBeenLastCalledWith(
+        expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenLastCalledWith(
             "./project/import.json",
             "test-house",
             expect.arrayContaining([
@@ -417,7 +417,7 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
-        const lockCalls = mocks.upsertHouseLockImportables.mock.calls;
+        const lockCalls = mocks.upsertHouseLockImportablesOffThread.mock.calls;
         const updates = lockCalls[lockCalls.length - 1][2] as Array<{
             importable: ImportableFunction;
             itemContent: (owner: Action, property: string) => string | undefined;

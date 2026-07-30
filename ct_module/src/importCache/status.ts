@@ -1,11 +1,17 @@
 import type { Importable } from "htsw/types";
 
 import {
+    cacheEntryHashesAreCurrent,
     cacheEntryHash,
     readImportableCache,
     type ImportableCacheEntry,
 } from "./cache";
-import { importableHash, listHashes } from "./hash";
+import { listHashes } from "./hash";
+import {
+    getImportableHashRevision,
+    memoizedImportableHash,
+    seedImportableHash,
+} from "./hashMemo";
 import { importableIdentity } from "../importables/identity";
 import {
     itemDependencyIndexFor,
@@ -35,25 +41,7 @@ export function sameHashList(
     return true;
 }
 
-const hashByImportable = new WeakMap<object, string>();
-let importableHashRevision = 0;
-
-export function memoizedImportableHash(importable: Importable): string {
-    const cached = hashByImportable.get(importable);
-    if (cached !== undefined) return cached;
-    const hash = importableHash(importable);
-    hashByImportable.set(importable, hash);
-    return hash;
-}
-
-export function seedImportableHash(importable: Importable, hash: string): void {
-    hashByImportable.set(importable, hash);
-    importableHashRevision++;
-}
-
-export function getImportableHashRevision(): number {
-    return importableHashRevision;
-}
+export { getImportableHashRevision, memoizedImportableHash, seedImportableHash };
 
 const entryListHashesCache = new WeakMap<
     ImportableCacheEntry,
@@ -63,6 +51,7 @@ const entryListHashesCache = new WeakMap<
 export function cacheEntryListHashes(
     entry: ImportableCacheEntry
 ): Record<string, string[]> {
+    if (cacheEntryHashesAreCurrent(entry)) return entry.lists;
     let hashes = entryListHashesCache.get(entry);
     if (hashes === undefined) {
         hashes = listHashes(entry.importable);
