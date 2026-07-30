@@ -24,23 +24,29 @@ Both installers place `htsw` in `~/.local/bin` by default. Set
 
 ## Commands
 
-### `htsw check`
+### `htsw check [path]`
 
-Parses and validates the `import.json` file in the CWD, or an `import.json`
- pointed to by the optional positional argument.
+Parses and validates `./import.json` by default. The optional path must point to
+ an `import.json` or `*.import.json` file.
 
-### `htsw run`
+### `htsw run [path] [--ticks N]`
 
-Runs the function `htsw:main` of the `import.json` file in the CWD, or an
- `import.json` pointed to by the optional positional argument.
+Parses the same files as `htsw check`, then runs the function `htsw:main`.
 
 The output of the
  [Send a Chat Message](./htsl/actions.md#send-a-chat-message)
- action is redirected to the standard output.
+ action is written to standard output.
 
-> Note that repeating functions are ignored in `htsw run`.
+Use `--ticks N` to advance the runtime by a non-negative number of ticks after
+ `htsw:main` runs. Tick advancement drives Pause Execution actions and repeating
+ functions. The default is `0`.
 
-### `htsw upgrade`
+> `htsw run` is a limited local simulator, not a Housing server. It simulates
+ variable operations and comparisons, control flow, function calls,
+ variable/stat/random placeholders, chat output, pauses, and repeating
+ functions. Other actions do nothing and other conditions resolve to false.
+
+### `htsw upgrade [--force]`
 
 Downloads the latest CLI build, verifies its checksum, and replaces the
-installed command.
+ installed command. Use `--force` to reinstall an already-current version.

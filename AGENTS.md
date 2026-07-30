@@ -89,51 +89,61 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
 
 <!-- htsw:guides START -->
-## HTSW + Housing guides for agents
+## HTSW + Housing docs
 
 These docs are managed by `htsw-docs sync`.
 
-### Reference docs
+### Overview
 
-- Housing (concepts, actions, conditions, variables, placeholders, house
-  settings): start at `.htsw/housing/overview.md`.
-- HTSW (HTSL syntax, actions, conditions, importables, tooling): start at
-  `.htsw/htsw/overview.md`; the language reference is under
-  `.htsw/htsw/htsl/` and the tooling guide is `.htsw/htsw/tooling.md`.
-- How an HTSW project fits together (`import.json`, `.htsl`, `.snbt`, and
-  `include`): `.htsw/agents/htsw-project-structure.md`.
-- Common Housing patterns: `.htsw/agents/list-of-common-patterns.md`.
+Hypixel Housing is a gamemode on the Hypixel Network. Each player is given a
+ plot to build on, expand, create games, and more. Almost anything is possible!
+ Player's can also visit other people's houses and see what creations they've
+ made.
 
-### HTSW tooling
+The basis of Hypixel Housing are player houses. Players can create houses and
+ open them to the public for others to join.
 
-The HTSW CLI (`htsw` command) should be available in the shell environment.
-If it is not, ask the user to install it.
+Hypixel Housing allows clients of both 1.8.9 and 1.21 to join. Internally, the
+ servers run a heavily modified version of the 1.8.9 Minecraft server software.
+ This means that most features of newer Minecraft versions are inaccessible in
+ Housing.
 
-When writing, formatting, reviewing, or otherwise interacting with HTSW,
-leverage the HTSW CLI to the fullest.
+HTSW is a near zero-abstraction framework and collection of formats for
+ representing Housing entities as text. It consists of two main formats:
+ `import.json` and HTSL.
 
-Make an attempt to test the code you write with `htsw run` unless that is
-entirely inapplicable, in which case do not bend over backwards simply to
-check the box of having "tested" the code.
+HTSL (Housing Text Scripting Language) is the markup language used by HTSW to
+ represent Housing actions in a textual format.
 
-Validate through `import.json`, normally `htsw check import.json` (or just
-`htsw check`, which uses `./import.json`). Do not treat standalone
-`.htsl` files as the validation target: they hold Housing Actions referenced
-by an `import.json`, and `check` / `run` are built around
-`import.json` / `*.import.json` entrypoints.
+### Documentation
 
-Testing will usually involve creating a temporary `.htsl` file specifically
-to use as the `htsw:main` function in order to invoke other code. Ask the
-user first unless there is already a clear precedent; they may request a
-different testing procedure, or no tests at all.
+#### Housing concepts
 
-When driving the live game (for example through the minecraft-mcp bridge),
-imports can be queued and run in-game with the hidden `/htsw queue` command
-family; see `.htsw/agents/htsw-import-queue.md`.
+- Actions and action containers: `.htsw/housing/concepts/actions.md`
+- Conditions: `.htsw/housing/concepts/conditions.md`
+- Functions: `.htsw/housing/concepts/functions.md`
+- Houses: `.htsw/housing/concepts/house.md`
+- Regions: `.htsw/housing/concepts/regions.md`
+- Systems: `.htsw/housing/concepts/systems.md`
+- Variables: `.htsw/housing/concepts/variables.md`
 
-### Reading the docs
+#### HTSW reference
 
-Many doc files have a table of contents (`<!--- TOC -->` ... `<!--- END -->`),
-and each section covered by a TOC ends with a horizontal rule (`---`). Read
-the TOC first and pull only the sections you need.
+- Importables: `.htsw/htsw/importables.md`
+- Tooling and CLI: `.htsw/htsw/tooling.md`
+- Basic syntax: `.htsw/htsw/htsl/basic-syntax.md`
+- Actions: `.htsw/htsw/htsl/actions.md`
+- Conditions: `.htsw/htsw/htsl/conditions.md`
+
+#### Agent workflows
+
+- Project structure and validation: `.htsw/agents/htsw-project-structure.md`
+- Live import queue: `.htsw/agents/htsw-import-queue.md`
+- Common Housing patterns: `.htsw/agents/list-of-common-patterns.md`
+
+#### Essential commands
+
+- Validate the entry `import.json` or `*.import.json` with `htsw check`.
+- Use `htsw run` for local simulation.
+- Follow the live import queue guide when in-game tools are available.
 <!-- htsw:guides END -->

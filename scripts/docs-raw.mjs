@@ -27,6 +27,7 @@ rmSync(rawDirectory, { recursive: true, force: true });
 mkdirSync(rawDirectory, { recursive: true });
 
 const files = findMarkdownFiles(docsDirectory)
+  .filter((sourcePath) => path.relative(docsDirectory, sourcePath) !== "SUMMARY.md")
   .map((sourcePath) => {
     const relativePath = path.relative(docsDirectory, sourcePath);
     const manifestPath = relativePath.split(path.sep).join("/");

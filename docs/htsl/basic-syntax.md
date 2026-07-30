@@ -33,5 +33,20 @@ You can find a detailed list of the syntax for all actions [here](actions.md).
 
 ## Conditions
 
+Conditions in HTSL are declared with a keyword and positional arguments. They
+ are always within a Conditional Action's Conditions list (`if (...)`), and are
+ separated by commas.
+
+They may be typed on a single line or multiple lines:
+
+```htsl
+if (var x == 5, var y == 5) {}
+// or
+if (
+    var x == 5,
+    var y == 5
+) {}
+```
+
 You can find a detailed list of the syntax for all conditions
  [here](conditions.md).
