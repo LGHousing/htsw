@@ -93,6 +93,12 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 
 These docs are managed by `htsw-docs sync`.
 
+Before working on any HTSW or Housing task, read the relevant documentation
+linked below and use it as the source of truth.
+
+Use the Housing concept docs for game behavior, the HTSW reference for syntax
+and formats, and the agent workflows for validation and live imports.
+
 ### Overview
 
 Hypixel Housing is a gamemode on the Hypixel Network. Each player is given a
