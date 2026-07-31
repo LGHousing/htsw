@@ -5,7 +5,6 @@ import { pollTicks } from "../tasks/poll";
 import { getMinecraft, getPlayer, javaType } from "../utils/java";
 
 const KeyBinding = javaType("net.minecraft.client.settings.KeyBinding");
-const GuiInventory = javaType("net.minecraft.client.gui.inventory.GuiInventory");
 
 /**
  * Side effects coordinating the importer with the surrounding game:
@@ -61,22 +60,16 @@ function currentScreenIsOpen(): boolean {
     return getMinecraft().field_71462_r !== null;
 }
 
-// Jump taps and creative set-slot packets only take effect while no screen is
-// open; a Housing menu left open by an earlier step (e.g. the /regions list or
-// the Functions list after shell creation) silently eats them.
+// Jump taps go through client keybindings, which never fire while a screen is
+// open. Held-slot changes are also only ever sent by the vanilla client with
+// no screen open, so close before those too. Creative set-slot packets are NOT
+// affected — measured 2026-07-31: spawns land fine with Housing chest menus
+// open (Housing Menu, Functions list, Regions list).
 export async function closeOpenScreen(ctx: TaskContext): Promise<void> {
     if (!currentScreenIsOpen()) return;
     // func_71053_j = EntityPlayer.closeScreen — same as pressing Esc on a
     // container, including notifying the server.
     getPlayer().func_71053_j();
-    await ctx.waitFor("tick");
-}
-
-export async function ensurePlayerInventoryScreen(ctx: TaskContext): Promise<void> {
-    const minecraft = getMinecraft();
-    if (GuiInventory.class.isInstance(minecraft.field_71462_r)) return;
-    await closeOpenScreen(ctx);
-    minecraft.func_147108_a(new GuiInventory(getPlayer()));
     await ctx.waitFor("tick");
 }
 

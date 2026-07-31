@@ -1,7 +1,7 @@
 import TaskContext from "../../tasks/context";
 import { pollTicks } from "../../tasks/poll";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
-import { closeOpenScreen, ensurePlayerInventoryScreen } from "../sideEffects";
+import { closeOpenScreen } from "../sideEffects";
 import {
     SET_SLOT_ACK_MAX_TICKS,
     selectedHotbarSlot,
@@ -36,7 +36,7 @@ export function createImportedItemPlacementSession(): ImportedItemPlacementSessi
             const stack = item.getItemStack() as MCItemStack | null;
             if (stack === null) throw new Error("Cannot inject an empty item stack.");
 
-            await ensurePlayerInventoryScreen(ctx);
+            await closeOpenScreen(ctx);
             const emptySlot = findEmptyHotbarSlot();
             if (emptySlot !== undefined) {
                 await placeInHotbarSlot(ctx, emptySlot, stack);
@@ -67,7 +67,7 @@ export function createImportedItemPlacementSession(): ImportedItemPlacementSessi
             if (borrowed === null) return;
             const slot = borrowed;
             borrowed = null;
-            await ensurePlayerInventoryScreen(ctx);
+            await closeOpenScreen(ctx);
             await restoreBorrowedSlot(ctx, slot);
         },
     };
