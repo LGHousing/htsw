@@ -10,6 +10,8 @@ import {
 import { TaskManager } from "../../../tasks/manager";
 import { getQueueLength } from "./queue";
 import { isImportPreparationRunning, startImport } from "./taskController";
+import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
+import { appendRawHtslFile } from "../../../rawHtslImport";
 
 export function importControl(): Element {
     const importDisabled = (): boolean =>
@@ -39,6 +41,18 @@ export function importControl(): Element {
                     hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                 },
                 onClick: () => startImport(),
+            }),
+            Button({
+                icon: Icons.fileUp,
+                text: "Append HTSL",
+                disabled: () => TaskManager.isBusy() || isImportPreparationRunning(),
+                tooltip: "Appends a raw .htsl file to the open Housing action list.",
+                style: {
+                    width: { kind: "px", value: 116 },
+                    height: { kind: "grow" },
+                },
+                onClick: () =>
+                    openFileBrowserWithHtslSelection(undefined, appendRawHtslFile),
             }),
         ],
     });

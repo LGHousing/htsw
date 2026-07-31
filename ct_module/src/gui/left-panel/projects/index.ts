@@ -51,15 +51,15 @@ function currentHouseTrustButton(): Element {
     const trusted = uuid !== null && isHouseTrusted(uuid);
     const tooltip =
         uuid === null
-            ? "No current house detected"
+            ? "Join a house to change its trust setting"
             : trusted
-              ? "Current house is trusted"
-              : "Trust current house";
+              ? "Imports use this house's cache instead of reading menus - speeds up imports"
+              : "Imports re-read this house's menus instead of trusting its cache";
     const tooltipColor =
         uuid === null ? COLOR_TEXT_FAINT : trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM;
     return Button({
         style: {
-            width: { kind: "px", value: 76 },
+            width: { kind: "grow" },
             height: { kind: "grow" },
             background: trusted ? COLOR_TOGGLE_ON : COLOR_BUTTON,
             hoverBackground: trusted ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
@@ -85,6 +85,7 @@ function currentHouseTrustButton(): Element {
             Text({
                 text: trusted ? "Trusted" : "Trust",
                 color: uuid === null ? COLOR_TEXT_FAINT : COLOR_TEXT,
+                truncate: true,
             }),
         ],
     });
@@ -224,49 +225,34 @@ export function ProjectsView(): Element {
         children: [
             Row({
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
-                children: [
-                    Row({
+                children: () => [
+                    Button({
+                        icon: Icons.search,
+                        text: "Browse",
                         style: {
-                            gap: 6,
                             width: { kind: "grow" },
                             height: { kind: "grow" },
                         },
-                        children: [
-                            Button({
-                                icon: Icons.search,
-                                text: "Browse",
-                                style: {
-                                    width: { kind: "grow" },
-                                    height: { kind: "grow" },
-                                },
-                                onClick: () => openBrowseModal(),
-                            }),
-                            Button({
-                                icon: Icons.history,
-                                text: "Recent",
-                                style: {
-                                    width: { kind: "px", value: 80 },
-                                    height: { kind: "grow" },
-                                },
-                                onClick: (rect) => {
-                                    togglePopover({
-                                        key: "left-recents",
-                                        anchor: rect,
-                                        content: recentsPopoverContent(),
-                                        width: 280,
-                                        height: Math.min(
-                                            180,
-                                            getRecents().length * 20 + 12
-                                        ),
-                                    });
-                                },
-                            }),
-                        ],
+                        onClick: () => openBrowseModal(),
                     }),
-                    Row({
-                        style: { height: { kind: "grow" }, align: "center" },
-                        children: () => [currentHouseTrustButton()],
+                    Button({
+                        icon: Icons.history,
+                        text: "Recent",
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        onClick: (rect) => {
+                            togglePopover({
+                                key: "left-recents",
+                                anchor: rect,
+                                content: recentsPopoverContent(),
+                                width: 280,
+                                height: Math.min(180, getRecents().length * 20 + 12),
+                            });
+                        },
                     }),
+                    currentHouseTrustButton(),
                 ],
             }),
             Row({

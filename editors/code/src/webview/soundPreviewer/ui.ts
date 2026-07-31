@@ -5,14 +5,14 @@ import type {
     SoundEntry,
     SoundPreviewFromHostMessage,
     SoundPreviewToHostMessage,
-    SoundVersionId,
+    SoundMode,
 } from "../protocol";
 
 type VsCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 type State = {
     sounds: SoundEntry[];
-    version: SoundVersionId;
+    mode: SoundMode;
     pitch: number;
     volume: number;
     query: string;
@@ -35,7 +35,7 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
     const audio = new AudioEngine();
     const state: State = {
         sounds: [],
-        version: "1.8.9",
+        mode: "1.8.9",
         pitch: DEFAULT_PITCH,
         volume: DEFAULT_VOLUME,
         query: "",
@@ -48,7 +48,7 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
         const message = event.data;
         if (message.type === "init") {
             state.sounds = message.sounds;
-            state.version = message.settings.version;
+            state.mode = message.settings.mode;
             state.pitch = normalizePitch(message.settings.pitch);
             state.volume = normalizeVolume(message.settings.volume);
             render();
@@ -109,8 +109,8 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
                 <div class="toolbar">
                     <div class="controls">
                         <div class="segmented" role="group" aria-label="Minecraft version">
-                            <button id="version-1-8" type="button" class="${state.version === "1.8.9" ? "active" : ""}">1.8</button>
-                            <button id="version-1-21" type="button" class="${state.version === "1.21.1" ? "active" : ""}">1.21</button>
+                            <button id="version-1-8" type="button" class="${state.mode === "1.8.9" ? "active" : ""}">1.8</button>
+                            <button id="version-modern" type="button" class="${state.mode === "modern" ? "active" : ""}">Modern</button>
                         </div>
                         <label>
                             <span class="label-text">Search</span>
@@ -151,12 +151,12 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
 
     function bind(vscode: VsCodeApi): void {
         bindClick("version-1-8", () => {
-            state.version = "1.8.9";
+            state.mode = "1.8.9";
             persistSettings(vscode, state);
             render();
         });
-        bindClick("version-1-21", () => {
-            state.version = "1.21.1";
+        bindClick("version-modern", () => {
+            state.mode = "modern";
             persistSettings(vscode, state);
             render();
         });
@@ -241,14 +241,14 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
             button.addEventListener("click", () => {
                 const sound = state.sounds.find((entry) => entry.path === button.dataset.playPath);
                 if (!sound) return;
-                if (!canPlay(sound, state.version)) return;
+                if (!canPlay(sound, state.mode)) return;
                 state.loadingPath = sound.path;
                 state.status = { kind: "idle", text: "Loading audio..." };
                 renderStatus();
                 renderSoundList({ preserveScroll: true });
                 post(vscode, {
                     type: "requestPlay",
-                    version: state.version,
+                    mode: state.mode,
                     soundPath: sound.path,
                 });
             });
@@ -265,9 +265,9 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
 }
 
 function soundRow(sound: SoundEntry, state: State): string {
-    const disabled = !canPlay(sound, state.version);
+    const disabled = !canPlay(sound, state.mode);
     const loading = state.loadingPath === sound.path;
-    const unavailableVersion = state.version === "1.8.9" ? "1.8" : "1.21";
+    const unavailableVersion = state.mode === "1.8.9" ? "1.8" : "modern";
     return `
         <div class="sound-row">
             <div>
@@ -281,8 +281,8 @@ function soundRow(sound: SoundEntry, state: State): string {
     `;
 }
 
-function canPlay(sound: SoundEntry, version: SoundVersionId): boolean {
-    return version === "1.8.9" ? sound.mapped1_8 !== null : sound.mapped1_21 !== null;
+function canPlay(sound: SoundEntry, mode: SoundMode): boolean {
+    return mode === "1.8.9" ? sound.mapped1_8 !== null : sound.mappedModern !== null;
 }
 
 function filterSounds(sounds: SoundEntry[], query: string): SoundEntry[] {
@@ -296,7 +296,7 @@ function filterSounds(sounds: SoundEntry[], query: string): SoundEntry[] {
 function persistSettings(vscode: VsCodeApi, state: State): void {
     post(vscode, {
         type: "saveSettings",
-        version: state.version,
+        mode: state.mode,
         pitch: state.pitch,
         volume: state.volume,
     });

@@ -42,6 +42,12 @@ function statusForImportable(importable: Importable): CacheState {
     return cacheStateForImportable(importable) ?? "unknown";
 }
 
+export function statusForImportableBlocking(
+    importable: Importable
+): CacheState {
+    return statusForImportable(importable);
+}
+
 export function cachedStatusForImportable(
     importable: Importable
 ): CacheState | null {

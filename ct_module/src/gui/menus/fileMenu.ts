@@ -13,6 +13,7 @@ import {
     queueItemsForPath,
     removeFromQueue,
 } from "../right-panel/import-tab/queue";
+import { appendRawHtslFile } from "../../rawHtslImport";
 
 function isImportJsonPath(filePath: string): boolean {
     const normalized = filePath.split("\\").join("/").toLowerCase();
@@ -68,6 +69,12 @@ function genericFileActions(filePath: string, importJsonPath?: string | null): M
         },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
+    if (filePath.toLowerCase().endsWith(".htsl")) {
+        actions.unshift({
+            label: "Append to open action list",
+            onClick: () => appendRawHtslFile(filePath),
+        });
+    }
     if (queueAction !== null) actions.unshift(queueAction);
     return actions;
 }

@@ -1,11 +1,10 @@
-import { SourceMap, parseActionsResult, parseImportablesResult, Diagnostic } from "htsw";
+import { SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 import { normalizePathSeparators } from "htsw-editor-common/project";
 
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 import { recompile } from "./recompile";
-import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
 import { getMinecraft, javaType } from "../utils/java";
@@ -30,11 +29,7 @@ import {
     setLagProbeEnabled,
 } from "../perf/lagProbe";
 import { commandTest } from "../inGameTests/command";
-import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
-import { createProjectItemIndex } from "../importables/items/projectItems";
-import { createItemFieldResolver } from "../importables/items/resolveItem";
 import { startImport } from "../gui/right-panel/import-tab/taskController";
-import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
@@ -52,6 +47,7 @@ import { commandTrust } from "./trust";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { appendRawHtslFile } from "../rawHtslImport";
 
 type HtswSubcommand = {
     name: string;
@@ -647,7 +643,7 @@ function commandImport(args: string[]) {
             ChatLib.chat("&cRaw imports require a .htsl file.");
             return;
         }
-        startRawHtslImport(importPath);
+        appendRawHtslFile(importPath);
         return;
     }
 
@@ -670,58 +666,6 @@ function isRawImportToken(token: string | undefined): boolean {
     if (token === undefined) return false;
     const lower = token.toLowerCase();
     return lower === "raw" || lower === "open" || lower === "append";
-}
-
-function startRawHtslImport(path: string): void {
-    if (TaskManager.isBusy()) {
-        ChatLib.chat(
-            "&c[htsw] An import (or another task) is already running — wait for it to finish first."
-        );
-        return;
-    }
-
-    const sm = new SourceMap(new FileSystemFileLoader());
-    const result = parseActionsResult(sm, path);
-    printDiagnostics(sm, result.diagnostics);
-
-    const errCount = countBlockingDiagnostics(result.diagnostics);
-    if (errCount > 0) {
-        printDiagnostic(
-            sm,
-            Diagnostic.error(
-                `Raw HTSL import failed with ${errCount} error${errCount === 1 ? "" : "s"}`
-            )
-        );
-        return;
-    }
-
-    if (result.value.length === 0) {
-        ChatLib.chat(`&c[htsw] No actions found in ${path}`);
-        return;
-    }
-
-    const items = createProjectItemIndex([], result.gcx);
-    const resolveItem = createItemFieldResolver(items);
-    runHousingSyncTask("import", async (ctx) => {
-        if (ctx.tryGetMenuItemSlot("Add Action") === null) {
-            throw new Error("Open a Housing action-list menu first.");
-        }
-
-        const count = result.value.length;
-        ChatLib.chat(
-            `&7[htsw] Appending ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
-        );
-        await appendActionsToOpenActionList(ctx, result.value, resolveItem);
-        ChatLib.chat(
-            `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
-        );
-    }).catch((err: unknown) => {
-        if (err instanceof Diagnostic) {
-            printDiagnostic(sm, err);
-            return;
-        }
-        ChatLib.chat(`&c[htsw] Raw HTSL import failed: ${String(err)}`);
-    });
 }
 
 function commandSimulator(args: string[]) {

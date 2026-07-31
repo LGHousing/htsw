@@ -1,13 +1,22 @@
-import type { SoundVersionId } from "../webview/protocol";
+import type { SoundMode } from "../webview/protocol";
 
-export const PINNED_VERSION_JSON: Record<SoundVersionId, string> = {
-    "1.8.9": "https://piston-meta.mojang.com/v1/packages/d546f1707a3f2b7d034eece5ea2e311eda875787/1.8.9.json",
-    "1.21.1": "https://piston-meta.mojang.com/v1/packages/b2175d7cf605de8e31ee9298e14113f847e6bb35/1.21.1.json",
+export const FALLBACK_SOUND_VERSIONS: Record<
+    SoundMode,
+    { id: string; versionJsonUrl: string }
+> = {
+    "1.8.9": {
+        id: "1.8.9",
+        versionJsonUrl: "https://piston-meta.mojang.com/v1/packages/d546f1707a3f2b7d034eece5ea2e311eda875787/1.8.9.json",
+    },
+    modern: {
+        id: "26.2",
+        versionJsonUrl: "https://piston-meta.mojang.com/v1/packages/3457237902814cca3f5c6f20b0c5db1b1f341512/26.2.json",
+    },
 };
 
 // Best-effort 1.8.9 event-name migration table, based on Mojang asset event names.
 // Keep null for old events that do not have a clean modern sound event equivalent.
-export const SOUND_NAME_1_8_TO_1_21: Record<string, string | null> = {
+export const SOUND_NAME_1_8_TO_MODERN: Record<string, string | null> = {
     "ambient.cave.cave": "ambient.cave",
     "ambient.weather.rain": "weather.rain",
     "ambient.weather.thunder": "entity.lightning_bolt.thunder",
@@ -193,10 +202,10 @@ export const SOUND_NAME_1_8_TO_1_21: Record<string, string | null> = {
     "mob.villager.yes": "entity.villager.yes",
 };
 
-export function soundEventForVersion(version: SoundVersionId, soundPath: string): string | null {
+export function soundEventForMode(mode: SoundMode, soundPath: string): string | null {
     if (soundPath.startsWith("minecraft:")) {
-        return version === "1.21.1" ? soundPath.slice("minecraft:".length) : null;
+        return mode === "modern" ? soundPath.slice("minecraft:".length) : null;
     }
-    if (version === "1.8.9") return soundPath;
-    return SOUND_NAME_1_8_TO_1_21[soundPath] ?? null;
+    if (mode === "1.8.9") return soundPath;
+    return SOUND_NAME_1_8_TO_MODERN[soundPath] ?? null;
 }

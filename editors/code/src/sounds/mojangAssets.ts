@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { createWriteStream, promises as fs } from "node:fs";
 import { get } from "node:https";
 import * as path from "node:path";
-import { PINNED_VERSION_JSON } from "./soundMap";
-import type { SoundVersionId } from "../webview/protocol";
+import { FALLBACK_SOUND_VERSIONS } from "./soundMap";
+import type { SoundMode } from "../webview/protocol";
 
 const MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const MANIFEST_FALLBACK_URL = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
@@ -12,10 +12,11 @@ const REQUEST_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 5;
 
 type VersionManifest = {
+    latest: { release: string };
     versions: { id: string; url: string }[];
 };
 
-type VersionJson = {
+export type VersionJson = {
     assetIndex: { url: string };
 };
 
@@ -38,21 +39,42 @@ type SoundResolution = {
     available: Array<Omit<ResolvedSoundObject, "variants">>;
 };
 
-async function resolveVersionJsonUrl(version: SoundVersionId): Promise<string> {
+export type ResolvedSoundVersion = {
+    id: string;
+    versionJson: VersionJson;
+};
+
+export async function resolveSoundVersion(
+    mode: SoundMode
+): Promise<ResolvedSoundVersion> {
+    const fallback = FALLBACK_SOUND_VERSIONS[mode];
+    if (mode === "1.8.9") {
+        return {
+            id: fallback.id,
+            versionJson: await fetchJson(fallback.versionJsonUrl),
+        };
+    }
+
     for (const url of [MANIFEST_URL, MANIFEST_FALLBACK_URL]) {
         try {
             const manifest = await fetchJson<VersionManifest>(url);
-            const match = manifest.versions.find((entry) => entry.id === version);
-            if (match) return match.url;
+            const match = manifest.versions.find(
+                (entry) => entry.id === manifest.latest.release
+            );
+            if (match) {
+                return {
+                    id: match.id,
+                    versionJson: await fetchJson(match.url),
+                };
+            }
         } catch {
             continue;
         }
     }
-    return PINNED_VERSION_JSON[version];
-}
-
-export async function fetchVersionJson(version: SoundVersionId): Promise<VersionJson> {
-    return fetchJson(await resolveVersionJsonUrl(version));
+    return {
+        id: fallback.id,
+        versionJson: await fetchJson(fallback.versionJsonUrl),
+    };
 }
 
 export async function fetchAssetIndex(versionJson: VersionJson): Promise<AssetIndex> {

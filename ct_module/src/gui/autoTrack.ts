@@ -14,7 +14,10 @@ import {
     forEachCachedParse,
     parseImportJsonBlocking,
 } from "./parsing/parses";
-import { cachedStatusForImportable } from "./cache-status";
+import {
+    cachedStatusForImportable,
+    statusForImportableBlocking,
+} from "./cache-status";
 import {
     addToQueue,
     makeImportableQueueItem,
@@ -33,24 +36,36 @@ type ModifiedQueueResult = {
     workKeys: string[];
 };
 
-export function needsModifiedQueue(imp: Importable): boolean {
+type ModifiedQueueOptions = {
+    blockingCacheRead?: boolean;
+};
+
+export function needsModifiedQueue(
+    imp: Importable,
+    blockingCacheRead = false
+): boolean {
     // "unknown" means no cache entry exists — a never-imported importable.
     // New importables must queue too, or auto-track never picks up newly
     // created functions/menus. (A cache that merely isn't loaded yet
     // returns null, not "unknown", and re-queues via the cache-warm event.)
-    const status = cachedStatusForImportable(imp);
+    const status = blockingCacheRead
+        ? statusForImportableBlocking(imp)
+        : cachedStatusForImportable(imp);
     return status === "modified" || status === "unknown";
 }
 
 export function queueModifiedImportables(
     sourcePath: string,
     parsed: ImportablesParseResult,
-    importables: readonly Importable[] = parsed.value
+    importables: readonly Importable[] = parsed.value,
+    options: ModifiedQueueOptions = {}
 ): ModifiedQueueResult {
     const canonicalSourcePath = canonicalPath(sourcePath);
     const modified: Importable[] = [];
     for (const imp of importables) {
-        if (needsModifiedQueue(imp)) modified.push(imp);
+        if (needsModifiedQueue(imp, options.blockingCacheRead)) {
+            modified.push(imp);
+        }
     }
     const housingUuid = getHousingUuid();
     const expansion =
@@ -102,7 +117,9 @@ export function queueModifiedFromPath(sourcePath: string): void {
         ChatLib.chat(`&c[htsw] Skipping ${sourcePath}: ${cached.error ?? "parse failed"}`);
         return;
     }
-    queueModifiedImportables(cached.canonicalPath, cached.parsed);
+    queueModifiedImportables(cached.canonicalPath, cached.parsed, undefined, {
+        blockingCacheRead: true,
+    });
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";

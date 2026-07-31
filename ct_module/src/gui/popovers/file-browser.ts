@@ -26,13 +26,18 @@ import {
     COLOR_TEXT_DIM,
     SIZE_ROW_H,
 } from "../lib/theme";
-import { setImportJsonPath } from "../state";
+import { getHousingUuid, setImportJsonPath } from "../state";
 import { addRecent } from "../persistence/recents";
 import { normalizePathSeparators } from "htsw-editor-common/project";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
+import { boundImportJsonPath } from "../../importCache/houseBindings";
+import {
+    readJsonSettingsFile,
+    writeJsonSettingsFile,
+} from "../../persistence/settingsFiles";
 
 type Entry = {
     name: string;
@@ -52,20 +57,51 @@ let backStack: string[] = [];
 // in sync so the bar always shows the actual current directory.
 let pathDraft: string = cwd;
 let filter = "";
-// Selected import.json in the current directory listing. Only set when the
-// user single-clicks a *.json/import.json row — drives the Load button label
-// and active state. Cleared on directory change so a stale selection from a
-// previous folder can't be loaded.
-let selectedImportPath: string | null = null;
-let selectedImportName: string | null = null;
-let selectImportJsonOnly: ((path: string) => void) | null = null;
+// Selected file in the current browser mode. Cleared on directory change so
+// a stale selection from a previous folder cannot be activated.
+let selectedFilePath: string | null = null;
+let selectedFileName: string | null = null;
+
+type BrowserMode =
+    | { kind: "importJson"; onSelect: ((path: string) => void) | null }
+    | { kind: "htsl"; onSelect: (path: string) => void };
+
+let browserMode: BrowserMode = { kind: "importJson", onSelect: null };
+
+const APPEND_HTSL_DIRECTORY_FILE = "append-htsl-directory.json";
+let rememberedAppendHtslDir: string | null | undefined;
+
+function readRememberedAppendHtslDir(): string | null {
+    if (rememberedAppendHtslDir !== undefined) return rememberedAppendHtslDir;
+    const stored = readJsonSettingsFile(APPEND_HTSL_DIRECTORY_FILE);
+    rememberedAppendHtslDir =
+        stored.ok && stored.found && typeof stored.value === "string" && dirExists(stored.value)
+            ? normalizeHtswPath(stored.value)
+            : null;
+    return rememberedAppendHtslDir;
+}
+
+function rememberAppendHtslDir(path: string): void {
+    const normalized = normalizeHtswPath(path);
+    if (normalized === rememberedAppendHtslDir) return;
+    rememberedAppendHtslDir = normalized;
+    writeJsonSettingsFile(APPEND_HTSL_DIRECTORY_FILE, normalized);
+}
+
+function boundProjectPath(): string | null {
+    const uuid = getHousingUuid();
+    if (uuid === null) return null;
+    const path = boundImportJsonPath(uuid);
+    return path !== null && pathExists(path) ? path : null;
+}
 
 function setCwd(next: string): void {
     closeActiveMenu();
     cwd = normalizeHtswPath(next);
     pathDraft = cwd;
-    selectedImportPath = null;
-    selectedImportName = null;
+    selectedFilePath = null;
+    selectedFileName = null;
+    if (browserMode.kind === "htsl") rememberAppendHtslDir(cwd);
 }
 
 function navigateTo(next: string): void {
@@ -154,10 +190,9 @@ function listDir(dir: string): Entry[] {
             // ignore
         }
     }
-    // Loadable import.jsons first (they're what the browser is FOR), then
-    // folders, then everything else.
+    // Selectable files first, then folders, then everything else.
     const rank = (e: Entry): number => {
-        if (!e.isDir && (e.name.toLowerCase() === "import.json" || e.ext === "json")) return 0;
+        if (isSelectableEntry(e)) return 0;
         return e.isDir ? 1 : 2;
     };
     out.sort((a, b) => {
@@ -174,32 +209,60 @@ function isImportJsonEntry(entry: Entry): boolean {
     return entry.name.toLowerCase() === "import.json" || entry.ext === "json";
 }
 
-function selectImport(entry: Entry): void {
-    selectedImportPath = entry.fullPath;
-    selectedImportName = entry.name;
+function isSelectableEntry(entry: Entry): boolean {
+    return browserMode.kind === "importJson"
+        ? isImportJsonEntry(entry)
+        : !entry.isDir && entry.ext === "htsl";
+}
+
+function isSelectableFileName(fileName: string): boolean {
+    const lower = fileName.toLowerCase();
+    return browserMode.kind === "importJson"
+        ? lower.length >= 5 && lower.lastIndexOf(".json") === lower.length - 5
+        : lower.length >= 5 && lower.lastIndexOf(".htsl") === lower.length - 5;
+}
+
+function selectionDescription(): string {
+    return browserMode.kind === "importJson" ? "an import.json" : "an HTSL file";
+}
+
+function selectFile(entry: Entry): void {
+    selectedFilePath = entry.fullPath;
+    selectedFileName = entry.name;
 }
 
 function navigateInto(entry: Entry): void {
     if (entry.isDir) {
         navigateTo(entry.fullPath);
-    } else if (isImportJsonEntry(entry)) {
-        loadAsImport(entry.fullPath);
+    } else if (isSelectableEntry(entry)) {
+        activateFile(entry.fullPath);
     }
 }
 
-function loadAsImport(path: string): void {
-    if (selectImportJsonOnly !== null) {
-        addRecent(path);
-        selectImportJsonOnly(path);
+function activateFile(path: string): void {
+    if (browserMode.kind === "htsl") {
+        const slash = normalizeHtswPath(path).lastIndexOf("/");
+        if (slash > 0) rememberAppendHtslDir(path.substring(0, slash));
+    }
+    if (browserMode.onSelect !== null) {
+        const onSelect = browserMode.onSelect;
+        const kind = browserMode.kind;
         closeAllPopovers();
-        ChatLib.chat(`&a[htsw] Selected ${path}`);
+        onSelect(path);
+        if (kind === "importJson") {
+            addRecent(path);
+            ChatLib.chat(`&a[htsw] Selected ${path}`);
+        }
         return;
     }
-    queueSourcePath(path);
-    setImportJsonPath(path);
-    addRecent(path);
-    closeAllPopovers();
-    ChatLib.chat(`&a[htsw] Loaded ${path}`);
+    if (browserMode.kind === "importJson") {
+        queueSourcePath(path);
+        setImportJsonPath(path);
+        addRecent(path);
+        closeAllPopovers();
+        ChatLib.chat(`&a[htsw] Loaded ${path}`);
+        return;
+    }
 }
 
 /**
@@ -244,18 +307,17 @@ function commitPathDraft(): void {
             navigateTo(normalized);
             return;
         }
-        const fname = String(fnObj.toString()).toLowerCase();
-        const isJson =
-            fname.length >= 5 &&
-            fname.lastIndexOf(".json") === fname.length - 5;
-        if (isJson) {
-            loadAsImport(normalized);
+        const fname = String(fnObj.toString());
+        if (isSelectableFileName(fname)) {
+            activateFile(normalized);
             return;
         }
         const parent = p.getParent();
         if (parent !== null) {
             navigateTo(normalizePathSeparators(String(parent.toString())));
-            ChatLib.chat(`&7[htsw] ${fname} is not an import.json — jumped to its folder`);
+            ChatLib.chat(
+                `&7[htsw] ${fname} is not ${selectionDescription()} — jumped to its folder`
+            );
             return;
         }
         ChatLib.chat(`&c[htsw] Cannot open ${fname}`);
@@ -324,12 +386,12 @@ function newImportJson(): void {
         const target = `${cwd}/import.json`;
         const p = Paths.get(target);
         if (Files.exists(p)) {
-            loadAsImport(target);
+            activateFile(target);
             return;
         }
         FileLib.write(target, "{\n}\n", true);
         ChatLib.chat(`&a[htsw] Created ${target}`);
-        loadAsImport(target);
+        activateFile(target);
     } catch (err) {
         ChatLib.chat(`&c[htsw] Init import.json failed: ${String(err)}`);
     }
@@ -355,9 +417,9 @@ function deleteEntry(entry: Entry): void {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
         deletePathRecursive(Files, Paths.get(entry.fullPath));
-        if (selectedImportPath === entry.fullPath) {
-            selectedImportPath = null;
-            selectedImportName = null;
+        if (selectedFilePath === entry.fullPath) {
+            selectedFilePath = null;
+            selectedFileName = null;
         }
         ChatLib.chat(`&a[htsw] Deleted ${entry.name}`);
     } catch (err) {
@@ -382,10 +444,10 @@ function iconColorFor(e: Entry): number {
 }
 
 function fileRow(entry: Entry): Element {
-    const isJson = isImportJsonEntry(entry);
-    const loadable = entry.isDir || isJson;
+    const selectable = isSelectableEntry(entry);
+    const loadable = entry.isDir || selectable;
     const isSelected =
-        isJson && selectedImportPath !== null && selectedImportPath === entry.fullPath;
+        selectable && selectedFilePath !== null && selectedFilePath === entry.fullPath;
     return Container({
         style: {
             direction: "row",
@@ -441,18 +503,15 @@ function fileRow(entry: Entry): Element {
                 return;
             }
             // Dirs: single-click navigates in (the second click of a double is
-            // ignored so a fast double doesn't descend twice). import.json
-            // files: single-click selects (lights up the Load button); double-
-            // click loads. Other files: ignored entirely. All double-click work
-            // happens here via isDoubleClickSecond — no separate onDoubleClick
-            // handler so chat messages and loadAsImport don't fire twice.
+            // ignored so a fast double doesn't descend twice). Selectable files
+            // activate on double-click; other files are ignored.
             if (entry.isDir) {
                 if (!info.isDoubleClickSecond) navigateInto(entry);
                 return;
             }
-            if (!isJson) return;
+            if (!selectable) return;
             if (info.isDoubleClickSecond) navigateInto(entry);
-            else selectImport(entry);
+            else selectFile(entry);
         },
         children: [
             Icon({
@@ -508,13 +567,20 @@ function headerActionButton(
 }
 
 function header(): Element {
+    const projectActions: Element[] = browserMode.kind === "importJson"
+        ? [
+              headerActionButton(Icons.filePlus2, "Init import.json", 128, () =>
+                  confirmNewImportJson()
+              ),
+          ]
+        : [];
     return Row({
         style: { gap: 4, height: { kind: "px", value: 18 }, align: "center" },
         children: [
             Text({
-                text: "Browser",
+                text: browserMode.kind === "importJson" ? "Browser" : "Append HTSL",
                 color: ACCENT_WARN,
-                style: { width: { kind: "px", value: 60 } },
+                style: { width: { kind: "px", value: browserMode.kind === "importJson" ? 60 : 90 } },
             }),
             Button({
                 tooltip: "Back",
@@ -533,9 +599,7 @@ function header(): Element {
             }),
             headerActionButton(Icons.externalLink, "Open in OS", 92, () => openInOS()),
             headerActionButton(Icons.folderPlus, "New Folder", 98, () => newFolder()),
-            headerActionButton(Icons.filePlus2, "Init import.json", 128, () =>
-                confirmNewImportJson()
-            ),
+            ...projectActions,
             Container({
                 style: { width: { kind: "grow" } },
                 children: [],
@@ -568,7 +632,10 @@ function pathBar(): Element {
                     pathDraft = v;
                 },
                 onSubmit: () => commitPathDraft(),
-                placeholder: "paste a path or import.json…",
+                placeholder:
+                    browserMode.kind === "importJson"
+                        ? "paste a path or import.json…"
+                        : "paste a path or .htsl file…",
                 style: { width: { kind: "grow" } },
             }),
             Button({
@@ -626,7 +693,7 @@ function listBody(): Element {
     });
 }
 
-function loadButton(): Element {
+function selectionButton(): Element {
     return Row({
         style: { gap: 6, height: { kind: "px", value: 20 } },
         children: [
@@ -635,25 +702,22 @@ function loadButton(): Element {
                 children: [],
             }),
             Button({
-                // Dim the button until the user picks an import.json. Without a selection
-                // we don't know which one to load — directories can hold multiple
-                // *.import.json files so there's no useful default.
                 text: () =>
-                    selectedImportName !== null
-                        ? `${selectImportJsonOnly === null ? "Load" : "Select"} ${selectedImportName}`
-                        : "Select an import.json",
+                    selectedFileName !== null
+                        ? `${browserMode.kind === "htsl" ? "Append" : browserMode.onSelect === null ? "Load" : "Select"} ${selectedFileName}`
+                        : `Select ${selectionDescription()}`,
                 style: {
                     width: { kind: "px", value: 220 },
                     height: { kind: "grow" },
                     background: () =>
-                        selectedImportPath !== null ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                        selectedFilePath !== null ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
                     hoverBackground: () =>
-                        selectedImportPath !== null
+                        selectedFilePath !== null
                             ? COLOR_BUTTON_PRIMARY_HOVER
                             : COLOR_BUTTON_HOVER,
                 },
                 onClick: () => {
-                    if (selectedImportPath !== null) loadAsImport(selectedImportPath);
+                    if (selectedFilePath !== null) activateFile(selectedFilePath);
                 },
             }),
         ],
@@ -676,7 +740,7 @@ function browserContent(): Element {
             pathBar(),
             searchBar(),
             listBody(),
-            loadButton(),
+            selectionButton(),
         ],
     });
 }
@@ -691,7 +755,21 @@ export function openFileBrowserWithImportJsonSelection(
     initialDir: string | undefined,
     onSelect: ((path: string) => void) | null
 ): void {
-    selectImportJsonOnly = onSelect;
+    browserMode = { kind: "importJson", onSelect };
+    openConfiguredFileBrowser(initialDir);
+}
+
+export function openFileBrowserWithHtslSelection(
+    initialDir: string | undefined,
+    onSelect: (path: string) => void
+): void {
+    browserMode = { kind: "htsl", onSelect };
+    openConfiguredFileBrowser(
+        initialDir ?? readRememberedAppendHtslDir() ?? boundProjectPath() ?? PROJECTS_ROOT
+    );
+}
+
+function openConfiguredFileBrowser(initialDir: string | undefined): void {
     backStack = [];
     if (initialDir !== undefined && initialDir.length > 0) {
         setCwd(resolveExistingDir(initialDir));

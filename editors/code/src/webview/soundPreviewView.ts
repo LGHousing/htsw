@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
 import { SoundCache } from "../sounds/soundCache";
-import { SOUND_NAME_1_8_TO_1_21, soundEventForVersion } from "../sounds/soundMap";
+import { SOUND_NAME_1_8_TO_MODERN, soundEventForMode } from "../sounds/soundMap";
 import type {
     SoundEntry,
     SoundPreviewFromHostMessage,
     SoundPreviewToHostMessage,
-    SoundVersionId,
+    SoundMode,
 } from "./protocol";
 
 const VERSION_KEY = "htsw.soundPreviewer.version";
@@ -41,42 +41,42 @@ export class SoundPreviewController {
                 await this.loadModernSoundCatalog(webview);
                 return;
             case "requestPlay":
-                await this.play(webview, message.version, message.soundPath);
+                await this.play(webview, message.mode, message.soundPath);
                 return;
             case "copyPath":
                 await this.copyPath(webview, message.soundPath);
                 return;
             case "saveSettings":
-                await this.saveSettings(message.version, message.pitch, message.volume);
+                await this.saveSettings(message.mode, message.pitch, message.volume);
                 return;
         }
     }
 
     private async play(
         webview: vscode.Webview,
-        version: SoundVersionId,
+        mode: SoundMode,
         soundPath: string,
     ): Promise<void> {
-        const eventName = soundEventForVersion(version, soundPath);
+        const eventName = soundEventForMode(mode, soundPath);
         if (eventName === null) {
             await this.post(webview, {
                 type: "playState",
                 ok: false,
-                version,
+                mode,
                 soundPath,
-                error: version === "1.21.1"
-                    ? "No 1.21 audio is mapped for this 1.8 sound."
+                error: mode === "modern"
+                    ? "No modern audio is mapped for this 1.8 sound."
                     : "No audio is mapped for this sound.",
             });
             return;
         }
 
         try {
-            const cached = await this.cache.ensureSound(version, eventName);
+            const cached = await this.cache.ensureSound(mode, eventName);
             await this.post(webview, {
                 type: "playState",
                 ok: true,
-                version,
+                mode,
                 soundPath,
                 uri: webview.asWebviewUri(cached.fileUri).toString(),
                 variants: cached.variants,
@@ -85,7 +85,7 @@ export class SoundPreviewController {
             await this.post(webview, {
                 type: "playState",
                 ok: false,
-                version,
+                mode,
                 soundPath,
                 error: err instanceof Error ? err.message : String(err),
             });
@@ -105,20 +105,23 @@ export class SoundPreviewController {
         }
     }
 
-    private readSettings(): { version: SoundVersionId; pitch: number; volume: number } {
+    private readSettings(): { mode: SoundMode; pitch: number; volume: number } {
+        const savedVersion = this.globalState.get<string>(VERSION_KEY, "1.8.9");
         return {
-            version: this.globalState.get<SoundVersionId>(VERSION_KEY, "1.8.9"),
+            mode: savedVersion === "modern" || savedVersion === "1.21.1"
+                ? "modern"
+                : "1.8.9",
             pitch: this.globalState.get<number>(PITCH_KEY, 1),
             volume: this.globalState.get<number>(VOLUME_KEY, 0.7),
         };
     }
 
     private async saveSettings(
-        version: SoundVersionId,
+        mode: SoundMode,
         pitch: number,
         volume: number,
     ): Promise<void> {
-        await this.globalState.update(VERSION_KEY, version);
+        await this.globalState.update(VERSION_KEY, mode);
         await this.globalState.update(PITCH_KEY, pitch);
         await this.globalState.update(VOLUME_KEY, volume);
     }
@@ -127,7 +130,7 @@ export class SoundPreviewController {
         try {
             await this.post(webview, {
                 type: "soundCatalog",
-                sounds: soundEntries(await this.cache.soundEvents("1.21.1")),
+                sounds: soundEntries(await this.cache.soundEvents("modern")),
             });
         } catch {
             return;
@@ -147,20 +150,20 @@ function soundEntries(modernSoundEvents: readonly string[]): SoundEntry[] {
         name: sound.name,
         path: sound.path,
         mapped1_8: sound.path,
-        mapped1_21: SOUND_NAME_1_8_TO_1_21[sound.path] ?? null,
+        mappedModern: SOUND_NAME_1_8_TO_MODERN[sound.path] ?? null,
     }));
-    const housingEvents1_21 = new Set(
+    const mappedModernEvents = new Set(
         housingSounds
-            .map((sound) => sound.mapped1_21)
+            .map((sound) => sound.mappedModern)
             .filter((sound): sound is string => sound !== null)
     );
     const modernOnlySounds = modernSoundEvents
-        .filter((eventName) => !housingEvents1_21.has(eventName))
+        .filter((eventName) => !mappedModernEvents.has(eventName))
         .map((eventName) => ({
             name: soundEventDisplayName(eventName),
             path: `minecraft:${eventName}`,
             mapped1_8: null,
-            mapped1_21: eventName,
+            mappedModern: eventName,
         }));
 
     return [...housingSounds, ...modernOnlySounds];

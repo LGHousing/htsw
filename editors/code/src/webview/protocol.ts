@@ -1,6 +1,6 @@
 import type { Tag } from "htsw/nbt";
 
-export type SoundVersionId = "1.8.9" | "1.21.1";
+export type SoundMode = "1.8.9" | "modern";
 
 export type GitDecoration = {
     badge: string;
@@ -53,7 +53,7 @@ export type SoundEntry = {
     name: string;
     path: string;
     mapped1_8: string | null;
-    mapped1_21: string | null;
+    mappedModern: string | null;
 };
 
 /** A nested file reachable from an importable: a region's enter/exit actions,
@@ -200,21 +200,21 @@ export type ItemEditorFromHostMessage =
 
 export type SoundPreviewToHostMessage =
     | { type: "ready" }
-    | { type: "requestPlay"; version: SoundVersionId; soundPath: string }
+    | { type: "requestPlay"; mode: SoundMode; soundPath: string }
     | { type: "copyPath"; soundPath: string }
-    | { type: "saveSettings"; version: SoundVersionId; pitch: number; volume: number };
+    | { type: "saveSettings"; mode: SoundMode; pitch: number; volume: number };
 
 export type SoundPreviewFromHostMessage =
     | {
           type: "init";
           sounds: SoundEntry[];
-          settings: { version: SoundVersionId; pitch: number; volume: number };
+          settings: { mode: SoundMode; pitch: number; volume: number };
       }
     | { type: "soundCatalog"; sounds: SoundEntry[] }
     | {
           type: "playState";
           ok: true;
-          version: SoundVersionId;
+          mode: SoundMode;
           soundPath: string;
           uri: string;
           variants: string[];
@@ -222,7 +222,7 @@ export type SoundPreviewFromHostMessage =
     | {
           type: "playState";
           ok: false;
-          version: SoundVersionId;
+          mode: SoundMode;
           soundPath: string;
           error: string;
       }

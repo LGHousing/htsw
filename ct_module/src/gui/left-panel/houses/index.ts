@@ -329,6 +329,7 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
             Text({
                 text: trusted ? "Trusted" : "Trust",
                 color: enabled ? COLOR_TEXT : COLOR_TEXT_FAINT,
+                truncate: true,
             }),
         ],
     });

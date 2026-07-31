@@ -5,12 +5,12 @@ import {
     downloadObject,
     fetchAssetIndex,
     fetchSoundsJson,
-    fetchVersionJson,
+    resolveSoundVersion,
     resolveSoundObject,
     soundEventsWithAudio,
     verifySha1,
 } from "./mojangAssets";
-import type { SoundVersionId } from "../webview/protocol";
+import type { SoundMode } from "../webview/protocol";
 
 export type CachedSound = {
     fileUri: Uri;
@@ -19,6 +19,10 @@ export type CachedSound = {
 
 export class SoundCache {
     private readonly rootPath: string;
+    private readonly resolvedVersions = new Map<
+        SoundMode,
+        ReturnType<typeof resolveSoundVersion>
+    >();
 
     public constructor(rootUri: Uri) {
         this.rootPath = rootUri.fsPath;
@@ -28,13 +32,13 @@ export class SoundCache {
         return Uri.file(this.rootPath);
     }
 
-    public async soundEvents(version: SoundVersionId): Promise<string[]> {
-        const versionData = await this.ensureVersionData(version);
+    public async soundEvents(mode: SoundMode): Promise<string[]> {
+        const versionData = await this.ensureVersionData(mode);
         return soundEventsWithAudio(versionData.index, versionData.sounds);
     }
 
-    public async ensureSound(version: SoundVersionId, eventName: string): Promise<CachedSound> {
-        const versionData = await this.ensureVersionData(version);
+    public async ensureSound(mode: SoundMode, eventName: string): Promise<CachedSound> {
+        const versionData = await this.ensureVersionData(mode);
         const resolved = resolveSoundObject(versionData.index, versionData.sounds, eventName);
         const objectPath = this.objectPath(resolved.hash);
         if (!(await verifySha1(objectPath, resolved.hash))) {
@@ -46,11 +50,17 @@ export class SoundCache {
         };
     }
 
-    private async ensureVersionData(version: SoundVersionId): Promise<{
+    private async ensureVersionData(mode: SoundMode): Promise<{
         index: Parameters<typeof resolveSoundObject>[0];
         sounds: Parameters<typeof resolveSoundObject>[1];
     }> {
-        const dir = path.join(this.rootPath, "versions", version);
+        let resolvedPromise = this.resolvedVersions.get(mode);
+        if (resolvedPromise === undefined) {
+            resolvedPromise = resolveSoundVersion(mode);
+            this.resolvedVersions.set(mode, resolvedPromise);
+        }
+        const resolved = await resolvedPromise;
+        const dir = path.join(this.rootPath, "versions", resolved.id);
         const versionPath = path.join(dir, "version.json");
         const indexPath = path.join(dir, "index.json");
         const soundsPath = path.join(dir, "sounds.json");
@@ -59,7 +69,7 @@ export class SoundCache {
 
         let versionJson = await readJson(versionPath);
         if (!versionJson) {
-            versionJson = await fetchVersionJson(version);
+            versionJson = resolved.versionJson;
             await writeJson(versionPath, versionJson);
         }
 
