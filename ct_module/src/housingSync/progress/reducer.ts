@@ -294,6 +294,15 @@ function reactivateImportable(
     rowIndex: number,
     phase: ProgressPayload["phase"] | undefined
 ): ProgressReducerState {
+    if (state.active !== null && state.active.key === key) {
+        const active: ActiveBookkeeping = {
+            ...state.active,
+            rowIndex,
+            currentSlot: null,
+            ...(phase === undefined ? {} : { phase }),
+        };
+        return rebuildSnapshot(state, active);
+    }
     const carried = parkActiveIfNeeded(state, key);
     const parked = carried.parkedRows[key];
     if (parked === undefined) {

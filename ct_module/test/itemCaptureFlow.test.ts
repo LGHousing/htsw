@@ -92,10 +92,6 @@ describe("editor item capture inventory handling", () => {
         const existing = '{id:"minecraft:stone",Count:63b,Damage:0s}';
         inventory.slots[4] = { slotId: 4, nbt: existing, count: 63 };
         const ctx = context(target, 2, () => {
-            if (inventory.slots[4].nbt === null) {
-                inventory.slots[4] = { slotId: 4, nbt: target, count: 2 };
-                return;
-            }
             inventory.slots[4] = {
                 slotId: 4,
                 nbt: '{id:"minecraft:stone",Count:64b,Damage:0s}',
@@ -117,7 +113,7 @@ describe("editor item capture inventory handling", () => {
 
         expect(register).toHaveBeenCalledOnce();
         expect(register.mock.calls[0][0]).toContain("Count:2b");
-        expect(inventory.clearedSlots).toEqual([4]);
+        expect(inventory.clearedSlots).toEqual([]);
         expect(inventory.slots[4]).toEqual({ slotId: 4, nbt: existing, count: 63 });
         expect(inventory.slots[5]).toEqual({ slotId: 5, nbt: null, count: 0 });
     });
@@ -132,7 +128,11 @@ describe("editor item capture inventory handling", () => {
         let otherAtClick: InventorySlotSnapshot | undefined;
         const ctx = context(target, 1, () => {
             otherAtClick = { ...inventory.slots[2] };
-            inventory.slots[1] = { slotId: 1, nbt: target, count: 1 };
+            inventory.slots[1] = {
+                slotId: 1,
+                nbt: '{id:"minecraft:skull",Count:2b,Damage:3s,tag:{SkullOwner:{Properties:{textures:[{Value:"target"}]}}}}',
+                count: 2,
+            };
         });
 
         await expect(
@@ -144,20 +144,23 @@ describe("editor item capture inventory handling", () => {
             )
         ).resolves.toBe("captured");
 
-        expect(inventory.clearedSlots).toEqual([1]);
+        expect(inventory.clearedSlots).toEqual([]);
         expect(otherAtClick).toEqual({ slotId: 2, nbt: other, count: 1 });
+        expect(inventory.slots[1]).toEqual({ slotId: 1, nbt: target, count: 1 });
         expect(inventory.slots[2]).toEqual({ slotId: 2, nbt: other, count: 1 });
     });
 
-    test("clears an exact-identity stack before capture and restores it", async () => {
+    test("captures a give that merges into an exact-identity stack and restores it", async () => {
         const target = '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{display:{Name:"x"}}}';
         const existing =
             '{id:"minecraft:stone",Count:32b,Damage:0s,tag:{display:{Name:"x"}}}';
         inventory.slots[7] = { slotId: 7, nbt: existing, count: 32 };
-        let slotWasEmptyWhenClicked = false;
         const ctx = context(target, 1, () => {
-            slotWasEmptyWhenClicked = inventory.slots[7].nbt === null;
-            inventory.slots[7] = { slotId: 7, nbt: target, count: 1 };
+            inventory.slots[7] = {
+                slotId: 7,
+                nbt: '{id:"minecraft:stone",Count:33b,Damage:0s,tag:{display:{Name:"x"}}}',
+                count: 33,
+            };
         });
 
         await expect(
@@ -169,8 +172,7 @@ describe("editor item capture inventory handling", () => {
             )
         ).resolves.toBe("captured");
 
-        expect(slotWasEmptyWhenClicked).toBe(true);
-        expect(inventory.clearedSlots).toEqual([7]);
+        expect(inventory.clearedSlots).toEqual([]);
         expect(inventory.restoredSlots).toEqual([7]);
         expect(inventory.slots[7]).toEqual({ slotId: 7, nbt: existing, count: 32 });
     });

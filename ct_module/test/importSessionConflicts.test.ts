@@ -55,7 +55,7 @@ vi.mock("../src/importCache/houseLock", () => ({
 }));
 
 vi.mock("../src/runtimeDebug/importFailureLog", () => ({
-    writeImportFailureLog: () => "./failure.log",
+    writeTaskFailureLog: () => "./failure.log",
 }));
 
 import {

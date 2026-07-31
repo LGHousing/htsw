@@ -1007,4 +1007,33 @@ describe("progress reducer", () => {
             applying: 0,
         });
     });
+
+    test("reactivating the still-active row applies the phase", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "a", status: "queued", ...baseRow }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "ITEM",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "importableReactivated",
+                key: "a",
+                rowIndex: 0,
+                phase: "applying",
+            },
+        ]);
+
+        expect(s.progress.active?.key).toBe("a");
+        expect(s.progress.active?.phase).toBe("applying");
+    });
 });
