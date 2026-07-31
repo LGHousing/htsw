@@ -125,6 +125,7 @@ type ImportReader<I, R> =
               context: ImportContext,
               trust: ImportableTrustPlan | undefined
           ): Promise<R>;
+          needsHydration(read: R): boolean;
           hydrate(ctx: TaskContext, read: R): Promise<void>;
       };
 
@@ -224,7 +225,8 @@ function defineImporter<
             return {
                 kind: recipe.type,
                 importable: typedImportable,
-                needsHydration: reader.kind === "staged",
+                needsHydration:
+                    reader.kind === "staged" && reader.needsHydration(read),
                 hydrate:
                     reader.kind === "direct"
                         ? async () => undefined
@@ -266,6 +268,7 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableFunction,
+            needsHydration: (read) => read.actions.kind === "hydrate",
             hydrate: hydrateImportableFunction,
         },
         plan: planImportableFunction,
@@ -280,6 +283,7 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableEvent,
+            needsHydration: (read) => read.actions.kind === "hydrate",
             hydrate: hydrateImportableEvent,
         },
         plan: planImportableEvent,
@@ -294,6 +298,7 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableCommand,
+            needsHydration: (read) => read.actions.kind === "hydrate",
             hydrate: hydrateImportableCommand,
         },
         plan: planImportableCommand,
@@ -308,6 +313,8 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableRegion,
+            needsHydration: (read) =>
+                read.enter.kind === "hydrate" || read.exit.kind === "hydrate",
             hydrate: hydrateImportableRegion,
         },
         plan: planImportableRegion,
@@ -320,6 +327,8 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableMenu,
+            needsHydration: (read) =>
+                read.slots.some((slot) => slot.actions.kind === "hydrate"),
             hydrate: hydrateImportableMenu,
         },
         plan: planImportableMenu,
@@ -343,6 +352,8 @@ const IMPORTERS = {
         reader: {
             kind: "staged",
             scan: scanImportableNpc,
+            needsHydration: (read) =>
+                read.left.kind === "hydrate" || read.right.kind === "hydrate",
             hydrate: hydrateImportableNpc,
         },
         plan: planImportableNpc,

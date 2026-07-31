@@ -469,9 +469,6 @@ function knowledgeStatusText(): string {
     if (active == null || active.knowledge == null) return "";
     const knowledge = active.knowledge;
     if (active.phase === "applying" || active.phase === "done") return "";
-    if (knowledge.currentReason === "known-empty") {
-        return "Nothing to read in Housing";
-    }
     if (active.phase === "hydrating") {
         if (knowledge.currentReason === "cache-missing") {
             return "Reading action details from Housing · cache unavailable";
@@ -479,13 +476,13 @@ function knowledgeStatusText(): string {
         if (knowledge.currentReason === "lock-conflict") {
             return "Reading current action details · Housing changed";
         }
-        if (knowledge.usedHouse && knowledge.usedCache) {
+        if (knowledge.usedCache) {
             return "Reading uncached action details from Housing";
         }
-        if (knowledge.usedCache) {
-            return "Using verified cached action details";
-        }
         return "Reading action details from Housing";
+    }
+    if (knowledge.currentReason === "known-empty") {
+        return "Nothing to read in Housing";
     }
     if (knowledge.currentReason === "whole-importable") {
         return "Using verified cache";

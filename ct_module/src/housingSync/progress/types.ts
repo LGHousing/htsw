@@ -66,8 +66,6 @@ export type KnowledgeLockStatus = "matched" | "missing" | "mismatch";
 
 export type ImportKnowledgeState = {
     usedCache: boolean;
-    usedHouse: boolean;
-    usedKnownState: boolean;
     currentSource: KnowledgeSourceKind;
     currentReason: KnowledgeSourceReason;
     lockStatus: KnowledgeLockStatus | null;

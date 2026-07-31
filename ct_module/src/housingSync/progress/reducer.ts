@@ -472,8 +472,6 @@ function applyKnowledgeSource(
     const previous = state.active.knowledge;
     const knowledge: ImportKnowledgeState = {
         usedCache: previous?.usedCache === true || event.source === "cache",
-        usedHouse: previous?.usedHouse === true || event.source === "house",
-        usedKnownState: previous?.usedKnownState === true || event.source === "known",
         currentSource: event.source,
         currentReason: event.reason,
         lockStatus: event.lockStatus ?? previous?.lockStatus ?? null,

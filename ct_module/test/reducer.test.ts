@@ -714,8 +714,6 @@ describe("progress reducer", () => {
 
         expect(s.progress.active?.knowledge).toEqual({
             usedCache: true,
-            usedHouse: true,
-            usedKnownState: false,
             currentSource: "cache",
             currentReason: "cached-list",
             lockStatus: "matched",
