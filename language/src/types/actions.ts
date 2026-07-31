@@ -238,7 +238,7 @@ export type ActionSetVelocity = {
 export type ActionLaunch = {
     type: "LAUNCH";
     location: Location;
-    strength: number;
+    strength: Value;
 };
 
 export type ActionExit = {

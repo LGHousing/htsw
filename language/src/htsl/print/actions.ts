@@ -175,7 +175,7 @@ function printActionHead(
         case "KILL":
             return "kill";
         case "LAUNCH":
-            return `launchTarget ${printLocation(action.location)} ${printNumber(action.strength)}`;
+            return `launchTarget ${printLocation(action.location)} ${printValue(action.strength)}`;
         case "MESSAGE":
             return `chat ${quoteStringOrPlaceholder(action.message)}`;
         case "PAUSE":

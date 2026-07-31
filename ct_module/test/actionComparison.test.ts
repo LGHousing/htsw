@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type {
     Action,
-    ActionLaunch,
     ActionPauseExecution,
     ActionPlaySound,
     ConditionCompareVar,
@@ -79,21 +78,6 @@ describe("action comparison — value-kind numeric coercion", () => {
         const desired: ActionPauseExecution = {
             type: "PAUSE",
             ticks: 1,
-        };
-        expect(actionsCompareEqual(observed, desired)).toBe(true);
-    });
-
-    test("required numeric LAUNCH strength compare from lore string to source number", () => {
-        const location: ActionLaunch["location"] = { type: "House Spawn Location" };
-        const observed: ActionLaunch = {
-            type: "LAUNCH",
-            location,
-            strength: "1" as unknown as number,
-        };
-        const desired: ActionLaunch = {
-            type: "LAUNCH",
-            location,
-            strength: 1,
         };
         expect(actionsCompareEqual(observed, desired)).toBe(true);
     });

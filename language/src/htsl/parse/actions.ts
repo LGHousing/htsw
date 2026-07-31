@@ -1,5 +1,5 @@
 import { Diagnostic } from "../../diagnostic";
-import type { Action } from "../../types";
+import type { Action, Value } from "../../types";
 import { Span } from "../../span";
 import {
     parseEnchantment,
@@ -407,8 +407,26 @@ function parseActionGiveItem(p: Parser, note: Note): Action {
 function parseActionLaunch(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "LAUNCH", note, (action) => {
         setField(p, action, "location", parseLocation);
-        setField(p, action, "strength", () => p.parseBoundedNumber(1, 10));
+        setField(p, action, "strength", parseLaunchStrength);
     });
+}
+
+function parseLaunchStrength(p: Parser): Value {
+    const { value, span } = p.spanned(parseNumericValue);
+    const literal = Number(value);
+    if (Number.isFinite(literal) && literal < 0) {
+        p.gcx.addDiagnostic(
+            Diagnostic.error("Value must be greater than or equal to 0")
+                .addPrimarySpan(span)
+        );
+    }
+    if (Number.isFinite(literal) && literal > 20) {
+        p.gcx.addDiagnostic(
+            Diagnostic.error("Value must be less than or equal to 20")
+                .addPrimarySpan(span)
+        );
+    }
+    return value;
 }
 
 function parseActionMessage(p: Parser, note: Note): Action {

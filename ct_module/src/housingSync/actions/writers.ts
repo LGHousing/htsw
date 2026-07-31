@@ -730,7 +730,7 @@ export async function writeSetVelocity(
 export async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {
     const locationLabel = getActionFieldLabel("LAUNCH", "location");
     await setLocationValue(ctx, locationLabel, action.location);
-    await setNumberValue(
+    await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("LAUNCH", "strength")),
         action.strength

@@ -162,7 +162,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
     { kw: "kill", fields: [] },
     {
         kw: "launchTarget",
-        fields: [f("location", "location"), f("strength", "number")],
+        fields: [f("location", "location"), f("strength", "value")],
     },
     { kw: "lobby", fields: [f("lobby", "lobby")] },
     {

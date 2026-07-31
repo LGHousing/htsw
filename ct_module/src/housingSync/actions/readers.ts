@@ -321,7 +321,7 @@ export async function readOpenLaunch({
     const base: Observed<ActionLaunch> = current ?? {
         type: "LAUNCH",
         location: { type: "Current Location" },
-        strength: 0,
+        strength: "0",
     };
     refreshLocationFromEditor(ctx, base, getActionFieldLabel("LAUNCH", "location"));
     refreshStringFieldFromEditor(

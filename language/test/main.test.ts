@@ -174,6 +174,28 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("launchTarget accepts placeholder strength and the full literal range", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "launchTarget Custom_Coordinates \"0 0 0\" %var.player/str%",
+                    "launchTarget Invokers_Location 0",
+                    "launchTarget House_Spawn_Location 20",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+        expect(result.value).toMatchObject([
+            { type: "LAUNCH", strength: "%var.player/str%" },
+            { type: "LAUNCH", strength: "0" },
+            { type: "LAUNCH", strength: "20" },
+        ]);
+    });
+
     it("compare-placeholder accepts string placeholders with == ", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
