@@ -492,6 +492,24 @@ function layoutContainer(
         if (m !== null) fixedSum += m;
     }
     const gapSum = n > 1 ? gap * (n - 1) : 0;
+
+    // Truncating text opts into fitting the space it's given, so when the
+    // row's fixed content overflows, take the overflow out of those labels
+    // first instead of letting every sibling spill past the container edge.
+    if (isRow) {
+        let overflow = fixedSum + gapSum - mainLen;
+        for (let i = 0; i < n && overflow > 0; i++) {
+            const ch = children[i];
+            if (ch.kind !== "text" || !ch.truncate) continue;
+            const size = mainSizes[i];
+            if (size === null || size <= 0) continue;
+            const cut = Math.min(size, overflow);
+            mainSizes[i] = size - cut;
+            fixedSum -= cut;
+            overflow -= cut;
+        }
+    }
+
     const leftover = Math.max(0, mainLen - fixedSum - gapSum);
 
     let growTotal = 0;

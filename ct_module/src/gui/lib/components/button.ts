@@ -96,6 +96,6 @@ function buildShorthandChildren(
 ): Child[] {
     const out: Child[] = [];
     if (icon !== undefined) out.push(Icon({ name: icon, color: iconColor }));
-    if (text !== undefined) out.push(Text({ text, color: textColor }));
+    if (text !== undefined) out.push(Text({ text, color: textColor, truncate: true }));
     return out;
 }
