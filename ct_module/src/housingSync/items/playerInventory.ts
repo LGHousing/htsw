@@ -34,10 +34,6 @@ export function snapshotPlayerInventory(): PlayerInventorySnapshot {
     };
 }
 
-export function snapshotOpenContainerInventory(): InventorySlotSnapshot[] {
-    return snapshotInventoryView("openContainer");
-}
-
 export function snapshotInventoryView(view: InventoryView): InventorySlotSnapshot[] {
     const snapshot: InventorySlotSnapshot[] = [];
     for (let slotId = 0; slotId < INVENTORY_SIZE; slotId++) {

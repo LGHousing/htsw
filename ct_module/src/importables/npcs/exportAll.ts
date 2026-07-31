@@ -41,6 +41,7 @@ export type ExportAllNpcsOptions = {
     skipExisting?: boolean;
     output: ReadOutput;
     quiet?: boolean;
+    onItemFailure?: (error: unknown, identity: string, rowIndex: number) => void;
 };
 
 export async function exportAllNpcs(
@@ -213,6 +214,7 @@ async function exportAllNpcsInner(
                 if (isTaskCancelled(error)) {
                     throw error;
                 }
+                options.onItemFailure?.(error, npcPosIdentity(requestedEntry.pos), i);
                 failed++;
                 sink?.itemFailed?.(i, String(error));
                 if (!quiet) {

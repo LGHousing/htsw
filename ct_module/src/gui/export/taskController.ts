@@ -6,13 +6,14 @@ import { getNewExportTarget } from "../state";
 import { getParseAt, markParseStale } from "../parsing/parses";
 import type { ReadFn } from "../../importables/export/reader";
 import { projectExportDestinationFromParsedImportJson } from "../../importables/export/projectDestination";
-import { TaskManager } from "../../tasks/manager";
+import { isTaskCancelled, TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
 import { createExportProgressSink } from "./progressSink";
 import { showToast } from "../toast";
 import { runHousingSyncTask } from "../../housingSync/taskRunner";
 import { getExportDestinationStatus } from "./destinationStatus";
+import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
 
 export type ExportSpec = {
     type: Importable["type"];
@@ -103,6 +104,17 @@ export function startExport(
             if (onSuccess !== undefined) onSuccess();
         })
         .catch((err: unknown) => {
+            if (!isTaskCancelled(err)) {
+                writeTaskFailureLog(
+                    {
+                        phase: "export",
+                        sourcePath: importJsonPath,
+                        housingUuid: "",
+                        importableType: spec.type,
+                    },
+                    err
+                );
+            }
             showToast(`Export failed: ${String(err)}`, 0xffe85c5c, 8000);
         });
 }

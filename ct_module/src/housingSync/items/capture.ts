@@ -6,13 +6,12 @@ import { getItemFromSnbt } from "../../utils/nbt";
 import type { ItemFieldObservation } from "./fieldObservations";
 import { clickGoBack } from "../menus/menuUtils";
 import { timedWaitForMenu } from "../menus/menuWait";
-import { canonicalItemShellKey, canonicalLiveItemKey, snbtFromItem } from "./itemNbt";
+import { canonicalItemShellKey, snbtFromItem } from "./itemNbt";
 import {
     clearInventorySlot,
     inventoryIsFull,
     restoreInventorySlots,
     snapshotInventoryView,
-    snapshotOpenContainerInventory,
     type InventorySlotSnapshot,
     type InventoryView,
 } from "./playerInventory";
@@ -74,8 +73,7 @@ async function withCapturedEditorItem<T>(
 
         const actionItemCount = getStackCount(currentItemSlot.getItem());
         const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
-        const targetKey = mergeKey(currentSnbt);
-        if (targetKey === null) {
+        if (readEditorItemIdentity(currentSnbt) === null) {
             ctx.displayMessage(
                 `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
             );
@@ -85,7 +83,7 @@ async function withCapturedEditorItem<T>(
         const captured = await recaptureCurrentItem(
             ctx,
             currentItemSlot,
-            targetKey,
+            currentSnbt,
             actionItemCount,
             displayNameHint
         );
@@ -122,25 +120,24 @@ function getStackCount(stack: unknown): number {
 async function recaptureCurrentItem(
     ctx: TaskContext,
     currentItemSlot: ItemSlot,
-    targetKey: string,
+    editorSnbt: string,
     actionItemCount: number,
     displayNameHint: string
 ): Promise<string | null> {
     const inventoryView: InventoryView = "openContainer";
-    const originalInventory = snapshotOpenContainerInventory();
+    const originalInventory = snapshotInventoryView(inventoryView);
     try {
-        await clearMergeCandidates(ctx, inventoryView, originalInventory, targetKey);
         if (inventoryIsFull(inventoryView)) {
             await clearInventorySlot(ctx, FULL_INVENTORY_CAPTURE_SLOT, inventoryView);
         }
 
-        const captureBaseline = snapshotOpenContainerInventory();
+        const captureBaseline = snapshotInventoryView(inventoryView);
         currentItemSlot.click();
         const captured = await waitForCapturedInventoryChange(
             ctx,
             inventoryView,
             captureBaseline,
-            targetKey,
+            editorSnbt,
             actionItemCount
         );
         if (captured === null) {
@@ -154,106 +151,91 @@ async function recaptureCurrentItem(
     }
 }
 
-async function clearMergeCandidates(
-    ctx: TaskContext,
-    view: InventoryView,
-    snapshot: readonly InventorySlotSnapshot[],
-    targetKey: string
-): Promise<void> {
-    for (let index = 0; index < snapshot.length; index++) {
-        const entry = snapshot[index];
-        if (mergeKey(entry.nbt) !== targetKey) continue;
-        await clearInventorySlot(ctx, entry.slotId, view);
-    }
-}
-
 function diffForCapture(
     before: readonly InventorySlotSnapshot[],
     after: readonly InventorySlotSnapshot[],
-    targetKey: string,
     actionItemCount: number
 ): string | null {
-    let found: string | null = null;
+    let normalizedNbt: string | null = null;
     for (let index = 0; index < before.length; index++) {
         const previous = before[index];
         const current = index < after.length ? after[index] : undefined;
-        if (current === undefined || current.nbt === null) continue;
+        if (current === undefined) return null;
         if (current.nbt === previous.nbt && current.count === previous.count) continue;
-        if (found !== null) return null;
-        found = rewriteSnbtCount(current.nbt, actionItemCount);
+        if (current.nbt === null) return null;
+        const currentNormalizedNbt = rewriteSnbtCount(current.nbt, 1);
+        if (normalizedNbt !== null && currentNormalizedNbt !== normalizedNbt) return null;
+        normalizedNbt = currentNormalizedNbt;
     }
-    return found !== null && mergeKey(found) === targetKey ? found : null;
-}
-
-function mergeKey(snbt: string | null): string | null {
-    if (snbt === null) return null;
-    try {
-        return canonicalLiveItemKey(getItemFromSnbt(rewriteSnbtCount(snbt, 1)));
-    } catch (_error) {
-        return rewriteSnbtCount(snbt, 1);
-    }
+    return normalizedNbt === null ? null : rewriteSnbtCount(normalizedNbt, actionItemCount);
 }
 
 async function waitForCapturedInventoryChange(
     ctx: TaskContext,
     view: InventoryView,
     baseline: readonly InventorySlotSnapshot[],
-    targetKey: string,
+    editorSnbt: string,
     actionItemCount: number
 ): Promise<string | null> {
     for (let tick = 0; tick < SET_SLOT_ACK_MAX_TICKS; tick++) {
-        const captured = capturedFromInventory(
-            baseline,
-            snapshotInventoryView(view),
-            targetKey,
-            actionItemCount
-        );
-        if (captured !== null) return captured;
+        const captured = diffForCapture(baseline, snapshotInventoryView(view), actionItemCount);
+        if (captured !== null && capturedMatchesEditor(captured, editorSnbt)) return captured;
         await ctx.waitFor("tick");
     }
-    return capturedFromInventory(
-        baseline,
-        snapshotInventoryView(view),
-        targetKey,
-        actionItemCount
-    );
+    const captured = diffForCapture(baseline, snapshotInventoryView(view), actionItemCount);
+    return captured !== null && capturedMatchesEditor(captured, editorSnbt) ? captured : null;
 }
 
-function capturedFromInventory(
-    baseline: readonly InventorySlotSnapshot[],
-    current: readonly InventorySlotSnapshot[],
-    targetKey: string,
-    actionItemCount: number
-): string | null {
-    const changed = diffForCapture(baseline, current, targetKey, actionItemCount);
-    if (changed !== null) return changed;
-    if (snapshotHasMatchingStack(baseline, targetKey)) return null;
-    return findCapturedMatchingStack(current, targetKey, actionItemCount);
-}
+type EditorItemIdentity = {
+    id: string;
+    damage: string;
+    interactData: string | null;
+};
 
-function snapshotHasMatchingStack(
-    snapshot: readonly InventorySlotSnapshot[],
-    targetKey: string
-): boolean {
-    for (let index = 0; index < snapshot.length; index++) {
-        if (mergeKey(snapshot[index].nbt) === targetKey) return true;
+function readEditorItemIdentity(snbt: string): EditorItemIdentity | null {
+    try {
+        const root = htsw.nbt.parseSnbtText(snbt);
+        if (root.type !== "compound") return null;
+        const value = root.value as Partial<Record<string, htsw.nbt.Tag>>;
+        const id = value.id;
+        const damage = value.Damage;
+        if (id === undefined || damage === undefined) return null;
+        const interactData = compoundChild(compoundChild(value.tag, "ExtraAttributes"), "interact_data");
+        return {
+            id: htsw.nbt.printSnbt(id, { pretty: false }),
+            damage: htsw.nbt.printSnbt(damage, { pretty: false }),
+            interactData:
+                interactData === null
+                    ? null
+                    : ["left", "right", "version"]
+                          .map((key) => {
+                              const child = interactData.value[key];
+                              return child === undefined
+                                  ? ""
+                                  : htsw.nbt.printSnbt(child, { pretty: false });
+                          })
+                          .join("|"),
+        };
+    } catch (_error) {
+        return null;
     }
-    return false;
 }
 
-function findCapturedMatchingStack(
-    snapshot: readonly InventorySlotSnapshot[],
-    targetKey: string,
-    actionItemCount: number
-): string | null {
-    let found: string | null = null;
-    for (let index = 0; index < snapshot.length; index++) {
-        const entry = snapshot[index];
-        if (entry.nbt === null || mergeKey(entry.nbt) !== targetKey) continue;
-        if (found !== null) return null;
-        found = rewriteSnbtCount(entry.nbt, actionItemCount);
-    }
-    return found;
+function compoundChild(
+    tag: htsw.nbt.Tag | undefined | null,
+    key: string
+): htsw.nbt.TagCompound | null {
+    if (tag === undefined || tag === null || tag.type !== "compound") return null;
+    const child = tag.value[key];
+    return child !== undefined && child.type === "compound" ? child : null;
+}
+
+function capturedMatchesEditor(capturedSnbt: string, editorSnbt: string): boolean {
+    const captured = readEditorItemIdentity(capturedSnbt);
+    const editor = readEditorItemIdentity(editorSnbt);
+    if (captured === null || editor === null) return false;
+    if (captured.id !== editor.id || captured.damage !== editor.damage) return false;
+    return editor.interactData === null || captured.interactData === editor.interactData;
 }
 
 function rewriteSnbtCount(snbt: string, count: number): string {

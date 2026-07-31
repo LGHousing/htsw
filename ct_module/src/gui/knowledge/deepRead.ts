@@ -9,7 +9,8 @@ import { recordHouseScan } from "../../importCache/cache";
 import { projectItemsFromParsedImportJson } from "../../importables/export/projectDestination";
 import type { ReadFn } from "../../importables/export/reader";
 import { runExportSession } from "../../importables/export/session";
-import { TaskManager } from "../../tasks/manager";
+import { isTaskCancelled, TaskManager } from "../../tasks/manager";
+import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
 
 let readInFlight = false;
 
@@ -74,6 +75,19 @@ export function startDeepRead(
             options.onSuccess?.();
         })
         .catch((err: unknown) => {
+            if (!isTaskCancelled(err)) {
+                writeTaskFailureLog(
+                    {
+                        phase: "deep-read",
+                        sourcePath: options.importJsonPath,
+                        housingUuid: options.housingUuid,
+                        ...(specs.length === 1
+                            ? { importableType: specs[0].type }
+                            : {}),
+                    },
+                    err
+                );
+            }
             showToast(`${summaryLabel} read failed: ${String(err)}`, 0xffe85c5c, 8000);
             ChatLib.chat(`&c[htsw] ${summaryLabel} read failed: ${String(err)}`);
         });

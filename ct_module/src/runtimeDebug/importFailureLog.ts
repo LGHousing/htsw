@@ -12,7 +12,7 @@ import {
 import { uploadDiagnosticsFile } from "./importFailureUpload";
 import { readLocalVersion } from "../autoUpdate";
 
-export type ImportFailureDetails = {
+export type TaskFailureDetails = {
     phase: string;
     sourcePath: string;
     housingUuid: string;
@@ -55,8 +55,8 @@ function timestampForPath(): string {
     return d.toISOString().replace(/[:.]/g, "-");
 }
 
-export function writeImportFailureLog(
-    context: ImportFailureDetails,
+export function writeTaskFailureLog(
+    context: TaskFailureDetails,
     error: unknown
 ): string {
     const path = `./htsw/import-errors/import-error-${timestampForPath()}.json`;

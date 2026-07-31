@@ -353,6 +353,7 @@ export function defineHouseExporter<
                 progress: options.progress,
                 quiet,
                 accept,
+                onItemFailure: options.onItemFailure,
             };
             const reader = spec.reader;
             const result =

@@ -45,6 +45,7 @@ export type ReadOptions = {
     onNamesListed?: (names: readonly string[]) => void;
     skipExisting?: boolean;
     quiet?: boolean;
+    onItemFailure?: (error: unknown, identity: string, rowIndex: number) => void;
 };
 
 export type ReadFn = (ctx: TaskContext, options: ReadOptions) => Promise<ReadResult>;
@@ -60,6 +61,7 @@ type ReadLoopBase<Result> = {
     progress?: ExportProgressSink;
     quiet?: boolean;
     accept: (ctx: TaskContext, name: string, result: Result) => Promise<void>;
+    onItemFailure?: (error: unknown, identity: string, rowIndex: number) => void;
 };
 
 type DirectReadLoopParams<Result> = ReadLoopBase<Result> & {
@@ -116,7 +118,7 @@ export async function runReadLoop<Pending, Result>(
     ctx: TaskContext,
     params: ReadLoopParams<Pending, Result>
 ): Promise<{ succeeded: number; failed: number }> {
-    const { names, verb, progress, reader, accept, quiet } = params;
+    const { names, verb, progress, reader, accept, quiet, onItemFailure } = params;
     const shown = (name: string): string =>
         params.displayName !== undefined ? params.displayName(name) : name;
 
@@ -154,6 +156,7 @@ export async function runReadLoop<Pending, Result>(
                     };
                 } catch (error) {
                     if (isTaskCancelled(error)) throw error;
+                    onItemFailure?.(error, name, i);
                     pending[i] = { kind: "failed" };
                     failed++;
                     sink?.itemFailed?.(i, String(error));
@@ -192,6 +195,7 @@ export async function runReadLoop<Pending, Result>(
                     sink?.itemFinished?.(i);
                 } catch (error) {
                     if (isTaskCancelled(error)) throw error;
+                    onItemFailure?.(error, name, i);
                     failed++;
                     sink?.itemFailed?.(i, String(error));
                     if (quiet !== true) {
@@ -232,6 +236,7 @@ export async function runReadLoop<Pending, Result>(
                 if (isTaskCancelled(error)) {
                     throw error;
                 }
+                onItemFailure?.(error, name, i);
                 failed++;
                 sink?.itemFailed?.(i, String(error));
                 if (quiet !== true) {

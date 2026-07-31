@@ -58,7 +58,7 @@ import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
 } from "../../housingSync/actions/apply";
-import { writeImportFailureLog } from "../../runtimeDebug/importFailureLog";
+import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../../runtimeDebug/runtimeDebugBuffer";
 import type { ImportConflict } from "./conflicts";
 import {
@@ -407,7 +407,7 @@ async function runImportSessionInner(
                     status: "failed",
                     error: diag.message,
                 });
-                const logPath = writeImportFailureLog(
+                const logPath = writeTaskFailureLog(
                     {
                         phase: "scan",
                         sourcePath: selection.sourcePath,
@@ -477,7 +477,7 @@ async function runImportSessionInner(
                     status: "failed",
                     error: diag.message,
                 });
-                const logPath = writeImportFailureLog(
+                const logPath = writeTaskFailureLog(
                     {
                         phase: "hydrate",
                         sourcePath: selection.sourcePath,
@@ -709,7 +709,7 @@ async function runImportSessionInner(
                     status: "failed",
                     error: diag.message,
                 });
-                const logPath = writeImportFailureLog(
+                const logPath = writeTaskFailureLog(
                     {
                         phase: "apply",
                         sourcePath: selection.sourcePath,

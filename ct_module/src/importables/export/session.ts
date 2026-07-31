@@ -18,6 +18,7 @@ import {
 } from "../../project/paths";
 import { HOUSE_READERS } from "./readers";
 import type { ReadFn, ReadResult } from "./reader";
+import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
 
 export type ExportBatchType = HouseExportTypeName | "NPC";
 export type NamedExportType = Exclude<HouseExportTypeName, "EVENT">;
@@ -83,7 +84,29 @@ export async function runExportSession(
     batches: readonly ExportSessionBatch[]
 ): Promise<ReadResult> {
     const total: ReadResult = { total: 0, succeeded: 0, failed: 0 };
+    let failureLogged = false;
+    const phase = destination.kind === "cache" ? "deep-read" : "export";
+    const sourcePath =
+        destination.kind === "project"
+            ? destination.project.importJsonPath
+            : destination.importJsonPath;
+    const housingUuid = destination.kind === "cache" ? destination.housingUuid : "";
     for (const batch of batches) {
+        const onItemFailure = (error: unknown, identity: string, rowIndex: number) => {
+            if (failureLogged) return;
+            failureLogged = true;
+            writeTaskFailureLog(
+                {
+                    phase,
+                    sourcePath,
+                    housingUuid,
+                    importableType: batch.type,
+                    identity,
+                    rowIndex,
+                },
+                error
+            );
+        };
         if (destination.kind === "project" && batch.type === "NPC") {
             const project = destination.project;
             const result = await exportAllNpcs(ctx, {
@@ -93,6 +116,7 @@ export async function runExportSession(
                 newExportTargetImportJson: batch.newExportTargetImportJson,
                 progress: createExportProgressSink("NPC", project.importJsonPath),
                 output: { kind: "project" },
+                onItemFailure,
             });
             addReadResult(total, result);
             project.projectItems = readProjectItemsForExport(project.importJsonPath);
@@ -125,6 +149,7 @@ export async function runExportSession(
                 destination.kind === "cache"
                     ? { kind: "cache", housingUuid: destination.housingUuid }
                     : { kind: "project" },
+            onItemFailure,
         });
         addReadResult(total, result);
         if (destination.kind === "project") {
