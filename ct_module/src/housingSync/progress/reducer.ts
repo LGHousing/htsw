@@ -33,6 +33,7 @@ type ActiveBookkeeping = {
     sync: TaskProgressActive["sync"];
     currentSlot: MenuSlotFocus | null;
     knowledge: ImportKnowledgeState | null;
+    hydrationCompleted: boolean;
 };
 
 export type ProgressReducerState = {
@@ -82,6 +83,8 @@ export function reduce(
             return startImportable(state, event);
         case "importableReactivated":
             return reactivateImportable(state, event.key, event.rowIndex, event.phase);
+        case "importableHydrationCompleted":
+            return completeImportableHydration(state, event.key);
         case "sessionTotalsLocked":
             return lockSessionTotals(
                 state,
@@ -280,6 +283,7 @@ function startImportable(
         sync: null,
         currentSlot: null,
         knowledge: null,
+        hydrationCompleted: false,
     };
     return rebuildSnapshot(carriedActive, active);
 }
@@ -305,6 +309,29 @@ function reactivateImportable(
         ...(phase === undefined ? {} : { phase }),
     };
     return rebuildSnapshot({ ...carried, parkedRows: rest }, restored);
+}
+
+function completeImportableHydration(
+    state: ProgressReducerState,
+    key: string
+): ProgressReducerState {
+    if (state.active?.key === key) {
+        const active = { ...state.active, hydrationCompleted: true };
+        return rebuildSnapshot(state, active);
+    }
+    const parked = state.parkedRows[key];
+    if (parked === undefined) return state;
+    const completed = trueUpReadHydrate({
+        ...parked,
+        phase: "hydrating",
+        hydrationCompleted: true,
+    });
+    const parkedRows = { ...state.parkedRows, [key]: completed };
+    return {
+        ...state,
+        parkedRows,
+        progress: { ...state.progress, parked: deriveParked(parkedRows).snapshots },
+    };
 }
 
 /**
@@ -344,7 +371,10 @@ function parkActiveIfNeeded(
 function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
     const setup = active.currentPhaseUnits.setup;
     const applying = active.currentPhaseUnits.applying;
-    if (active.phase === "setup" || active.phase === "reading") {
+    if (
+        !active.hydrationCompleted &&
+        (active.phase === "setup" || active.phase === "reading")
+    ) {
         const hydrating = active.currentPhaseUnits.hydrating;
         return {
             ...active,
@@ -369,6 +399,7 @@ function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
     const reading = Math.min(active.currentPhaseUnits.reading, completedPastSetup);
     return {
         ...active,
+        phase: active.hydrationCompleted ? "hydrating" : active.phase,
         currentTotalUnits: Math.max(
             active.currentCompletedUnits,
             active.currentCompletedUnits + applying

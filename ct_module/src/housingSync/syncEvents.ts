@@ -136,6 +136,10 @@ export type SyncEvent =
           phase?: ProgressPayload["phase"];
       }
     | {
+          kind: "importableHydrationCompleted";
+          key: string;
+      }
+    | {
           kind: "sessionTotalsLocked";
           plannedRows?: readonly { key: string; applicationUnits: number }[];
           sessionApplicationUnits?: number;

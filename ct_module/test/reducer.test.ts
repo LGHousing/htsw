@@ -896,6 +896,57 @@ describe("progress reducer", () => {
         expect(s.progress.parked.a.totalUnits).toBe(10);
     });
 
+    test("trusted hydration completion stays reading while active and turns purple when parked", () => {
+        let s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "a", status: "queued", ...baseRow },
+                    { key: "b", status: "queued", ...baseRow },
+                ],
+                initialTotalUnits: 20,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 3,
+                    totalUnits: 3,
+                    phaseUnits: { setup: 0, reading: 3, hydrating: 0, applying: 0 },
+                    sync: { completedUnits: 1, totalUnits: 1, parent: null },
+                    measuredTotalUnits: true,
+                },
+            },
+            { kind: "importableHydrationCompleted", key: "a" },
+        ]);
+
+        expect(s.progress.active?.phase).toBe("reading");
+
+        s = reduce(s, {
+            kind: "importableStarted",
+            key: "b",
+            type: "FUNCTION",
+            identity: "b",
+            setupUnits: 0,
+            initialUnits: 10,
+            rowIndex: 1,
+            cached: null,
+        });
+
+        expect(s.progress.parked.a.phase).toBe("hydrating");
+    });
+
     test("reactivating an export row enters hydration immediately", () => {
         const s = emit([
             {

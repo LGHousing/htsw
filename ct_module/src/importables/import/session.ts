@@ -444,6 +444,10 @@ async function runImportSessionInner(
 
         for (const entry of chunkReads) {
             if (!entry.read.needsHydration) {
+                events?.emit({
+                    kind: "importableHydrationCompleted",
+                    key: entry.row.key,
+                });
                 hydrated.push(entry);
                 continue;
             }

@@ -271,6 +271,7 @@ function createSyncEventHandler(args: {
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
             previewReplay.restore(e.key, activeViewPath);
         },
+        importableHydrationCompleted: () => {},
         sessionTotalsLocked: () => {},
         sessionApplicationProgress: () => {},
         applicationProgress: () => {},
