@@ -21,6 +21,11 @@ import { memoizedImportableHash } from "./hashMemo";
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
 
+function formatHouseLockError(error: unknown): string {
+    const stack = (error as { stack?: unknown } | null)?.stack;
+    return typeof stack === "string" && stack ? stack : String(error);
+}
+
 type HouseLockEntry = {
     type: Importable["type"];
     identity: string;
@@ -239,7 +244,8 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
         ensureParentDirs(lockPath);
         FileLib.write(lockPath, JSON.stringify(lock, null, 4), true);
         return true;
-    } catch (_e) {
+    } catch (error) {
+        console.error(`[htsw] house.lock write failed: ${formatHouseLockError(error)}`);
         return false;
     }
 }
@@ -297,7 +303,11 @@ export function upsertHouseLockImportablesOffThread(
                         let prepared: PreparedHouseLockImportableUpdate[] | null = null;
                         try {
                             prepared = snapshot.map(prepareHouseLockImportableUpdate);
-                        } catch (_error) {}
+                        } catch (error) {
+                            console.error(
+                                `[htsw] house.lock prepare failed: ${formatHouseLockError(error)}`
+                            );
+                        }
                         runOnMainThread(() => {
                             resolve(
                                 prepared !== null &&

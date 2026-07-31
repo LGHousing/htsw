@@ -542,17 +542,11 @@ async function runImportSessionInner(
         verifiedDependencyContext,
         true
     );
-    if (
-        !(await flushHouseLockEntries(
-            selection.sourcePath,
-            selection.housingUuid,
-            pendingHouseLockEntries
-        ))
-    ) {
-        ctx.displayMessage(
-            "&e[htsw] Hydrated house state was cached, but house.lock could not be updated; retry may need to read it again."
-        );
-    }
+    await flushHouseLockEntries(
+        selection.sourcePath,
+        selection.housingUuid,
+        pendingHouseLockEntries
+    );
 
     let activePlanIndex: number | null = null;
     try {
@@ -786,11 +780,17 @@ async function runImportSessionInner(
         throw error;
     }
 
-    await flushHouseLockEntries(
-        selection.sourcePath,
-        selection.housingUuid,
-        pendingHouseLockEntries
-    );
+    if (
+        !(await flushHouseLockEntries(
+            selection.sourcePath,
+            selection.housingUuid,
+            pendingHouseLockEntries
+        ))
+    ) {
+        ctx.displayMessage(
+            "&e[htsw] Hydrated house state was cached, but house.lock could not be updated; retry may need to read it again."
+        );
+    }
     events?.emit({ kind: "sessionFinished" });
 }
 
