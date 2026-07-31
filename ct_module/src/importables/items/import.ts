@@ -22,7 +22,6 @@ import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
 import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
-import { timed } from "../../housingSync/progress/timing";
 import {
     hasItemClickActions,
     readInteractDataCache,
@@ -36,6 +35,8 @@ import {
     type ApplicationProgress,
     type ApplicationStep,
 } from "../import/applicationProgress";
+
+const INTERACT_DATA_SIGN_MAX_TICKS = 60;
 
 function sourceItemShell(importable: ImportableItem): object {
     return {
@@ -147,9 +148,7 @@ export function itemPlanApplicationUnits(plan: ItemImportPlan): number {
 }
 
 export function itemApplicationPlan(plan: ItemImportPlan): ApplicationPlan {
-    const steps: ApplicationStep[] = [
-        workStep("placeItem", COST.itemInject + COST.guaranteedSleep1000),
-    ];
+    const steps: ApplicationStep[] = [workStep("placeItem", COST.itemInject)];
     if (plan.leftPlan !== null || plan.rightPlan !== null) {
         steps.push(
             workStep("openItemEditor", COST.commandInterval + COST.commandMenuWait),
@@ -171,7 +170,7 @@ export function itemApplicationPlan(plan: ItemImportPlan): ApplicationPlan {
             );
         }
         steps.push(
-            workStep("captureInteractData", COST.guaranteedSleep1000 + COST.nbtCapture),
+            workStep("captureInteractData", COST.nbtCapture),
             workStep("interactDataCache", COST.cacheWrite)
         );
     }
@@ -212,12 +211,26 @@ export async function applyImportableItemPlan(
 
     let interactData: string | null = null;
     await application.run("captureInteractData", async () => {
-        await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
-
-        const snbt = heldItem()?.getRawNBT();
-        if (!snbt) throw Error("Why don't we have the item?");
-
-        interactData = extractInteractDataSnbt(snbt);
+        // Housing re-signs the held item after its click actions change and
+        // pushes the new stack to the client; wait for a blob that differs
+        // from what we placed instead of sleeping a fixed second.
+        const placedInteractData = extractInteractDataSnbt(
+            plan.item.getRawNBT() ?? ""
+        );
+        const signedInteractData = (): string | null => {
+            const snbt = heldItem()?.getRawNBT();
+            if (!snbt) return null;
+            const current = extractInteractDataSnbt(snbt);
+            return current !== null && current !== placedInteractData
+                ? current
+                : null;
+        };
+        for (let tick = 0; tick < INTERACT_DATA_SIGN_MAX_TICKS; tick++) {
+            interactData = signedInteractData();
+            if (interactData !== null) return;
+            await ctx.waitFor("tick");
+        }
+        interactData = signedInteractData();
         if (interactData === null) {
             throw new Error(
                 `Could not capture interact_data after applying click actions to '${importable.name}'.`

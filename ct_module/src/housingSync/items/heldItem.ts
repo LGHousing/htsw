@@ -7,8 +7,6 @@ import {
     selectedHotbarSlot,
     sendCreativeInventoryAction,
 } from "../menus/packets";
-import { COST } from "../progress/costs";
-import { timed } from "../progress/timing";
 import {
     clearInventorySlot,
     inventorySlotToPacketSlot,
@@ -97,7 +95,6 @@ export async function temporarilyHoldItem(
         }
         await injectIntoHotbarSlot(ctx, slotId, stack);
         await selectHotbarSlotAndWait(ctx, slotId);
-        await waitForHeldItem(ctx);
         return held;
     } catch (error) {
         await restoreTemporarilyHeldItem(ctx, held);
@@ -147,7 +144,6 @@ async function placeInHotbarSlot(
 ): Promise<void> {
     await injectIntoHotbarSlot(ctx, slotId, stack);
     await selectHotbarSlotAndWait(ctx, slotId);
-    await waitForHeldItem(ctx);
 }
 
 async function waitForStack(
@@ -184,6 +180,3 @@ async function restoreBorrowedSlot(
     }
 }
 
-async function waitForHeldItem(ctx: TaskContext): Promise<void> {
-    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
-}
