@@ -13,10 +13,10 @@
  */
 
 // ── Surfaces ────────────────────────────────────────────────────────────
-export const COLOR_PANEL = 0xff1b1f25 | 0;            // dark slate, primary panel bg
-export const COLOR_PANEL_BORDER = 0xff2c323b | 0;     // 1px panel edge
-export const COLOR_PANEL_RAISED = 0xff242931 | 0;     // slightly lighter sub-panel bg
-export const COLOR_DIVIDER = 0xff2c323b | 0;          // hairline rule
+export const COLOR_PANEL = 0xff1b1f25 | 0; // dark slate, primary panel bg
+export const COLOR_PANEL_BORDER = 0xff3c423b | 0; // 1px panel edge
+export const COLOR_PANEL_RAISED = 0xff242931 | 0; // slightly lighter sub-panel bg
+export const COLOR_DIVIDER = 0xff2c323b | 0; // hairline rule
 // Modal scrim. It stacks on MC's own ~75% inventory dim plus the dark panel
 // backgrounds, so it must stay light — 0xc0 here compounded to a near-blackout.
 export const COLOR_OVERLAY_DIM = 0x66000000 | 0;
@@ -38,7 +38,7 @@ export const COLOR_BUTTON_PRIMARY = 0xff3370c0 | 0;
 export const COLOR_BUTTON_PRIMARY_HOVER = 0xff4080d8 | 0;
 export const COLOR_BUTTON_DANGER = 0xff8e3838 | 0;
 export const COLOR_BUTTON_DANGER_HOVER = 0xffa84444 | 0;
-export const COLOR_BUTTON_DISABLED = 0xff23272f | 0;  // recessed, no-hover; pair with COLOR_TEXT_FAINT
+export const COLOR_BUTTON_DISABLED = 0xff23272f | 0; // recessed, no-hover; pair with COLOR_TEXT_FAINT
 export const COLOR_TOGGLE_ON = 0xff1e3d3d | 0;
 export const COLOR_TOGGLE_ON_HOVER = 0xff2a4f4f | 0;
 

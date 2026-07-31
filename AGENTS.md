@@ -24,7 +24,7 @@ This guide says **what each part is for and the rules it must keep**. Do not cop
 | `editors/code/` | `npm run build` | —          |                                                               |
 | `ct_module/`    | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `npm run deploy:ct` |
 
-**After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `npm run deploy:ct` from the repo root** so `/ct reload` picks it up. It runs the full build (typecheck + lint + Vite + Java) and atomically replaces the deployed module. `ct_module/.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
+**After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `npm run deploy:ct` from the repo root** so `/ct reload` picks it up. It runs the deploy build (typecheck + Vite + Java) and atomically replaces the deployed module; lint + knip run separately via `npm run verify` in `ct_module/` (and automatically during releases). `ct_module/.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
 **After changing code, assets, metadata, or build setup that ships in `editors/code/`, run `npm run package` from `editors/code/` and install the generated `.vsix` with `code --install-extension <file>.vsix --force`** so the local VS Code installation uses the change.
 

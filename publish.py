@@ -180,6 +180,7 @@ def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> 
 
 def stage_ct(do_build: bool, notes: str | None) -> None:
     if do_build:
+        run(["npm", "run", "verify"], CT_DIR)
         run(["npm", "run", "build"], CT_DIR)
 
     dist = CT_DIR / "dist"
