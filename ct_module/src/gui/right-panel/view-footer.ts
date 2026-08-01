@@ -126,7 +126,16 @@ function queueSummary(): Element {
         })
     );
     return Row({
-        style: { gap: 4, height: { kind: "px", value: 16 }, align: "center" },
+        style: {
+            gap: 4,
+            height: { kind: "px", value: 16 },
+            align: "center",
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0 || getQueueLength() === 0) return;
+            queueExpanded = !queueExpanded;
+        },
         children,
     });
 }
