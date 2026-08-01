@@ -23,6 +23,7 @@ import {
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
+import { logActionListConflict } from "./conflictLog";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import type { ItemFieldContent } from "../items/fieldContent";
@@ -259,19 +260,30 @@ function recordActionListConflict(
         importableKey(target.type, target.identity)
     );
     const itemContent = options.sync.itemDiff?.fieldContent;
+    const lock = {
+        contentHash: trustPlan?.lockListContentHashes?.[target.basePath],
+        scanHash: trustPlan?.lockListScanHashes?.[target.basePath],
+    };
+    const hashFamily = trustedImport ? ("scan" as const) : ("content" as const);
     const verdict = actionListConflictVerdict(
         live,
-        {
-            contentHash: trustPlan?.lockListContentHashes?.[target.basePath],
-            scanHash: trustPlan?.lockListScanHashes?.[target.basePath],
-        },
+        lock,
         desired,
-        trustedImport ? "scan" : "content",
+        hashFamily,
         liveItemContent ?? itemContent,
         itemContent
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
+        logActionListConflict({
+            target,
+            hashFamily,
+            live,
+            lock,
+            source: desired,
+            liveItemContent: liveItemContent ?? itemContent,
+            sourceItemContent: itemContent,
+        });
     }
     return verdict;
 }

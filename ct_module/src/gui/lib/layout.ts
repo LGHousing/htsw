@@ -90,6 +90,12 @@ export type Element =
            * itself); inputs without an onSubmit just unfocus on Enter.
            */
           onSubmit?: () => void;
+          /**
+           * Called for non-Enter, non-Esc key presses while this input is
+           * focused, before the key reaches the underlying GuiTextField.
+           * Return true to consume the key (the field never sees it).
+           */
+          onKeyDown?: (keyCode: number) => boolean;
           placeholder?: string;
       }
     | {

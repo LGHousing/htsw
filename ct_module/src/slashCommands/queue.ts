@@ -1,10 +1,10 @@
 import type { Importable } from "htsw/types";
 
-import { queueModifiedFromPath } from "../gui/autoTrack";
+import { queueModifiedImportables } from "../gui/autoTrack";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import {
-    parseImportJsonBlocking,
     parseImportJsonCurrent,
+    parseImportJsonCurrentBlocking,
 } from "../gui/parsing/parses";
 import {
     addToQueue,
@@ -169,14 +169,16 @@ function commandQueueModified(args: string[]): void {
         return;
     }
     const path = resolvePath(args);
-    const cached = parseImportJsonBlocking(path);
+    const cached = parseImportJsonCurrentBlocking(path);
     if (cached.parsed === null) {
         ChatLib.chat(
             `&c[htsw] Could not parse ${compactFileLabel(path)}: ${cached.error ?? "parse failed"}`
         );
         return;
     }
-    queueModifiedFromPath(cached.canonicalPath);
+    queueModifiedImportables(cached.canonicalPath, cached.parsed, undefined, {
+        blockingCacheRead: true,
+    });
     ChatLib.chat(`&a[htsw] Queue now contains ${getQueue().length} item(s)`);
 }
 

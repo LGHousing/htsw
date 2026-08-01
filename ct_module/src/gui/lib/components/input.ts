@@ -6,6 +6,7 @@ export type InputProps = {
     value: Extractable<string>;
     onChange: (v: string) => void;
     onSubmit?: () => void;
+    onKeyDown?: (keyCode: number) => boolean;
     style?: Style;
     placeholder?: string;
 };
@@ -18,6 +19,7 @@ export function Input(props: InputProps): Element {
         value: props.value,
         onChange: props.onChange,
         onSubmit: props.onSubmit,
+        onKeyDown: props.onKeyDown,
         placeholder: props.placeholder,
     };
 }

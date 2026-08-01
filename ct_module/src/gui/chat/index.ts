@@ -36,6 +36,51 @@ const CHAT_SCROLL_PAD_RIGHT = 0;
 
 let chatText = "";
 
+const SENT_HISTORY_MAX = 100;
+const sentHistory: string[] = [];
+// Index into sentHistory while browsing with up/down; -1 = not browsing.
+let historyPos = -1;
+// What was typed before browsing started; restored when stepping past the
+// newest history entry, like vanilla chat.
+let historyDraft = "";
+
+function rememberSentMessage(text: string): void {
+    if (sentHistory[sentHistory.length - 1] !== text) {
+        sentHistory.push(text);
+        if (sentHistory.length > SENT_HISTORY_MAX) sentHistory.shift();
+    }
+    historyPos = -1;
+    historyDraft = "";
+}
+
+function stepHistory(delta: number): void {
+    if (sentHistory.length === 0) return;
+    if (historyPos === -1) {
+        if (delta > 0) return;
+        historyDraft = chatText;
+        historyPos = sentHistory.length - 1;
+    } else {
+        const next = historyPos + delta;
+        if (next < 0) return;
+        if (next >= sentHistory.length) {
+            historyPos = -1;
+            chatText = historyDraft;
+            return;
+        }
+        historyPos = next;
+    }
+    chatText = sentHistory[historyPos];
+}
+
+const KEY_UP = 200;
+const KEY_DOWN = 208;
+
+function handleChatKey(keyCode: number): boolean {
+    if (keyCode !== KEY_UP && keyCode !== KEY_DOWN) return false;
+    stepHistory(keyCode === KEY_UP ? -1 : 1);
+    return true;
+}
+
 function commandNameOf(text: string): string {
     if (text.substring(0, 2) === "//") return "/";
     const withoutSlash = text.substring(1).trim();
@@ -79,6 +124,7 @@ function submitChat(): void {
     } catch (err) {
         ChatLib.chat(`&c[htsw] Send failed: ${String(err)}`);
     }
+    rememberSentMessage(text);
     chatText = "";
     setFocusedInput(null);
 }
@@ -165,6 +211,7 @@ function ChatInputBar(): Element {
                 value: () => chatText,
                 onChange: (v) => { chatText = v; },
                 onSubmit: () => submitChat(),
+                onKeyDown: (keyCode) => handleChatKey(keyCode),
                 placeholder: `Press ${getChatKeyName()} to chat…`,
                 style: { width: { kind: "grow" } },
             }),

@@ -9,11 +9,7 @@ import {
     isCurrentHouseTrusted,
 } from "./state";
 import { getActiveAutoTrackSources } from "./autoTrackScope";
-import {
-    canonicalPath,
-    forEachCachedParse,
-    parseImportJsonBlocking,
-} from "./parsing/parses";
+import { canonicalPath, forEachCachedParse } from "./parsing/parses";
 import {
     cachedStatusForImportable,
     statusForImportableBlocking,
@@ -109,17 +105,6 @@ export function queueModifiedImportables(
         newlyQueuedRequired,
         workKeys,
     };
-}
-
-export function queueModifiedFromPath(sourcePath: string): void {
-    const cached = parseImportJsonBlocking(sourcePath);
-    if (cached.parsed === null) {
-        ChatLib.chat(`&c[htsw] Skipping ${sourcePath}: ${cached.error ?? "parse failed"}`);
-        return;
-    }
-    queueModifiedImportables(cached.canonicalPath, cached.parsed, undefined, {
-        blockingCacheRead: true,
-    });
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";

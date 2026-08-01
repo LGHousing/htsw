@@ -752,6 +752,11 @@ export function initHtswGui(): void {
             cancel(event);
             return;
         }
+        if (inputEl.onKeyDown !== undefined && inputEl.onKeyDown(keyCode)) {
+            markGuiDirty();
+            cancel(event);
+            return;
+        }
         const rec = getRecord(focusedId);
         if (rec === null) {
             cancel(event);

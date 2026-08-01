@@ -22,7 +22,7 @@ type CanonicalChildList = {
     types: readonly string[];
 };
 
-type CanonicalScanSlot =
+export type CanonicalScanSlot =
     { unknown: true } | { type: Action["type"]; childLists?: CanonicalChildList[] };
 
 function canonicalKnownSlot(
@@ -43,26 +43,34 @@ function hashCanonicalSlots(slots: readonly CanonicalScanSlot[]): string {
     return hashHex(JSON.stringify(slots));
 }
 
-export function actionListScanHashFromSlots(
+export function actionListScanSlotsFromSlots(
     slots: readonly ObservedActionSlot[]
-): string {
-    return hashCanonicalSlots(
-        slots.map((slot) => {
-            if (slot.action === null) return { unknown: true };
-            return canonicalKnownSlot(
-                slot.action.type,
-                (prop) => slot.childListSummaries?.[prop]
-            );
-        })
+): CanonicalScanSlot[] {
+    return slots.map((slot) => {
+        if (slot.action === null) return { unknown: true };
+        return canonicalKnownSlot(
+            slot.action.type,
+            (prop) => slot.childListSummaries?.[prop]
+        );
+    });
+}
+
+export function actionListScanSlotsFromActions(
+    actions: readonly Action[]
+): CanonicalScanSlot[] {
+    return actions.map((action) =>
+        canonicalKnownSlot(action.type, (prop) => desiredChildListTypes(action, prop))
     );
 }
 
+export function actionListScanHashFromSlots(
+    slots: readonly ObservedActionSlot[]
+): string {
+    return hashCanonicalSlots(actionListScanSlotsFromSlots(slots));
+}
+
 export function actionListScanHashFromActions(actions: readonly Action[]): string {
-    return hashCanonicalSlots(
-        actions.map((action) =>
-            canonicalKnownSlot(action.type, (prop) => desiredChildListTypes(action, prop))
-        )
-    );
+    return hashCanonicalSlots(actionListScanSlotsFromActions(actions));
 }
 
 function stableJson(value: unknown): string {

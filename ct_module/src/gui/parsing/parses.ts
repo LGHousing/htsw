@@ -368,6 +368,34 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     return parseImportJsonFromDisk(canon, rawPath, mtime, startedAt);
 }
 
+/**
+ * Like `parseImportJsonBlocking`, but stats the ENTIRE fingerprint
+ * synchronously instead of going through the settle-debounced sweep. The
+ * sweep needs several GUI ticks to confirm a referenced-file edit, so a
+ * one-shot caller with the GUI closed (a slash command) would otherwise be
+ * served the stale parse. Pays the full stat cost on the calling thread —
+ * only for explicit user commands where current state matters more than a
+ * brief freeze.
+ */
+export function parseImportJsonCurrentBlocking(rawPath: string): CachedParse {
+    const canon = canonicalPath(rawPath);
+    const existing = cache.get(canon);
+    if (existing !== undefined) {
+        const changedPaths: string[] = [];
+        for (const path of Object.keys(existing.fingerprint)) {
+            if (getMtimeMs(path) !== existing.fingerprint[path]) {
+                changedPaths.push(path);
+            }
+        }
+        if (changedPaths.length !== 0) {
+            logFullParseReason(canon, "source files changed", changedPaths);
+            return parseImportJsonFromDisk(canon, rawPath, getMtimeMs(canon), Date.now());
+        }
+        resetFreshness(existing.freshness);
+    }
+    return parseImportJsonBlocking(rawPath);
+}
+
 function yieldFilesystemScan(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }

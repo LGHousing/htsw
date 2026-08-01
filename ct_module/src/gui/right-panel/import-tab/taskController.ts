@@ -180,6 +180,9 @@ async function confirmImportConflicts(
     conflicts: readonly ImportConflict[],
     onReview: () => void
 ): Promise<boolean> {
+    ChatLib.chat(
+        "&7[htsw] Conflict evidence (live/lock/source hashes and type sequences) logged to import-conflicts.log"
+    );
     return openAnswerableConflictPrompt(ctx, {
         chatMessage: conflictAwaitingConfirmationMessage(conflicts),
         chatConfirmAction: "import anyway",
