@@ -110,6 +110,16 @@ function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): VarState 
             return unknownLong();
         case "player.block.z":
             return unknownLong();
+        case "player.location.x":
+            return unknownLong();
+        case "player.location.y":
+            return unknownLong();
+        case "player.location.z":
+            return unknownLong();
+        case "player.location.pitch":
+            return longRange(Long.fromNumber(-90), Long.fromNumber(90));
+        case "player.location.yaw":
+            return longRange(Long.fromNumber(-180), Long.fromNumber(180));
         case "player.group.name":
             return unknownString();
         case "player.group.tag":
