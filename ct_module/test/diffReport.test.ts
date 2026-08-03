@@ -11,7 +11,7 @@ import {
     actionListScanHashFromActions,
 } from "../src/housingSync/actions/scanHash";
 import type { HouseLock } from "../src/importCache/houseLock";
-import { formatDiffDetailsFile } from "../src/slashCommands/diffDetails";
+import { formatDiffDetailsFile } from "../src/housingSync/actions/diffDetails";
 import {
     evaluateDiffReport,
     formatDiffReport,

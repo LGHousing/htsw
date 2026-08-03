@@ -82,6 +82,8 @@ export type TaskProgressActive = {
     sync: ListSyncProgress | null;
     currentSlot?: MenuSlotFocus | null;
     knowledge?: ImportKnowledgeState | null;
+    scanCompleted: boolean;
+    hydrationRequired: boolean;
 };
 
 export type TaskProgress = {

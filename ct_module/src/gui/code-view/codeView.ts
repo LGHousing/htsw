@@ -45,9 +45,8 @@ export type CodeViewProps = {
      * which NPEs at parse time. Naming the prop `lineDecorator` dodges the trap.
      */
     lineDecorator: Extractable<LineDecorator>;
-    autoFollow?: boolean;
+    autoFollow?: Extractable<boolean>;
 
-    scrollLocked?: Extractable<boolean>;
     emptyMessage?: Extractable<string>;
     onOpenPath?: (path: string, options: { activate: boolean }) => void;
 };
@@ -124,7 +123,7 @@ function buildLineModel(
     const decorated: DecoratedLine[] = [];
     const reserved = lineDecorator.gutterVisibility?.();
     let showFocusGutter = reserved?.focus === true;
-    let showStateGutter = reserved?.state === true;
+    let showStateGutter = reserved?.marker === true;
     let maxLineNum = 1;
     const noteGutterContent = (dec: LineDecorations): void => {
         if (hasFocusGutterContent(dec)) showFocusGutter = true;
@@ -305,7 +304,6 @@ export function CodeView(props: CodeViewProps): Element {
     return Scroll({
         id: props.scrollId,
         style: { height: { kind: "grow" }, gap: 0 },
-        locked: props.scrollLocked,
         children: () => {
             const phaseStart = Date.now();
             try {
@@ -448,6 +446,11 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     );
     recordPhase("codeview.select", Date.now() - selectStart);
 
+    if (props.autoFollow !== undefined && extract(props.autoFollow)) {
+        getScrollState(props.scrollId).contentLength = totalRows * LINE_H;
+        applyAutoFollow(props.scrollId, lineDecorator, lineIdToIndex);
+    }
+
     // ── Visibility window ────────────────────────────────────
     const scrollState = getScrollState(props.scrollId);
     const offset = scrollState.offset;
@@ -524,9 +527,6 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     }
     recordPhase("codeview.rows", Date.now() - rowsStart);
 
-    if (props.autoFollow === true) {
-        applyAutoFollow(props.scrollId, lineDecorator, lineIdToIndex);
-    }
     return out;
 }
 
@@ -634,7 +634,7 @@ function hasFocusGutterContent(dec: LineDecorations): boolean {
 }
 
 function hasStateGutterContent(dec: LineDecorations): boolean {
-    return dec.state !== undefined;
+    return dec.state !== undefined || dec.marker !== undefined;
 }
 
 function bodyWidthForScroll(

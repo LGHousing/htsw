@@ -32,6 +32,7 @@ import { viewBody } from "./view-body";
 import { compactFileLabel, compactPath, hasExt } from "../lib/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
 import { viewFooter } from "./view-footer";
+import { ImportCodeViewFollowButton } from "./importCodeView";
 import {
     beginTabDrag,
     isTabDragging,
@@ -413,6 +414,7 @@ function viewTabHeader(): Element {
         children: () => {
             const p = getActivePath();
             const children: Element[] = [pathLabel()];
+            if (isLiveTabActive()) children.push(ImportCodeViewFollowButton());
             if (!isLiveTabActive() && p !== null && isSnbtPath(p)) {
                 children.push(
                     Button({

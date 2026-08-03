@@ -9,6 +9,7 @@
 
 import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
+import type { IconName } from "../lib/icons.generated";
 import type { Diagnostic, ImportablesParseResult } from "htsw";
 import type { ActionTreePath } from "../../housingSync/actionPath";
 
@@ -55,7 +56,14 @@ export type RenderableLine = {
 };
 
 export type LineDecorations = {
+    /** Static source-diff state. Live import operations use `marker` instead. */
     state?: DiffState;
+    marker?: {
+        glyph?: string;
+        icon?: IconName;
+        color: number;
+        background?: number;
+    };
     foregroundColor?: number;
     background?: number;
     detail?: string;
@@ -76,14 +84,14 @@ export type LineDecorator = {
     decorateLine(line: RenderableLine): LineDecorations;
     focusedLineId(): string | null;
     /**
-     * Reserve the focus (▶) and/or diff-state (+/~/-) gutter columns for the
+     * Reserve the focus (▶) and/or marker gutter columns for the
      * whole view, independent of whether any line currently carries that
      * decoration. Without this the columns mount and unmount as decorations
      * come and go, shifting every row sideways mid-task. A gutter is still
      * shown when line content needs it even if the reservation says false.
      * Omit to derive both purely from line content.
      */
-    gutterVisibility?(): { focus: boolean; state: boolean };
+    gutterVisibility?(): { focus: boolean; marker: boolean };
     extraLinesAtEnd?(): { line: RenderableLine; decorations: LineDecorations }[];
     /**
      * Identity of everything `decorateLine` reads. The code view caches its

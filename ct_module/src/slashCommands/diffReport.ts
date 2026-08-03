@@ -14,7 +14,10 @@ import {
 } from "../importCache/actionLists";
 import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "../importables/identity";
-import { printerDiagnosticsForDiff, type DiffPrinterDiagnostic } from "./diffDetails";
+import {
+    printerDiagnosticsForDiff,
+    type DiffPrinterDiagnostic,
+} from "../housingSync/actions/diffDetails";
 import {
     sourceItemFieldContent,
     type ItemFieldContent,
@@ -25,6 +28,8 @@ type DiffReportList = ActionSyncConflict &
     ActionListConflictDetails & {
         canonicalDifferences: ActionListConflictDifference[];
         printerDiagnostics: DiffPrinterDiagnostic[];
+        sourceActions?: readonly Action[];
+        liveActions?: readonly Action[];
     };
 
 export type DiffReport = {
@@ -206,6 +211,8 @@ function diffReportList(
             ...printerDiagnosticsForDiff("source", match.sourceActions),
             ...printerDiagnosticsForDiff("live", liveActions),
         ],
+        sourceActions: match.sourceActions,
+        liveActions,
     };
 }
 

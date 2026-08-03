@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { Action, Importable } from "htsw/types";
 
 import {
+    activatePreview,
     applyComplete,
     buildObservedToDesiredIndexMap,
     disposeLivePreviews,
     finalizeFromSource,
+    getCurrentOperation,
     getCurrentPath,
+    livePreviewCacheTelemetry,
     livePreviewCacheSize,
     markHeadApplied,
     markPreviewCompleted,
@@ -22,6 +25,7 @@ import {
     rebaseToDesired,
     resetPreview,
     setObservedTopLevel,
+    setCurrentOperation,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
 import {
@@ -97,7 +101,21 @@ describe("primeWithCache + previewLinesForFile", () => {
         expect(ids()).toEqual(["0:body"]);
     });
 
-    test("keeps every file in a 20-function import live", () => {
+    test("reports retained preview weight", () => {
+        primeWithCache(PATH, func([message("cached")]));
+        setObservedTopLevel(PATH, nodes(message("observed")));
+        setObservedTopLevel(PATH, nodes(message("pending one"), message("pending two")));
+
+        const retainedLines = previewLinesForFile(PATH);
+        expect(livePreviewCacheTelemetry()).toEqual({
+            states: 1,
+            lines: retainedLines.length,
+            tokens: retainedLines.reduce((sum, line) => sum + line.tokens.length, 0),
+            pendingNodes: 2,
+        });
+    });
+
+    test("keeps at most 16 rendered file previews", () => {
         const paths: string[] = [];
         for (let i = 0; i < 20; i++) {
             const path = `./function-${i}.htsl`;
@@ -105,20 +123,23 @@ describe("primeWithCache + previewLinesForFile", () => {
             primeWithCache(path, func([message(String(i))]));
         }
 
-        for (const path of paths) {
+        for (const path of paths.slice(-16)) {
             expect(previewLinesForFile(path).map((line) => line.id)).toEqual(["0:body"]);
         }
+        expect(previewLinesForFile(paths[0])).toEqual([]);
+        expect(livePreviewCacheSize()).toBe(16);
     });
 
-    test("evicts only completed files when a large import reaches the cap", () => {
+    test("releases a successful preview when the next preview becomes active", () => {
         for (let i = 0; i < 130; i++) {
             const path = `./large-import-${i}.htsl`;
+            activatePreview(path);
             primeWithCache(path, func([message(String(i))]));
             if (i < 129) markPreviewCompleted(path);
         }
 
         expect(previewLinesForFile("./large-import-0.htsl")).toEqual([]);
-        expect(livePreviewCacheSize()).toBe(128);
+        expect(livePreviewCacheSize()).toBe(1);
         expect(
             previewLinesForFile("./large-import-129.htsl").map((line) => line.id)
         ).toEqual(["0:body"]);
@@ -222,8 +243,8 @@ describe("read live preview", () => {
         replay.restore("a", sharedPath);
 
         expect(
-            previewLinesForFile(sharedPath)[0].tokens
-                .map((token) => token.text)
+            previewLinesForFile(sharedPath)[0]
+                .tokens.map((token) => token.text)
                 .join("")
         ).toBe('chat "observed-a"');
     });
@@ -275,7 +296,7 @@ describe("read live preview", () => {
             });
         }
 
-        expect(livePreviewCacheSize()).toBe(128);
+        expect(livePreviewCacheSize()).toBe(16);
         preview.activate(0, false);
         expect(
             previewLinesForFile(getActiveTaskPath()!).map((line) =>
@@ -412,7 +433,7 @@ describe("markPlannedAdd", () => {
         markPlannedAdd(PATH, p(0), message("new"), 0);
         expect(ids()).toEqual(["pending:0:body"]);
         const added = previewLinesForFile(PATH)[0];
-        expect(added.diffState).toBe("add");
+        expect(added.plannedOp).toBe("add");
     });
 
     test("subsequent adds resolve siblings even when both are still prefixed", () => {
@@ -445,22 +466,14 @@ describe("markPlannedAdd", () => {
 });
 
 describe("markPlannedEdit", () => {
-    test("inserts an added replacement line below the deleted body", () => {
+    test("keeps one row for an in-place edit", () => {
         primeWithCache(PATH, func([message("old")]));
         markPlannedEdit(PATH, p(0), message("old"), message("new"));
-        expect(ids()).toEqual(["0:body", "0:ghost"]);
-        const ghost = previewLinesForFile(PATH)[1];
-        expect(ghost.variant).toBe("ghost");
-        expect(ghost.italic).toBeFalsy();
-        expect(ghost.diffState).toBe("add");
-        // Ghost takes no line number — it isn't part of the file's numbering.
-        expect(ghost.lineNum).toBe(0);
-    });
-
-    test("body line is marked as deleted", () => {
-        primeWithCache(PATH, func([message("old")]));
-        markPlannedEdit(PATH, p(0), message("old"), message("new"));
-        expect(bodyAt(0)?.diffState).toBe("delete");
+        expect(ids()).toEqual(["0:body"]);
+        expect(bodyAt(0)?.plannedOp).toBe("edit");
+        expect(bodyAt(0)?.tokens.map((token) => token.text).join("")).toBe(
+            'chat "old"'
+        );
     });
 });
 
@@ -468,25 +481,24 @@ describe("markPlannedDelete", () => {
     test("marks the body line as delete", () => {
         primeWithCache(PATH, func([message("x")]));
         markPlannedDelete(PATH, p(0));
-        expect(bodyAt(0)?.diffState).toBe("delete");
+        expect(bodyAt(0)?.plannedOp).toBe("delete");
     });
 
     test("marks every line of a CONDITIONAL subtree as delete", () => {
         primeWithCache(PATH, func([conditional({ ifActions: [message("child")] })]));
         markPlannedDelete(PATH, p(0));
         for (const line of previewLinesForFile(PATH)) {
-            expect(line.diffState).toBe("delete");
+            expect(line.plannedOp).toBe("delete");
         }
     });
 });
 
 describe("markPlannedMove", () => {
-    test("marks the moved body as edit (gold)", () => {
+    test("retains move as a distinct operation", () => {
         primeWithCache(PATH, func([message("a"), message("b")]));
         markPlannedMove(PATH, p(1), 1, 0);
-        expect(bodyAt(1)?.diffState).toBe("edit");
-        // The non-moved sibling stays untouched.
-        expect(bodyAt(0)?.diffState).toBeUndefined();
+        expect(bodyAt(1)?.plannedOp).toBe("move");
+        expect(bodyAt(0)?.plannedOp).toBeUndefined();
     });
 });
 
@@ -560,7 +572,7 @@ describe("rebaseToDesired", () => {
 
         expect(ids()).toEqual(["1:body", "0:body"]);
         expect(previewRevision(PATH)).toBe(rebasedRevision + 1);
-        expect(bodyAt(0)?.diffState).toBe("edit");
+        expect(bodyAt(0)?.plannedOp).toBe("move");
     });
 
     test("keeps delete paths observed and removes only the flagged collision", () => {
@@ -616,7 +628,7 @@ describe("rebaseToDesired", () => {
             "0.ifActions.0:body",
             "0:close",
         ]);
-        expect(bodyAt(0, "ifActions", 0)?.diffState).toBe("edit");
+        expect(bodyAt(0, "ifActions", 0)?.plannedOp).toBe("move");
     });
 });
 
@@ -627,7 +639,7 @@ describe("applyComplete(add)", () => {
         applyComplete(PATH, p(0), "add", "add");
         expect(ids()).toEqual(["0:body"]);
         expect(bodyAt(0)?.completed).toBe(true);
-        expect(bodyAt(0)?.diffState).toBeUndefined();
+        expect(bodyAt(0)?.plannedOp).toBeUndefined();
     });
 
     test("bottom-up apply (child first, then outer) is idempotent on prefix strip", () => {
@@ -642,7 +654,7 @@ describe("applyComplete(add)", () => {
         expect(ids()).toEqual(["0:body", "0.ifActions.0:body", "0:close"]);
         for (const line of previewLinesForFile(PATH)) {
             expect(line.completed).toBe(true);
-            expect(line.diffState).toBeUndefined();
+            expect(line.plannedOp).toBeUndefined();
         }
     });
 });
@@ -664,19 +676,18 @@ describe("applyComplete(delete)", () => {
 });
 
 describe("applyComplete(edit)", () => {
-    test("promotes the ghost to the body and removes the original", () => {
+    test("updates the existing row when the edit completes", () => {
         primeWithCache(PATH, func([message("old")]));
         markPlannedEdit(PATH, p(0), message("old"), message("new"));
         applyComplete(PATH, p(0), "edit", "edit");
-        // After: only one line, at the same id, marked completed.
         expect(ids()).toEqual(["0:body"]);
         const body = bodyAt(0)!;
         expect(body.completed).toBe(true);
         expect(body.variant).toBe("body");
-        expect(body.italic).toBeFalsy();
+        expect(body.tokens.map((token) => token.text).join("")).toBe('chat "new"');
     });
 
-    test("no ghost present: just marks body completed", () => {
+    test("marks an unplanned edit complete", () => {
         primeWithCache(PATH, func([message("x")]));
         applyComplete(PATH, p(0), "edit", "edit");
         expect(bodyAt(0)?.completed).toBe(true);
@@ -684,12 +695,12 @@ describe("applyComplete(edit)", () => {
 });
 
 describe("applyComplete(move)", () => {
-    test("clears the diff state and marks body completed", () => {
+    test("clears the planned operation and marks body completed", () => {
         primeWithCache(PATH, func([message("a"), message("b")]));
         markPlannedMove(PATH, p(1), 1, 0);
         applyComplete(PATH, p(1), "match", "move");
         expect(bodyAt(1)?.completed).toBe(true);
-        expect(bodyAt(1)?.diffState).toBeUndefined();
+        expect(bodyAt(1)?.plannedOp).toBeUndefined();
     });
 });
 
@@ -715,20 +726,16 @@ describe("markHeadApplied", () => {
         expect(after).toContain("pending:0.ifActions.0:body");
     });
 
-    test("promotes a ghost when planEdit happened before markHeadApplied", () => {
+    test("applies the planned head tokens", () => {
         primeWithCache(PATH, func([conditional({})]));
         markPlannedEdit(PATH, p(0), conditional({}), conditional({ matchAny: true }));
         markHeadApplied(PATH, p(0));
-        // Ghost is gone; body carries forward.
-        expect(ids().filter((id) => id.indexOf("ghost") >= 0)).toEqual([]);
         expect(bodyAt(0)?.completed).toBe(true);
     });
 });
 
 describe("finalizeFromSource", () => {
     test("rebuilds the line list from the source tree, all completed", () => {
-        // Start in a messy intermediate state — some pending-add lines,
-        // some diff states still set.
         setObservedTopLevel(PATH, nodes(message("a")));
         markPlannedAdd(PATH, p(1), message("b"), 1);
 
@@ -737,8 +744,24 @@ describe("finalizeFromSource", () => {
         expect(ids()).toEqual(["0:body", "1:body"]);
         for (const line of previewLinesForFile(PATH)) {
             expect(line.completed).toBe(true);
-            expect(line.diffState).toBeUndefined();
+            expect(line.plannedOp).toBeUndefined();
         }
+    });
+});
+
+describe("setCurrentOperation", () => {
+    test("keeps a move cursor on the observed row when an add shares its path", () => {
+        primeWithCache(PATH, func([message("existing")]));
+        markPlannedAdd(PATH, p(0), message("added"), 0);
+
+        setCurrentOperation(PATH, p(0), "move");
+        expect(getCurrentOperation(PATH)).toEqual({ op: "move", lineId: "0:body" });
+
+        setCurrentOperation(PATH, p(0), "add");
+        expect(getCurrentOperation(PATH)).toEqual({
+            op: "add",
+            lineId: "pending:0:body",
+        });
     });
 });
 
@@ -752,6 +775,14 @@ describe("previewLineIdForPath", () => {
     test("returns the unprefixed id when the path is observed", () => {
         primeWithCache(PATH, func([message("x")]));
         expect(previewLineIdForPath(PATH, p(0))).toBe("0:body");
+    });
+
+    test("falls forward to a rendered neighbor after the focused row is deleted", () => {
+        primeWithCache(PATH, func([message("a"), message("b"), message("c")]));
+        markPlannedDelete(PATH, p(1));
+        applyComplete(PATH, p(1), "delete", "delete");
+
+        expect(previewLineIdForPath(PATH, p(1))).toBe("2:body");
     });
 
     test("returns the unprefixed id when the path is unknown", () => {

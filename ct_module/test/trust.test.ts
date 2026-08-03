@@ -564,6 +564,7 @@ describe("trusted action-list planning", () => {
             },
             overwriteWarningMode: "always",
             conflicts: [],
+            conflictEvidence: [],
             events: undefined,
             itemRead: { mode: "sync" },
         };

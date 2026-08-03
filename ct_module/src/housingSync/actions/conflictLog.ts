@@ -14,7 +14,7 @@ import {
 } from "./scanHash";
 import type { ItemFieldContent } from "../items/fieldContent";
 
-export const IMPORT_CONFLICT_LOG_PATH =
+const IMPORT_CONFLICT_LOG_PATH =
     "./config/ChatTriggers/modules/HTSW/import-conflicts.log";
 
 /**

@@ -27,6 +27,8 @@ import { logActionListConflict } from "./conflictLog";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import type { ItemFieldContent } from "../items/fieldContent";
+import { fullyHydratedActionsFromSlots } from "./hydration/plan";
+import { actionListConflictDifferences } from "./conflictDetails";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -172,6 +174,12 @@ export async function hydrateActionListForPlan(
     for (const action of desired) {
         canonicalizeActionItemName(action, options.sync.canonicalizeItemName);
     }
+    if (options.sync.trust.trustMode) {
+        const liveActions = fullyHydratedActionsFromSlots(observed);
+        if (liveActions !== null) {
+            recordKnownConflictEvidence(liveActions, desired, options);
+        }
+    }
     if (!options.sync.trust.trustMode) {
         recordActionListConflict({ slots: observed }, desired, options);
     }
@@ -275,6 +283,19 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         options.sync.conflicts.push(target);
+        const liveActions =
+            "actions" in live
+                ? live.actions
+                : fullyHydratedActionsFromSlots(live.slots);
+        if (liveActions !== null) {
+            upsertConflictEvidence(
+                liveActions,
+                desired,
+                options,
+                liveItemContent ?? itemContent,
+                itemContent
+            );
+        }
         logActionListConflict({
             target,
             hashFamily,
@@ -286,4 +307,83 @@ function recordActionListConflict(
         });
     }
     return verdict;
+}
+
+function recordKnownConflictEvidence(
+    liveActions: readonly Action[],
+    desired: readonly Action[],
+    options: ActionListPlanOptions
+): void {
+    const target = options.conflictTarget;
+    if (
+        target === undefined ||
+        !options.sync.conflicts.some(
+            (conflict) =>
+                conflict.type === target.type &&
+                conflict.identity === target.identity &&
+                conflict.basePath === target.basePath
+        )
+    ) {
+        return;
+    }
+    const itemContent = options.sync.itemDiff?.fieldContent;
+    upsertConflictEvidence(
+        liveActions,
+        desired,
+        options,
+        itemContent,
+        itemContent
+    );
+}
+
+function upsertConflictEvidence(
+    liveActions: readonly Action[],
+    sourceActions: readonly Action[],
+    options: ActionListPlanOptions,
+    liveItemContent?: ItemFieldContent,
+    sourceItemContent?: ItemFieldContent
+): void {
+    const target = options.conflictTarget;
+    const evidence = options.sync.conflictEvidence;
+    if (target === undefined) return;
+    const baselineActions = options.baselineCurrent;
+    const entry = {
+        ...target,
+        baselineActions,
+        housingChangesSinceBaseline:
+            baselineActions === undefined
+                ? undefined
+                : actionListConflictDifferences(
+                      liveActions,
+                      baselineActions,
+                      liveItemContent
+                  ),
+        projectChangesSinceBaseline:
+            baselineActions === undefined
+                ? undefined
+                : actionListConflictDifferences(
+                      sourceActions,
+                      baselineActions,
+                      sourceItemContent
+                  ),
+        liveActions,
+        sourceActions,
+        canonicalDifferences: actionListConflictDifferences(
+            liveActions,
+            sourceActions,
+            liveItemContent,
+            sourceItemContent
+        ),
+    };
+    const index = evidence.findIndex(
+        (candidate) =>
+            candidate.type === target.type &&
+            candidate.identity === target.identity &&
+            candidate.basePath === target.basePath
+    );
+    if (index < 0) {
+        evidence.push(entry);
+    } else {
+        evidence[index] = entry;
+    }
 }

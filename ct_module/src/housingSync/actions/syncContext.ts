@@ -7,11 +7,21 @@ import type { ItemCaptureSink } from "../items/capture";
 import type { ItemFieldObservationRecorder } from "../items/fieldObservations";
 import type { SyncEventHandler } from "../syncEvents";
 import type { OverwriteWarningMode } from "../../importables/overwriteWarning";
+import type { ActionListConflictDifference } from "./conflictDetails";
 
 export type ActionSyncConflict = {
     type: Importable["type"];
     identity: string;
     basePath: string;
+};
+
+export type ActionSyncConflictEvidence = ActionSyncConflict & {
+    baselineActions?: readonly Action[];
+    housingChangesSinceBaseline?: readonly ActionListConflictDifference[];
+    projectChangesSinceBaseline?: readonly ActionListConflictDifference[];
+    liveActions: readonly Action[];
+    sourceActions: readonly Action[];
+    canonicalDifferences: readonly ActionListConflictDifference[];
 };
 
 export type ActionSyncContext = {
@@ -20,6 +30,7 @@ export type ActionSyncContext = {
     trust: TrustPlan;
     overwriteWarningMode: OverwriteWarningMode;
     conflicts: ActionSyncConflict[];
+    conflictEvidence: ActionSyncConflictEvidence[];
     events?: SyncEventHandler;
     itemRead: { mode: "sync" } | { mode: "verify"; captures: ItemCaptureSink };
     itemDiff?: ItemDiffContext;

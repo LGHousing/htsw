@@ -81,8 +81,14 @@ import {
     sourceItemFieldContent,
     type ItemFieldContent,
 } from "../../housingSync/items/fieldContent";
+import {
+    diffDetailsReportForImportConflicts,
+    writeDiffDetailsFile,
+} from "../../housingSync/actions/diffDetails";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
+
+export type ImportConflictDecision = "proceed" | "cancel" | "review";
 
 export type ImportSessionRequest = {
     importables: Importable[];
@@ -96,7 +102,10 @@ export type ImportSessionRequest = {
         | { kind: "proceed" }
         | {
               kind: "prompt";
-              decide: (conflicts: readonly ImportConflict[]) => Promise<boolean>;
+              decide: (
+                  conflicts: readonly ImportConflict[]
+              ) => Promise<ImportConflictDecision>;
+              onReviewPrepared?: (retainedKeys: readonly string[]) => void;
           };
     /** Called for dependencies that were not already included by the caller. */
     onImportableAutoAdded?: (importable: Importable) => void;
@@ -274,6 +283,7 @@ async function runImportSessionInner(
             overwriteWarningMode:
                 selection.overwriteWarningMode ?? getOverwriteWarningMode(),
             conflicts: [],
+            conflictEvidence: [],
             events,
             itemRead: { mode: "sync" },
             itemDiff,
@@ -372,6 +382,11 @@ async function runImportSessionInner(
             });
             if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
+                events?.emit({
+                    kind: "importableScanCompleted",
+                    key: row.key,
+                    needsHydration: false,
+                });
                 trustedRows.push(row);
                 plannedApplicationUnits.set(row.key, COST.cacheWrite);
                 continue;
@@ -385,6 +400,11 @@ async function runImportSessionInner(
                     row,
                     read: await scanImportable(ctx, row.importable, session),
                 };
+                events?.emit({
+                    kind: "importableScanCompleted",
+                    key: row.key,
+                    needsHydration: entry.read.needsHydration,
+                });
                 reads.push(entry);
                 chunkReads.push(entry);
             } catch (error) {
@@ -444,10 +464,6 @@ async function runImportSessionInner(
 
         for (const entry of chunkReads) {
             if (!entry.read.needsHydration) {
-                events?.emit({
-                    kind: "importableHydrationCompleted",
-                    key: entry.row.key,
-                });
                 hydrated.push(entry);
                 continue;
             }
@@ -459,6 +475,10 @@ async function runImportSessionInner(
             });
             try {
                 await entry.read.hydrate(ctx);
+                events?.emit({
+                    kind: "importableHydrationCompleted",
+                    key: entry.row.key,
+                });
                 hydrated.push(entry);
             } catch (error) {
                 const outcome = await persistHydratedReads(
@@ -515,23 +535,59 @@ async function runImportSessionInner(
     }
 
     if (session.actions.conflicts.length > 0) {
-        const proceed =
+        const diffDetailsPath = writeImportConflictDiff(
+            ctx,
+            selection.sourcePath,
+            session.actions.conflicts,
+            session.actions.conflictEvidence
+        );
+        const decision =
             selection.conflictHandling.kind === "proceed"
-                ? true
+                ? "proceed"
                 : await selection.conflictHandling.decide(session.actions.conflicts);
-        if (!proceed) {
-            for (const row of rowsMeta) {
-                events?.emit({
-                    kind: "importableFinished",
-                    key: row.key,
-                    status: "skipped",
-                });
+        if (decision === "review") {
+            const conflictKeys = new Set(
+                session.actions.conflicts.map((conflict) =>
+                    importableKey(conflict.type, conflict.identity)
+                )
+            );
+            const conflictPlans = observedPlans.filter(({ plan }) =>
+                conflictKeys.has(
+                    importableKey(
+                        plan.importable.type,
+                        importableIdentity(plan.importable)
+                    )
+                )
+            );
+            const retainedKeys: string[] = [];
+            await writeObservedPlanCaches(
+                ctx,
+                conflictPlans,
+                selection.housingUuid,
+                new Map(),
+                verifiedDependencyContext,
+                true,
+                (plan) => {
+                    retainedKeys.push(
+                        importableKey(
+                            plan.importable.type,
+                            importableIdentity(plan.importable)
+                        )
+                    );
+                }
+            );
+            if (selection.conflictHandling.kind === "prompt") {
+                selection.conflictHandling.onReviewPrepared?.(retainedKeys);
             }
+        }
+        if (decision !== "proceed") {
             ctx.displayMessage(
                 "&c[htsw] Import cancelled — Housing changed since the last import."
             );
             ctx.displayMessage(
-                "&7[htsw] Review the conflicting action lists in Housing, then retry."
+                diffDetailsPath === null
+                    ? "&7[htsw] Review the conflicting action lists in Housing, then retry."
+                    : `&7[htsw] Review &f${diffDetailsPath}&7, then retry the import.`
             );
             events?.emit({ kind: "sessionFinished" });
             return;
@@ -798,6 +854,34 @@ async function runImportSessionInner(
     events?.emit({ kind: "sessionFinished" });
 }
 
+function writeImportConflictDiff(
+    ctx: TaskContext,
+    sourcePath: string,
+    conflicts: readonly ImportConflict[],
+    evidence: ImportContext["actions"]["conflictEvidence"]
+): string | null {
+    try {
+        const path = writeDiffDetailsFile(
+            diffDetailsReportForImportConflicts(conflicts, evidence),
+            sourcePath,
+            new Date().toISOString()
+        );
+        ctx.displayMessage(
+            `&d[htsw] Housing conflict detected — diff saved to &f${path}`
+        );
+        ctx.displayMessage(
+            "&7[htsw] Your coding agent can read that file to review the live Housing changes."
+        );
+        return path;
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        ctx.displayMessage(
+            `&e[htsw] Housing conflict detected, but the diff file could not be saved: ${reason}`
+        );
+        return null;
+    }
+}
+
 async function restoreItemPlacementAfterCancellation(
     ctx: TaskContext,
     session: ImportContext
@@ -942,7 +1026,8 @@ async function writeObservedPlanCaches(
     housingUuid: string,
     pendingHouseLockEntries: PendingHouseLockEntries,
     verifiedContext: VerifiedDependencyContext,
-    quiet: boolean = false
+    quiet: boolean = false,
+    onSaved?: (plan: ImportablePlan) => void
 ): Promise<number> {
     let savedCount = 0;
     for (const { plan } of plans) {
@@ -970,6 +1055,7 @@ async function writeObservedPlanCaches(
                 verifiedContext.itemContent
             ),
         });
+        onSaved?.(plan);
         savedCount++;
     }
     return savedCount;

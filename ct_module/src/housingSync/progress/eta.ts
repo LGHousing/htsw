@@ -96,6 +96,7 @@ export function easeEta(
 export function createEtaCalculator(): EtaCalculator {
     let totalEta: EtaSmoother | null = null;
     let phaseEta: EtaSmoother | null = null;
+    let phaseScope: { key: string; phase: ProgressPhase } | null = null;
     let totalsLocked = false;
 
     function resetAtTotalsLock(progress: TaskProgress): void {
@@ -126,8 +127,16 @@ export function createEtaCalculator(): EtaCalculator {
             resetAtTotalsLock(progress);
             const phase = progress.active.phase;
             if (phase === "done") return null;
+            if (
+                phaseScope === null ||
+                phaseScope.key !== progress.active.key ||
+                phaseScope.phase !== phase
+            ) {
+                phaseEta = null;
+                phaseScope = { key: progress.active.key, phase };
+            }
             const now = Date.now();
-            const remainingUnits = phaseRemainingUnits(progress, phase);
+            const remainingUnits = snapshotPhaseRemaining(progress.active, phase);
             const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
             phaseEta = easeEta(phaseEta, candidate, now);
             return phaseEta.displayed;
@@ -175,22 +184,6 @@ export function currentMsPerUnit(): number {
     const value = weightTotal === 0 ? MS_PER_UNIT_PRIOR : weightedSum / weightTotal;
     cachedMsPerUnit = { at: now, value };
     return value;
-}
-
-function phaseRemainingUnits(progress: TaskProgress, phase: ProgressPhase): number {
-    const current = progress.active;
-    if (current === null) return 0;
-    // The staged importer processes each phase row by row. Scanned rows waiting
-    // for hydration sit in `parked` with those units still unspent, and a row
-    // that completed the phase parks with those units trued to zero
-    // (`trueUpReadHydrate`). Summing them makes the countdown cover every row
-    // still waiting for the phase instead of just the active row.
-    let remaining = snapshotPhaseRemaining(current, phase);
-    for (const key in progress.parked) {
-        if (key === current.key) continue;
-        remaining += snapshotPhaseRemaining(progress.parked[key], phase);
-    }
-    return remaining;
 }
 
 function snapshotPhaseRemaining(

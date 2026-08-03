@@ -34,8 +34,8 @@ describe("action-list conflict details", () => {
             differences: [
                 {
                     path: "action 1 (give item) · itemName",
-                    live: "<item>",
-                    source: "<item>",
+                    live: "apple",
+                    source: "cookie",
                 },
             ],
             moreCount: 0,

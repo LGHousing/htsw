@@ -57,6 +57,7 @@ function syncContextWith(handler: SyncEventHandler): ActionSyncContext {
         },
         overwriteWarningMode: "always",
         conflicts: [],
+        conflictEvidence: [],
         events: handler,
         itemRead: { mode: "sync" },
     };

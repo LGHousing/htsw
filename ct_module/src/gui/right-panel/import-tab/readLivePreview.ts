@@ -2,11 +2,10 @@ import type { Importable } from "htsw/types";
 
 import type { SyncEventHandler } from "../../../housingSync/syncEvents";
 import type { ObservedNode } from "../../../housingSync/observedActions";
+import { ActionPath, type ActionPathKey } from "../../../housingSync/actionPath";
 import {
-    ActionPath,
-    type ActionPathKey,
-} from "../../../housingSync/actionPath";
-import {
+    activatePreview,
+    disposePreviewOperation,
     getCurrentPath,
     hasPreviewState,
     markReadComplete,
@@ -15,10 +14,7 @@ import {
     setCurrent,
     setObservedTopLevel,
 } from "./livePreview";
-import {
-    setActiveTaskListLabel,
-    setActiveTaskPath,
-} from "./taskProgress";
+import { setActiveTaskListLabel, setActiveTaskPath } from "./taskProgress";
 
 export type ReadLivePreview = {
     events: SyncEventHandler;
@@ -43,7 +39,8 @@ export function createReadLivePreview(
     const completedPaths: Array<Map<ActionPathKey, ActionPath>> = [];
 
     const activePath = (): string | null => {
-        if (activeIndex === null || activeIndex < 0 || activeIndex >= paths.length) return null;
+        if (activeIndex === null || activeIndex < 0 || activeIndex >= paths.length)
+            return null;
         return paths[activeIndex];
     };
 
@@ -106,6 +103,7 @@ export function createReadLivePreview(
                 completedPaths[i] = new Map();
             }
             if (paths.length > 0) {
+                activatePreview(paths[0]);
                 resetPreview(paths[0]);
                 setActiveTaskPath(paths[0]);
             }
@@ -114,6 +112,7 @@ export function createReadLivePreview(
             if (index < 0 || index >= paths.length) return;
             const path = paths[index];
             activeIndex = index;
+            activatePreview(path);
             if (reset) {
                 latestSnapshots[index] = null;
                 completedPaths[index] = new Map();
@@ -136,7 +135,7 @@ export function createReadLivePreview(
             markPreviewCompleted(path);
         },
         clear() {
-            for (let i = 0; i < paths.length; i++) resetPreview(paths[i]);
+            disposePreviewOperation(paths);
             paths = [];
             latestSnapshots.length = 0;
             completedPaths.length = 0;

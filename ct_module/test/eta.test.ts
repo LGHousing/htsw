@@ -43,6 +43,8 @@ function progress(
                 applying: 10,
             },
             sync: null,
+            scanCompleted: true,
+            hydrationRequired: phase === "hydrating",
         },
         parked: {},
         rows: [],
@@ -98,10 +100,8 @@ describe("import ETA", () => {
         expect(eta.getTotal(p)).toBe(10.5);
     });
 
-    test("phase ETA covers parked rows still waiting for the phase", () => {
+    test("phase ETA only covers the active importable", () => {
         const p = progress(10, "hydrating");
-        // A scanned row waiting for hydration: reading is complete and
-        // hydration units are unspent.
         p.parked["FUNCTION:waiting"] = {
             key: "FUNCTION:waiting",
             type: "FUNCTION",
@@ -111,21 +111,12 @@ describe("import ETA", () => {
             totalUnits: 70,
             phaseUnits: { setup: 0, reading: 10, hydrating: 50, applying: 10 },
             sync: null,
+            scanCompleted: true,
+            hydrationRequired: true,
         };
-        // A row already hydrated and parked again: its hydrating units were
-        // trued to zero, so it must not inflate the countdown.
-        p.parked["FUNCTION:done"] = {
-            key: "FUNCTION:done",
-            type: "FUNCTION",
-            identity: "done",
-            phase: "hydrating",
-            completedUnits: 60,
-            totalUnits: 70,
-            phaseUnits: { setup: 0, reading: 60, hydrating: 0, applying: 10 },
-            sync: null,
-        };
-        // Active remaining 100 + waiting row's 50 = 150 units * 150 ms/u.
-        expect(eta.getPhase(p)).toBe(22.5);
+        // Active remaining 100 units * 150 ms/u. The parked row belongs only
+        // in the total ETA shown below the progress bar.
+        expect(eta.getPhase(p)).toBe(15);
     });
 
     test("setup phase remaining accounts for the setup segment", () => {

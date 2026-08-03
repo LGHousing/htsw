@@ -823,6 +823,11 @@ describe("progress reducer", () => {
                 },
             },
             {
+                kind: "importableScanCompleted",
+                key: "a",
+                needsHydration: true,
+            },
+            {
                 kind: "importableStarted",
                 key: "b",
                 type: "FUNCTION",
@@ -841,6 +846,8 @@ describe("progress reducer", () => {
             applying: 0,
         });
         expect(s.progress.parked.a.totalUnits).toBe(12);
+        expect(s.progress.parked.a.scanCompleted).toBe(true);
+        expect(s.progress.parked.a.hydrationRequired).toBe(true);
     });
 
     test("parking after hydrating keeps the read/hydrate split", () => {
@@ -896,7 +903,7 @@ describe("progress reducer", () => {
         expect(s.progress.parked.a.totalUnits).toBe(10);
     });
 
-    test("trusted hydration completion stays reading while active and turns purple when parked", () => {
+    test("a completed scan that needs no hydration stays reading-blue when parked", () => {
         let s = emit([
             {
                 kind: "sessionStarted",
@@ -928,7 +935,11 @@ describe("progress reducer", () => {
                     measuredTotalUnits: true,
                 },
             },
-            { kind: "importableHydrationCompleted", key: "a" },
+            {
+                kind: "importableScanCompleted",
+                key: "a",
+                needsHydration: false,
+            },
         ]);
 
         expect(s.progress.active?.phase).toBe("reading");
@@ -944,7 +955,9 @@ describe("progress reducer", () => {
             cached: null,
         });
 
-        expect(s.progress.parked.a.phase).toBe("hydrating");
+        expect(s.progress.parked.a.phase).toBe("reading");
+        expect(s.progress.parked.a.scanCompleted).toBe(true);
+        expect(s.progress.parked.a.hydrationRequired).toBe(false);
     });
 
     test("reactivating an export row enters hydration immediately", () => {

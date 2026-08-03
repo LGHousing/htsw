@@ -33,16 +33,21 @@ import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     orderImportablesForSession,
     runImportSession,
+    type ImportConflictDecision,
 } from "../../../importables/import/session";
 import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
-import { importableIdentity } from "../../../importables/identity";
+import { importableIdentity, importableKey } from "../../../importables/identity";
 import { HOUSE_READERS } from "../../../importables/export/readers";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
-import type { SyncEventHandler, SyncEvent } from "../../../housingSync/syncEvents";
+import type {
+    DiffOpKind,
+    SyncEventHandler,
+    SyncEvent,
+} from "../../../housingSync/syncEvents";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
@@ -57,6 +62,7 @@ import {
 } from "../../../housingSync/sideEffects";
 import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import {
+    activatePreview,
     applyComplete,
     finalizeFromSource,
     markHeadApplied,
@@ -70,6 +76,7 @@ import {
     rebaseToDesired,
     resetPreview,
     setCurrent,
+    setCurrentOperation,
     setLiveSummary,
     setObservedTopLevel,
 } from "./livePreview";
@@ -177,13 +184,13 @@ function conflictLines(conflicts: readonly ImportConflict[]): string[] {
 
 async function confirmImportConflicts(
     ctx: TaskContext,
-    conflicts: readonly ImportConflict[],
-    onReview: () => void
-): Promise<boolean> {
+    conflicts: readonly ImportConflict[]
+): Promise<ImportConflictDecision> {
     ChatLib.chat(
         "&7[htsw] Conflict evidence (live/lock/source hashes and type sequences) logged to import-conflicts.log"
     );
-    return openAnswerableConflictPrompt(ctx, {
+    const review = { requested: false };
+    const proceed = await openAnswerableConflictPrompt(ctx, {
         chatMessage: conflictAwaitingConfirmationMessage(conflicts),
         chatConfirmAction: "import anyway",
         chatRefuseAction: "cancel the import",
@@ -193,9 +200,11 @@ async function confirmImportConflicts(
         extraLabel: "See changes",
         danger: true,
         onExtra: () => {
-            onReview();
+            review.requested = true;
         },
     });
+    if (proceed) return "proceed";
+    return review.requested ? "review" : "cancel";
 }
 
 const BODY_LIST_PROPS: Record<string, true | undefined> = {
@@ -240,6 +249,14 @@ function createSyncEventHandler(args: {
     }
     const previewReplay = createImportPreviewReplay(args.trustMode);
     let activeViewKey: string | null = null;
+    const operationStack: Array<{ path: ActionPath; op: DiffOpKind }> = [];
+    const restoreParentOperation = (): boolean => {
+        if (activeViewPath === null || operationStack.length === 0) return false;
+        const parent = operationStack[operationStack.length - 1];
+        setCurrentOperation(activeViewPath, parent.path, parent.op);
+        setFocusPath(activeViewPath, parent.path);
+        return true;
+    };
 
     // Mapped type: one handler per event kind, parameter narrowed to the
     // specific event shape. TS enforces exhaustiveness — a new kind on the
@@ -250,10 +267,12 @@ function createSyncEventHandler(args: {
     const handlers: Handlers = {
         sessionStarted: () => {},
         importableStarted: (e) => {
+            operationStack.length = 0;
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewKey = e.key;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
             if (activeViewPath !== null) {
+                activatePreview(activeViewPath);
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
             }
@@ -269,16 +288,20 @@ function createSyncEventHandler(args: {
             if (e.status === "imported") invalidateSourceDiffForImportable(imp);
         },
         importableReactivated: (e) => {
+            operationStack.length = 0;
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewKey = e.key;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
+            if (activeViewPath !== null) activatePreview(activeViewPath);
             previewReplay.restore(e.key, activeViewPath);
         },
+        importableScanCompleted: () => {},
         importableHydrationCompleted: () => {},
         sessionTotalsLocked: () => {},
         sessionApplicationProgress: () => {},
         applicationProgress: () => {},
         sessionFinished: () => {
+            operationStack.length = 0;
             activeViewKey = null;
             activeViewPath = null;
         },
@@ -340,7 +363,8 @@ function createSyncEventHandler(args: {
         },
         operationStarted: (e) => {
             if (activeViewPath === null) return;
-            setCurrent(activeViewPath, e.path);
+            operationStack.push({ path: e.path, op: e.op });
+            setCurrentOperation(activeViewPath, e.path, e.op);
             if (e.op === "edit" && !editAffectsHeadLine(e.fieldsChanged)) {
                 markMatch(activeViewPath, e.path);
             }
@@ -348,11 +372,13 @@ function createSyncEventHandler(args: {
         },
         operationCompleted: (e) => {
             if (activeViewPath === null) return;
-            setCurrent(activeViewPath, null);
             applyComplete(activeViewPath, e.path, e.finalState, e.op);
+            operationStack.pop();
+            if (!restoreParentOperation()) setCurrent(activeViewPath, null);
         },
         listSyncCompleted: () => {
             if (activeViewPath === null) return;
+            if (restoreParentOperation()) return;
             setCurrent(activeViewPath, null);
             setFocusPath(activeViewPath, null);
         },
@@ -423,6 +449,7 @@ type ConflictReviewRequest = {
     batch: ImportBatch;
     conflicts: readonly ImportConflict[];
     housingUuid: string;
+    retainedKeys: readonly string[];
 };
 
 function conflictedImportables(request: ConflictReviewRequest): Importable[] {
@@ -443,9 +470,29 @@ function conflictedImportables(request: ConflictReviewRequest): Importable[] {
 function startConflictReview(request: ConflictReviewRequest): void {
     const importables = conflictedImportables(request);
     if (importables.length === 0) return;
+    const retainedKeys = new Set(request.retainedKeys);
+    const remaining = importables.filter(
+        (importable) =>
+            !retainedKeys.has(
+                importableKey(importable.type, importableIdentity(importable))
+            )
+    );
+    const firstSourcePath = importableSourcePath(importables[0]);
+    const openReview = (message: string): void => {
+        if (firstSourcePath !== undefined) {
+            previewSelect(firstSourcePath, request.batch.sourcePath);
+        }
+        ChatLib.chat(message);
+    };
+    if (remaining.length === 0) {
+        openReview(
+            "&7[htsw] Kept the changed lists from this import — the View tab shows what changed in Housing."
+        );
+        return;
+    }
 
     const specsByType = new Map<Importable["type"], DeepReadSpec & { names: string[] }>();
-    for (const imp of importables) {
+    for (const imp of remaining) {
         const read = HOUSE_READERS[imp.type];
         if (read === null) continue;
         let spec = specsByType.get(imp.type);
@@ -460,21 +507,22 @@ function startConflictReview(request: ConflictReviewRequest): void {
         }
         spec.names.push(importableIdentity(imp));
     }
-
-    const firstSourcePath = importableSourcePath(importables[0]);
-    startDeepRead(Array.from(specsByType.values()), {
+    const specs = Array.from(specsByType.values());
+    if (specs.length === 0) {
+        ChatLib.chat(
+            "&e[htsw] Couldn't retain a complete Housing snapshot for the changed lists."
+        );
+        return;
+    }
+    startDeepRead(specs, {
         housingUuid: request.housingUuid,
         importJsonPath: request.batch.sourcePath,
         parsed: request.batch.parsed,
         summaryLabel: "changed importable",
-        onSuccess: () => {
-            if (firstSourcePath !== undefined) {
-                previewSelect(firstSourcePath, request.batch.sourcePath);
-            }
-            ChatLib.chat(
-                "&7[htsw] Read the changed lists — the View tab shows what changed in Housing."
-            );
-        },
+        onSuccess: () =>
+            openReview(
+                "&7[htsw] Kept the available changes and read the remaining lists — the View tab shows what changed in Housing."
+            ),
     });
 }
 
@@ -794,24 +842,27 @@ async function prepareAndStartImport(
                     conflictHandling: {
                         kind: "prompt",
                         decide: async (conflicts) => {
-                            const proceed = await confirmImportConflicts(
-                                ctx,
-                                conflicts,
-                                () => {
-                                    reviewRequest = {
-                                        batch,
-                                        conflicts: conflicts.slice(),
-                                        housingUuid,
-                                    };
-                                }
-                            );
-                            if (!proceed) {
+                            const decision = await confirmImportConflicts(ctx, conflicts);
+                            if (decision === "review") {
+                                reviewRequest = {
+                                    batch,
+                                    conflicts: conflicts.slice(),
+                                    housingUuid,
+                                    retainedKeys: [],
+                                };
+                            }
+                            if (decision !== "proceed") {
                                 cancelled = true;
                                 ChatLib.chat(
                                     `[htsw] Import cancelled by user · ${totalImported} imported`
                                 );
                             }
-                            return proceed;
+                            return decision;
+                        },
+                        onReviewPrepared: (retainedKeys) => {
+                            if (reviewRequest !== null) {
+                                reviewRequest.retainedKeys = retainedKeys;
+                            }
                         },
                     },
                     onImportableAutoAdded: (importable) => {
@@ -895,8 +946,8 @@ async function prepareAndStartImport(
                         removeFromQueueKey(sessionItemKeys[i]);
                     }
                 }
-                // A conflict review is a separate read task, so it must not
-                // strand the import session while it runs.
+                // A conflict review may start a separate read task for snapshots
+                // the importer could not reconstruct, so don't strand the session.
                 if (!isTaskRunning() || reviewRequest !== null) {
                     endQueueSession(false);
                     if (removeSessionItems || cancelled) clearLastFinishedProgress();

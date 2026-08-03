@@ -1,11 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 /**
- * Shared diff-state type and palette used by both the live import preview
- * (`import-tab/livePreview.ts`, where each `PreviewLine` carries its own
- * `diffState`) and the static View-tab diff (`sourceDiff.ts`). This file
- * holds only the type + constants — the per-action state lives in those
- * modules.
+ * Source-diff state and palette for the static code view.
  *
  *   "unknown"  — no info (gray)
  *   "match"    — current source matches the cache baseline exactly (white)
@@ -13,8 +9,7 @@
  *   "delete"   — cache baseline has it, current source doesn't (red)
  *   "add"      — current source has it, cache baseline doesn't (green)
  *
- * The importer's "currently touching this line" cursor is NOT a diff state —
- * it's driven by focus (see `focusedLine`) and painted with `COLOR_CURSOR`.
+ * Live import operations use explicit visual markers rather than this state.
  */
 
 export type DiffState =

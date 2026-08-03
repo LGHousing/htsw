@@ -35,6 +35,7 @@ import {
     readActionListPlan,
     scanActionListForPlan,
 } from "../src/housingSync/actions/plan";
+import { scanActionListSync } from "../src/housingSync/actions/prepareSync";
 
 function sessionWithLock(
     importable: ImportableFunction,
@@ -88,6 +89,7 @@ function sessionWithLock(
         },
         overwriteWarningMode,
         conflicts: [],
+        conflictEvidence: [],
         events: undefined,
         itemRead: { mode: "sync" },
     };
@@ -133,7 +135,55 @@ describe("readActionListPlan conflict detection", () => {
         expect(session.conflicts).toEqual([
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
+        expect(session.conflictEvidence).toEqual([
+            expect.objectContaining({
+                type: "FUNCTION",
+                identity: "Debug",
+                basePath: "actions",
+                liveActions: [changeVar()],
+                sourceActions: [playSound()],
+                canonicalDifferences: [
+                    expect.objectContaining({
+                        path: "action 1 (change var) · type",
+                    }),
+                ],
+            }),
+        ]);
         expect(mocks.hydrateActionListScan).toHaveBeenCalledOnce();
+    });
+
+    it("reports a known conflict before hydration even when the cache baseline is missing", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, changeVar())],
+        });
+        const session = sessionWithLock(importable, [message("baseline")]);
+        const reasons: string[] = [];
+        session.events = {
+            emit: (event) => {
+                if (event.kind === "knowledgeSourceUsed") reasons.push(event.reason);
+            },
+        };
+        const trustPlan = session.trust.importables.get("FUNCTION:Debug");
+
+        const result = await scanActionListSync(null as unknown as TaskContext, {
+            desired: importable.actions,
+            sync: session,
+            trustPlan,
+            basePath: "actions",
+            conflictTarget: {
+                type: importable.type,
+                identity: importable.name,
+                basePath: "actions",
+            },
+        });
+
+        expect(result.kind).toBe("hydrate");
+        expect(reasons[reasons.length - 1]).toBe("lock-conflict");
     });
 
     it("detects an untrusted content conflict without an import cache entry", async () => {

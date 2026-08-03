@@ -140,8 +140,10 @@ vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
     createDiffProgressSession: () => mocks.progress,
 }));
 
-vi.mock("../src/slashCommands/diffDetails", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/slashCommands/diffDetails")>()),
+vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
+    ...(await importOriginal<
+        typeof import("../src/housingSync/actions/diffDetails")
+    >()),
     writeDiffDetailsFile: () => "./htsw-diff/latest.diff",
 }));
 
@@ -188,6 +190,7 @@ function actionSession(trust: TrustPlan): ActionSyncContext {
         trust,
         overwriteWarningMode: "always",
         conflicts: [],
+        conflictEvidence: [],
         events: undefined,
         itemRead: { mode: "sync" },
     };

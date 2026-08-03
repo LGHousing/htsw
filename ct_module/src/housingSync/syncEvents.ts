@@ -136,6 +136,11 @@ export type SyncEvent =
           phase?: ProgressPayload["phase"];
       }
     | {
+          kind: "importableScanCompleted";
+          key: string;
+          needsHydration: boolean;
+      }
+    | {
           kind: "importableHydrationCompleted";
           key: string;
       }

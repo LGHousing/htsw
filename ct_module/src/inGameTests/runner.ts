@@ -411,6 +411,7 @@ function fixtureImportContext(
             trust,
             overwriteWarningMode: "always",
             conflicts: [],
+            conflictEvidence: [],
             events: undefined,
             itemRead: { mode: "verify", captures },
         },

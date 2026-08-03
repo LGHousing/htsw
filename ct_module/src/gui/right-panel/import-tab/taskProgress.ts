@@ -347,12 +347,16 @@ export type QueueItemRunState =
           phase: QueuePhase;
           phaseUnits: PhaseUnits;
           completedUnits: number;
+          scanCompleted: boolean;
+          hydrationRequired: boolean;
       }
     | {
           kind: "parked";
           phase: QueuePhase;
           phaseUnits: PhaseUnits;
           completedUnits: number;
+          scanCompleted: boolean;
+          hydrationRequired: boolean;
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
@@ -391,6 +395,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
                 phase: snap.phase,
                 phaseUnits: snap.phaseUnits,
                 completedUnits: snap.completedUnits,
+                scanCompleted: snap.scanCompleted,
+                hydrationRequired: snap.hydrationRequired,
             };
         }
         return {
@@ -398,6 +404,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
             phase: "reading",
             phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
             completedUnits: 0,
+            scanCompleted: false,
+            hydrationRequired: false,
         };
     }
     return runStateFromActive(current);
@@ -445,6 +453,8 @@ function runStateFromActive(active: {
     phase: "setup" | "reading" | "hydrating" | "applying" | "done";
     completedUnits: number;
     phaseUnits: PhaseUnits;
+    scanCompleted: boolean;
+    hydrationRequired: boolean;
 }): Extract<QueueItemRunState, { kind: "current" }> {
     let phase: QueuePhase;
     if (active.phase === "applying") {
@@ -459,6 +469,8 @@ function runStateFromActive(active: {
         phase,
         phaseUnits: active.phaseUnits,
         completedUnits: active.completedUnits,
+        scanCompleted: active.scanCompleted,
+        hydrationRequired: active.hydrationRequired,
     };
 }
 

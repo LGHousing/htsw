@@ -70,12 +70,19 @@ function compareScalarFields(
                 source as unknown as Action | Condition,
                 field.prop
             );
-            if (liveItem !== sourceItem) {
+            const bothCanonical = liveItem !== undefined && sourceItem !== undefined;
+            const liveValue = bothCanonical
+                ? liveItem
+                : scalarFieldCompareKey(type, field.prop, live[field.prop]);
+            const sourceValue = bothCanonical
+                ? sourceItem
+                : scalarFieldCompareKey(type, field.prop, source[field.prop]);
+            if (liveValue !== sourceValue) {
                 addDifference(
                     collector,
                     `${path} · ${field.prop}`,
-                    "<item>",
-                    "<item>"
+                    liveValue,
+                    sourceValue
                 );
             }
             continue;

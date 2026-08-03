@@ -37,7 +37,7 @@ import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
-import { writeDiffDetailsFile } from "./diffDetails";
+import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
 import {
     evaluateDiffReport,
     formatDiffReport,

@@ -4,7 +4,7 @@ import type { Action } from "htsw/types";
 import {
     formatDiffDetailsFile,
     printerDiagnosticsForDiff,
-} from "../src/slashCommands/diffDetails";
+} from "../src/housingSync/actions/diffDetails";
 
 describe("diff details", () => {
     it("surfaces diagnostics from lossy HTSL printing", () => {
@@ -87,7 +87,7 @@ describe("diff details", () => {
                 "# conflicts: 2\n" +
                 "# pending changes: 1\n" +
                 "# unknown: 1\n" +
-                "# Values use the canonical field comparison that determined the verdict.\n" +
+                "# Field differences compare the labeled action-list snapshots.\n" +
                 "\n" +
                 '# FUNCTION "Debug" · actions\n' +
                 "--- source/actions\n" +
@@ -149,5 +149,62 @@ describe("diff details", () => {
             );
         }
         expect(details).not.toMatch(/^   "[ab]"$/m);
+    });
+
+    it("includes complete source and live HTSL for agent review", () => {
+        const details = formatDiffDetailsFile(
+            {
+                clean: 0,
+                conflicts: [
+                    {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        basePath: "actions",
+                        canonicalDifferences: [
+                            {
+                                path: "action 1 (message) · message",
+                                source: '"source"',
+                                live: '"live"',
+                            },
+                        ],
+                        printerDiagnostics: [],
+                        baselineKnown: true,
+                        baselineActions: [
+                            { type: "MESSAGE", message: "last import" },
+                        ],
+                        housingChangesSinceBaseline: [
+                            {
+                                path: "action 1 (message) · message",
+                                source: '"last import"',
+                                live: '"live"',
+                            },
+                        ],
+                        projectChangesSinceBaseline: [
+                            {
+                                path: "action 1 (message) · message",
+                                source: '"last import"',
+                                live: '"source"',
+                            },
+                        ],
+                        sourceActions: [{ type: "MESSAGE", message: "source" }],
+                        liveActions: [{ type: "MESSAGE", message: "live" }],
+                    },
+                ],
+                pending: [],
+                unknown: 0,
+            },
+            "/project/import.json",
+            "2026-07-27T12:00:00.000Z"
+        );
+
+        expect(details).toContain(
+            "# HOUSING CHANGES SINCE LAST IMPORT\n" +
+                "--- last-import/actions\n+++ live/actions\n"
+        );
+        expect(details).toContain(
+            "# COMPLETE LAST IMPORT HTSL\nchat \"last import\"\n\n" +
+                "# COMPLETE SOURCE HTSL\nchat \"source\"\n\n" +
+                "# COMPLETE LIVE HTSL\nchat \"live\""
+        );
     });
 });

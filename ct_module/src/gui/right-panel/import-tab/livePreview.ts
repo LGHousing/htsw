@@ -4,7 +4,6 @@ import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
 import { normalizeSoundKey } from "../../../housingSync/fields/sounds";
 import type { TokenSpan, FieldSpan } from "../../code-view/lineTypes";
-import type { DiffState } from "../../code-view/diffPalette";
 import type {
     DiffFinalState,
     DiffOpKind,
@@ -27,7 +26,7 @@ import type {
     ObservedNode,
 } from "../../../housingSync/observedActions";
 
-type PreviewVariant = "body" | "else" | "close" | "ghost" | "placeholder";
+type PreviewVariant = "body" | "else" | "close" | "placeholder";
 
 export type PreviewLine = {
     id: string;
@@ -39,7 +38,8 @@ export type PreviewLine = {
     depth: number;
     lineNum: number;
     italic?: boolean;
-    diffState?: DiffState;
+    plannedOp?: DiffOpKind;
+    plannedTokens?: TokenSpan[];
     completed?: boolean;
     deleted?: boolean;
 };
@@ -51,6 +51,10 @@ type FileState = {
     readCompletedPaths: Map<ActionPathKey, ActionPath>;
     /** Action path the importer is touching right now (cursor / scroll target). */
     currentPath: ActionTreePath | null;
+    currentOperation: {
+        op: DiffOpKind;
+        lineId: string;
+    } | null;
     /** Set once the diff plan is known; its presence means we're in the apply phase. */
     summary: DiffSummary | null;
     lastObservedAt: number;
@@ -72,7 +76,8 @@ type FileState = {
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
 const states = new Map<string, FileState>();
-const MAX_PREVIEW_STATES = 128;
+const MAX_PREVIEW_STATES = 16;
+let activePreviewKey: string | null = null;
 
 function keyForFile(path: string): string {
     return normalizeHtswPath(path);
@@ -83,8 +88,9 @@ function removeState(key: string): void {
     markGuiDirty();
 }
 
-function evictCompletedPreview(): boolean {
+function evictCompletedPreview(exceptKey?: string): boolean {
     for (const [key, state] of states) {
+        if (key === exceptKey) continue;
         if (!state.evictionEligible) continue;
         removeState(key);
         return true;
@@ -92,9 +98,13 @@ function evictCompletedPreview(): boolean {
     return false;
 }
 
-function evictOldestPreview(): void {
-    const oldest = states.keys().next();
-    if (!oldest.done) removeState(oldest.value);
+function evictOldestInactivePreview(): boolean {
+    for (const key of states.keys()) {
+        if (key === activePreviewKey) continue;
+        removeState(key);
+        return true;
+    }
+    return false;
 }
 
 function ensure(path: string): FileState {
@@ -102,7 +112,7 @@ function ensure(path: string): FileState {
     let s = states.get(k);
     if (!s) {
         while (states.size >= MAX_PREVIEW_STATES) {
-            if (!evictCompletedPreview()) evictOldestPreview();
+            if (!evictCompletedPreview() && !evictOldestInactivePreview()) break;
         }
         s = {
             lines: [],
@@ -110,6 +120,7 @@ function ensure(path: string): FileState {
             hasContent: false,
             readCompletedPaths: new Map(),
             currentPath: null,
+            currentOperation: null,
             summary: null,
             lastObservedAt: 0,
             pendingNodes: undefined,
@@ -671,7 +682,6 @@ function makeLine(opts: {
     depth: number;
     lineNum?: number;
     italic?: boolean;
-    diffState?: DiffState;
     completed?: boolean;
     id?: string;
 }): PreviewLine {
@@ -685,7 +695,6 @@ function makeLine(opts: {
         depth: opts.depth,
         lineNum: opts.lineNum ?? 0,
         italic: opts.italic,
-        diffState: opts.diffState,
         completed: opts.completed,
     };
 }
@@ -693,7 +702,7 @@ function makeLine(opts: {
 function renumberLines(lines: PreviewLine[]): void {
     let n = 1;
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].variant === "ghost" || lines[i].variant === "placeholder") {
+        if (lines[i].variant === "placeholder") {
             lines[i].lineNum = 0;
             continue;
         }
@@ -723,9 +732,10 @@ function applyReadCompletions(
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         if (!lineHasCompletedRead(line, completedPaths)) continue;
-        if (line.completed !== true || line.diffState !== undefined) {
+        if (line.completed !== true || line.plannedOp !== undefined) {
             line.completed = true;
-            line.diffState = undefined;
+            line.plannedOp = undefined;
+            line.plannedTokens = undefined;
             changed = true;
         }
     }
@@ -778,6 +788,19 @@ export function resetPreview(path: string): void {
     removeState(keyForFile(path));
 }
 
+export function activatePreview(path: string): void {
+    const key = keyForFile(path);
+    if (activePreviewKey !== key) {
+        activePreviewKey = key;
+        while (evictCompletedPreview(key)) {}
+    }
+    const state = states.get(key);
+    if (state === undefined) return;
+    state.evictionEligible = false;
+    states.delete(key);
+    states.set(key, state);
+}
+
 export function hasPreviewState(path: string): boolean {
     return states.has(keyForFile(path));
 }
@@ -792,11 +815,28 @@ export function beginPreviewRead(path: string): void {
 }
 
 export function markPreviewCompleted(path: string): void {
-    const state = states.get(keyForFile(path));
-    if (state !== undefined) state.evictionEligible = true;
+    const key = keyForFile(path);
+    const state = states.get(key);
+    if (state === undefined) return;
+    if (key !== activePreviewKey) {
+        removeState(key);
+        return;
+    }
+    state.evictionEligible = true;
+}
+
+export function disposePreviewOperation(paths: readonly string[]): void {
+    let changed = false;
+    for (let i = 0; i < paths.length; i++) {
+        const key = keyForFile(paths[i]);
+        if (activePreviewKey === key) activePreviewKey = null;
+        if (states.delete(key)) changed = true;
+    }
+    if (changed) markGuiDirty();
 }
 
 export function disposeLivePreviews(): void {
+    activePreviewKey = null;
     if (states.size === 0) return;
     states.clear();
     markGuiDirty();
@@ -804,6 +844,25 @@ export function disposeLivePreviews(): void {
 
 export function livePreviewCacheSize(): number {
     return states.size;
+}
+
+export function livePreviewCacheTelemetry(): {
+    states: number;
+    lines: number;
+    tokens: number;
+    pendingNodes: number;
+} {
+    let lines = 0;
+    let tokens = 0;
+    let pendingNodes = 0;
+    for (const state of states.values()) {
+        lines += state.lines.length;
+        for (let i = 0; i < state.lines.length; i++) {
+            tokens += state.lines[i].tokens.length;
+        }
+        pendingNodes += state.pendingNodes?.length ?? 0;
+    }
+    return { states: states.size, lines, tokens, pendingNodes };
 }
 
 export function primeWithCache(
@@ -981,7 +1040,7 @@ export function markPlannedAdd(
         false
     );
     for (let i = 0; i < newLines.length; i++) {
-        newLines[i].diffState = "add";
+        newLines[i].plannedOp = "add";
     }
     markLinesPending(newLines);
     s.lines.splice(insertAt, 0, ...newLines);
@@ -998,21 +1057,12 @@ export function markPlannedEdit(
     const s = ensure(path);
     const startIdx = findActionStartIndex(s.lines, actionPath);
     if (startIdx < 0) return;
-    // diffPlanned arrives twice per list (after reading, again when the apply
-    // starts); a still-pending ghost means this edit is already marked.
-    if (findIndexByPathVariant(s.lines, actionPath, "ghost") >= 0) return;
-    s.lines[startIdx].diffState = "delete";
+    if (s.lines[startIdx].plannedOp === "edit") return;
     const depth = s.lines[startIdx].depth;
-    const ghostText = `${indent(depth)}${printActionOneLine(desired)}`;
-    const ghost = makeLine({
-        variant: "ghost",
-        actionPath,
-        text: ghostText,
-        depth,
-        diffState: "add",
-    });
-    s.lines.splice(startIdx + 1, 0, ghost);
-    renumberLines(s.lines);
+    s.lines[startIdx].plannedOp = "edit";
+    s.lines[startIdx].plannedTokens = tokenizeHtsl(
+        `${indent(depth)}${printActionOneLine(desired)}`
+    );
     bump(s);
 }
 
@@ -1026,7 +1076,7 @@ export function markPlannedDelete(path: string, actionPath: ActionPath): void {
         ? findDeletedActionEndIndex(s.lines, actionPath, startIdx)
         : findActionEndIndex(s.lines, actionPath, startIdx);
     for (let i = startIdx; i <= endIdx; i++) {
-        s.lines[i].diffState = "delete";
+        s.lines[i].plannedOp = "delete";
         s.lines[i].deleted = true;
     }
     bump(s);
@@ -1041,7 +1091,7 @@ export function markPlannedMove(
     const s = ensure(path);
     const startIdx = findActionStartIndex(s.lines, actionPath);
     if (startIdx < 0) return;
-    s.lines[startIdx].diffState = "edit";
+    s.lines[startIdx].plannedOp = "move";
     bump(s);
 }
 
@@ -1064,28 +1114,11 @@ export function applyComplete(
     if (kind === "edit") {
         const startIdx = findActionStartIndex(s.lines, actionPath);
         if (startIdx < 0) return;
-        let ghostIdx = -1;
-        const ghostId = `${ActionPath.key(actionPath)}:ghost`;
-        for (let i = startIdx + 1; i < s.lines.length; i++) {
-            if (s.lines[i].id === ghostId) {
-                ghostIdx = i;
-                break;
-            }
-        }
-        if (ghostIdx >= 0) {
-            const ghost = s.lines[ghostIdx];
-            ghost.italic = false;
-            ghost.variant = "body";
-            ghost.diffState = undefined;
-            ghost.completed = true;
-            ghost.id = computeLineId(ghost);
-            s.lines.splice(ghostIdx, 1);
-            s.lines.splice(startIdx, 1, ghost);
-        } else {
-            s.lines[startIdx].diffState = undefined;
-            s.lines[startIdx].completed = true;
-        }
-        renumberLines(s.lines);
+        const line = s.lines[startIdx];
+        if (line.plannedTokens !== undefined) line.tokens = line.plannedTokens;
+        line.plannedTokens = undefined;
+        line.plannedOp = undefined;
+        line.completed = true;
         bump(s);
         return;
     }
@@ -1106,7 +1139,8 @@ export function applyComplete(
             const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
             for (let i = startIdx; i <= endIdx; i++) {
                 if (s.lines[i].deleted === true) continue;
-                s.lines[i].diffState = undefined;
+                s.lines[i].plannedOp = undefined;
+                s.lines[i].plannedTokens = undefined;
                 s.lines[i].completed = true;
             }
             bump(s);
@@ -1115,7 +1149,8 @@ export function applyComplete(
         for (let i = firstAdded; i <= lastAdded; i++) {
             const line = s.lines[i];
             if (line.pending === true) setPending(line, false);
-            line.diffState = undefined;
+            line.plannedOp = undefined;
+            line.plannedTokens = undefined;
             line.completed = true;
         }
         renumberLines(s.lines);
@@ -1124,7 +1159,8 @@ export function applyComplete(
     }
     const startIdx = findActionStartIndex(s.lines, actionPath);
     if (startIdx < 0) return;
-    s.lines[startIdx].diffState = undefined;
+    s.lines[startIdx].plannedOp = undefined;
+    s.lines[startIdx].plannedTokens = undefined;
     s.lines[startIdx].completed = true;
     bump(s);
 }
@@ -1146,34 +1182,12 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
     }
     if (bodyIdx < 0) return;
 
-    let ghostIdx = -1;
-    for (let i = bodyIdx + 1; i < s.lines.length; i++) {
-        const line = s.lines[i];
-        if (
-            line.actionPath?.kind === "action" &&
-            ActionPath.equals(line.actionPath, actionPath) &&
-            line.variant === "ghost" &&
-            line.deleted !== true
-        ) {
-            ghostIdx = i;
-            break;
-        }
-    }
-    if (ghostIdx >= 0) {
-        const ghost = s.lines[ghostIdx];
-        ghost.italic = false;
-        ghost.variant = "body";
-        ghost.diffState = undefined;
-        ghost.completed = true;
-        setPending(ghost, false);
-        s.lines.splice(ghostIdx, 1);
-        s.lines.splice(bodyIdx, 1, ghost);
-    } else {
-        const body = s.lines[bodyIdx];
-        if (body.pending === true) setPending(body, false);
-        body.diffState = undefined;
-        body.completed = true;
-    }
+    const body = s.lines[bodyIdx];
+    if (body.pending === true) setPending(body, false);
+    if (body.plannedTokens !== undefined) body.tokens = body.plannedTokens;
+    body.plannedTokens = undefined;
+    body.plannedOp = undefined;
+    body.completed = true;
 
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
@@ -1185,7 +1199,8 @@ export function markHeadApplied(path: string, actionPath: ActionPath): void {
             continue;
         if (line.variant !== "else" && line.variant !== "close") continue;
         if (line.pending === true) setPending(line, false);
-        line.diffState = undefined;
+        line.plannedOp = undefined;
+        line.plannedTokens = undefined;
         line.completed = true;
     }
 
@@ -1221,6 +1236,37 @@ export function previewLineIdForPath(path: string, actionPath: ActionTreePath): 
     const effective = effectiveFocusActionPath(path, actionPath);
     if (effective === null) {
         const nearest = ActionTreePath.nearestAction(actionPath);
+        const state = states.get(keyForFile(path));
+        if (state !== undefined && nearest !== null) {
+            const listPath = ActionPath.containingList(nearest);
+            const targetIndex = ActionPath.index(nearest);
+            let bestLine: PreviewLine | null = null;
+            let bestDistance = Infinity;
+            for (let i = 0; i < state.lines.length; i++) {
+                const line = state.lines[i];
+                if (
+                    line.variant !== "body" ||
+                    line.deleted === true ||
+                    line.actionPath?.kind !== "action" ||
+                    !actionListPathsEqual(
+                        ActionPath.containingList(line.actionPath),
+                        listPath
+                    )
+                ) {
+                    continue;
+                }
+                const candidateIndex = ActionPath.index(line.actionPath);
+                const distance = Math.abs(candidateIndex - targetIndex);
+                if (
+                    distance < bestDistance ||
+                    (distance === bestDistance && candidateIndex >= targetIndex)
+                ) {
+                    bestLine = line;
+                    bestDistance = distance;
+                }
+            }
+            if (bestLine !== null) return bestLine.id;
+        }
         return computeLineId({ actionPath: nearest ?? actionPath, variant: "body" });
     }
     const s = states.get(keyForFile(path));
@@ -1258,7 +1304,8 @@ export function finalizeFromSource(path: string, actions: ReadonlyArray<Action>)
     appendActions(out, nodesFromActions(actions), undefined, 0, false);
     for (let i = 0; i < out.length; i++) {
         out[i].completed = true;
-        out[i].diffState = undefined;
+        out[i].plannedOp = undefined;
+        out[i].plannedTokens = undefined;
     }
     renumberLines(out);
     s.lines = out;
@@ -1268,12 +1315,18 @@ export function finalizeFromSource(path: string, actions: ReadonlyArray<Action>)
 
 // ── Live cursor / phase + match tagging ───────────────────────────────
 //
-// Per-line diff state lives on the `PreviewLine`s themselves (set by the
+// Planned operations live on the `PreviewLine`s themselves (set by the
 // `markPlanned*` / `applyComplete` mutators above). The only live state that
-// isn't per-line is the cursor and the phase flag, kept as two scalars below.
+// isn't per-line is the active cursor and the phase flag.
 
 export function getCurrentPath(path: string): ActionTreePath | null {
     return states.get(keyForFile(path))?.currentPath ?? null;
+}
+
+export function getCurrentOperation(
+    path: string
+): { op: DiffOpKind; lineId: string } | null {
+    return states.get(keyForFile(path))?.currentOperation ?? null;
 }
 
 export function getLiveSummary(path: string): DiffSummary | null {
@@ -1283,13 +1336,51 @@ export function getLiveSummary(path: string): DiffSummary | null {
 export function setCurrent(path: string, actionPath: ActionTreePath | null): void {
     const s = ensure(path);
     if (
-        (s.currentPath === null && actionPath === null) ||
-        (s.currentPath !== null &&
-            actionPath !== null &&
-            ActionTreePath.equals(s.currentPath, actionPath))
+        s.currentOperation === null &&
+        ((s.currentPath === null && actionPath === null) ||
+            (s.currentPath !== null &&
+                actionPath !== null &&
+                ActionTreePath.equals(s.currentPath, actionPath)))
     )
         return;
     s.currentPath = actionPath;
+    s.currentOperation = null;
+    markGuiDirty();
+}
+
+export function setCurrentOperation(
+    path: string,
+    actionPath: ActionPath,
+    op: DiffOpKind
+): void {
+    const s = ensure(path);
+    let preferredLineId: string | null = null;
+    let fallbackLineId: string | null = null;
+    for (let i = 0; i < s.lines.length; i++) {
+        const line = s.lines[i];
+        if (
+            line.variant !== "body" ||
+            line.actionPath?.kind !== "action" ||
+            !ActionPath.equals(line.actionPath, actionPath)
+        ) {
+            continue;
+        }
+        if (fallbackLineId === null) fallbackLineId = line.id;
+        const preferred =
+            op === "add"
+                ? line.pending === true
+                : line.pending !== true &&
+                  (op === "delete" ? line.deleted === true : line.deleted !== true);
+        if (preferred) {
+            preferredLineId = line.id;
+            break;
+        }
+    }
+    s.currentPath = actionPath;
+    s.currentOperation = {
+        op,
+        lineId: preferredLineId ?? fallbackLineId ?? previewLineIdForPath(path, actionPath),
+    };
     markGuiDirty();
 }
 
@@ -1321,7 +1412,8 @@ export function markMatch(path: string, actionPath: ActionPath): void {
             ActionPath.equals(linePath, actionPath)
         ) {
             s.lines[i].completed = true;
-            s.lines[i].diffState = undefined;
+            s.lines[i].plannedOp = undefined;
+            s.lines[i].plannedTokens = undefined;
             changed = true;
         }
     }

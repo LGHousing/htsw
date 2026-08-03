@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     upsertHouseLockImportablesOffThread: vi.fn(
         async (_path: string, _housingUuid: string, _updates: unknown[]) => true
     ),
+    writeDiffDetailsFile: vi.fn(() => "./project/htsw-diff/latest.diff"),
 }));
 
 vi.mock("../src/importables/import/importers", () => ({
@@ -58,6 +59,13 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
     writeTaskFailureLog: () => "./failure.log",
 }));
 
+vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
+    ...(await importOriginal<
+        typeof import("../src/housingSync/actions/diffDetails")
+    >()),
+    writeDiffDetailsFile: mocks.writeDiffDetailsFile,
+}));
+
 import {
     runImportSession,
     type ImportSessionRequest,
@@ -94,7 +102,7 @@ describe("import conflict gate", () => {
         mocks.upsertHouseLockImportablesOffThread.mockResolvedValue(true);
     });
 
-    it("skips every planned row and leaves caches and the lock untouched on cancel", async () => {
+    it("leaves planned rows unfinished and caches and the lock untouched on cancel", async () => {
         const importable: ImportableFunction = {
             type: "FUNCTION",
             name: "Debug",
@@ -104,12 +112,31 @@ describe("import conflict gate", () => {
             async (
                 _ctx: unknown,
                 _importable: unknown,
-                session: { actions: { conflicts: unknown[] } }
+                session: {
+                    actions: {
+                        conflicts: unknown[];
+                        conflictEvidence: unknown[];
+                    };
+                }
             ) => {
                 session.actions.conflicts.push({
                     type: "FUNCTION",
                     identity: "Debug",
                     basePath: "actions",
+                });
+                session.actions.conflictEvidence.push({
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                    liveActions: [message("live")],
+                    sourceActions: importable.actions,
+                    canonicalDifferences: [
+                        {
+                            path: "action 1 (message) · message",
+                            live: '"live"',
+                            source: '"desired"',
+                        },
+                    ],
                 });
                 return {
                     kind: "FUNCTION",
@@ -145,22 +172,103 @@ describe("import conflict gate", () => {
             events: { emit: (event) => events.push(event) },
             conflictHandling: {
                 kind: "prompt",
-                decide: async () => false,
+                decide: async () => {
+                    expect(
+                        messages.some((message) =>
+                            message.includes("Housing conflict detected — diff saved to")
+                        )
+                    ).toBe(true);
+                    return "cancel";
+                },
             },
         });
 
         expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
         expect(mocks.tryWriteImportableCache).not.toHaveBeenCalled();
         expect(mocks.upsertHouseLockImportablesOffThread).not.toHaveBeenCalled();
-        expect(events).toContainEqual({
-            kind: "importableFinished",
-            key: "./project/import.json|FUNCTION:Debug",
-            status: "skipped",
-        });
+        expect(events.some((event) => event.kind === "importableFinished")).toBe(false);
         expect(events[events.length - 1]).toEqual({ kind: "sessionFinished" });
         expect(messages).toContain(
             "&c[htsw] Import cancelled — Housing changed since the last import."
         );
+    });
+
+    it("retains the hydrated Housing snapshot for review without updating the lock", async () => {
+        const desired: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("desired")],
+        };
+        const observed: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [message("observed")],
+        };
+        mocks.scanImportable.mockImplementation(
+            async (
+                _ctx: unknown,
+                _importable: unknown,
+                session: { actions: { conflicts: unknown[] } }
+            ) => {
+                session.actions.conflicts.push({
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                });
+                return {
+                    kind: "FUNCTION",
+                    importable: desired,
+                    needsHydration: true,
+                    hydrate: mocks.hydrateImportable,
+                    plan: () => ({
+                        kind: "FUNCTION",
+                        importable: desired,
+                        applicationPlan: cacheApplicationPlan,
+                        applicationUnits: cacheApplicationPlan.totalUnits,
+                        isNoOp: () => false,
+                        apply: mocks.applyImportablePlan,
+                        reconstructObserved: () => observed,
+                        reconstructPartial: () => null,
+                    }),
+                };
+            }
+        );
+        const onReviewPrepared = vi.fn();
+        const events: SyncEvent[] = [];
+        const ctx = {
+            sleep: async () => undefined,
+            displayMessage: () => undefined,
+        } as unknown as TaskContext;
+
+        await runImportSession(ctx, {
+            importables: [desired],
+            trustMode: true,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: [desired] } as never,
+            events: { emit: (event) => events.push(event) },
+            conflictHandling: {
+                kind: "prompt",
+                decide: async () => "review",
+                onReviewPrepared,
+            },
+        });
+
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledTimes(1);
+        expect(events.some((event) => event.kind === "importableFinished")).toBe(false);
+        expect(mocks.tryWriteImportableCache).toHaveBeenCalledWith(
+            ctx,
+            observed,
+            "importer",
+            "test-house",
+            {
+                itemDependencies: { version: 1, dependencies: [] },
+                quiet: true,
+            }
+        );
+        expect(mocks.upsertHouseLockImportablesOffThread).not.toHaveBeenCalled();
+        expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
+        expect(onReviewPrepared).toHaveBeenCalledWith(["FUNCTION:Debug"]);
     });
 
     it("saves completed observations when hydration is cancelled", async () => {

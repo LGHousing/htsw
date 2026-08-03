@@ -96,6 +96,7 @@ export async function scanActionListSync(
     if (target.open !== undefined) {
         await target.open();
     }
+    const conflictsBeforeScan = target.sync.conflicts.length;
     const scan = await scanActionListForPlan(ctx, target.desired, {
         sync: target.sync,
         listPath: target.listPath,
@@ -112,12 +113,15 @@ export async function scanActionListSync(
         ),
         conflictTarget: target.conflictTarget,
     });
+    const conflictDetected = target.sync.conflicts.length > conflictsBeforeScan;
     if (needsConflictScan) {
         emitKnowledgeSource(
             target.sync.events,
             scan.kind === "planned" ? "cache" : "house",
             scan.kind === "planned"
                 ? "lock-verified"
+                : conflictDetected
+                  ? "lock-conflict"
                 : trustedBaseline === undefined
                   ? "cache-missing"
                   : "lock-conflict",

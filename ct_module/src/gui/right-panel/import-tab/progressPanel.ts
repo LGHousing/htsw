@@ -27,8 +27,9 @@ import {
 import {
     PHASE_APPLYING,
     PHASE_HYDRATING,
+    PHASE_HYDRATION_QUEUED,
     PHASE_READING,
-    PHASE_SCANNED,
+    PHASE_SCANNING,
 } from "./phaseColors";
 import { cancelActiveTask } from "../../../tasks/activeTask";
 import { showToast } from "../../toast";
@@ -90,11 +91,11 @@ function progressElapsedText(): string {
     return `§7${formatEtaSeconds(ms / 1000)}`;
 }
 
-const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } | undefined } = {
-    setup: { title: "Reading", etaSuffix: "read" },
-    reading: { title: "Reading", etaSuffix: "read" },
-    hydrating: { title: "Hydrating", etaSuffix: "hydrate" },
-    applying: { title: "Applying", etaSuffix: "apply" },
+const PHASE_LABELS: { [k: string]: { title: string } | undefined } = {
+    setup: { title: "Reading" },
+    reading: { title: "Reading" },
+    hydrating: { title: "Hydrating" },
+    applying: { title: "Applying" },
 };
 
 function opCounterText(): string {
@@ -124,20 +125,14 @@ function menuSlotParts(slot: MenuSlotFocus, phase: string): string[] {
     return parts;
 }
 
-function phaseEtaText(suffix: string): string {
-    // Show a phase countdown only when this phase's size is actually known:
-    //   - hydrating: the hydration plan gives exact units at phase start
-    //   - applying:  the diff is computed, op count fixed
-    // Setup and reading are discovery — their totals aren't known
-    // yet, so a countdown there would be invented. (Reading also self-
-    // suppresses: its remaining stays ~0 until the read finishes.)
+function phaseEtaText(): string {
     const p = getTaskProgress();
     const phase = p !== null && p.active !== null ? p.active.phase : null;
-    const phaseKnown = phase === "hydrating" || phase === "applying" || phase === "done";
-    if (p !== null && !phaseKnown) return "";
+    if (phase !== "hydrating" && phase !== "applying") return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    return `${formatEtaSeconds(secs)} left ${suffix}`;
+    const context = phase === "hydrating" ? "hydrating" : "for this importable";
+    return `${formatEtaSeconds(secs)} left ${context}`;
 }
 
 function currentPhaseLabel(): string {
@@ -146,7 +141,6 @@ function currentPhaseLabel(): string {
     const labels = PHASE_LABELS[p.active.phase];
     if (labels === undefined) return "§lDone";
     const title = isEtaEstimating() ? "Scanning" : labels.title;
-    const etaSuffix = isEtaEstimating() ? "scan" : labels.etaSuffix;
     const parts: string[] = [];
     const slot = p.active.currentSlot;
     if (slot != null && p.active.type === "MENU") {
@@ -155,7 +149,7 @@ function currentPhaseLabel(): string {
         const counter = opCounterText();
         if (counter.length > 0) parts.push(counter);
     }
-    const eta = phaseEtaText(etaSuffix);
+    const eta = phaseEtaText();
     if (eta.length > 0) parts.push(eta);
     return parts.length > 0 ? `§l${title}§r  ·  ${parts.join("  ·  ")}` : `§l${title}`;
 }
@@ -205,6 +199,8 @@ type PhaseSnapshot = {
     phase: "setup" | "reading" | "hydrating" | "applying" | "done";
     phaseUnits: PhaseUnits;
     completedUnits: number;
+    scanCompleted: boolean;
+    hydrationRequired: boolean;
 };
 
 /**
@@ -248,6 +244,14 @@ function taskPhaseFillSegments(snapshot: PhaseSnapshot): Element[] {
     return [phaseSegment(1, f.readFraction, PHASE_READING)];
 }
 
+function taskHasReachedHydration(): boolean {
+    const progress = getTaskProgress();
+    if (progress === null) return false;
+    if (progress.totalsLocked) return true;
+    const phase = progress.active?.phase;
+    return phase === "hydrating" || phase === "applying" || phase === "done";
+}
+
 /**
  * Segments for the importable currently being worked on. During export
  * scanning the phase-unit math has nothing to show (a scan credits almost
@@ -259,7 +263,22 @@ export function currentSnapshotSegments(
     snapshot: PhaseSnapshot,
     style: "slices" | "fill"
 ): Element[] {
-    if (isEtaEstimating()) return [phaseSegment(1, 1, PHASE_READING)];
+    if (snapshot.phase === "setup" || snapshot.phase === "reading") {
+        if (snapshot.scanCompleted) {
+            const color = snapshot.hydrationRequired
+                ? PHASE_HYDRATION_QUEUED
+                : taskHasReachedHydration()
+                  ? PHASE_HYDRATING
+                  : PHASE_READING;
+            return [phaseSegment(1, 1, color)];
+        }
+        if (isEtaEstimating()) return [phaseSegment(1, 1, PHASE_SCANNING)];
+        const fraction = phaseFractions(
+            snapshot.phaseUnits,
+            snapshot.completedUnits
+        ).readFraction;
+        return [phaseSegment(1, fraction, PHASE_SCANNING)];
+    }
     return style === "slices"
         ? taskPhaseSliceSegments(snapshot)
         : taskPhaseFillSegments(snapshot);
@@ -275,7 +294,19 @@ export function parkedSnapshotSegments(
     style: "slices" | "fill"
 ): Element[] {
     if (snapshot.phase === "setup" || snapshot.phase === "reading") {
-        return [phaseSegment(1, 1, PHASE_SCANNED)];
+        if (!snapshot.scanCompleted) {
+            return [phaseSegment(1, 1, PHASE_SCANNING)];
+        }
+        if (snapshot.hydrationRequired) {
+            return [phaseSegment(1, 1, PHASE_HYDRATION_QUEUED)];
+        }
+        return [
+            phaseSegment(
+                1,
+                1,
+                taskHasReachedHydration() ? PHASE_HYDRATING : PHASE_READING
+            ),
+        ];
     }
     return style === "slices"
         ? taskPhaseSliceSegments(snapshot)
@@ -444,17 +475,18 @@ function operationProgressText(completed: number, total: number): string {
 function progressTotalEtaLine(): string {
     const p = getTaskProgress();
     if (p === null) return "";
-    if (isEtaEstimating()) return "total estimating...";
+    if (isEtaEstimating()) return "total calculating…";
     // Until the apply phase, the per-importable apply cost is just a rough
     // guess — the real op-by-op diff isn't known until each importable has
     // been read + hydrated. Showing a total before then is fiction, so we
-    // withhold it (the per-phase ETA still ticks).
-    const ready = isTaskTotalLocked(p);
+    // withhold it until the session-wide apply plan is fixed.
+    const phase = p.active?.phase;
+    const ready = (phase === "applying" || phase === "done") && isTaskTotalLocked(p);
     if (!ready) {
-        return "total estimating…";
+        return "total calculating…";
     }
     const secs = getTaskEtaSeconds();
-    if (secs === null) return "total estimating…";
+    if (secs === null) return "total calculating…";
     const etc = getTaskEtcMs();
     const etcText = etc === null ? "" : ` · ends ${formatClockTime(etc)}`;
     // "~" marks a session whose item sizes are pure fallbacks (nothing cached
@@ -470,11 +502,11 @@ function knowledgeStatusText(): string {
     const knowledge = active.knowledge;
     if (active.phase === "applying" || active.phase === "done") return "";
     if (active.phase === "hydrating") {
+        if (knowledge.currentReason === "lock-conflict") {
+            return "Housing differs from the last import · reading action details";
+        }
         if (knowledge.currentReason === "cache-missing") {
             return "Reading action details from Housing · cache unavailable";
-        }
-        if (knowledge.currentReason === "lock-conflict") {
-            return "Reading current action details · Housing changed";
         }
         if (knowledge.usedCache) {
             return "Reading uncached action details from Housing";
@@ -512,6 +544,13 @@ function knowledgeStatusText(): string {
         return "Housing changed since the last import · reading current state";
     }
     return "Reading current state from Housing";
+}
+
+function knowledgeStatusColor(): number {
+    const active = getTaskProgress()?.active;
+    if (active?.knowledge?.currentReason === "lock-conflict") return PHASE_HYDRATING;
+    if (active?.phase === "hydrating") return PHASE_HYDRATING;
+    return COLOR_TEXT_DIM;
 }
 
 type ProgressPosition = {
@@ -683,7 +722,7 @@ export function liveTaskFooterPanel(): Element {
                     knowledgeStatusText().length > 0 &&
                         Text({
                             text: () => knowledgeStatusText(),
-                            color: COLOR_TEXT_DIM,
+                            color: () => knowledgeStatusColor(),
                             truncate: true,
                             style: { width: { kind: "grow" } },
                         }),

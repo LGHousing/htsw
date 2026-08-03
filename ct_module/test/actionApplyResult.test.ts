@@ -78,6 +78,7 @@ function syncContext(): ActionSyncContext {
         },
         overwriteWarningMode: "always",
         conflicts: [],
+        conflictEvidence: [],
         events: undefined,
         itemRead: { mode: "sync" },
     };

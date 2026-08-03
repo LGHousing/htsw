@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Container, Text } from "../lib/components";
+import { Container, Icon, Text } from "../lib/components";
 import type { ClickInfo, Element, Rect } from "../lib/layout";
 import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from "./diffPalette";
 import { CodeViewColors } from "./lineModel";
@@ -248,7 +248,7 @@ function buildVisualLineRow(
     const state: DiffState = dec.state ?? "unknown";
     const isFocused = dec.isFocused === true;
 
-    let bg = dec.background;
+    let bg = dec.background ?? dec.marker?.background;
     if (bg === undefined && dec.state !== undefined) {
         bg = ROW_BG_BY_STATE[state];
     }
@@ -258,11 +258,13 @@ function buildVisualLineRow(
 
     const cursorGlyphText = isFocused ? CURSOR_GLYPH : " ";
     const cursorGlyphColor = COLOR_CURSOR;
-    const stateGlyphText = dec.state !== undefined ? STATE_GLYPH[state] : " ";
-    const stateGlyphColor =
-        dec.state !== undefined
+    const markerGlyphText =
+        dec.marker?.glyph ?? (dec.state !== undefined ? STATE_GLYPH[state] : " ");
+    const markerColor =
+        dec.marker?.color ??
+        (dec.state !== undefined
             ? COLOR_BY_STATE[state]
-            : (line.staticForeground ?? CodeViewColors.gutter);
+            : (line.staticForeground ?? CodeViewColors.gutter));
 
     const hideLineNum = dec.hideLineNum === true;
     const lineNumText = hideLineNum || continuation
@@ -310,11 +312,32 @@ function buildVisualLineRow(
         }));
     }
     if (options.showStateGutter) {
-        children.push(Text({
-            text: continuation ? " " : stateGlyphText,
-            color: applyAlpha(stateGlyphColor, alpha),
-            style: { width: { kind: "px", value: STATE_GUTTER_W } },
-        }));
+        children.push(
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    justify: "center",
+                    width: { kind: "px", value: STATE_GUTTER_W },
+                    height: { kind: "grow" },
+                },
+                children: [
+                    !continuation && dec.marker?.icon !== undefined
+                        ? Icon({
+                              name: dec.marker.icon,
+                              color: applyAlpha(markerColor, alpha),
+                              style: {
+                                  width: { kind: "px", value: 7 },
+                                  height: { kind: "px", value: 7 },
+                              },
+                          })
+                        : Text({
+                              text: continuation ? " " : markerGlyphText,
+                              color: applyAlpha(markerColor, alpha),
+                          }),
+                ],
+            })
+        );
     }
     children.push(
         Text({

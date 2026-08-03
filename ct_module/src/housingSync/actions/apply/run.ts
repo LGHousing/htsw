@@ -565,8 +565,17 @@ export class ActionListApplyRun {
     }
 
     private emitStarted(op: ActionListOperation, path: ActionPath | null): void {
-        if (this.events === undefined || path === null || op.kind === "delete") return;
+        if (this.events === undefined || path === null) return;
         const actionType = actionTypeForOp(op);
+        if (op.kind === "delete") {
+            this.events.emit({
+                kind: "operationStarted",
+                path,
+                op: "delete",
+                actionType,
+            });
+            return;
+        }
         if (actionType === null) return;
         if (op.kind === "add") {
             this.events.emit({
