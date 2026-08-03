@@ -214,9 +214,7 @@ export async function applyImportableItemPlan(
         // Housing re-signs the held item after its click actions change and
         // pushes the new stack to the client; wait for a blob that differs
         // from what we placed instead of sleeping a fixed second.
-        const placedInteractData = extractInteractDataSnbt(
-            plan.item.getRawNBT() ?? ""
-        );
+        const placedInteractData = extractInteractDataSnbt(plan.item.getRawNBT());
         const signedInteractData = (): string | null => {
             const snbt = heldItem()?.getRawNBT();
             if (!snbt) return null;
