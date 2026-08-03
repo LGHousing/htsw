@@ -61,6 +61,7 @@ vi.mock("../src/gui/parsing/offThreadParse", () => ({
             error: null,
             fingerprint: currentFingerprint(),
             hashes: version === 1 ? ["old"] : ["new", "new2"],
+            profile: null,
         }),
 }));
 
@@ -68,7 +69,13 @@ vi.mock("../src/gui/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: () => null,
     restoreParseFromSnapshot: () => null,
-    saveSnapshot: () => undefined,
+    saveSnapshot: () => ({
+        hashMs: 0,
+        buildMs: 0,
+        serializeMs: 0,
+        writeMs: 0,
+        bytes: 0,
+    }),
 }));
 vi.mock("../src/importables/items/projectItems", () => ({
     createProjectItemIndex: () => ({}),

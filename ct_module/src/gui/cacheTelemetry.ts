@@ -13,7 +13,7 @@ import { truncateCacheSize } from "./lib/render";
 import { forEachCachedParse, parseCacheSizes } from "./parsing/parses";
 import { rightPanelFileCacheSize } from "./right-panel";
 import { focusedLineCacheSize } from "./right-panel/import-tab/focusedLine";
-import { livePreviewCacheSize } from "./right-panel/import-tab/livePreview";
+import { livePreviewCacheTelemetry } from "./right-panel/import-tab/livePreview";
 import { queueItemsCacheSize } from "./right-panel/import-tab/queue";
 import { queueRowCacheSizes } from "./right-panel/import-tab/queueRows";
 import { debugLog } from "./lib/debugLog";
@@ -25,8 +25,9 @@ export function guiCacheSizes() {
     const sourceDiff = sourceDiffCacheSizes();
     const queueRows = queueRowCacheSizes();
     const importCache = importCacheMemorySizes();
+    const livePreviews = livePreviewCacheTelemetry();
     return {
-        boundedParses: parse.parses,
+        unboundedParses: parse.parses,
         boundedCanonicalPaths: parse.canonicalPaths,
         boundedLinePlain: lines.plain,
         boundedLineHtsl: lines.htsl,
@@ -35,7 +36,10 @@ export function guiCacheSizes() {
         boundedLineHtslRaw: lines.htslRaw,
         boundedProjectEnumeration: enumerationCacheSize(),
         boundedSubtreeAggregates: subtreeAggregateCacheSize(),
-        boundedLivePreviews: livePreviewCacheSize(),
+        boundedLivePreviews: livePreviews.states,
+        boundedLivePreviewLines: livePreviews.lines,
+        boundedLivePreviewTokens: livePreviews.tokens,
+        boundedLivePreviewPendingNodes: livePreviews.pendingNodes,
         boundedTextWidths: textWidthCacheSize(),
         boundedTruncations: truncateCacheSize(),
         boundedHtslParses: htslParseCacheSize(),
@@ -70,15 +74,18 @@ export function parsedManifestCount(): number {
 export function logGuiCacheSizes(): void {
     const sizes = guiCacheSizes();
     debugLog(
-        `cache sizes bounded={parse:${sizes.boundedParses},canonicalPaths:${sizes.boundedCanonicalPaths},` +
+        `cache sizes bounded={canonicalPaths:${sizes.boundedCanonicalPaths},` +
             `linePlain:${sizes.boundedLinePlain},lineHtsl:${sizes.boundedLineHtsl},` +
             `lineJson:${sizes.boundedLineJson},lineSnbt:${sizes.boundedLineSnbt},` +
             `lineHtslRaw:${sizes.boundedLineHtslRaw},` +
             `projectEnumeration:${sizes.boundedProjectEnumeration},` +
             `subtreeAggregates:${sizes.boundedSubtreeAggregates},` +
-            `livePreviews:${sizes.boundedLivePreviews},textWidths:${sizes.boundedTextWidths},` +
+            `livePreviews:${sizes.boundedLivePreviews},livePreviewLines:${sizes.boundedLivePreviewLines},` +
+            `livePreviewTokens:${sizes.boundedLivePreviewTokens},` +
+            `livePreviewPendingNodes:${sizes.boundedLivePreviewPendingNodes},` +
+            `textWidths:${sizes.boundedTextWidths},` +
             `truncations:${sizes.boundedTruncations},htslParses:${sizes.boundedHtslParses}} ` +
-            `unbounded={mcItems:${sizes.unboundedMcItems},icons:${sizes.unboundedIcons},` +
+            `unbounded={parses:${sizes.unboundedParses},mcItems:${sizes.unboundedMcItems},icons:${sizes.unboundedIcons},` +
             `anchors:${sizes.unboundedAnchors},codeViewModels:${sizes.unboundedCodeViewModels},` +
             `sourceDiffEntries:${sizes.unboundedSourceDiffEntries},` +
             `sourceDiffFileTargets:${sizes.unboundedSourceDiffFileTargets},` +

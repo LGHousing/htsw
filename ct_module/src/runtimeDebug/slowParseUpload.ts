@@ -11,6 +11,26 @@ export type SlowParseDetails = {
     reason: string;
     changedPaths: readonly string[];
     parsePerf: readonly unknown[];
+    profile: {
+        phases: {
+            sourceParseMs: number;
+            referencedPathFingerprintMs: number;
+            importableHashMs: number;
+            snapshotBuildMs: number;
+            snapshotSerializeMs: number;
+            snapshotWriteMs: number;
+            mainThreadDerivedIndexMs: number;
+        };
+        projectShape: {
+            referencedPathCount: number;
+            importableCount: number;
+            diagnosticCount: number;
+            snapshotBytes: number | null;
+        } | null;
+        workerStartDelayMs: number | null;
+        mainThreadCallbackDelayMs: number | null;
+        unattributedMs: number | null;
+    } | null;
 };
 
 const uploadedProjects = new Set<string>();
@@ -29,9 +49,7 @@ function containsAbsolutePath(value: string): boolean {
 
 function redactAbsolutePaths(value: unknown): unknown {
     if (typeof value === "string") {
-        return containsAbsolutePath(value)
-            ? `path:${cyrb53(value).toString(16)}`
-            : value;
+        return containsAbsolutePath(value) ? `path:${cyrb53(value).toString(16)}` : value;
     }
     if (Array.isArray(value)) return value.map(redactAbsolutePaths);
     if (value === null || typeof value !== "object") return value;
@@ -50,10 +68,7 @@ function redactAbsolutePaths(value: unknown): unknown {
 
 export function uploadSlowParseDiagnostics(details: SlowParseDetails): void {
     try {
-        if (
-            !getUploadSlowParseDiagnostics() ||
-            uploadedProjects.has(details.canon)
-        ) {
+        if (!getUploadSlowParseDiagnostics() || uploadedProjects.has(details.canon)) {
             return;
         }
         uploadedProjects.add(details.canon);
@@ -67,6 +82,7 @@ export function uploadSlowParseDiagnostics(details: SlowParseDetails): void {
             reason: details.reason,
             changedPaths: details.changedPaths,
             parsePerf: details.parsePerf,
+            fullParseProfile: details.profile,
             recentRuntimeDebug: recentRuntimeDebugRecords(),
         });
         ensureParentDirs(path);

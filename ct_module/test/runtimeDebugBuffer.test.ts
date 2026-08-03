@@ -17,26 +17,53 @@ describe("runtime debug buffer", () => {
         expect(recentRuntimeDebugRecords().map((record) => record.sequence)).toEqual([1, 2]);
     });
 
-    it("overwrites old records while preserving chronological order", () => {
-        const capacity = runtimeDebugStats().maxRecords as number;
-        for (let sequence = 0; sequence < capacity + 3; sequence++) {
+    it("retains event history independently from the shorter packet tail", () => {
+        const stats = runtimeDebugStats();
+        const eventCapacity = (stats.eventRecords as { maxRecords: number }).maxRecords;
+        const packetCapacity = (stats.packetRecords as { maxRecords: number }).maxRecords;
+        for (let sequence = 0; sequence < packetCapacity + 3; sequence++) {
+            recordRuntimeDebug("packet", { sequence: `packet-${sequence}` });
+        }
+        for (let sequence = 0; sequence < eventCapacity + 2; sequence++) {
             recordRuntimeDebug("entry", { sequence });
         }
 
         const records = recentRuntimeDebugRecords();
-        expect(records).toHaveLength(capacity);
-        expect(records[0].sequence).toBe(3);
-        expect(records[records.length - 1].sequence).toBe(capacity + 2);
+        expect(records).toHaveLength(eventCapacity + packetCapacity);
+        expect(records.filter((record) => record.kind === "packet")[0].sequence).toBe(
+            "packet-3"
+        );
+        expect(records.filter((record) => record.kind === "entry")[0].sequence).toBe(2);
         expect(runtimeDebugStats()).toMatchObject({
-            retainedRecords: capacity,
-            droppedRecords: 3,
+            retainedRecords: eventCapacity + packetCapacity,
+            droppedRecords: 5,
+            eventRecords: {
+                retainedRecords: eventCapacity,
+                droppedRecords: 2,
+            },
+            packetRecords: {
+                retainedRecords: packetCapacity,
+                droppedRecords: 3,
+            },
         });
     });
 
+    it("merges packet and event records in insertion order", () => {
+        recordRuntimeDebug("first", { sequence: 1 });
+        recordRuntimeDebug("packet", { sequence: 2 });
+        recordRuntimeDebug("last", { sequence: 3 });
+
+        expect(recentRuntimeDebugRecords().map((record) => record.sequence)).toEqual([
+            1, 2, 3,
+        ]);
+    });
+
     it("releases retained records and resets ring state", () => {
-        const capacity = runtimeDebugStats().maxRecords as number;
-        for (let sequence = 0; sequence <= capacity; sequence++) {
-            recordRuntimeDebug("entry", { sequence });
+        const packetCapacity = (
+            runtimeDebugStats().packetRecords as { maxRecords: number }
+        ).maxRecords;
+        for (let sequence = 0; sequence <= packetCapacity; sequence++) {
+            recordRuntimeDebug("packet", { sequence });
         }
 
         resetRuntimeDebugRecords();
@@ -46,6 +73,8 @@ describe("runtime debug buffer", () => {
         expect(runtimeDebugStats()).toMatchObject({
             retainedRecords: 1,
             droppedRecords: 0,
+            eventRecords: { retainedRecords: 1, droppedRecords: 0 },
+            packetRecords: { retainedRecords: 0, droppedRecords: 0 },
         });
     });
 });

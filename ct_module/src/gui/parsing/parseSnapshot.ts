@@ -193,6 +193,14 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
 
 export type FingerprintChange = { path: string; mtime: number };
 
+export type SnapshotSaveMetrics = {
+    hashMs: number;
+    buildMs: number;
+    serializeMs: number;
+    writeMs: number;
+    bytes: number | null;
+};
+
 /**
  * Stat every fingerprinted file once and return the entries whose mtime
  * moved (`mtime: 0` = file missing). Empty result = snapshot is current.
@@ -284,7 +292,14 @@ export function saveSnapshot(
     result: ImportablesParseResult,
     watchedMtimes: { [path: string]: number },
     precomputedHashes?: readonly string[]
-): void {
+): SnapshotSaveMetrics {
+    const hashStartedAt = Date.now();
+    const hashes =
+        precomputedHashes === undefined
+            ? result.value.map(memoizedImportableHash)
+            : precomputedHashes.slice();
+    const hashMs = Date.now() - hashStartedAt;
+    const buildStartedAt = Date.now();
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
@@ -292,17 +307,39 @@ export function saveSnapshot(
         importJsonPath,
         fingerprint,
         importables: result.value,
-        hashes:
-            precomputedHashes === undefined
-                ? result.value.map(memoizedImportableHash)
-                : precomputedHashes.slice(),
+        hashes,
         houseUuid: result.importJson.houseUuid,
         fileTree: serializeFileTree(result.importJson.fileTree, result.value),
         diagnostics: result.diagnostics.map((d) =>
             serializeDiagnostic(result.gcx.sourceMap, d)
         ),
     };
-    writeSnapshotFile(snapshot);
+    const buildMs = Date.now() - buildStartedAt;
+    const serializeStartedAt = Date.now();
+    let serialized: string;
+    try {
+        serialized = JSON.stringify(snapshot);
+    } catch (_e) {
+        return {
+            hashMs,
+            buildMs,
+            serializeMs: Date.now() - serializeStartedAt,
+            writeMs: 0,
+            bytes: null,
+        };
+    }
+    const bytes = utf8ByteLength(serialized);
+    const serializeMs = Date.now() - serializeStartedAt;
+    const writeStartedAt = Date.now();
+    writeSnapshotFile(snapshot.importJsonPath, serialized);
+    const writeMs = Date.now() - writeStartedAt;
+    return {
+        hashMs,
+        buildMs,
+        serializeMs,
+        writeMs,
+        bytes,
+    };
 }
 
 function serializeFileTree(
@@ -353,11 +390,35 @@ function deserializeFileTree(
     return visit(tree);
 }
 
-function writeSnapshotFile(snapshot: Snapshot): void {
+function utf8ByteLength(value: string): number {
+    let bytes = 0;
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if (code <= 0x7f) {
+            bytes++;
+        } else if (code <= 0x7ff) {
+            bytes += 2;
+        } else if (
+            code >= 0xd800 &&
+            code <= 0xdbff &&
+            i + 1 < value.length &&
+            value.charCodeAt(i + 1) >= 0xdc00 &&
+            value.charCodeAt(i + 1) <= 0xdfff
+        ) {
+            bytes += 4;
+            i++;
+        } else {
+            bytes += 3;
+        }
+    }
+    return bytes;
+}
+
+function writeSnapshotFile(importJsonPath: string, serialized: string): void {
     try {
-        const out = snapshotFileFor(snapshot.importJsonPath);
+        const out = snapshotFileFor(importJsonPath);
         ensureParentDirs(out);
-        FileLib.write(out, JSON.stringify(snapshot), true);
+        FileLib.write(out, serialized, true);
     } catch (_e) {
         // Cache is best-effort; failures don't disturb the parse path.
     }

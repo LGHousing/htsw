@@ -31,7 +31,9 @@ import { seedImportableHash } from "../../importCache/status";
 import {
     buildParseFingerprint,
     parseImportJsonOffThread,
+    type OffThreadParseProfile,
     type OffThreadParseResult,
+    type ParsePhaseTimings,
 } from "./offThreadParse";
 import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
 import { BoundedMap } from "../lib/boundedLruMap";
@@ -69,19 +71,6 @@ export type CachedParse = {
     /** Settle-debounce bookkeeping for the steady-state fingerprint poll. */
     freshness: FingerprintFreshness;
 };
-
-function fingerprintOf(
-    canon: string,
-    mtime: number,
-    parsed: ImportablesParseResult | null
-): { [path: string]: number } {
-    if (parsed === null) {
-        const fp: { [path: string]: number } = {};
-        fp[canon] = mtime;
-        return fp;
-    }
-    return buildParseFingerprint(canon, mtime, parsed);
-}
 
 // `canonicalPath` is called all over the render paths (per file tab, per
 // queue item, per importable in the cache scans) — and each call did a fresh
@@ -174,6 +163,25 @@ type FullParseReason = {
 };
 const pendingFullParseReasons = new Map<string, FullParseReason>();
 
+type FullParseProfile = {
+    phases: ParsePhaseTimings & { mainThreadDerivedIndexMs: number };
+    projectShape: OffThreadParseProfile["projectShape"];
+    workerStartDelayMs: number | null;
+    mainThreadCallbackDelayMs: number | null;
+    unattributedMs: number | null;
+};
+
+function emptyParsePhases(): ParsePhaseTimings {
+    return {
+        sourceParseMs: 0,
+        referencedPathFingerprintMs: 0,
+        importableHashMs: 0,
+        snapshotBuildMs: 0,
+        snapshotSerializeMs: 0,
+        snapshotWriteMs: 0,
+    };
+}
+
 function recordParsePerf(
     path: string,
     ms: number,
@@ -197,14 +205,49 @@ function commitParseEntry(
     fingerprint: { [path: string]: number } | null,
     fromSnapshot: boolean,
     snapshotAlreadySaved: boolean,
-    startedAt: number
+    startedAt: number,
+    workerProfile: OffThreadParseProfile | null = null
 ): CachedParse {
-    let committedFingerprint = fingerprint ?? fingerprintOf(canon, mtime, parsed);
-    if (parsed !== null && fingerprint === null) {
+    const fullParseProfile: FullParseProfile | null =
+        workerProfile === null
+            ? null
+            : {
+                  phases: {
+                      ...workerProfile.phases,
+                      mainThreadDerivedIndexMs: 0,
+                  },
+                  projectShape: workerProfile.projectShape,
+                  workerStartDelayMs: workerProfile.workerStartDelayMs,
+                  mainThreadCallbackDelayMs: workerProfile.mainThreadCallbackDelayMs,
+                  unattributedMs: null,
+              };
+    let committedFingerprint: { [path: string]: number };
+    if (fingerprint !== null) {
+        committedFingerprint = fingerprint;
+    } else if (parsed === null) {
+        committedFingerprint = { [canon]: mtime };
+    } else {
+        const fingerprintStartedAt = Date.now();
         committedFingerprint = buildParseFingerprint(canon, mtime, parsed);
+        if (fullParseProfile !== null) {
+            fullParseProfile.phases.referencedPathFingerprintMs =
+                Date.now() - fingerprintStartedAt;
+        }
     }
     if (parsed !== null && !fromSnapshot && !snapshotAlreadySaved) {
-        saveSnapshot(canon, parsed, committedFingerprint);
+        const snapshotMetrics = saveSnapshot(canon, parsed, committedFingerprint);
+        if (fullParseProfile !== null) {
+            fullParseProfile.phases.importableHashMs = snapshotMetrics.hashMs;
+            fullParseProfile.phases.snapshotBuildMs = snapshotMetrics.buildMs;
+            fullParseProfile.phases.snapshotSerializeMs = snapshotMetrics.serializeMs;
+            fullParseProfile.phases.snapshotWriteMs = snapshotMetrics.writeMs;
+            fullParseProfile.projectShape = {
+                referencedPathCount: Object.keys(committedFingerprint).length,
+                importableCount: parsed.value.length,
+                diagnosticCount: parsed.diagnostics.length,
+                snapshotBytes: snapshotMetrics.bytes,
+            };
+        }
     }
     const entry: CachedParse = {
         canonicalPath: canon,
@@ -220,14 +263,33 @@ function commitParseEntry(
     parseCacheRevision++;
     markGuiDirty();
     if (parsed !== null) {
+        const derivedIndexStartedAt = Date.now();
         createItemDependencyIndex(
             parsed.value,
             createProjectItemIndex(parsed.value, parsed.gcx)
         );
+        if (fullParseProfile !== null) {
+            fullParseProfile.phases.mainThreadDerivedIndexMs =
+                Date.now() - derivedIndexStartedAt;
+        }
         recordHouseBinding(parsed.importJson.houseUuid, canon);
     }
     notifyParseCacheEntryChanged(entry);
     const durationMs = Date.now() - startedAt;
+    if (fullParseProfile !== null) {
+        const phases = fullParseProfile.phases;
+        const profiledMs =
+            phases.sourceParseMs +
+            phases.referencedPathFingerprintMs +
+            phases.importableHashMs +
+            phases.snapshotBuildMs +
+            phases.snapshotSerializeMs +
+            phases.snapshotWriteMs +
+            phases.mainThreadDerivedIndexMs +
+            (fullParseProfile.workerStartDelayMs ?? 0) +
+            (fullParseProfile.mainThreadCallbackDelayMs ?? 0);
+        fullParseProfile.unattributedMs = Math.max(0, durationMs - profiledMs);
+    }
     recordParsePerf(canon, durationMs, source);
     if (source === "full" || source === "error") {
         const pendingReason = pendingFullParseReasons.get(canon) ?? {
@@ -248,6 +310,7 @@ function commitParseEntry(
                 reason: pendingReason.reason,
                 changedPaths: pendingReason.paths,
                 parsePerf: getParsePerfStats(),
+                profile: fullParseProfile,
             });
         }
     }
@@ -304,6 +367,13 @@ function parseImportJsonFromDisk(
     let parsed: ImportablesParseResult | null = null;
     let error: string | null = null;
     let source: ParsePerfEntry["source"] = "full";
+    const workerProfile: OffThreadParseProfile = {
+        phases: emptyParsePhases(),
+        projectShape: null,
+        workerStartDelayMs: null,
+        mainThreadCallbackDelayMs: null,
+    };
+    const sourceParseStartedAt = Date.now();
     const sm = new SourceMap(new FileSystemFileLoader());
     try {
         // Parse with the canonical absolute path, not the stored
@@ -321,6 +391,7 @@ function parseImportJsonFromDisk(
         error = msg;
         source = "error";
     }
+    workerProfile.phases.sourceParseMs = Date.now() - sourceParseStartedAt;
     return commitParseEntry(
         canon,
         rawPath,
@@ -331,7 +402,8 @@ function parseImportJsonFromDisk(
         null,
         false,
         false,
-        startedAt
+        startedAt,
+        workerProfile
     );
 }
 
@@ -576,7 +648,8 @@ function commitOffThreadResult(
         result.fingerprint,
         false,
         result.parsed !== null,
-        startedAt
+        startedAt,
+        result.profile ?? null
     );
 }
 

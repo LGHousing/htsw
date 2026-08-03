@@ -79,7 +79,13 @@ vi.mock("../src/gui/parsing/parseSnapshot", () => ({
         importJson: { houseUuid: null },
         gcx: {},
     }),
-    saveSnapshot: () => undefined,
+    saveSnapshot: () => ({
+        hashMs: 0,
+        buildMs: 0,
+        serializeMs: 0,
+        writeMs: 0,
+        bytes: 0,
+    }),
 }));
 
 vi.mock("../src/gui/parsing/offThreadParse", () => ({

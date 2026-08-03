@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const cacheSizes = vi.hoisted(() => ({
-    boundedParses: 1,
+    unboundedParses: 1,
     boundedCanonicalPaths: 2,
     boundedLinePlain: 3,
     boundedLineHtsl: 4,
@@ -11,6 +11,9 @@ const cacheSizes = vi.hoisted(() => ({
     boundedProjectEnumeration: 8,
     boundedSubtreeAggregates: 9,
     boundedLivePreviews: 10,
+    boundedLivePreviewLines: 101,
+    boundedLivePreviewTokens: 202,
+    boundedLivePreviewPendingNodes: 3,
     boundedTextWidths: 11,
     boundedTruncations: 12,
     boundedHtslParses: 13,
@@ -32,6 +35,13 @@ const cacheSizes = vi.hoisted(() => ({
 }));
 const uploadDiagnosticsFile = vi.hoisted(() => vi.fn());
 const ensureParentDirs = vi.hoisted(() => vi.fn());
+const taskRunning = vi.hoisted(() => ({ value: true }));
+const runtimeDebug = vi.hoisted(() => ({
+    maxRecords: 1_000,
+    retainedRecords: 20,
+    droppedRecords: 3,
+    startedAt: 900,
+}));
 
 vi.mock("../src/gui/cacheTelemetry", () => ({
     guiCacheSizes: () => cacheSizes,
@@ -40,9 +50,18 @@ vi.mock("../src/gui/cacheTelemetry", () => ({
 vi.mock("../src/settings", () => ({
     getUploadSessionHeartbeat: () => true,
 }));
+vi.mock("../src/autoUpdate", () => ({
+    readLocalVersion: () => "0.13.0-test.4",
+}));
+vi.mock("../src/tasks/manager", () => ({
+    TaskManager: { isBusy: () => taskRunning.value },
+}));
 vi.mock("../src/utils/filesystem", () => ({ ensureParentDirs }));
 vi.mock("../src/runtimeDebug/importFailureUpload", () => ({
     uploadDiagnosticsFile,
+}));
+vi.mock("../src/runtimeDebug/runtimeDebugBuffer", () => ({
+    runtimeDebugStats: () => runtimeDebug,
 }));
 
 afterEach(() => {
@@ -71,17 +90,20 @@ function stubJvmMetrics(): void {
                     }),
                     getGarbageCollectorMXBeans: () => [
                         {
-                            getName: () => "G1 Young Generation",
+                            getName: () => "PS Scavenge",
                             getCollectionCount: () => 12,
                             getCollectionTime: () => 34,
                         },
                         {
-                            getName: () => "G1 Old Generation",
+                            getName: () => "PS MarkSweep",
                             getCollectionCount: () => 2,
                             getCollectionTime: () => 9,
                         },
                     ],
                 };
+            }
+            if (name === "java.lang.System") {
+                return { getProperty: () => "1.8.0_51" };
             }
             throw new Error(`Unexpected Java type: ${name}`);
         },
@@ -89,40 +111,64 @@ function stubJvmMetrics(): void {
 }
 
 describe("session heartbeat", () => {
-    test("contains only numeric fields, including all 28 cache sizes", async () => {
+    test("includes build, JVM, task, debug, and cache context", async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         vi.resetModules();
         stubJvmMetrics();
-        const { createSessionHeartbeatBody } = await import(
-            "../src/runtimeDebug/sessionHeartbeat"
-        );
+        const { createSessionHeartbeatBody } =
+            await import("../src/runtimeDebug/sessionHeartbeat");
 
         const body = createSessionHeartbeatBody(2_500);
 
+        expect(body.sessionId).toMatch(/^[0-9a-f]{32}$/);
         expect(body).toEqual({
             kind: 1,
-            schemaVersion: 1,
+            schemaVersion: 2,
             capturedAtMs: 2_500,
             sessionUptimeMs: 1_500,
+            sessionId: body.sessionId,
+            htswVersion: "0.13.0-test.4",
+            taskRunning: true,
+            javaVersion: "1.8.0_51",
             heapUsedBytes: 220,
             heapCommittedBytes: 300,
             heapMaxBytes: 500,
             nonHeapUsedBytes: 70,
-            g1YoungCollectionCount: 12,
-            g1YoungCollectionTimeMs: 34,
-            g1OldCollectionCount: 2,
-            g1OldCollectionTimeMs: 9,
+            gcCollectionCount: 14,
+            gcCollectionTimeMs: 43,
+            garbageCollectors: [
+                {
+                    name: "PS Scavenge",
+                    collectionCount: 12,
+                    collectionTimeMs: 34,
+                },
+                {
+                    name: "PS MarkSweep",
+                    collectionCount: 2,
+                    collectionTimeMs: 9,
+                },
+            ],
+            runtimeDebug,
             ...cacheSizes,
             parsedManifestCount: 6,
         });
-        expect(Object.keys(cacheSizes)).toHaveLength(28);
-        for (const key of Object.keys(body) as Array<keyof typeof body>) {
-            const value = body[key];
-            expect(typeof value).toBe("number");
-            expect(Number.isFinite(value)).toBe(true);
-            expect(Number.isInteger(value)).toBe(true);
-        }
+        expect(Object.keys(cacheSizes)).toHaveLength(31);
+    });
+
+    test("uses one ephemeral id for the loaded session", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        vi.resetModules();
+        stubJvmMetrics();
+        const { createSessionHeartbeatBody } =
+            await import("../src/runtimeDebug/sessionHeartbeat");
+
+        const first = createSessionHeartbeatBody(2_500);
+        const second = createSessionHeartbeatBody(3_500);
+
+        expect(second.sessionId).toBe(first.sessionId);
+        expect(second.sessionUptimeMs).toBe(2_500);
     });
 
     test("schedules and uploads one compact heartbeat every 30 minutes", async () => {
@@ -141,9 +187,8 @@ describe("session heartbeat", () => {
                 return { setDelay };
             })
         );
-        const { initSessionHeartbeat } = await import(
-            "../src/runtimeDebug/sessionHeartbeat"
-        );
+        const { initSessionHeartbeat } =
+            await import("../src/runtimeDebug/sessionHeartbeat");
 
         initSessionHeartbeat();
         expect(setDelay).toHaveBeenCalledWith(1_800);

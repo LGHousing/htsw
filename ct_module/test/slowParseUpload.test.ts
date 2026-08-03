@@ -50,9 +50,8 @@ describe("slow parse upload privacy", () => {
     test("stable-hashes every absolute path before writing the upload body", async () => {
         const write = vi.fn();
         vi.stubGlobal("FileLib", { write });
-        const { uploadSlowParseDiagnostics } = await import(
-            "../src/runtimeDebug/slowParseUpload"
-        );
+        const { uploadSlowParseDiagnostics } =
+            await import("../src/runtimeDebug/slowParseUpload");
 
         uploadSlowParseDiagnostics({
             canon: "/Users/alice/Projects/secret/import.json",
@@ -71,6 +70,26 @@ describe("slow parse upload privacy", () => {
                     at: 123,
                 },
             ],
+            profile: {
+                phases: {
+                    sourceParseMs: 4_000,
+                    referencedPathFingerprintMs: 500,
+                    importableHashMs: 400,
+                    snapshotBuildMs: 100,
+                    snapshotSerializeMs: 300,
+                    snapshotWriteMs: 200,
+                    mainThreadDerivedIndexMs: 250,
+                },
+                projectShape: {
+                    referencedPathCount: 401,
+                    importableCount: 88,
+                    diagnosticCount: 3,
+                    snapshotBytes: 123_456,
+                },
+                workerStartDelayMs: 20,
+                mainThreadCallbackDelayMs: 230,
+                unattributedMs: 100,
+            },
         });
 
         expect(write).toHaveBeenCalledOnce();
@@ -83,6 +102,26 @@ describe("slow parse upload privacy", () => {
             expect.stringMatching(/^path:[0-9a-f]+$/),
         ]);
         expect(JSON.stringify(body)).not.toContain("alice");
+        expect(body.fullParseProfile).toEqual({
+            phases: {
+                sourceParseMs: 4_000,
+                referencedPathFingerprintMs: 500,
+                importableHashMs: 400,
+                snapshotBuildMs: 100,
+                snapshotSerializeMs: 300,
+                snapshotWriteMs: 200,
+                mainThreadDerivedIndexMs: 250,
+            },
+            projectShape: {
+                referencedPathCount: 401,
+                importableCount: 88,
+                diagnosticCount: 3,
+                snapshotBytes: 123_456,
+            },
+            workerStartDelayMs: 20,
+            mainThreadCallbackDelayMs: 230,
+            unattributedMs: 100,
+        });
         expect(uploadDiagnosticsFile).toHaveBeenCalledWith(path);
     });
 });

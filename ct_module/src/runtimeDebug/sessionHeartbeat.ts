@@ -3,26 +3,36 @@ import {
     parsedManifestCount,
     type GuiCacheSizes,
 } from "../gui/cacheTelemetry";
+import { readLocalVersion } from "../autoUpdate";
 import { getUploadSessionHeartbeat } from "../settings";
+import { TaskManager } from "../tasks/manager";
 import { ensureParentDirs } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
+import { runtimeDebugStats } from "./runtimeDebugBuffer";
 
 const HEARTBEAT_INTERVAL_SECONDS = 30 * 60;
 const HEARTBEAT_PATH = "./htsw/import-errors/session-heartbeat.json";
 const SESSION_HEARTBEAT_KIND = 1;
-const SESSION_HEARTBEAT_SCHEMA_VERSION = 1;
+const SESSION_HEARTBEAT_SCHEMA_VERSION = 2;
 const startedAt = Date.now();
+const sessionId = randomSessionId();
+
+type GarbageCollectorTelemetry = {
+    name: string;
+    collectionCount: number;
+    collectionTimeMs: number;
+};
 
 type JvmMemoryTelemetry = {
+    javaVersion: string;
     heapUsedBytes: number;
     heapCommittedBytes: number;
     heapMaxBytes: number;
     nonHeapUsedBytes: number;
-    g1YoungCollectionCount: number;
-    g1YoungCollectionTimeMs: number;
-    g1OldCollectionCount: number;
-    g1OldCollectionTimeMs: number;
+    gcCollectionCount: number;
+    gcCollectionTimeMs: number;
+    garbageCollectors: GarbageCollectorTelemetry[];
 };
 
 export type SessionHeartbeatBody = JvmMemoryTelemetry &
@@ -31,39 +41,60 @@ export type SessionHeartbeatBody = JvmMemoryTelemetry &
         schemaVersion: number;
         capturedAtMs: number;
         sessionUptimeMs: number;
+        sessionId: string;
+        htswVersion: string;
+        taskRunning: boolean;
+        runtimeDebug: Record<string, unknown>;
         parsedManifestCount: number;
     };
+
+function randomSessionId(): string {
+    let id = "";
+    for (let i = 0; i < 32; i++) {
+        id += Math.floor(Math.random() * 16).toString(16);
+    }
+    return id;
+}
+
+function sumSupported(
+    collectors: GarbageCollectorTelemetry[],
+    field: "collectionCount" | "collectionTimeMs"
+): number {
+    let total = 0;
+    let supported = false;
+    for (let i = 0; i < collectors.length; i++) {
+        const value = collectors[i][field];
+        if (value < 0) continue;
+        total += value;
+        supported = true;
+    }
+    return supported ? total : -1;
+}
 
 function readJvmMemoryTelemetry(): JvmMemoryTelemetry {
     const runtime = javaType("java.lang.Runtime").getRuntime();
     const heapCommittedBytes = Number(runtime.totalMemory());
     const ManagementFactory = javaType("java.lang.management.ManagementFactory");
     const nonHeap = ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage();
-    let g1YoungCollectionCount = -1;
-    let g1YoungCollectionTimeMs = -1;
-    let g1OldCollectionCount = -1;
-    let g1OldCollectionTimeMs = -1;
     const beans = ManagementFactory.getGarbageCollectorMXBeans();
+    const garbageCollectors: GarbageCollectorTelemetry[] = [];
     for (let i = 0; i < beans.length; i++) {
         const bean = beans[i];
-        const name = String(bean.getName());
-        if (name === "G1 Young Generation") {
-            g1YoungCollectionCount = Number(bean.getCollectionCount());
-            g1YoungCollectionTimeMs = Number(bean.getCollectionTime());
-        } else if (name === "G1 Old Generation") {
-            g1OldCollectionCount = Number(bean.getCollectionCount());
-            g1OldCollectionTimeMs = Number(bean.getCollectionTime());
-        }
+        garbageCollectors.push({
+            name: String(bean.getName()),
+            collectionCount: Number(bean.getCollectionCount()),
+            collectionTimeMs: Number(bean.getCollectionTime()),
+        });
     }
     return {
+        javaVersion: String(javaType("java.lang.System").getProperty("java.version")),
         heapUsedBytes: heapCommittedBytes - Number(runtime.freeMemory()),
         heapCommittedBytes,
         heapMaxBytes: Number(runtime.maxMemory()),
         nonHeapUsedBytes: Number(nonHeap.getUsed()),
-        g1YoungCollectionCount,
-        g1YoungCollectionTimeMs,
-        g1OldCollectionCount,
-        g1OldCollectionTimeMs,
+        gcCollectionCount: sumSupported(garbageCollectors, "collectionCount"),
+        gcCollectionTimeMs: sumSupported(garbageCollectors, "collectionTimeMs"),
+        garbageCollectors,
     };
 }
 
@@ -75,7 +106,11 @@ export function createSessionHeartbeatBody(
         schemaVersion: SESSION_HEARTBEAT_SCHEMA_VERSION,
         capturedAtMs,
         sessionUptimeMs: Math.max(0, capturedAtMs - startedAt),
+        sessionId,
+        htswVersion: readLocalVersion() ?? "unknown",
+        taskRunning: TaskManager.isBusy(),
         ...readJvmMemoryTelemetry(),
+        runtimeDebug: runtimeDebugStats(),
         ...guiCacheSizes(),
         parsedManifestCount: parsedManifestCount(),
     };
