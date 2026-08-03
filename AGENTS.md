@@ -125,13 +125,13 @@ HTSL (Housing Text Scripting Language) is the markup language used by HTSW to
 
 #### Housing concepts
 
-- Actions and action containers: `.htsw/housing/concepts/actions.md`
-- Conditions: `.htsw/housing/concepts/conditions.md`
-- Functions: `.htsw/housing/concepts/functions.md`
-- Houses: `.htsw/housing/concepts/house.md`
-- Regions: `.htsw/housing/concepts/regions.md`
-- Systems: `.htsw/housing/concepts/systems.md`
-- Variables: `.htsw/housing/concepts/variables.md`
+- Actions and action containers: `.htsw/housing/actions.md`
+- Conditions: `.htsw/housing/conditions.md`
+- Functions: `.htsw/housing/functions.md`
+- Houses: `.htsw/housing/house.md`
+- Regions: `.htsw/housing/regions.md`
+- Systems: `.htsw/housing/systems.md`
+- Variables: `.htsw/housing/variables.md`
 
 #### HTSW reference
 
