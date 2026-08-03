@@ -265,6 +265,16 @@ function wrapMenuWaitTimeout(
     return wrapped;
 }
 
+function finishChatPromptAfterMenu(
+    ctx: TaskContext,
+    menuWait: WaitForPromise<void>
+): WaitForPromise<void> {
+    const finished = menuWait.then(() => ctx.finishChatPrompt()) as WaitForPromise<void>;
+    finished.cleanupWaiter = menuWait.cleanupWaiter;
+    finished.catch(() => {});
+    return finished;
+}
+
 // `skipPopulateWait`: resolve as soon as the opened window is the active
 // container, skipping the "reached its WindowItems count" wait. For containers
 // whose live count never matches their server snapshot (only the anvil so far,
@@ -347,10 +357,9 @@ export function waitForMenu(
     // Cancel via the timed promise (stops the guard's tick loop) rather than the
     // bare waiter cleanup, so an abandoned waitForMenu (a losing race branch)
     // tears the timer down too instead of leaking a 6s phantom timeout.
-    return wrapMenuWaitTimeout(
-        timedPromise,
-        timedPromise.cleanupWaiter ?? cleanup,
-        state
+    return finishChatPromptAfterMenu(
+        ctx,
+        wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state)
     );
 }
 

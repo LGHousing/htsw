@@ -25,6 +25,7 @@ const KeyboardClass = javaType("org.lwjgl.input.Keyboard");
 const ForgeMouseInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre"
 );
+const ForgeMouseEvent = javaType("net.minecraftforge.client.event.MouseEvent");
 const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
@@ -604,7 +605,7 @@ export function initHtswGui(): void {
         cancel(event);
     });
 
-    // Mouse wheel, two cooperating halves over the SAME routing decision
+    // Mouse wheel, three cooperating paths over the SAME routing decision
     // (`routeWheel`):
     //
     // 1. Forge's GuiScreenEvent.MouseInputEvent.Pre — SUPPRESSION ONLY. It
@@ -612,7 +613,10 @@ export function initHtswGui(): void {
     //    which is the only place vanilla GuiContainer scroll and
     //    GuiContainerCreative tab/item-list scrolling can be cancelled. It
     //    does NOT apply the wheel to our scrolls.
-    // 2. A per-frame `Mouse.getDWheel()` poll in guiRender (`pollWheel`) —
+    // 2. Forge's global MouseEvent fills the no-screen import gap. It runs
+    //    before Minecraft's in-world handling, so an HTSW scroll cannot also
+    //    change the hotbar while Housing is waiting for a chat-entered value.
+    // 3. A per-frame `Mouse.getDWheel()` poll in guiRender (`pollWheel`) —
     //    APPLICATION. MC only drains the event queue during runTick (~20Hz),
     //    so applying from events moved scroll targets in visible ~50ms steps
     //    that the easing could only partially mask (20Hz velocity pulsing).
@@ -636,6 +640,21 @@ export function initHtswGui(): void {
         const my = overlayScreenH - Math.floor(MouseClass.getEventY() / s) - 1;
         if (routeWheel(mx, my, 0, false)) cancel(event);
     });
+    register(
+        ForgeMouseEvent,
+        (event: ForgeEvent & { x: number; y: number; dwheel: number }) => {
+            if (event.dwheel === 0) return;
+            if (getMinecraft().field_71462_r !== null) return;
+            if (!inImportGap()) return;
+            const s = getEffectiveOverlayScale();
+            const overlayScreenH = Math.floor(getMinecraft().field_71440_d / s);
+            const mx = Math.floor(event.x / s);
+            const my = overlayScreenH - Math.floor(event.y / s) - 1;
+            const consumed = routeWheel(mx, my, event.dwheel / 120, true);
+            MouseClass.getDWheel();
+            if (consumed) cancel(event);
+        }
+    );
     // Runs at default (NORMAL) priority, so everything here — the wheel poll's
     // target moves, dirty marks — lands BEFORE the panel paints this same
     // frame (Panel's render trigger is Priority.LOW). Moving any of it after

@@ -12,6 +12,13 @@ import { C01PacketChatMessage } from "../utils/packets";
 import { sendPacket } from "../utils/java";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 import { createTaskCancelledError } from "./cancellation";
+import {
+    abandonChatPromptOwnership,
+    beginChatPromptOwnership,
+    deferUnownedChat,
+    finishChatPromptOwnership,
+    markOwnedChatPacket,
+} from "./chatPromptOwnership";
 
 /**
  * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
@@ -22,8 +29,7 @@ import { createTaskCancelledError } from "./cancellation";
  */
 const MAX_CHAT_MESSAGE_LENGTH = 256;
 const ALL_CHAT_PREFIX = "/ac ";
-const MAX_CHAT_VALUE_LENGTH =
-    MAX_CHAT_MESSAGE_LENGTH - ALL_CHAT_PREFIX.length;
+const MAX_CHAT_VALUE_LENGTH = MAX_CHAT_MESSAGE_LENGTH - ALL_CHAT_PREFIX.length;
 
 /**
  * Hypixel's chat anti-spam works as a heat budget: every chat sent to
@@ -68,6 +74,13 @@ const CHAT_MIN_INTERVAL_MS = 50;
  * back-to-back.
  */
 const COMMAND_COOLDOWN_MS = 300;
+
+register("packetSent", (packet, event) => {
+    if (packet instanceof C01PacketChatMessage && deferUnownedChat(packet)) {
+        cancel(event);
+        recordRuntimeDebug("chatDeferred");
+    }
+});
 
 export type TaskWaiter<T> = {
     label: string;
@@ -179,9 +192,18 @@ export default class TaskContext {
         }
         await this.awaitCommandCooldown();
         await this.awaitChatBudget();
-        ChatLib.say(command);
+        this.sendOwnedChatPacket(command);
         recordRuntimeDebug("command", { command });
         this.lastCommandAt = Date.now();
+    }
+
+    private sendOwnedChatPacket(message: string): void {
+        const packet = new C01PacketChatMessage("");
+        const messageField = packet.class.getDeclaredField("field_149440_a");
+        messageField.setAccessible(true);
+        messageField.set(packet, message);
+        markOwnedChatPacket(this, packet);
+        sendPacket(packet);
     }
 
     public async sendMessage(message: string): Promise<void> {
@@ -198,12 +220,33 @@ export default class TaskContext {
         // the string to 100 chars. Build the packet with a dummy value and
         // overwrite the message field by reflection so the full (≤256) message
         // reaches the server.
-        const packet = new C01PacketChatMessage("");
-        const messageField = packet.class.getDeclaredField("field_149440_a");
-        messageField.setAccessible(true);
-        messageField.set(packet, outgoingMessage);
-        sendPacket(packet);
+        this.sendOwnedChatPacket(outgoingMessage);
         recordRuntimeDebug("chatInput", { length: outgoingMessage.length });
+    }
+
+    public beginChatPrompt(): void {
+        beginChatPromptOwnership(this);
+    }
+
+    public async finishChatPrompt(): Promise<void> {
+        await this.finishCancellationCleanup(async () => {
+            const replayed = await finishChatPromptOwnership(this, async (packet) => {
+                await this.awaitChatBudget();
+                markOwnedChatPacket(this, packet);
+                sendPacket(packet as HtswPacketInstance);
+                this.lastCommandAt = Date.now();
+            });
+            if (replayed > 0) {
+                recordRuntimeDebug("chatReplayed", { count: replayed });
+                ChatLib.chat(
+                    `&7[htsw] Sent ${replayed === 1 ? "your chat message" : `${replayed} queued chat messages`} after Housing's value prompt closed.`
+                );
+            }
+        });
+    }
+
+    public abandonChatPrompt(): number | null {
+        return abandonChatPromptOwnership(this);
     }
 
     public displayMessage(message: string) {

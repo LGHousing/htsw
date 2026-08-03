@@ -616,9 +616,11 @@ export async function enterValue(
         return "CHAT";
     }
     if (inputMode === "SIGN") {
+        await ctx.finishChatPrompt();
         submitSignValue(value);
         return "SIGN";
     }
+    await ctx.finishChatPrompt();
     if (value.length > ANVIL_NAME_MAX) {
         throw new Error(
             `Value is ${value.length} characters — too long for Housing's anvil ` +
@@ -642,6 +644,7 @@ function valueInputTiming(mode: "CHAT" | "ANVIL" | "SIGN"): {
 }
 
 function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
+    ctx.beginChatPrompt();
     return ctx.waitFor("message", (message) => {
         return removedFormatting(message).includes(
             "Please use the chat to provide the value you wish to set."
@@ -731,6 +734,7 @@ export async function setStringOrPaginatedOptionValue(
     );
 
     if (inputMode !== "CHAT" && inputMode !== "MENU") {
+        await ctx.finishChatPrompt();
         await waitForKnownMenu(ctx, inputMode.windowId, true);
         setAnvilItemName(newValue);
         acceptNewAnvilItem();
@@ -744,6 +748,7 @@ export async function setStringOrPaginatedOptionValue(
             await waitForMenu(ctx);
             return;
         case "MENU": {
+            await ctx.finishChatPrompt();
             const optionSlot = await getSlotPaginate(ctx, newValue);
             if (isAlreadySelectedOption(optionSlot)) {
                 await clickGoBack(ctx);

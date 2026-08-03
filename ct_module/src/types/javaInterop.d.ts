@@ -751,6 +751,7 @@ declare global {
         "net.minecraft.util.ChatComponentText": HtswMinecraftChatComponentTextClass;
         "net.minecraft.util.IChatComponent": HtswMinecraftChatComponentClass;
         "net.minecraftforge.client.event.GuiOpenEvent": JavaClass<unknown>;
+        "net.minecraftforge.client.event.MouseEvent": JavaClass<unknown>;
         "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre": JavaClass<unknown>;
         "net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre": JavaClass<unknown>;
         "net.minecraftforge.client.event.RenderGameOverlayEvent$ElementType": JavaClass<unknown> &
