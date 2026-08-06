@@ -1,7 +1,5 @@
 # HTSW Agent Guide
 
-HTSW = "HTSL but we don't take Ls" — a refined HTSL (Housing Text Scripting Language) that expresses Hypixel Housing GUI programming as text.
-
 ## Layout
 
 - `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Where syntax and types are defined. Entrypoint `language/src/index.ts`. **Ask before editing.**
@@ -10,26 +8,13 @@ HTSW = "HTSL but we don't take Ls" — a refined HTSL (Housing Text Scripting La
 - `editors/` — VS Code, Monaco, shared editor features.
 - `docs/`, `examples/` — guide content and example projects. Tests live per package (`language/test`, `ct_module/test`).
 
-| area            | build           | test       | notes                                                         |
-| --------------- | --------------- | ---------- | ------------------------------------------------------------- |
-| `language/`     | `npm run build` | `npm test` | `lib: es2022`                                                 |
-| `cli/`          | `npm run build` | —          |                                                               |
-| `editors/code/` | `npm run build` | —          |                                                               |
-| `ct_module/`    | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `npm run deploy:ct` |
-
 **After changing code, assets, metadata, or build setup that ships in `ct_module/`, run `npm run deploy:ct` from the repo root** so `/ct reload` picks it up. It runs the deploy build (typecheck + Vite + Java) and atomically replaces the deployed module; lint + knip run separately via `npm run verify` in `ct_module/` (and automatically during releases). `ct_module/.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
 **After changing code, assets, metadata, or build setup that ships in `editors/code/`, run `npm run package` from `editors/code/` and install the generated `.vsix` with `code --install-extension <file>.vsix --force`** so the local VS Code installation uses the change.
 
 ## Comments
 
-**Default to NO comment.** AI-written comments tend to (a) restate what well-named code already says and (b) phrase guessed reasoning as established fact. The second is the worse failure: a confident-sounding "this works because X" misleads the next reader into trusting incorrect rationale and leaving real bugs in place. A wrong comment is worse than no comment.
-
-Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
-
-**When a comment earns its place, make it stand on its own.** Write it for a reader who doesn't yet know the codebase's vocabulary. Don't lean on an undefined internal term or a bare local variable name — say what the thing costs or does and why it matters, in plain words. Plain sentences, not dense shorthand.
-
-**Fix the name before reaching for a comment.** When a comment exists only to decode an under-named thing, rename the thing instead. A clear name removes the need for the comment; keep it only if a real _why_ remains after renaming.
+Default to no comment. Prefer clearer names or refactoring. Comment only verified, non-obvious reasoning that the code cannot express, and write it in plain language that stands on its own.
 
 - Read the `gui-development` skill before touching anything under `ct_module/src/gui/`.
 
@@ -38,30 +23,25 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 - Release notes are user-facing update text. Write the important changes in plain language, avoid internal jargon, and do not publish changelog-only Markdown into the CT updater feed.
 - A release is not done until the autoupdater feeds are published. After the version-bump commit, run `python publish.py release --tag <tag> --notes-file <path>` from the repo root. It builds CT, VS Code, and CLI artifacts, deploys all three feeds, and creates or updates the GitHub release. Use `stage`, `deploy`, and `verify` only when performing part of that workflow intentionally.
 - If you are not fully sure how Hypixel Housing behaves, ask Callan before implementing, documenting, or relying on that behavior.
-- When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
-- When auditing code, look for two paths doing the same job, abstractions that don't earn their place, and names that hide who owns what. If two mechanisms feed the same caller, first look for one shared path. Keep them separate when they do different jobs, run at different times, or need different state — and make that difference clear in the design.
+- When answering architecture questions or auditing code, judge ownership and call out accidental complexity, duplicate paths, needless abstractions, and misleading names. Prefer one shared path when mechanisms do the same job; keep them separate when their work, timing, or state differs.
 
 ## ct_module importer reference
 
-Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importables/` (per-type import/export and importable-owned export helpers), `tasks/` (async task/cancel plumbing), and `importCache/` (per-house cache). Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
+`ct_module/src/housingSync/` owns live-menu reads, diffs, and writes; `importables/` owns per-type import/export; `tasks/` owns async task lifecycle; and `importCache/` owns per-house cache state. Procedures and coverage change often, so read the canonical registries and implementations below.
 
 **Where the current behavior is defined:**
 
-- Which importable types are wired — the switch in `importables/imports.ts` for import; `HOUSE_READERS` in `importables/houseReaders.ts` for live-house read/deep-read coverage; and `HOUSE_EXPORT_TYPES` in `importables/houseExportTypes.ts` for name-based exports. `gui/left-panel/houses/contentTypes.ts` adds GUI-only behavior.
-- Per-type import procedure — that type's `importables/<type>/import.ts`. Per-type house reads usually live in `importables/<type>/readHouse<Type>.ts` and use `makeReadHouse` from `importables/readHouse.ts`; `importables/read.ts` owns the shared loop. NPCs adapt their position-keyed export flow to the same `ReadFn` interface.
+- Importable coverage — `importables/imports.ts` for imports, `HOUSE_READERS` for live reads, `HOUSE_EXPORT_TYPES` for name-based exports, and `gui/left-panel/houses/contentTypes.ts` for GUI-only behavior.
 - Read/write + child-list coverage per action/condition — `ACTION_IO` / `CONDITION_IO`, via `getActionIo` / `getConditionIo`.
 - Trust-mode conflict detection runs during action-list scanning, and `runImportSession` resolves conflicts after scanning, hydration, and planning finish but before application begins; v1 scan hashes cover only action types plus child-list type structure, and Cancel must leave `house.lock.json` untouched.
-- Which import.json a NEW export lands in — `importJsonTargetForSectionEntry` (and the per-type `htslTargetFor*`/`snbtTargetForItemExport`) in `editors/common/src/project/exportTargets.ts`: an existing declaration wins, else the user's sticky sub-target (`gui/state/newExportTarget.ts`, set in the Houses "Change" picker) when it's reachable in the include tree, else the section folder, else the base file. Re-exports of already-declared importables ignore the sub-target. The choice threads in via `ReadOptions.newExportTargetImportJson` (set in `gui/export/taskController.ts:startExport`).
-- Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
+- New-export targets are chosen in `editors/common/src/project/exportTargets.ts`: existing declaration, reachable sticky sub-target, section folder, then base file. Re-exports ignore the sticky sub-target.
 
 **Structure rules:**
 
 - Describe importer work as scanning → hydration → planning → application. Hydration may be skipped when scanning or trusted state already provides complete knowledge; planning is in-memory. Always name the stages directly instead of grouping or numbering them.
-- `imports.ts` only dispatches — never inline per-type bodies. Live-house readers use the shared `ReadFn` interface; don't add separate per-caller lists of supported types when `HOUSE_READERS` or `HOUSE_EXPORT_TYPES` already owns that choice.
-- A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. Importable-owned export helpers that cut across types live under the owning importable folder, such as `importables/items/`. Task state and cancellation helpers live under `tasks/`.
-- Start every import, export, and deep read with `housingSync/taskRunner.ts:runHousingSyncTask` so one place starts and cleans up Housing menu work.
-- Import, export, and deep-read reuse the same live-menu readers (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate that read logic.
-- A list/browser opener that walks `/hmenu` -> submenu (e.g. `openNpcBrowser`, `openGroupsList`) guards on `housingSync/menus/currentMenu.ts:isAtMenuTitle` and early-returns when already at that menu, so the list phase -> per-item phase doesn't re-run the whole `/hmenu` round-trip. It compares the _base_ title (pagination's `(page/total)` prefix stripped), which is safe because the paginated navigation reads the live page from the title and self-corrects from any page. Only guard _list_ openers this way — never early-return into a specific item's editor unless the menu title uniquely identifies that item (NPCs are position-keyed with non-unique names; the group edit menu title doesn't name the group).
+- `imports.ts` only dispatches. Keep a type's import, export, and shared logic under `importables/<type>/`; cross-type export helpers under their owning importable; and task state and cancellation under `tasks/`. Do not create per-caller support lists when the canonical registries own the choice.
+- Start every import, export, and deep read with `runHousingSyncTask`, and reuse the shared live-menu readers.
+- List/browser openers may reuse the current base menu through `isAtMenuTitle`; item editors may only do so when the title uniquely identifies the item.
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
 
 <!-- htsw:guides START -->

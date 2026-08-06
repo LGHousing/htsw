@@ -5,9 +5,7 @@ description: Guardrails for changing the HTSW in-game GUI under ct_module/src/gu
 
 # GUI development
 
-HTSW's overlay is a declarative element tree running in ChatTriggers on Rhino and Forge 1.8.9. Read the code you are changing before relying on this skill: types, element kinds, constants, filenames, and current UI behavior belong in code, not here.
-
-Update this skill only when a non-obvious constraint below changes or a newly verified runtime trap would otherwise be rediscovered. Do not mirror current APIs or feature inventories.
+HTSW's overlay is a declarative element tree running in ChatTriggers on Rhino and Forge 1.8.9. Read the code you are changing first; types, APIs, feature inventories, and current behavior belong there. Update this skill only for non-obvious constraints or verified runtime traps.
 
 ## Ownership
 
@@ -17,12 +15,10 @@ Update this skill only when a non-obvious constraint below changes or a newly ve
 
 ## Retained layout
 
-Panels retain their laid-out trees between rebuilds and draw those retained trees every frame.
-
-- Treat extracted draw values such as text and color as live. Treat element membership, dimensions, ordering, and other layout structure as retained.
+Panels retain their laid-out trees between rebuilds. Extracted draw values such as text and color remain live; element membership, dimensions, ordering, and other layout structure do not.
 - Call `markGuiDirty()` at the state owner when a mutation changes layout or interaction geometry. Do not rely on the timed rebuild backstop for async changes; scroll easing can postpone it. Do not make every caller reproduce the bookkeeping.
 - Let the panel advance cached scroll layouts while easing. Do not add a fresh full-tree layout to wheel handling or animation frames.
-- Read `layout.ts` for the current `Element` union and `Extractable` fields. Do not assume every property or closure is reactive merely because adjacent properties are.
+- Only `Extractable` fields in `layout.ts` are reactive; do not assume adjacent properties or closures are.
 - Set `truncate` on constrained `grow` text containing user or path data. A grow width constrains layout allocation, not text drawing.
 - Keep scissor pushes and pops balanced on every path, including early returns.
 
@@ -36,23 +32,17 @@ Panel rendering and topmost overlay rendering happen at different stages:
 - Popovers and HTSW hover UI draw from the late `postGuiRender` path so they appear above Minecraft UI.
 - If a panel begins covering the inventory rectangle, re-evaluate its Forge render event; the existing panel event will paint underneath inventory contents.
 
-All layout, hit-testing, and clipping use HTSW overlay coordinates. Convert only at boundaries:
+All layout, hit-testing, and clipping use HTSW overlay coordinates. At boundaries, use `mcToOverlay` for Minecraft-scaled input, overlay screen and bounds helpers for geometry, and `scissor.ts` for real-pixel conversion and Y flip. Do not copy scale math into feature code or use `Renderer.screen` dimensions and raw container bounds directly.
 
-- Convert coordinates received in Minecraft's scaled space with `mcToOverlay` before layout, dispatch, or popover use.
-- Use the overlay screen-size helpers instead of `Renderer.screen` dimensions.
-- Use the overlay bounds wrappers rather than mixing raw container bounds with overlay coordinates.
-- Run `Renderer.*` drawing inside the shared overlay begin/end draw boundary.
-- Let `scissor.ts` perform the overlay-to-real-pixel conversion and Y flip.
-
-Do not copy the scale math into feature code.
+Run `Renderer.*` drawing inside the shared overlay begin/end draw boundary.
 
 ## Popovers and hover cards
 
 - Use `togglePopover` for a popover owned by a re-clickable anchor. Its anchor exclusion prevents the dismissing click from immediately reopening it.
 - Use `openMenu` for cursor-anchored context menus; they intentionally close on the next click.
-- Let an outside click close an ordinary popover and continue to the panel below. Modal popovers absorb the dismissing click and wheel input.
+- Let an outside click close an ordinary popover and continue to the panel below. Modal popovers absorb the dismissing click and own wheel input before panels.
 - Keep popover click dispatch inside the panel click path and guarded so multiple registered panels cannot dispatch the same popover click twice.
-- Keep informational hover cards separate from explicit popovers. A code-view row offers at most one hover card; merge diagnostics and decorator information into that path.
+- Keep informational hover cards separate from explicit popovers.
 - Close popovers and clear focus when the inventory overlay disappears.
 
 ## Keyboard and mouse input
@@ -63,9 +53,7 @@ Preserve these input rules:
 
 - `cancel(event)` does not stop other ChatTriggers handlers. Handlers that must yield to earlier work need to check `event.isCanceled()`.
 - Do not let global shortcuts steal typed characters from native screens such as Housing's anvil rename UI.
-- Keep wheel application and vanilla suppression as two cooperating paths. Poll the LWJGL wheel accumulator on the render path for frame-rate application; use Forge's mouse-input Pre event only to cancel vanilla handling. Applying in both paths doubles scrolling, while using only the Forge path makes eased scrolling pulse.
-- Route wheel input to topmost popovers before panels. Modal popovers own the wheel across their scrim.
-- Do not use ChatTriggers' `scrolled` trigger when vanilla scrolling must be cancelled; it does not expose the cancellable event.
+- Poll the LWJGL wheel accumulator on the render path for frame-rate application; use Forge's mouse-input Pre event only to cancel vanilla handling. Applying in both paths doubles scrolling, while using only Forge makes easing pulse. Do not use ChatTriggers' non-cancellable `scrolled` trigger for this.
 - Prefer explicit trigger priorities when ordering truly matters, but do not set `HIGHEST` on `guiMouseClick`: that priority has been observed to double-fire in this ChatTriggers build.
 
 Use the existing `javaType` helper for new Java class lookups. Follow nearby interop when a code path deliberately uses Rhino's `java` / `javax` globals instead.
@@ -80,11 +68,11 @@ Use the existing `javaType` helper for new Java class lookups. Follow nearby int
 
 ## Icons
 
-Use generated `Icons.*` literals through the `Icon` component. The build copies only icon names it finds as string literals in the bundle, so a dynamic icon choice must still enumerate every possible generated icon literal in code. After adding or removing PNGs, let the normal build regenerate the icon list or run `npm run generate:icons` when an immediate refresh is needed.
+Use generated `Icons.*` literals through `Icon`. The build copies only literal icon names, so dynamic choices must enumerate every possibility. The normal build regenerates the list; run `npm run generate:icons` only when an immediate refresh is needed.
 
 ## Change checklist
 
-For a styled composition, add or reuse a component built from existing elements. For a genuinely new primitive, trace the current `Element` union through measurement, layout, drawing, dispatch, its component builder, and exports; derive the exact required edits from the code rather than this document.
+Build styled compositions from existing elements. Wire genuinely new primitives through measurement, layout, drawing, dispatch, their component builder, and exports, deriving the exact edits from the current `Element` code.
 
 For in-game investigation:
 
