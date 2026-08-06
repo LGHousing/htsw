@@ -2,13 +2,6 @@
 
 HTSW = "HTSL but we don't take Ls" — a refined HTSL (Housing Text Scripting Language) that expresses Hypixel Housing GUI programming as text.
 
-## How to read this guide
-
-This guide says **what each part is for and the rules it must keep**. Do not copy details an agent can learn just by reading the code; those go stale. When you add to this file, write only:
-
-- **What an area is for**
-- **A reason the code can't tell you on its own**
-
 ## Layout
 
 - `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Where syntax and types are defined. Entrypoint `language/src/index.ts`. **Ask before editing.**
@@ -34,31 +27,14 @@ This guide says **what each part is for and the rules it must keep**. Do not cop
 
 Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
 
-**Do not write:**
-
-- Restatements of the next line — `// increment i`, `// dark slate, primary panel bg` next to `COLOR_PANEL`.
-- Narration of removed code or past bugs — `// previously this re-called scheduleReparse()…`, `// fix for ticket X`. Git has the diff; PRs have the context. Comments rot, history doesn't.
-- Task / PR breadcrumbs — `// added for the export flow`, `// used by the importer`. Renames silently make these wrong.
-- Section dividers inside functions — `// --- Double-click detection ---`. The function is too long; extract a helper instead.
-- Speculative MC/CT/Rhino internals — `// works because MC reads X during runTick`, unless you've actually traced it. If you can't reproduce the claim on demand, don't assert it in prose.
-- TODOs without a tracked issue and a concrete next step.
-- Docstrings that restate the type signature or list every parameter.
-
 **When a comment earns its place, make it stand on its own.** Write it for a reader who doesn't yet know the codebase's vocabulary. Don't lean on an undefined internal term or a bare local variable name — say what the thing costs or does and why it matters, in plain words. Plain sentences, not dense shorthand.
 
 **Fix the name before reaching for a comment.** When a comment exists only to decode an under-named thing, rename the thing instead. A clear name removes the need for the comment; keep it only if a real _why_ remains after renaming.
 
-## Code style
-
-- Prefer refactoring over explanatory comments.
-- If code is needlessly hard to understand, improve it.
-- If a state object has fields that many files update by hand, improve it. Put the repeated updates behind functions on the state owner instead. For example, callers should say `state.completeEdit(op)` instead of manually doing `completedOps++`, progress emit, snapshot refresh, and event emit in every phase. The goal is fewer files needing to know the bookkeeping rules.
 - Read the `gui-development` skill before touching anything under `ct_module/src/gui/`.
 
 ## Working style
 
-- Short progress updates before edits, builds, installs, and when findings change the plan.
-- Be direct about what changed and why. No vague reassurance.
 - Release notes are user-facing update text. Write the important changes in plain language, avoid internal jargon, and do not publish changelog-only Markdown into the CT updater feed.
 - A release is not done until the autoupdater feeds are published. After the version-bump commit, run `python publish.py release --tag <tag> --notes-file <path>` from the repo root. It builds CT, VS Code, and CLI artifacts, deploys all three feeds, and creates or updates the GitHub release. Use `stage`, `deploy`, and `verify` only when performing part of that workflow intentionally.
 - If you are not fully sure how Hypixel Housing behaves, ask Callan before implementing, documenting, or relying on that behavior.
