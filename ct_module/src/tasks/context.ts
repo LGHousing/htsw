@@ -10,15 +10,15 @@ import {
 import { waitFor, waitForTimeout, type WaitForPromise } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
 import { sendPacket } from "../utils/java";
+import { removedFormatting } from "../utils/helpers";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 import { createTaskCancelledError } from "./cancellation";
 import {
-    abandonChatPromptOwnership,
-    beginChatPromptOwnership,
-    deferUnownedChat,
-    finishChatPromptOwnership,
-    markOwnedChatPacket,
-} from "./chatPromptOwnership";
+    abandonChatPromptDeferral,
+    beginChatPromptDeferral,
+    deferPlayerChat,
+    finishChatPromptDeferral,
+} from "./chatPromptDeferral";
 
 /**
  * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
@@ -75,12 +75,20 @@ const CHAT_MIN_INTERVAL_MS = 50;
  */
 const COMMAND_COOLDOWN_MS = 300;
 
-register("packetSent", (packet, event) => {
-    if (packet instanceof C01PacketChatMessage && deferUnownedChat(packet)) {
-        cancel(event);
-        recordRuntimeDebug("chatDeferred");
-    }
+register("messageSent", (message, event) => {
+    if (!deferPlayerChat(message)) return;
+    cancel(event);
+    recordRuntimeDebug("chatDeferred");
 });
+
+function samePacket(left: object, right: object): boolean {
+    if (left === right) return true;
+    try {
+        return (left as { equals(other: object): boolean }).equals(right);
+    } catch (_error) {
+        return false;
+    }
+}
 
 export type TaskWaiter<T> = {
     label: string;
@@ -192,18 +200,21 @@ export default class TaskContext {
         }
         await this.awaitCommandCooldown();
         await this.awaitChatBudget();
-        this.sendOwnedChatPacket(command);
+        this.sendRawChatPacket(command);
         recordRuntimeDebug("command", { command });
         this.lastCommandAt = Date.now();
     }
 
-    private sendOwnedChatPacket(message: string): void {
+    private createChatPacket(message: string): HtswPacketInstance {
         const packet = new C01PacketChatMessage("");
         const messageField = packet.class.getDeclaredField("field_149440_a");
         messageField.setAccessible(true);
         messageField.set(packet, message);
-        markOwnedChatPacket(this, packet);
-        sendPacket(packet);
+        return packet;
+    }
+
+    private sendRawChatPacket(message: string): void {
+        sendPacket(this.createChatPacket(message));
     }
 
     public async sendMessage(message: string): Promise<void> {
@@ -220,33 +231,59 @@ export default class TaskContext {
         // the string to 100 chars. Build the packet with a dummy value and
         // overwrite the message field by reflection so the full (≤256) message
         // reaches the server.
-        this.sendOwnedChatPacket(outgoingMessage);
+        this.sendRawChatPacket(outgoingMessage);
         recordRuntimeDebug("chatInput", { length: outgoingMessage.length });
     }
 
     public beginChatPrompt(): void {
-        beginChatPromptOwnership(this);
+        beginChatPromptDeferral(this);
     }
 
     public async finishChatPrompt(): Promise<void> {
         await this.finishCancellationCleanup(async () => {
-            const replayed = await finishChatPromptOwnership(this, async (packet) => {
+            const deferred = finishChatPromptDeferral(this);
+            for (let i = 0; i < deferred.length; i++) {
                 await this.awaitChatBudget();
-                markOwnedChatPacket(this, packet);
-                sendPacket(packet as HtswPacketInstance);
-                this.lastCommandAt = Date.now();
-            });
-            if (replayed > 0) {
-                recordRuntimeDebug("chatReplayed", { count: replayed });
-                ChatLib.chat(
-                    `&7[htsw] Sent ${replayed === 1 ? "your chat message" : `${replayed} queued chat messages`} after Housing's value prompt closed.`
+                const message = deferred[i];
+                const echoWaiter = message.startsWith("/")
+                    ? null
+                    : this.waitFor("message", (incoming) => {
+                          const text = removedFormatting(incoming);
+                          return text.endsWith(`${Player.getName()}: ${message}`);
+                      });
+                const packet = this.createChatPacket(message);
+                const sentWaiter = this.waitFor("packetSent", (sentPacket) =>
+                    samePacket(packet, sentPacket)
                 );
+                sendPacket(packet);
+                try {
+                    await this.withTimeout(
+                        sentWaiter,
+                        "Waiting for queued chat message to send",
+                        2000
+                    );
+                    if (echoWaiter === null) {
+                        await this.sleep(1000);
+                    } else {
+                        const echoReceived = echoWaiter.then(() => {});
+                        await this.race([
+                            [echoReceived, echoWaiter],
+                            [this.sleep(1000), null],
+                        ]);
+                    }
+                    this.lastCommandAt = Date.now();
+                } finally {
+                    echoWaiter?.cleanupWaiter?.();
+                }
+            }
+            if (deferred.length > 0) {
+                recordRuntimeDebug("chatReplayed", { count: deferred.length });
             }
         });
     }
 
     public abandonChatPrompt(): number | null {
-        return abandonChatPromptOwnership(this);
+        return abandonChatPromptDeferral(this);
     }
 
     public displayMessage(message: string) {

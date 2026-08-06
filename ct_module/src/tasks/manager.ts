@@ -46,17 +46,6 @@ export class TaskManager {
                 throw err;
             }
         } finally {
-            const deferredChat = ctx.abandonChatPrompt();
-            if (deferredChat !== null) {
-                ChatLib.chat(
-                    "&c[htsw] Housing's value prompt did not close. Run &f/chatinput cancel &cbefore sending chat."
-                );
-                if (deferredChat > 0) {
-                    ChatLib.chat(
-                        `&c[htsw] ${deferredChat === 1 ? "Your chat message was" : `${deferredChat} chat messages were`} not sent.`
-                    );
-                }
-            }
             if (this.runningContext === ctx) this.runningContext = null;
         }
     }

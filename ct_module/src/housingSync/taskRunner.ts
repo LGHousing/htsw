@@ -26,13 +26,24 @@ export async function runHousingSyncTask<T>(
             // count is a canary that one slipped through the cleanup paths.
             const purged = resetEventContainers();
             if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+                ChatLib.chat(
+                    `&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`
+                );
             }
             setPacketCaptureForTask(true);
             const result = await task(ctx);
             resetRuntimeDebugRecords();
             return result;
         } finally {
+            const deferredChat = ctx.abandonChatPrompt();
+            if (deferredChat !== null && deferredChat > 0) {
+                ChatLib.chat(
+                    `&c[htsw] ${deferredChat === 1 ? "Your chat message was" : `${deferredChat} chat messages were`} blocked by Housing's value prompt and could not be resent because the task stopped.`
+                );
+                ChatLib.chat(
+                    "&7[htsw] If a Housing value prompt is still open, run &f/chatinput cancel&7."
+                );
+            }
             setPacketCaptureForTask(false);
             clearActiveTaskContext(kind, ctx);
             setTaskRunning(false);
