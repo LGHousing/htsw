@@ -47,6 +47,8 @@ const COLOR_PENDING_GRAY = 0xff666666 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 const COLOR_MOVE_ROW_BG = 0x55351f3d | 0;
+const PLANNED_MARKER_ALPHA = 0x88;
+const PLANNED_ROW_ALPHA = 0x18;
 
 let followRequested = true;
 let followIdentity = "";
@@ -118,32 +120,49 @@ function advanceFollowState(): boolean {
     return followRequested;
 }
 
-function operationMarker(op: DiffOpKind): NonNullable<LineDecorations["marker"]> {
+function withAlpha(color: number, alpha: number): number {
+    return ((alpha << 24) | (color & 0x00ffffff)) | 0;
+}
+
+function operationMarker(
+    op: DiffOpKind,
+    active: boolean
+): NonNullable<LineDecorations["marker"]> {
+    let marker: NonNullable<LineDecorations["marker"]>;
     if (op === "add") {
-        return {
+        marker = {
             glyph: "+",
             color: COLOR_BY_STATE.add,
             background: ROW_BG_BY_STATE.add,
         };
-    }
-    if (op === "delete") {
-        return {
+    } else if (op === "delete") {
+        marker = {
             glyph: "-",
             color: COLOR_BY_STATE.delete,
             background: ROW_BG_BY_STATE.delete,
         };
-    }
-    if (op === "move") {
-        return {
+    } else if (op === "move") {
+        marker = {
             icon: Icons.arrowUpDown,
             color: ACCENT_PURPLE,
             background: COLOR_MOVE_ROW_BG,
         };
+    } else {
+        marker = {
+            glyph: "~",
+            color: COLOR_BY_STATE.edit,
+            background: ROW_BG_BY_STATE.edit,
+        };
     }
+
+    if (active) return marker;
     return {
-        glyph: "~",
-        color: COLOR_BY_STATE.edit,
-        background: ROW_BG_BY_STATE.edit,
+        ...marker,
+        color: withAlpha(marker.color, PLANNED_MARKER_ALPHA),
+        background:
+            marker.background === undefined
+                ? undefined
+                : withAlpha(marker.background, PLANNED_ROW_ALPHA),
     };
 }
 
@@ -182,8 +201,10 @@ function importProgressDecorator(path: string | null): LineDecorator {
             }
             const isFocused = focusedLineId !== null && line.id === focusedLineId;
             const marker = operationFocused
-                ? operationMarker(currentOperation.op)
-                : undefined;
+                ? operationMarker(currentOperation.op, true)
+                : preview.plannedOp !== undefined
+                  ? operationMarker(preview.plannedOp, false)
+                  : undefined;
             const focusRowBg = inReadFocusRange
                 ? COLOR_READ_FOCUS_ROW_BG
                 : undefined;
