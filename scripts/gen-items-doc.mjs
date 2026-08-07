@@ -87,7 +87,7 @@ const lines = [
 ];
 
 await writeFile(
-  path.join(repositoryRoot, "docs", "items.md"),
+  path.join(repositoryRoot, "docs", "vanilla-item-names.md"),
   lines.join("\n"),
   "utf8",
 );

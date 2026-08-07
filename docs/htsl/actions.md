@@ -267,7 +267,7 @@ Gives the player an item.
   Ambiguous names do not resolve; currently these are `acacia_wood`,
   `dark_oak_wood`, and `wooden_slab`.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
-  during import. See [Vanilla Item Names](../items.md) for the full list.
+  during import. See [Vanilla Item Names](../vanilla-item-names.md) for the full list.
 - **Allow Multiple:** A boolean flag. When disabled, if there is another item in the player's
   inventory with the exact same nbt, this action does nothing.
 - **Inventory Slot:** A selection that determines where in the player's inventory to give the item.
@@ -323,7 +323,7 @@ Removes an item from the player.
   Ambiguous names do not resolve; currently these are `acacia_wood`,
   `dark_oak_wood`, and `wooden_slab`.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
-  during import. See [Vanilla Item Names](../items.md) for the full list.
+  during import. See [Vanilla Item Names](../vanilla-item-names.md) for the full list.
 
 #### HTSL
 

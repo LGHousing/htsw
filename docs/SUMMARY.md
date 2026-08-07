@@ -2,7 +2,7 @@
 
 - [Overview](./overview.md)
 - [Importables](./importables.md)
-  - [Vanilla Item Names](./items.md)
+  - [Vanilla Item Names](./vanilla-item-names.md)
 - [HTSL](./htsl/README.md)
   - [Basic Syntax](./htsl/basic-syntax.md)
   - [Actions](./htsl/actions.md)
