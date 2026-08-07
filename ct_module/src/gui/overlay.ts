@@ -87,6 +87,7 @@ import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
 import { isWatchImportRunning, setWatchDetectionLive } from "./watchMode";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
+import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
     dispatchWheel,
@@ -469,6 +470,7 @@ export function initHtswGui(): void {
         const screen = getMinecraft().field_71462_r;
         if (screen !== null) return;
         paintImportShade(0, 0, frame);
+        sampleImportCodeViewTrace();
         renderBadges();
         renderToast();
         }
@@ -476,6 +478,7 @@ export function initHtswGui(): void {
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         sampleProgressTraceTick();
         paintImportShade(mouseX, mouseY, frame);
+        sampleImportCodeViewTrace();
         renderBadges();
         renderToast();
     });

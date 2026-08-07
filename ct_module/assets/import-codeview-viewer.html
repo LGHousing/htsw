@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HTSW Import CodeView Replay</title>
+<style>
+:root {
+    color-scheme: dark;
+    --ink: #e8edf3;
+    --muted: #768292;
+    --faint: #414a57;
+    --panel: #181d24;
+    --panel-2: #202630;
+    --line: #303946;
+    --cyan: #67a7e8;
+    --green: #7ee787;
+    --red: #f85149;
+    --gold: #e3b341;
+    --purple: #c58af9;
+    --unit: 22px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    margin: 0;
+    overflow: hidden;
+    color: var(--ink);
+    background:
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 28px 28px,
+        #0e1217;
+    font-family: Bahnschrift, "Arial Narrow", sans-serif;
+}
+button, input { font: inherit; }
+button {
+    color: var(--ink);
+    border: 1px solid var(--line);
+    background: #252c36;
+    min-height: 32px;
+    padding: 0 12px;
+    cursor: pointer;
+}
+button:hover { border-color: #586678; background: #2c3541; }
+button:active { transform: translateY(1px); }
+.app {
+    height: 100%;
+    display: grid;
+    grid-template-rows: 58px minmax(0, 1fr) 90px;
+}
+.topbar {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) auto auto;
+    align-items: center;
+    gap: 20px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(19, 24, 30, .96);
+}
+.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.brand strong {
+    font: 700 17px/1 "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .08em;
+}
+.brand span {
+    color: var(--cyan);
+    font: 12px/1 "Cascadia Mono", Consolas, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.timecode {
+    color: #bcc7d4;
+    font: 13px/1 "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .04em;
+}
+.load-label { position: relative; overflow: hidden; }
+.load-label input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.workspace {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(500px, 1fr) 300px;
+    gap: 1px;
+    background: var(--line);
+}
+.stage {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: 44px minmax(0, 1fr);
+    background: #11161c;
+}
+.stage-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+}
+.file-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d7dee8;
+    font: 13px/1 "Cascadia Mono", Consolas, monospace;
+}
+.phase { display: flex; gap: 7px; align-items: center; }
+.chip {
+    border: 1px solid #3a4553;
+    padding: 4px 7px 3px;
+    color: #9ba7b6;
+    font: 700 10px/1 "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+.chip.live { border-color: #315e8e; color: #7bbcff; }
+.chip.applying { border-color: #52773a; color: #a5df7e; }
+.code-shell {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 75% 10%, rgba(103,167,232,.07), transparent 36%),
+        #10151b;
+}
+.code-viewport {
+    width: min(100%, 1120px);
+    height: min(100%, 720px);
+    overflow: hidden;
+    border: 1px solid #333d4a;
+    background: #1b2027;
+    box-shadow: 0 20px 60px rgba(0,0,0,.38);
+    scrollbar-width: none;
+}
+.code-viewport::-webkit-scrollbar { display: none; }
+.code-content {
+    min-width: max-content;
+    padding: 8px 0 32px;
+    font: 14px/var(--unit) "Cascadia Mono", Consolas, monospace;
+}
+.code-row {
+    min-width: 100%;
+    height: var(--unit);
+    display: grid;
+    grid-template-columns: 24px 24px 54px minmax(max-content, 1fr);
+    align-items: stretch;
+}
+.code-row .cell { display: grid; align-items: center; }
+.caret {
+    justify-items: center;
+    color: #79b8ff;
+    font-size: 11px;
+}
+.caret.active { background: rgba(103,167,232,.35); }
+.marker { justify-items: center; font-weight: 800; }
+.line-no { justify-items: end; padding-right: 11px; color: #687482; user-select: none; }
+.source {
+    display: flex !important;
+    align-items: center;
+    padding-right: 24px;
+    white-space: pre;
+}
+.empty {
+    padding: 30px;
+    color: var(--muted);
+    font: 14px/1.5 "Cascadia Mono", Consolas, monospace;
+}
+.side {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    background: var(--panel);
+}
+.side section { padding: 16px; border-bottom: 1px solid var(--line); }
+.eyebrow {
+    margin: 0 0 12px;
+    color: #6f7b89;
+    font: 700 10px/1 "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+.meter { height: 7px; background: #2a313b; overflow: hidden; }
+.meter > div { height: 100%; width: 0; background: var(--cyan); }
+.metric-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 7px 12px;
+    color: #8995a4;
+    font: 11px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+.metric-grid output { color: #d5dde7; text-align: right; }
+.legend { display: grid; gap: 8px; }
+.legend-row {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    align-items: center;
+    color: #8e9aa9;
+    font: 11px/1.2 "Cascadia Mono", Consolas, monospace;
+}
+.legend-mark { text-align: center; font-weight: 800; }
+.legend-mark.planned { opacity: .48; }
+.moments { min-height: 0; overflow: auto; padding: 0 !important; }
+.moments-head { padding: 16px 16px 10px; position: sticky; top: 0; background: var(--panel); }
+.moment {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 58px 1fr;
+    gap: 8px;
+    border: 0;
+    border-top: 1px solid #2a323d;
+    background: transparent;
+    padding: 9px 13px;
+    text-align: left;
+    min-height: 0;
+}
+.moment time { color: #6f7d8e; font: 10px/1.3 "Cascadia Mono", Consolas, monospace; }
+.moment span { color: #aeb8c5; font: 11px/1.3 "Cascadia Mono", Consolas, monospace; }
+.moment.current { background: #26303b; }
+.transport {
+    display: grid;
+    grid-template-columns: auto minmax(200px, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    padding: 13px 18px;
+    border-top: 1px solid var(--line);
+    background: #151a20;
+}
+.transport-controls { display: flex; gap: 7px; }
+.play { width: 78px; color: #d9f3ff; border-color: #456f93; }
+.timeline-wrap { display: grid; gap: 8px; }
+.timeline {
+    width: 100%;
+    accent-color: var(--cyan);
+    cursor: ew-resize;
+}
+.timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    color: #626e7c;
+    font: 10px/1 "Cascadia Mono", Consolas, monospace;
+}
+.activity-strip {
+    position: relative;
+    height: 6px;
+    background: #232a34;
+}
+.activity-strip > div {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 2px;
+    background: var(--cyan);
+    opacity: .7;
+    cursor: pointer;
+}
+.activity-strip > div:hover { opacity: 1; }
+.activity-strip .playhead {
+    min-width: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: #e8edf3;
+    opacity: 1;
+    cursor: default;
+    pointer-events: none;
+}
+.skip-idle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #697686;
+    font: 10px/1 "Cascadia Mono", Consolas, monospace;
+    cursor: pointer;
+    user-select: none;
+}
+.skip-idle input { accent-color: var(--cyan); margin: 0; }
+.speed { display: flex; align-items: center; gap: 8px; }
+.speed label { color: #697686; font: 10px/1 "Cascadia Mono", Consolas, monospace; }
+.speed select {
+    color: var(--ink);
+    border: 1px solid var(--line);
+    background: #252c36;
+    height: 32px;
+    padding: 0 9px;
+}
+.drop {
+    position: fixed;
+    inset: 16px;
+    z-index: 10;
+    display: none;
+    place-items: center;
+    border: 2px dashed var(--cyan);
+    background: rgba(9,14,19,.94);
+    color: #bfe4ff;
+    font: 700 18px/1 "Cascadia Mono", Consolas, monospace;
+    letter-spacing: .04em;
+}
+body.dragging .drop { display: grid; }
+@media (max-width: 900px) {
+    .workspace { grid-template-columns: 1fr; }
+    .side { display: none; }
+    .transport { grid-template-columns: auto 1fr; }
+    .speed { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="topbar">
+        <div class="brand"><strong>HTSW / IMPORT REPLAY</strong><span id="sessionLabel">NO TRACE LOADED</span></div>
+        <div class="timecode" id="timecode">00:00.000 / 00:00.000</div>
+        <label class="load-label"><button type="button">LOAD JSONL</button><input id="fileInput" type="file" accept=".jsonl,.txt"></label>
+    </header>
+    <main class="workspace">
+        <section class="stage">
+            <div class="stage-head">
+                <div class="file-name" id="fileName">Drop an import-codeview trace anywhere</div>
+                <div class="phase"><span class="chip" id="verbChip">idle</span><span class="chip" id="phaseChip">no model</span></div>
+            </div>
+            <div class="code-shell"><div class="code-viewport" id="codeViewport"><div class="empty">No replay loaded.<br><br>Use <b>/htsw debug codeview start</b>, run an import, then use <b>/htsw debug codeview stop</b>.</div></div></div>
+        </section>
+        <aside class="side">
+            <section>
+                <h2 class="eyebrow">Import progress</h2>
+                <div class="meter"><div id="progressFill"></div></div>
+                <div class="metric-grid" style="margin-top:12px">
+                    <span>active</span><output id="activeName">—</output>
+                    <span>operation</span><output id="operation">—</output>
+                    <span>focused row</span><output id="focusRow">—</output>
+                    <span>follow cursor</span><output id="follow">—</output>
+                    <span>scroll</span><output id="scroll">—</output>
+                    <span>viewport</span><output id="viewport">—</output>
+                    <span>model / frame</span><output id="modelFrame">—</output>
+                </div>
+            </section>
+            <section>
+                <h2 class="eyebrow">Gutter language</h2>
+                <div class="legend">
+                    <div class="legend-row"><span class="legend-mark planned" style="color:var(--green)">+</span><span>faint = planned, not started</span></div>
+                    <div class="legend-row"><span class="legend-mark" style="color:var(--green)">▶ +</span><span>bright + caret = active</span></div>
+                    <div class="legend-row"><span class="legend-mark" style="color:var(--gold)">~</span><span>edit in place</span></div>
+                    <div class="legend-row"><span class="legend-mark" style="color:var(--purple)">↕</span><span>move</span></div>
+                </div>
+            </section>
+            <section class="moments"><div class="moments-head"><h2 class="eyebrow" style="margin:0">Model changes</h2></div><div id="moments"></div></section>
+        </aside>
+    </main>
+    <footer class="transport">
+        <div class="transport-controls"><button id="prevSpan" title="Previous activity (Shift+Left)">«</button><button id="prev" title="Previous frame">‹</button><button class="play" id="play">PLAY</button><button id="next" title="Next frame">›</button><button id="nextSpan" title="Next activity (Shift+Right)">»</button></div>
+        <div class="timeline-wrap"><div class="activity-strip" id="activityStrip" title="Spans where the CodeView was visible"></div><input class="timeline" id="timeline" type="range" min="0" max="1" step="1" value="0"><div class="timeline-labels"><span>RECORDING START</span><span id="frameReadout">0 FRAMES</span><span>TRACE END</span></div></div>
+        <div class="speed"><label class="skip-idle"><input id="skipIdle" type="checkbox" checked>SKIP IDLE</label><label for="speed">RATE</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></div>
+    </footer>
+</div>
+<div class="drop">DROP IMPORT-CODEVIEW-TRACE.JSONL</div>
+<script>window.__HTSW_TRACE__ = null;</script>
+<script>
+(() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const els = {
+        sessionLabel: $("sessionLabel"), timecode: $("timecode"), fileName: $("fileName"),
+        verbChip: $("verbChip"), phaseChip: $("phaseChip"), codeViewport: $("codeViewport"),
+        progressFill: $("progressFill"), activeName: $("activeName"), operation: $("operation"),
+        focusRow: $("focusRow"), follow: $("follow"), scroll: $("scroll"),
+        viewport: $("viewport"), modelFrame: $("modelFrame"), moments: $("moments"),
+        fileInput: $("fileInput"), timeline: $("timeline"), play: $("play"),
+        prev: $("prev"), next: $("next"), speed: $("speed"), frameReadout: $("frameReadout"),
+        prevSpan: $("prevSpan"), nextSpan: $("nextSpan"), activityStrip: $("activityStrip"),
+        skipIdle: $("skipIdle")
+    };
+    const stripPlayhead = document.createElement("div");
+    stripPlayhead.className = "playhead";
+    let frames = [];
+    let activitySpans = [];
+    let duration = 0;
+    let playhead = 0;
+    let currentIndex = -1;
+    let playing = false;
+    let lastAnimationAt = 0;
+
+    function parseTrace(raw, label) {
+        const records = [];
+        raw.split(/\r?\n/).forEach((line, index) => {
+            if (!line.trim()) return;
+            try { records.push(JSON.parse(line)); }
+            catch (error) { throw new Error(`Invalid JSONL at line ${index + 1}: ${error.message}`); }
+        });
+        const models = new Map();
+        frames = [];
+        duration = 0;
+        records.forEach((record) => {
+            duration = Math.max(duration, Number(record.tMs) || 0);
+            if (record.kind === "model") models.set(record.modelId, record.state);
+            if (record.kind === "frame") {
+                frames.push({
+                    tMs: Number(record.tMs) || 0,
+                    number: record.frame,
+                    modelId: record.modelId,
+                    model: models.get(record.modelId) || null,
+                    state: record.state || {}
+                });
+            }
+        });
+        if (!frames.length) throw new Error("Trace contains no CodeView frames");
+        duration = Math.max(duration, frames[frames.length - 1].tMs, 1);
+        els.timeline.max = String(Math.ceil(duration));
+        els.frameReadout.textContent = `${frames.length} FRAMES · ${models.size} MODELS`;
+        els.sessionLabel.textContent = label.toUpperCase();
+        buildMoments();
+        buildActivityStrip();
+        setPlayhead(activitySpans.length ? activitySpans[0].start : 0, true);
+    }
+
+    function buildActivityStrip() {
+        const MERGE_GAP_MS = 10000;
+        activitySpans = [];
+        let span = null;
+        frames.forEach((frame) => {
+            const model = frame.model;
+            const active = !!(model && model.visible && Array.isArray(model.rows) && model.rows.length);
+            if (!active) return;
+            const file = model.path ? String(model.path).split(/[\\/]/).pop() : null;
+            if (span && frame.tMs - span.end <= MERGE_GAP_MS) span.end = frame.tMs;
+            else activitySpans.push(span = { start: frame.tMs, end: frame.tMs, files: new Set() });
+            if (file) span.files.add(file);
+        });
+        els.activityStrip.replaceChildren();
+        activitySpans.forEach((s) => {
+            const seg = document.createElement("div");
+            seg.style.left = `${(s.start / duration) * 100}%`;
+            seg.style.width = `${(Math.max(s.end - s.start, duration / 500) / duration) * 100}%`;
+            const files = [...s.files];
+            const fileLabel = files.length > 3 ? `${files.slice(0, 3).join(", ")} +${files.length - 3}` : files.join(", ");
+            seg.title = `${formatTime(s.start)} – ${formatTime(s.end)}${fileLabel ? `\n${fileLabel}` : ""}`;
+            seg.addEventListener("click", () => { pause(); setPlayhead(s.start, true); });
+            els.activityStrip.appendChild(seg);
+        });
+        els.activityStrip.appendChild(stripPlayhead);
+    }
+
+    function jumpActivity(direction) {
+        if (!activitySpans.length) return;
+        pause();
+        if (direction > 0) {
+            const next = activitySpans.find((s) => s.start > playhead + 500);
+            setPlayhead(next ? next.start : duration, true);
+            return;
+        }
+        const before = activitySpans.filter((s) => s.start < playhead - 500);
+        setPlayhead(before.length ? before[before.length - 1].start : 0, true);
+    }
+
+    function frameIndexAt(ms) {
+        let lo = 0, hi = frames.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (frames[mid].tMs <= ms) lo = mid + 1; else hi = mid;
+        }
+        return Math.max(0, lo - 1);
+    }
+
+    function setPlayhead(ms, force) {
+        if (!frames.length) return;
+        playhead = Math.max(0, Math.min(duration, ms));
+        els.timeline.value = String(Math.round(playhead));
+        stripPlayhead.style.left = `${(playhead / duration) * 100}%`;
+        els.timecode.textContent = `${formatTime(playhead)} / ${formatTime(duration)}`;
+        const nextIndex = frameIndexAt(playhead);
+        if (force || nextIndex !== currentIndex) {
+            currentIndex = nextIndex;
+            renderFrame(frames[currentIndex]);
+            highlightMoment();
+        }
+    }
+
+    function renderFrame(frame) {
+        const model = frame.model || {};
+        const progress = frame.state.progress || null;
+        const active = progress && progress.active;
+        const op = model.currentOperation;
+        const scroll = frame.state.scroll || {};
+        els.fileName.textContent = model.path || (model.visible ? model.emptyMessage : "Import CodeView hidden");
+        els.verbChip.textContent = model.verb || "idle";
+        els.verbChip.className = `chip ${model.visible ? "live" : ""}`;
+        els.phaseChip.textContent = active ? active.phase : "idle";
+        els.phaseChip.className = `chip ${active && active.phase === "applying" ? "applying" : ""}`;
+        const fraction = progress && progress.totalUnits > 0 ? progress.completedUnits / progress.totalUnits : 0;
+        els.progressFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+        els.activeName.textContent = active ? `${active.type} ${active.identity}` : "—";
+        els.operation.textContent = op ? `${op.op} · ${shortId(op.lineId)}` : "—";
+        els.focusRow.textContent = model.focusedLineId ? shortId(model.focusedLineId) : "—";
+        els.follow.textContent = frame.state.followRequested ? "ON" : "OFF / MANUAL";
+        els.follow.style.color = frame.state.followRequested ? "var(--green)" : "var(--gold)";
+        els.scroll.textContent = `${round(scroll.offset)} → ${round(scroll.target)} / ${round(scroll.contentLength)}`;
+        els.viewport.textContent = `${round(scroll.viewportWidth)} × ${round(scroll.viewportHeight)}`;
+        els.modelFrame.textContent = `${frame.modelId} / ${frame.number}`;
+        renderCode(model, scroll);
+    }
+
+    function renderCode(model, scroll) {
+        els.codeViewport.replaceChildren();
+        if (!model.visible || !Array.isArray(model.rows) || !model.rows.length) {
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = model.visible ? (model.emptyMessage || "No rows") : "Import CodeView was not visible in this frame.";
+            els.codeViewport.appendChild(empty);
+            return;
+        }
+        const content = document.createElement("div");
+        content.className = "code-content";
+        model.rows.forEach((row) => content.appendChild(codeRow(row)));
+        els.codeViewport.appendChild(content);
+        const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--unit")) / 10;
+        els.codeViewport.scrollTop = (Number(scroll.offset) || 0) * scale;
+    }
+
+    function codeRow(row) {
+        const el = document.createElement("div");
+        el.className = "code-row";
+        if (row.background !== null && row.background !== undefined) el.style.background = color(row.background);
+        el.style.opacity = String(row.alpha === undefined ? 1 : row.alpha);
+        const caret = cell("caret cell", row.caret ? "▶" : "");
+        if (row.caret) caret.classList.add("active");
+        if (row.cursorColumnBackground !== null && row.cursorColumnBackground !== undefined) {
+            caret.style.background = color(row.cursorColumnBackground);
+        }
+        const markerText = row.marker ? (row.marker.glyph || iconGlyph(row.marker.icon)) : "";
+        const marker = cell("marker cell", markerText);
+        if (row.marker) marker.style.color = color(row.marker.color);
+        const lineNo = cell("line-no cell", row.hideLineNum ? "" : String(row.lineNum || ""));
+        const source = document.createElement("div");
+        source.className = "source cell";
+        if (row.italic) source.style.fontStyle = "italic";
+        (row.tokens || []).forEach((token) => {
+            const span = document.createElement("span");
+            span.textContent = stripFormatting(token.text);
+            span.style.color = color(row.foregroundColor === null ? token.color : row.foregroundColor);
+            source.appendChild(span);
+        });
+        el.append(caret, marker, lineNo, source);
+        return el;
+    }
+
+    function cell(className, text) {
+        const el = document.createElement("div");
+        el.className = className;
+        el.textContent = text;
+        return el;
+    }
+
+    function buildMoments() {
+        els.moments.replaceChildren();
+        let previousModel = -1;
+        frames.forEach((frame, index) => {
+            if (frame.modelId === previousModel) return;
+            previousModel = frame.modelId;
+            const model = frame.model || {};
+            const button = document.createElement("button");
+            button.className = "moment";
+            button.dataset.frameIndex = String(index);
+            const time = document.createElement("time");
+            time.textContent = formatTime(frame.tMs);
+            const label = document.createElement("span");
+            const op = model.currentOperation;
+            label.textContent = op ? `${op.op.toUpperCase()} · ${shortId(op.lineId)}` : model.path ? "MODEL UPDATE" : "VIEW HIDDEN";
+            button.append(time, label);
+            button.addEventListener("click", () => { pause(); setPlayhead(frame.tMs, true); });
+            els.moments.appendChild(button);
+        });
+    }
+
+    function highlightMoment() {
+        let selected = null;
+        els.moments.querySelectorAll(".moment").forEach((button) => {
+            const index = Number(button.dataset.frameIndex);
+            const active = index <= currentIndex;
+            button.classList.toggle("current", active && (!selected || index > Number(selected.dataset.frameIndex)));
+            if (active && (!selected || index > Number(selected.dataset.frameIndex))) selected = button;
+        });
+        els.moments.querySelectorAll(".moment.current").forEach((button) => {
+            if (button !== selected) button.classList.remove("current");
+        });
+    }
+
+    function play() {
+        if (!frames.length) return;
+        if (playhead >= duration) setPlayhead(0, true);
+        playing = true;
+        lastAnimationAt = performance.now();
+        els.play.textContent = "PAUSE";
+        requestAnimationFrame(tick);
+    }
+    function pause() { playing = false; els.play.textContent = "PLAY"; }
+    function tick(now) {
+        if (!playing) return;
+        const delta = now - lastAnimationAt;
+        lastAnimationAt = now;
+        let next = playhead + delta * Number(els.speed.value);
+        if (els.skipIdle.checked && activitySpans.length) {
+            const inSpan = activitySpans.some((s) => next >= s.start - 1000 && next <= s.end + 1000);
+            if (!inSpan) {
+                const upcoming = activitySpans.find((s) => s.start > next);
+                if (upcoming) next = upcoming.start;
+            }
+        }
+        setPlayhead(next, false);
+        if (playhead >= duration) { pause(); return; }
+        requestAnimationFrame(tick);
+    }
+    function step(direction) {
+        if (!frames.length) return;
+        pause();
+        const index = Math.max(0, Math.min(frames.length - 1, currentIndex + direction));
+        setPlayhead(frames[index].tMs, true);
+    }
+
+    function color(value) {
+        if (value === null || value === undefined) return "inherit";
+        const n = Number(value) >>> 0;
+        const a = ((n >>> 24) & 255) / 255;
+        return `rgba(${(n >>> 16) & 255},${(n >>> 8) & 255},${n & 255},${a.toFixed(3)})`;
+    }
+    function iconGlyph(name) { return name && /arrowUpDown/i.test(name) ? "↕" : "◆"; }
+    function stripFormatting(text) { return String(text || "").replace(/§[0-9a-fk-or]/gi, ""); }
+    function shortId(id) { const s = String(id || ""); return s.length > 26 ? `…${s.slice(-25)}` : s; }
+    function round(n) { const value = Number(n) || 0; return Math.round(value * 10) / 10; }
+    function formatTime(ms) {
+        ms = Math.max(0, Number(ms) || 0);
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const millis = Math.floor(ms % 1000);
+        return `${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}.${String(millis).padStart(3,"0")}`;
+    }
+
+    els.play.addEventListener("click", () => playing ? pause() : play());
+    els.prev.addEventListener("click", () => step(-1));
+    els.next.addEventListener("click", () => step(1));
+    els.prevSpan.addEventListener("click", () => jumpActivity(-1));
+    els.nextSpan.addEventListener("click", () => jumpActivity(1));
+    els.timeline.addEventListener("input", () => { pause(); setPlayhead(Number(els.timeline.value), false); });
+    els.fileInput.addEventListener("change", () => {
+        const file = els.fileInput.files && els.fileInput.files[0];
+        if (!file) return;
+        file.text().then((raw) => parseTrace(raw, file.name)).catch(showError);
+    });
+    window.addEventListener("keydown", (event) => {
+        if (event.code === "Space") { event.preventDefault(); playing ? pause() : play(); }
+        if (event.code === "ArrowLeft") event.shiftKey ? jumpActivity(-1) : step(-1);
+        if (event.code === "ArrowRight") event.shiftKey ? jumpActivity(1) : step(1);
+    });
+    let dragDepth = 0;
+    window.addEventListener("dragenter", (event) => { event.preventDefault(); dragDepth++; document.body.classList.add("dragging"); });
+    window.addEventListener("dragleave", () => { dragDepth--; if (dragDepth <= 0) document.body.classList.remove("dragging"); });
+    window.addEventListener("dragover", (event) => event.preventDefault());
+    window.addEventListener("drop", (event) => {
+        event.preventDefault(); dragDepth = 0; document.body.classList.remove("dragging");
+        const file = event.dataTransfer && event.dataTransfer.files[0];
+        if (file) file.text().then((raw) => parseTrace(raw, file.name)).catch(showError);
+    });
+    function showError(error) {
+        pause();
+        els.codeViewport.innerHTML = "";
+        const node = document.createElement("div");
+        node.className = "empty";
+        node.style.color = "var(--red)";
+        node.textContent = error instanceof Error ? error.message : String(error);
+        els.codeViewport.appendChild(node);
+    }
+
+    if (typeof window.__HTSW_TRACE__ === "string" && window.__HTSW_TRACE__.trim()) {
+        try { parseTrace(window.__HTSW_TRACE__, "embedded import capture"); }
+        catch (error) { showError(error); }
+    }
+})();
+</script>
+</body>
+</html>

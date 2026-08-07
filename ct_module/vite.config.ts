@@ -52,6 +52,10 @@ const htswAliases = [
 // subfolders. HTSL and HousingEditor both put PNGs flat under assets/, so we match.
 const iconsSourceDir = path.resolve(srcDir, "../assets/icons");
 const iconsDistDir = path.resolve(srcDir, "../dist/assets");
+const importCodeViewTemplate = path.resolve(
+    srcDir,
+    "../assets/import-codeview-viewer.html"
+);
 
 function kebabToCamel(name: string): string {
     return name.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
@@ -128,6 +132,10 @@ const iconShakePlugin = {
             used++;
         }
         console.log(`htsw-icon-shake: copied ${used} of ${names.length} icons to dist/assets/`);
+        copyFileSync(
+            importCodeViewTemplate,
+            path.resolve(distDir, "import-codeview-viewer.html")
+        );
     },
 };
 

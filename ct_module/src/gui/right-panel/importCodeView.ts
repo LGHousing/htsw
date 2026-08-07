@@ -10,6 +10,7 @@ import type {
 import { Button, Icon } from "../lib/components";
 import {
     clearUserScrollOverride,
+    getScrollState,
     isScrollUserOverridden,
     type Element,
 } from "../lib/layout";
@@ -35,7 +36,7 @@ import {
     type PreviewLine,
 } from "./import-tab/livePreview";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
-import { getActivePath } from "./selection";
+import { getActivePath, isLiveTabActive } from "./selection";
 import {
     getSessionVerb,
     getTaskProgress,
@@ -63,16 +64,7 @@ export function ImportCodeView(): Element {
         },
         lineDecorator: () => importProgressDecorator(getActivePath()),
         autoFollow: () => advanceFollowState(),
-        emptyMessage: () => {
-            if (getTaskProgress() !== null) {
-                const verb = getSessionVerb();
-                if (verb === "export") return "Exporting...";
-                if (verb === "read") return "Reading house contents...";
-                if (verb === "diff") return "Scanning Housing...";
-                return "Importing...";
-            }
-            return "No live diff to show.";
-        },
+        emptyMessage: importCodeViewEmptyMessage,
     });
 }
 
@@ -122,6 +114,17 @@ function advanceFollowState(): boolean {
 
 function withAlpha(color: number, alpha: number): number {
     return ((alpha << 24) | (color & 0x00ffffff)) | 0;
+}
+
+function importCodeViewEmptyMessage(): string {
+    if (getTaskProgress() !== null) {
+        const verb = getSessionVerb();
+        if (verb === "export") return "Exporting...";
+        if (verb === "read") return "Reading house contents...";
+        if (verb === "diff") return "Scanning Housing...";
+        return "Importing...";
+    }
+    return "No live diff to show.";
 }
 
 function operationMarker(
@@ -254,6 +257,35 @@ function importProgressDecorator(path: string | null): LineDecorator {
                     ? ""
                     : `${currentOperation.op}:${currentOperation.lineId}`;
             return `progress:${path}\n${previewRevision(path)}\n${focusKey}\n${operationKey}\n${isApplyPhase}\n${getSessionVerb()}`;
+        },
+    };
+}
+
+export function inspectImportCodeView() {
+    const visible = isLiveTabActive();
+    const path = visible ? getActivePath() : null;
+    const currentPath = path === null ? null : getCurrentPath(path);
+    const scroll = getScrollState(SCROLL_ID);
+    return {
+        visible,
+        path,
+        viewIdentity: getTaskViewIdentity(path),
+        verb: getSessionVerb(),
+        emptyMessage: importCodeViewEmptyMessage(),
+        lines: path === null ? [] : previewLinesForFile(path),
+        lineDecorator: importProgressDecorator(path),
+        previewRevision: path === null ? -1 : previewRevision(path),
+        currentPath:
+            currentPath === null ? null : ActionTreePath.key(currentPath),
+        currentOperation: path === null ? null : getCurrentOperation(path),
+        followRequested,
+        scroll: {
+            offset: scroll.offset,
+            target: scroll.target,
+            contentLength: scroll.contentLength,
+            viewportWidth: scroll.viewportRect.w,
+            viewportHeight: scroll.viewportRect.h,
+            userOverridden: scroll.userOverridden,
         },
     };
 }

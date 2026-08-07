@@ -48,6 +48,13 @@ import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
 import { appendRawHtslFile } from "../rawHtslImport";
+import {
+    getImportCodeViewTraceStatus,
+    isImportCodeViewTraceEnabled,
+    openImportCodeViewReplay,
+    startImportCodeViewTrace,
+    stopImportCodeViewTrace,
+} from "../gui/right-panel/import-tab/codeViewTrace";
 
 type HtswSubcommand = {
     name: string;
@@ -253,6 +260,12 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         run: commandTrace,
         usage: "trace [on|off]",
     },
+    {
+        name: "codeview",
+        summary: "Record and replay the live import CodeView",
+        run: commandCodeViewTrace,
+        usage: "codeview [start|stop|status|open]",
+    },
 ];
 
 function commandDebug(args: string[]): void {
@@ -326,6 +339,47 @@ function commandTrace(args: string[]): void {
     }
     const path = setTaskTraceEnabled(true);
     ChatLib.chat(`&a[htsw] task trace on · &f${path}`);
+}
+
+function commandCodeViewTrace(args: string[]): void {
+    const action = (args[0] ?? "status").toLowerCase();
+    try {
+        if (action === "start" || action === "on") {
+            const path = startImportCodeViewTrace();
+            ChatLib.chat(`&a[htsw] import CodeView recording started · &f${path}`);
+            ChatLib.chat("&7Run the import, then use /htsw debug codeview stop.");
+            return;
+        }
+        if (action === "stop" || action === "off") {
+            const result = stopImportCodeViewTrace();
+            openPathInOS(result.replayPath);
+            ChatLib.chat("&a[htsw] import CodeView replay written and opened");
+            ChatLib.chat(`&7Trace: &f${result.tracePath}`);
+            ChatLib.chat(`&7Replay: &f${result.replayPath}`);
+            return;
+        }
+        if (action === "open") {
+            const path = openImportCodeViewReplay();
+            ChatLib.chat(`&a[htsw] opened import CodeView replay · &f${path}`);
+            return;
+        }
+        if (action === "status") {
+            const status = getImportCodeViewTraceStatus();
+            ChatLib.chat(
+                `&7[htsw] import CodeView recording ` +
+                    (isImportCodeViewTraceEnabled() ? "&aon" : "&coff") +
+                    ` &7· ${status.frames} frames · ${status.models} models`
+            );
+            ChatLib.chat(`&7Trace: &f${status.tracePath}`);
+            return;
+        }
+        ChatLib.chat("&cUsage: /htsw debug codeview [start|stop|status|open]");
+    } catch (error) {
+        ChatLib.chat(
+            `&c[htsw] import CodeView replay failed: ` +
+                (error instanceof Error ? error.message : String(error))
+        );
+    }
 }
 
 function commandGui(): void {
