@@ -23,12 +23,22 @@ for (const item of MINECRAFT_ITEMS) {
         const referenceName = itemReferences.vanillaVariationReferenceName(
             variation.displayName
         );
+        const override =
+            itemReferences.VANILLA_VARIATION_REFERENCE_OVERRIDES[referenceName];
+        const isOverrideTarget =
+            override === undefined ||
+            (override.id === `minecraft:${item.name}` &&
+                override.damage === variation.metadata);
         const displayName =
-            variation.metadata === 0 ? item.displayName : variation.displayName;
-        if (!VANILLA_BASE_NAMES.has(referenceName)) {
+            variation.metadata === 0 && override === undefined
+                ? item.displayName
+                : variation.displayName;
+        if (!VANILLA_BASE_NAMES.has(referenceName) && isOverrideTarget) {
             registerVanillaItemCompareName(referenceName, displayName);
         }
-        registerVanillaItemCompareName(variation.displayName, displayName);
+        if (isOverrideTarget) {
+            registerVanillaItemCompareName(variation.displayName, displayName);
+        }
     }
 }
 

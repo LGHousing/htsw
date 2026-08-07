@@ -5,7 +5,7 @@
 [HTSL item fields](./htsl/actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.
 
 <details>
-<summary>Full list (599 names)</summary>
+<summary>Full list (602 names)</summary>
 
 | Name | Resolves to | In-game display name |
 | --- | --- | --- |
@@ -47,6 +47,8 @@
 | `spruce_wood` | `minecraft:log`, damage 1 | Spruce Wood |
 | `birch_wood` | `minecraft:log`, damage 2 | Birch Wood |
 | `jungle_wood` | `minecraft:log`, damage 3 | Jungle Wood |
+| `acacia_wood` | `minecraft:log2`, damage 0 | Acacia Wood |
+| `dark_oak_wood` | `minecraft:log2`, damage 1 | Dark Oak Wood |
 | `minecraft:leaves` | `minecraft:leaves`, damage 0 | Leaves |
 | `oak_leaves` | `minecraft:leaves`, damage 0 | Oak Leaves |
 | `spruce_leaves` | `minecraft:leaves`, damage 1 | Spruce Leaves |
@@ -106,6 +108,7 @@
 | `minecraft:iron_block` | `minecraft:iron_block`, damage 0 | Block of Iron |
 | `minecraft:stone_slab` | `minecraft:stone_slab`, damage 0 | Stone Slab |
 | `sandstone_slab` | `minecraft:stone_slab`, damage 1 | Sandstone Slab |
+| `wooden_slab` | `minecraft:wooden_slab`, damage 0 | Wooden Slab |
 | `cobblestone_slab` | `minecraft:stone_slab`, damage 3 | Cobblestone Slab |
 | `bricks_slab` | `minecraft:stone_slab`, damage 4 | Bricks Slab |
 | `stone_bricks_slab` | `minecraft:stone_slab`, damage 5 | Stone Bricks Slab |
@@ -610,7 +613,3 @@
 | `minecraft:record_wait` | `minecraft:record_wait`, damage 0 | Wait Disc |
 
 </details>
-
-## Ambiguous names
-
-The derived names `acacia_wood`, `dark_oak_wood`, `wooden_slab` are ambiguous and refuse to resolve.

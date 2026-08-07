@@ -656,24 +656,24 @@ describe("import.json diagnostics readability", () => {
         ).toBeUndefined();
     });
 
-    it("keeps base item ids authoritative over variation aliases", () => {
-        expect(htsw.items.VANILLA_VARIATION_REFERENCE_COLLISIONS).toEqual([
-            "acacia_wood",
-            "dark_oak_wood",
-            "wooden_slab",
-        ]);
-        expect(
-            htsw.items.resolveVanillaItemReference("minecraft:wooden_slab")?.id
-        ).toBe("minecraft:wooden_slab");
+    it.each([
+        ["acacia_wood", "minecraft:log2", 0],
+        ["minecraft:acacia_wood", "minecraft:log2", 0],
+        ["dark_oak_wood", "minecraft:log2", 1],
+        ["minecraft:dark_oak_wood", "minecraft:log2", 1],
+        ["wooden_slab", "minecraft:wooden_slab", 0],
+        ["minecraft:wooden_slab", "minecraft:wooden_slab", 0],
+    ])("resolves overridden vanilla variation %s", (reference, id, damage) => {
+        const resolved = htsw.items.resolveVanillaItemReference(reference);
+        expect(resolved?.kind).toBe("vanilla");
+        if (resolved?.kind !== "vanilla") return;
+
+        expect(resolved.id).toBe(id);
+        expect(resolved.nbt.value.Damage).toEqual({ type: "short", value: damage });
     });
 
-    it("does not resolve ambiguous variation names", () => {
-        expect(
-            htsw.items.resolveVanillaItemReference("acacia_wood")
-        ).toBeUndefined();
-        expect(
-            htsw.items.resolveVanillaItemReference("minecraft:acacia_wood")
-        ).toBeUndefined();
+    it("has no unresolved vanilla variation collisions", () => {
+        expect(htsw.items.VANILLA_VARIATION_REFERENCE_COLLISIONS).toEqual([]);
     });
 
     it("reports unknown vanilla item ids distinctly", () => {

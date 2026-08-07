@@ -35,12 +35,23 @@ type VanillaVariationReference = {
     damage: number;
 };
 
+export const VANILLA_VARIATION_REFERENCE_OVERRIDES: Readonly<
+    Record<string, VanillaVariationReference>
+> = {
+    acacia_wood: { id: "minecraft:log2", damage: 0 },
+    dark_oak_wood: { id: "minecraft:log2", damage: 1 },
+    wooden_slab: { id: "minecraft:wooden_slab", damage: 0 },
+};
+
 const VANILLA_VARIATION_REFERENCES = new Map<string, VanillaVariationReference>();
 export const VANILLA_VARIATION_REFERENCE_COLLISIONS: readonly string[] = (() => {
     const collisions = new Set<string>();
     for (const item of MINECRAFT_ITEMS) {
         for (const variation of item.variations ?? []) {
             const name = vanillaVariationReferenceName(variation.displayName);
+            if (VANILLA_VARIATION_REFERENCE_OVERRIDES[name] !== undefined) {
+                continue;
+            }
             if (VANILLA_ITEM_NAMES.has(name)) {
                 if (name !== item.name || variation.metadata !== 0) {
                     collisions.add(name);
@@ -65,6 +76,12 @@ export const VANILLA_VARIATION_REFERENCE_COLLISIONS: readonly string[] = (() => 
                 damage: variation.metadata,
             });
         }
+    }
+    for (const name in VANILLA_VARIATION_REFERENCE_OVERRIDES) {
+        VANILLA_VARIATION_REFERENCES.set(
+            name,
+            VANILLA_VARIATION_REFERENCE_OVERRIDES[name]
+        );
     }
     return [...collisions].sort();
 })();

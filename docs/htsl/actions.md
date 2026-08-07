@@ -264,8 +264,9 @@ Gives the player an item.
   in `.snbt`, resolved relative to the HTSL file containing this field. Bare
   base IDs such as `stone` do not resolve. Flattened variant names are derived
   from display names by lowercasing and replacing spaces with underscores.
-  Ambiguous names do not resolve; currently these are `acacia_wood`,
-  `dark_oak_wood`, and `wooden_slab`.
+  `acacia_wood` and `dark_oak_wood` resolve to `minecraft:log2`, while
+  `wooden_slab` resolves to `minecraft:wooden_slab`, even though 1.8.9 reuses
+  their display names elsewhere.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
   during import. See [Vanilla Item Names](../vanilla-item-names.md) for the full list.
 - **Allow Multiple:** A boolean flag. When disabled, if there is another item in the player's
@@ -320,8 +321,9 @@ Removes an item from the player.
   in `.snbt`, resolved relative to the HTSL file containing this field. Bare
   base IDs such as `stone` do not resolve. Flattened variant names are derived
   from display names by lowercasing and replacing spaces with underscores.
-  Ambiguous names do not resolve; currently these are `acacia_wood`,
-  `dark_oak_wood`, and `wooden_slab`.
+  `acacia_wood` and `dark_oak_wood` resolve to `minecraft:log2`, while
+  `wooden_slab` resolves to `minecraft:wooden_slab`, even though 1.8.9 reuses
+  their display names elsewhere.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
   during import. See [Vanilla Item Names](../vanilla-item-names.md) for the full list.
 
