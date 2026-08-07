@@ -66,7 +66,10 @@ const lines = [
   "",
   "# Vanilla Item Names",
   "",
-  "[HTSL item fields](./actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.",
+  "[HTSL item fields](./htsl/actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.",
+  "",
+  "<details>",
+  `<summary>Full list (${rows.length} names)</summary>`,
   "",
   "| Name | Resolves to | In-game display name |",
   "| --- | --- | --- |",
@@ -75,6 +78,8 @@ const lines = [
       `| \`${name}\` | \`${id}\`, damage ${damage} | ${displayName.replaceAll("|", "\\|")} |`,
   ),
   "",
+  "</details>",
+  "",
   "## Ambiguous names",
   "",
   `The derived names ${ambiguousNames} are ambiguous and refuse to resolve.`,
@@ -82,7 +87,7 @@ const lines = [
 ];
 
 await writeFile(
-  path.join(repositoryRoot, "docs", "htsl", "items.md"),
+  path.join(repositoryRoot, "docs", "items.md"),
   lines.join("\n"),
   "utf8",
 );

@@ -40,7 +40,7 @@ jobs:
       - name: Check item names reference
         run: |
           node scripts/gen-items-doc.mjs
-          git diff --exit-code docs/htsl/items.md
+          git diff --exit-code docs/items.md
 
       - name: Bundle docs playground
         run: |

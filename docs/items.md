@@ -2,7 +2,10 @@
 
 # Vanilla Item Names
 
-[HTSL item fields](./actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.
+[HTSL item fields](./htsl/actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.
+
+<details>
+<summary>Full list (599 names)</summary>
 
 | Name | Resolves to | In-game display name |
 | --- | --- | --- |
@@ -605,6 +608,8 @@
 | `minecraft:record_ward` | `minecraft:record_ward`, damage 0 | Ward Disc |
 | `minecraft:record_11` | `minecraft:record_11`, damage 0 | 11 Disc |
 | `minecraft:record_wait` | `minecraft:record_wait`, damage 0 | Wait Disc |
+
+</details>
 
 ## Ambiguous names
 
