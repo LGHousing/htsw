@@ -634,6 +634,48 @@ describe("import.json diagnostics readability", () => {
         });
     });
 
+    it.each([
+        ["white_wool", "minecraft:wool", 0],
+        ["red_wool", "minecraft:wool", 14],
+        ["minecraft:white_wool", "minecraft:wool", 0],
+    ])("resolves vanilla damage variation %s", (reference, id, damage) => {
+        const resolved = htsw.items.resolveVanillaItemReference(reference);
+        expect(resolved?.kind).toBe("vanilla");
+        if (resolved?.kind !== "vanilla") return;
+
+        expect(resolved.id).toBe(id);
+        expect(resolved.nbt.value.Damage).toEqual({
+            type: "short",
+            value: damage,
+        });
+    });
+
+    it("rejects unknown vanilla variation names", () => {
+        expect(
+            htsw.items.resolveVanillaItemReference("chartreuse_wool")
+        ).toBeUndefined();
+    });
+
+    it("keeps base item ids authoritative over variation aliases", () => {
+        expect(htsw.items.VANILLA_VARIATION_REFERENCE_COLLISIONS).toEqual([
+            "acacia_wood",
+            "dark_oak_wood",
+            "wooden_slab",
+        ]);
+        expect(
+            htsw.items.resolveVanillaItemReference("minecraft:wooden_slab")?.id
+        ).toBe("minecraft:wooden_slab");
+    });
+
+    it("does not resolve ambiguous variation names", () => {
+        expect(
+            htsw.items.resolveVanillaItemReference("acacia_wood")
+        ).toBeUndefined();
+        expect(
+            htsw.items.resolveVanillaItemReference("minecraft:acacia_wood")
+        ).toBeUndefined();
+    });
+
     it("reports unknown vanilla item ids distinctly", () => {
         const result = parseImportables(
             caseFilePath("unknown_vanilla_item_reference")

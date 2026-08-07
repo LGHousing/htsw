@@ -5,6 +5,11 @@ export const MINECRAFT_ITEMS: readonly {
     id: number;
     displayName: string;
     name: string;
+    stackSize: number;
+    variations?: readonly {
+        metadata: number;
+        displayName: string;
+    }[];
 }[] = minecraftItems;
 
 export const ACTION_NAMES: {

@@ -1,5 +1,6 @@
 import type { Action, Condition } from "htsw/types";
 import { MINECRAFT_ITEMS } from "htsw/types";
+import { items as itemReferences } from "htsw";
 
 export type CanonicalizeItemName = (name: string) => string;
 
@@ -9,20 +10,24 @@ export type ResolveItemField = (
     kind: "action" | "condition"
 ) => Promise<Item>;
 
-type VanillaItem = (typeof MINECRAFT_ITEMS)[number] & {
-    variations?: readonly { metadata: number; displayName: string }[];
-};
-
 const VANILLA_ITEM_COMPARE_NAMES: Partial<Record<string, string>> = {};
+const VANILLA_BASE_NAMES = new Set(MINECRAFT_ITEMS.map((item) => item.name));
 
-for (const item of MINECRAFT_ITEMS as readonly VanillaItem[]) {
+for (const item of MINECRAFT_ITEMS) {
     registerVanillaItemCompareName(item.name, item.displayName);
     registerVanillaItemCompareName(item.displayName, item.displayName);
+}
+
+for (const item of MINECRAFT_ITEMS) {
     for (const variation of item.variations ?? []) {
-        const referenceName = variation.displayName.toLowerCase().replace(/ /g, "_");
+        const referenceName = itemReferences.vanillaVariationReferenceName(
+            variation.displayName
+        );
         const displayName =
             variation.metadata === 0 ? item.displayName : variation.displayName;
-        registerVanillaItemCompareName(referenceName, displayName);
+        if (!VANILLA_BASE_NAMES.has(referenceName)) {
+            registerVanillaItemCompareName(referenceName, displayName);
+        }
         registerVanillaItemCompareName(variation.displayName, displayName);
     }
 }

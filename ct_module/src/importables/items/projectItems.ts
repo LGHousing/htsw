@@ -1,11 +1,11 @@
 import { items as itemReferences, type GlobalCtxt } from "htsw";
 import type { Tag } from "htsw/nbt";
 import {
-    MINECRAFT_ITEMS,
     type Importable,
     type ImportableItem,
 } from "htsw/types";
 
+import { canonicalVanillaItemCompareName } from "../../housingSync/items/itemReferences";
 import { removedFormatting, unique } from "../../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../../utils/nbt";
 
@@ -186,13 +186,12 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         const existing = this.vanillaById[name];
         if (existing !== undefined) return existing;
         const resolved = itemReferences.resolveVanillaItemReference(name);
-        if (resolved === undefined) {
+        if (resolved === undefined || resolved.kind !== "vanilla") {
             return undefined;
         }
 
-        const vanilla = htswVanillaItem(name);
         const aliases = uniqueAliases([
-            ...(vanilla === undefined ? [] : [vanilla.displayName]),
+            canonicalVanillaItemCompareName(name),
             ...readItemDisplayAliases(resolved.nbt),
         ]);
         const entry = projectItem({
@@ -234,13 +233,6 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         const alias = this.aliases[normalized] ?? this.aliases[name];
         return alias === undefined || alias === "ambiguous" ? name : alias.name;
     }
-}
-
-function htswVanillaItem(
-    id: string
-): (typeof MINECRAFT_ITEMS)[number] | undefined {
-    const name = id.slice("minecraft:".length);
-    return MINECRAFT_ITEMS.find((item) => item.name === name);
 }
 
 function projectItem(fields: Omit<ProjectItem, "item">): ProjectItem {

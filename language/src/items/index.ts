@@ -26,6 +26,49 @@ export type ResolvedItemReference =
 
 const VANILLA_ITEM_NAMES = new Set(MINECRAFT_ITEMS.map((item) => item.name));
 
+export function vanillaVariationReferenceName(displayName: string): string {
+    return displayName.toLowerCase().replace(/ /g, "_");
+}
+
+type VanillaVariationReference = {
+    id: string;
+    damage: number;
+};
+
+const VANILLA_VARIATION_REFERENCES = new Map<string, VanillaVariationReference>();
+export const VANILLA_VARIATION_REFERENCE_COLLISIONS: readonly string[] = (() => {
+    const collisions = new Set<string>();
+    for (const item of MINECRAFT_ITEMS) {
+        for (const variation of item.variations ?? []) {
+            const name = vanillaVariationReferenceName(variation.displayName);
+            if (VANILLA_ITEM_NAMES.has(name)) {
+                if (name !== item.name || variation.metadata !== 0) {
+                    collisions.add(name);
+                }
+                continue;
+            }
+            if (collisions.has(name)) {
+                continue;
+            }
+            const existing = VANILLA_VARIATION_REFERENCES.get(name);
+            if (
+                existing !== undefined &&
+                (existing.id !== `minecraft:${item.name}` ||
+                    existing.damage !== variation.metadata)
+            ) {
+                collisions.add(name);
+                VANILLA_VARIATION_REFERENCES.delete(name);
+                continue;
+            }
+            VANILLA_VARIATION_REFERENCES.set(name, {
+                id: `minecraft:${item.name}`,
+                damage: variation.metadata,
+            });
+        }
+    }
+    return [...collisions].sort();
+})();
+
 export function isDirectSnbtItemReference(value: string): boolean {
     return value.toLowerCase().endsWith(".snbt");
 }
@@ -93,20 +136,23 @@ export function resolveItemReferenceFromSourcePath(
 export function resolveVanillaItemReference(
     itemName: string
 ): ResolvedItemReference | undefined {
-    if (!itemName.startsWith("minecraft:")) {
+    const prefixed = itemName.startsWith("minecraft:");
+    const name = prefixed ? itemName.slice("minecraft:".length) : itemName;
+    const variation = VANILLA_VARIATION_REFERENCES.get(name);
+    const baseId = prefixed && VANILLA_ITEM_NAMES.has(name)
+        ? `minecraft:${name}`
+        : variation?.id;
+    if (baseId === undefined) {
         return undefined;
     }
 
-    const name = itemName.slice("minecraft:".length);
-    if (!VANILLA_ITEM_NAMES.has(name)) {
-        return undefined;
-    }
+    const damage = variation?.damage ?? 0;
 
     return {
         kind: "vanilla",
         key: itemName,
-        id: itemName,
-        nbt: parseSnbtText(`{id:"${itemName}",Count:1b,Damage:0s}`),
+        id: baseId,
+        nbt: parseSnbtText(`{id:"${baseId}",Count:1b,Damage:${damage}s}`),
     };
 }
 

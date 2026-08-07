@@ -98,7 +98,7 @@ function checkItemReference(
             .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
             .addSubDiagnostic(
                 Diagnostic.help(
-                    "Item fields must match a top-level items[].name, a known minecraft: item id, or a direct .snbt path."
+                    "Item fields must match a top-level items[].name, a known minecraft: item id or damage-variant name, or a direct .snbt path."
                 )
             )
     );
