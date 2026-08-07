@@ -48,18 +48,26 @@ describe("action comparison — value-kind numeric coercion", () => {
         expect(actionsCompareEqual(observed, desired)).toBe(false);
     });
 
-    test("float-expanded observed value equals 7-decimal source value", () => {
-        // Housing echoes source `1.8095238` back as the expanded float
-        // `1.809523821`; both quantize to 7 decimals and must compare equal.
-        const observed = playSound({ pitch: "1.809523821" as unknown as number });
-        const desired = playSound({ pitch: 1.8095238 });
-        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    test.each([
+        [0.0025, 0.003],
+        [0.0015, 0.002],
+        [0.0625, 0.062],
+        [1234.56789, 1234.568],
+    ])("number %s compares as displayed %s", (input, displayed) => {
+        expect(
+            actionsCompareEqual(playSound({ pitch: input }), playSound({ pitch: displayed }))
+        ).toBe(true);
     });
 
-    test("difference within 7 decimals is still a real change", () => {
-        const observed = playSound({ pitch: "1.81" as unknown as number });
-        const desired = playSound({ pitch: 1.8095238 });
-        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    test.each([
+        ["0.0025", "0.003"],
+        ["0.0015", "0.002"],
+        ["0.0625", "0.062"],
+        ["1234.56789", "1234.568"],
+    ])("numeric display %s compares as displayed %s", (input, displayed) => {
+        expect(
+            actionsCompareEqual(changeVar({ value: input }), changeVar({ value: displayed }))
+        ).toBe(true);
     });
 
     test("malformed numeric strings stay as strings (no permissive coerce)", () => {
@@ -109,16 +117,27 @@ describe("action comparison — value-kind numeric coercion", () => {
         expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
 
-    test("tiny variable decimals compare at Housing display precision", () => {
-        const observed = changeVar({ value: "0.0" });
-        const desired = changeVar({ value: "0.0000000123" });
+    test("numeric-display values still normalize before whitespace handling", () => {
+        expect(
+            actionsCompareEqual(
+                changeVar({ value: "10,000.0" }),
+                changeVar({ value: "10000.0" })
+            )
+        ).toBe(true);
+    });
+});
+
+describe("action comparison — Housing input canonicalization", () => {
+    test("value fields compare equal after Housing collapses interior spaces", () => {
+        const observed = changeVar({ value: "accelerate &8| &7Left-click" });
+        const desired = changeVar({ value: "accelerate  &8|  &7Left-click" });
         expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
 
-    test("variable decimals still differ after display precision quantization", () => {
-        const observed = changeVar({ value: "0.0000002" });
-        const desired = changeVar({ value: "0.0000001" });
-        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    test("vanilla item references compare equal to their observed display name", () => {
+        const observed = { type: "DROP_ITEM", itemName: "Wool" } as Action;
+        const desired = { type: "DROP_ITEM", itemName: "white_wool" } as Action;
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
 });
 
@@ -220,14 +239,36 @@ describe("action comparison — note handling", () => {
 });
 
 describe("condition comparison — same machinery as actions", () => {
-    test("COMPARE_VAR with default fallback drops the field", () => {
+    test.each(["Not Set", '"Not Set"'])(
+        "observed default fallback %s equals an omitted desired field",
+        (fallback) => {
+            const observed: ConditionCompareVar = {
+                type: "COMPARE_VAR",
+                holder: { type: "Player" },
+                var: "x",
+                op: "Equal",
+                amount: "1",
+                fallback,
+            };
+            const desired: ConditionCompareVar = {
+                type: "COMPARE_VAR",
+                holder: { type: "Player" },
+                var: "x",
+                op: "Equal",
+                amount: "1",
+            };
+            expect(conditionsEqual(observed, desired)).toBe(true);
+        }
+    );
+
+    test("a genuinely different fallback does not equal an omitted field", () => {
         const observed: ConditionCompareVar = {
             type: "COMPARE_VAR",
             holder: { type: "Player" },
             var: "x",
             op: "Equal",
             amount: "1",
-            fallback: "Not Set",
+            fallback: '"0"',
         };
         const desired: ConditionCompareVar = {
             type: "COMPARE_VAR",
@@ -236,7 +277,7 @@ describe("condition comparison — same machinery as actions", () => {
             op: "Equal",
             amount: "1",
         };
-        expect(conditionsEqual(observed, desired)).toBe(true);
+        expect(conditionsEqual(observed, desired)).toBe(false);
     });
 });
 

@@ -20,12 +20,34 @@ import {
     getConditionFieldNumeric,
 } from "../fields/conditionMappings";
 import { normalizeSoundKey } from "../fields/sounds";
+import { canonicalVanillaItemCompareName } from "../items/itemReferences";
 
-const HOUSING_VALUE_SCALE = 1e7;
+const HOUSING_VALUE_DISPLAY_SCALE = 1e3;
 
 function quantizeHousingDecimal(num: number): number {
     if (Math.floor(num) === num) return num;
-    return Math.round(num * HOUSING_VALUE_SCALE) / HOUSING_VALUE_SCALE;
+    const magnitude = Math.abs(num);
+    const scaled = magnitude * HOUSING_VALUE_DISPLAY_SCALE;
+    const lower = Math.floor(scaled);
+    const fraction = scaled - lower;
+    let rounded: number;
+
+    if (fraction !== 0.5) {
+        rounded = Math.round(scaled);
+    } else {
+        const fixed = magnitude.toFixed(20);
+        const decimalPoint = fixed.indexOf(".");
+        const remainder = decimalPoint === -1 ? "" : fixed.substring(decimalPoint + 4);
+        const tie = "5" + new Array(remainder.length).join("0");
+        rounded =
+            remainder > tie
+                ? lower + 1
+                : remainder < tie
+                  ? lower
+                  : lower + (lower % 2);
+    }
+
+    return (num < 0 ? -rounded : rounded) / HOUSING_VALUE_DISPLAY_SCALE;
 }
 
 function normalizeValueTextForCompare(value: string): string {
@@ -210,7 +232,11 @@ function canonicalizeFieldValue(type: string, prop: string, value: unknown): unk
             return quantizeHousingDecimal(value);
         }
     } else if (kind === "value" && typeof value === "string") {
-        return normalizeValueTextForCompare(value);
+        const numericDisplay = normalizeValueTextForCompare(value);
+        return numericDisplay === value ? collapseInteriorSpaces(value) : numericDisplay;
+    }
+    if (kind === "item" && typeof value === "string") {
+        return canonicalVanillaItemCompareName(value);
     }
     if (kind === "location") {
         return canonicalizeLocationValue(value);
@@ -219,6 +245,18 @@ function canonicalizeFieldValue(type: string, prop: string, value: unknown): unk
         if (typeof value === "string") return { type: value };
     }
     return value;
+}
+
+function collapseInteriorSpaces(value: string): string {
+    const first = value.search(/[^ ]/);
+    if (first < 0) return value;
+    let last = value.length - 1;
+    while (last > first && value.charAt(last) === " ") last--;
+    return (
+        value.substring(0, first) +
+        value.substring(first, last + 1).replace(/ {2,}/g, " ") +
+        value.substring(last + 1)
+    );
 }
 
 function canonicalizeLocationValue(value: unknown): unknown {
@@ -301,9 +339,11 @@ export function canonicalDefaultCacheSize(): number {
 function fieldValueMatchesDefault(type: string, prop: string, value: unknown): boolean {
     const cachedDef = canonicalDefaultFor(type, prop);
     if (cachedDef === null) return false;
-    return cachedDef.scalar
-        ? value === cachedDef.value
-        : stableStringify(value) === cachedDef.key;
+    if (!cachedDef.scalar) return stableStringify(value) === cachedDef.key;
+    return (
+        value === cachedDef.value ||
+        (typeof cachedDef.value === "string" && value === JSON.stringify(cachedDef.value))
+    );
 }
 
 function canonicalDefaultFor(type: string, prop: string): CachedDefault | null {

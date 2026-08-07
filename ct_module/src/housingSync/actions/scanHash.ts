@@ -14,8 +14,8 @@ import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
 import type { ItemFieldContent } from "../items/fieldContent";
 
 // V1 covers only action-type sequences and child-list type sequences; scalar fields and notes are excluded.
-export const ACTION_LIST_SCAN_HASH_VERSION = 1;
-export const ACTION_LIST_CONTENT_HASH_VERSION = 2;
+export const ACTION_LIST_SCAN_HASH_VERSION = 2;
+export const ACTION_LIST_CONTENT_HASH_VERSION = 5;
 
 type CanonicalChildList = {
     prop: ChildListName;
@@ -33,7 +33,11 @@ function canonicalKnownSlot(
     for (const field of getChildListFields(type)) {
         const types = childTypes(field.prop);
         if (types !== undefined && types.length > 0) {
-            childLists.push({ prop: field.prop, types });
+            childLists.push({
+                prop: field.prop,
+                types:
+                    field.kind === "conditionList" ? [...types].sort() : types,
+            });
         }
     }
     return childLists.length === 0 ? { type } : { type, childLists };
@@ -151,14 +155,15 @@ function canonicalActionContent(
     for (const field of getChildListFields(action.type)) {
         const childList = value[field.prop];
         if (!Array.isArray(childList) || childList.length === 0) continue;
-        canonical[field.prop] =
-            field.kind === "conditionList"
-                ? (childList as Condition[]).map((condition) =>
-                      canonicalConditionContent(condition, itemContent)
-                  )
-                : (childList as Action[]).map((child) =>
-                      canonicalActionContent(child, false, itemContent)
-                  );
+        if (field.kind === "conditionList") {
+            canonical[field.prop] = (childList as Condition[])
+                .map((condition) => canonicalConditionContent(condition, itemContent))
+                .sort((a, b) => stableJson(a).localeCompare(stableJson(b)));
+        } else {
+            canonical[field.prop] = (childList as Action[]).map((child) =>
+                canonicalActionContent(child, false, itemContent)
+            );
+        }
     }
     return canonical;
 }

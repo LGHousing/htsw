@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { actionListConflictDetails } from "../src/housingSync/actions/conflictDetails";
 import { conditional, message, playSound } from "./utils";
-import type { Action } from "htsw/types";
+import type { Action, Condition } from "htsw/types";
 
 describe("action-list conflict details", () => {
     it("ignores item operand aliases and reports canonical item changes", () => {
@@ -130,6 +130,51 @@ describe("action-list conflict details", () => {
                 source: '"source"',
             },
         ]);
+    });
+
+    it("reports no conflict differences for rotated condition lists", () => {
+        const first = { type: "IS_SNEAKING" } as Condition;
+        const second = { type: "IS_SNEAKING", inverted: true } as Condition;
+
+        expect(
+            actionListConflictDetails(
+                [conditional({ conditions: [first, second] })],
+                [conditional({ conditions: [second, first] })]
+            )
+        ).toEqual({ differences: [], moreCount: 0 });
+    });
+
+    it("pairs genuinely changed conditions by type and cost", () => {
+        const live = [
+            { type: "IS_SNEAKING" },
+            { type: "IS_SNEAKING", inverted: true },
+        ] as Condition[];
+        const source = [
+            { type: "IS_SNEAKING", inverted: true },
+            { type: "IS_SNEAKING", note: "changed" },
+        ] as Condition[];
+
+        expect(
+            actionListConflictDetails(
+                [conditional({ conditions: live })],
+                [conditional({ conditions: source })]
+            ).differences
+        ).toEqual([
+            {
+                path: "action 1 (conditional) · conditions · condition 2 (is sneaking) · note",
+                live: "<unset>",
+                source: '"changed"',
+            },
+        ]);
+    });
+
+    it("still reports action-order changes", () => {
+        expect(
+            actionListConflictDetails(
+                [message("same"), playSound()],
+                [playSound(), message("same")]
+            ).differences
+        ).not.toEqual([]);
     });
 
     it("summarizes nested child-list length changes", () => {

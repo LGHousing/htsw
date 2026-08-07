@@ -17,6 +17,7 @@ import {
 } from "../src/importCache/trust";
 import { COST, estimateImportableUnits } from "../src/housingSync/progress/costs";
 import { readActionListSync } from "../src/housingSync/actions/prepareSync";
+import { ACTION_LIST_SCAN_HASH_VERSION } from "../src/housingSync/actions/scanHash";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
@@ -520,7 +521,7 @@ describe("buildTrustPlan house lock gating", () => {
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
                 houseUuid: uuid,
-                scanHashVersion: 1,
+                scanHashVersion: ACTION_LIST_SCAN_HASH_VERSION,
                 importables: {
                     "FUNCTION:Debug": {
                         type: "FUNCTION",

@@ -113,6 +113,23 @@ describe("action-list scan hashes", () => {
 });
 
 describe("action-list content hashes", () => {
+    it("ignores condition order but preserves action order", () => {
+        const first = { type: "IS_SNEAKING" } as const;
+        const second = { type: "IS_SNEAKING", inverted: true } as const;
+        const source = [conditional({ conditions: [first, second] })];
+        const rotated = [conditional({ conditions: [second, first] })];
+
+        expect(actionListContentHashFromActions(rotated)).toBe(
+            actionListContentHashFromActions(source)
+        );
+        expect(actionListScanHashFromActions(rotated)).toBe(
+            actionListScanHashFromActions(source)
+        );
+        expect(actionListContentHashFromActions([message("a"), playSound()])).not.toBe(
+            actionListContentHashFromActions([playSound(), message("a")])
+        );
+    });
+
     it("uses canonical item content instead of operand names", () => {
         const source = {
             type: "GIVE_ITEM",

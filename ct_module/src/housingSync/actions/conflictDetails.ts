@@ -2,7 +2,7 @@ import type { Action, Condition } from "htsw/types";
 
 import { getActionScalarLoreFields, getChildListFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
-import { noteCompareKey, scalarFieldCompareKey } from "./comparison";
+import { conditionsEqual, noteCompareKey, scalarFieldCompareKey } from "./comparison";
 import type { ItemFieldContent } from "../items/fieldContent";
 
 export type ActionListConflictDifference = {
@@ -119,7 +119,97 @@ function compareChildConditions(
     live: readonly Condition[],
     source: readonly Condition[]
 ): void {
-    compareChildEntries(collector, path, live, source, compareCondition, conditionLabel);
+    if (live.length !== source.length) {
+        addDifference(collector, path, childCount(live.length), childCount(source.length));
+    }
+
+    const unmatchedLive = live.map((condition, index) => ({ condition, index }));
+    const unmatchedSource = source.map((condition, index) => ({ condition, index }));
+    for (let sourceIndex = unmatchedSource.length - 1; sourceIndex >= 0; sourceIndex--) {
+        const match = unmatchedLive.findIndex((entry) =>
+            conditionsEqual(entry.condition, unmatchedSource[sourceIndex].condition)
+        );
+        if (match < 0) continue;
+        unmatchedLive.splice(match, 1);
+        unmatchedSource.splice(sourceIndex, 1);
+    }
+
+    const candidates: Array<{
+        liveIndex: number;
+        sourceIndex: number;
+        cost: number;
+    }> = [];
+    for (let sourceIndex = 0; sourceIndex < unmatchedSource.length; sourceIndex++) {
+        for (let liveIndex = 0; liveIndex < unmatchedLive.length; liveIndex++) {
+            const liveEntry = unmatchedLive[liveIndex];
+            const sourceEntry = unmatchedSource[sourceIndex];
+            if (liveEntry.condition.type !== sourceEntry.condition.type) continue;
+            const candidateCollector: DifferenceCollector = {
+                differences: [],
+                liveItemContent: collector.liveItemContent,
+                sourceItemContent: collector.sourceItemContent,
+            };
+            compareCondition(
+                candidateCollector,
+                "",
+                liveEntry.condition,
+                sourceEntry.condition
+            );
+            candidates.push({
+                liveIndex,
+                sourceIndex,
+                cost: candidateCollector.differences.length,
+            });
+        }
+    }
+    candidates.sort(
+        (a, b) =>
+            a.cost - b.cost ||
+            unmatchedLive[a.liveIndex].index - unmatchedLive[b.liveIndex].index ||
+            unmatchedSource[a.sourceIndex].index - unmatchedSource[b.sourceIndex].index
+    );
+
+    const matchedLive = new Set<number>();
+    const matchedSource = new Set<number>();
+    for (const candidate of candidates) {
+        if (
+            matchedLive.has(candidate.liveIndex) ||
+            matchedSource.has(candidate.sourceIndex)
+        ) {
+            continue;
+        }
+        matchedLive.add(candidate.liveIndex);
+        matchedSource.add(candidate.sourceIndex);
+        const liveEntry = unmatchedLive[candidate.liveIndex];
+        const sourceEntry = unmatchedSource[candidate.sourceIndex];
+        compareCondition(
+            collector,
+            `${path} · ${conditionLabel(sourceEntry.index, sourceEntry.condition.type)}`,
+            liveEntry.condition,
+            sourceEntry.condition
+        );
+    }
+
+    for (let i = 0; i < unmatchedLive.length; i++) {
+        if (matchedLive.has(i)) continue;
+        const entry = unmatchedLive[i];
+        addDifference(
+            collector,
+            `${path} · ${conditionLabel(entry.index, entry.condition.type)}`,
+            `<${entry.condition.type.toLowerCase()}>`,
+            undefined
+        );
+    }
+    for (let i = 0; i < unmatchedSource.length; i++) {
+        if (matchedSource.has(i)) continue;
+        const entry = unmatchedSource[i];
+        addDifference(
+            collector,
+            `${path} · ${conditionLabel(entry.index, entry.condition.type)}`,
+            undefined,
+            `<${entry.condition.type.toLowerCase()}>`
+        );
+    }
 }
 
 function childCount(count: number): string {
