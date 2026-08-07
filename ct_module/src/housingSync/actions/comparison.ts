@@ -336,7 +336,11 @@ export function canonicalDefaultCacheSize(): number {
     return canonicalDefaultCache.size;
 }
 
-function fieldValueMatchesDefault(type: string, prop: string, value: unknown): boolean {
+export function fieldValueMatchesDefault(
+    type: string,
+    prop: string,
+    value: unknown
+): boolean {
     const cachedDef = canonicalDefaultFor(type, prop);
     if (cachedDef === null) return false;
     if (!cachedDef.scalar) return stableStringify(value) === cachedDef.key;

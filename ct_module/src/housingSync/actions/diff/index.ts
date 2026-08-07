@@ -9,6 +9,7 @@ import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
+    fieldValueMatchesDefault,
     notesEqual,
     scalarFieldDiffers,
 } from "../comparison";
@@ -70,6 +71,7 @@ function plannedObservedAction(action: Observed): Observed<RootAction> {
 }
 
 const NOTE_ONLY_COST = 1;
+const ADD_OVERHEAD_COST = 2;
 
 // How many server interactions it takes to change a field of each kind.
 const FIELD_KIND_COST: Record<string, number> = {
@@ -115,6 +117,24 @@ function fieldDifferenceCost(
     let cost = 0;
     for (const field of scalarProps) {
         if (scalarFieldDiffers(observed, desired, type, field.prop)) {
+            cost += FIELD_KIND_COST[field.kind] ?? 1;
+        }
+    }
+    return cost;
+}
+
+function scalarCreationCost(
+    value: Record<string, unknown>,
+    type: string,
+    scalarProps: { prop: string; kind: UiFieldKind }[]
+): number {
+    let cost = 0;
+    for (const field of scalarProps) {
+        const fieldValue = value[field.prop];
+        if (
+            fieldValue !== undefined &&
+            !fieldValueMatchesDefault(type, field.prop, fieldValue)
+        ) {
             cost += FIELD_KIND_COST[field.kind] ?? 1;
         }
     }
@@ -177,6 +197,27 @@ function conditionCost(
         (itemDiffers ? FIELD_KIND_COST.item : 0) +
         (observed.inverted === desired.inverted ? 0 : 1) +
         (notesEqual(observed.note, desired.note) ? 0 : 1)
+    );
+}
+
+function conditionCreationCost(condition: Condition): number {
+    const loreFields = CONDITION_MAPPINGS[condition.type].loreFields as Record<
+        string,
+        { prop: string; kind: UiFieldKind }
+    >;
+    const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (!isChildListFieldKind(field.kind)) {
+            scalarProps.push({ prop: field.prop, kind: field.kind });
+        }
+    }
+
+    return (
+        ADD_OVERHEAD_COST +
+        scalarCreationCost(condition, condition.type, scalarProps) +
+        (condition.inverted === true ? 1 : 0) +
+        (condition.note === undefined ? 0 : NOTE_ONLY_COST)
     );
 }
 
@@ -290,7 +331,7 @@ function conditionListCost(
     }
     for (const entry of unmatchedDesired) {
         if (!matchedDesired.has(entry.index)) {
-            cost += 1;
+            cost += conditionCreationCost(entry.condition);
         }
     }
 
@@ -427,6 +468,26 @@ export function actionCost(
                 desiredValue as Action[],
                 itemDiff
             );
+        }
+    }
+
+    return cost;
+}
+
+export function actionCreationCost(action: Action): number {
+    const { childListNames, scalarProps } = splitLoreFields(action.type);
+    let cost =
+        ADD_OVERHEAD_COST +
+        scalarCreationCost(action, action.type, scalarProps) +
+        (action.note === undefined ? 0 : NOTE_ONLY_COST);
+
+    for (const prop of childListNames) {
+        const value = getFieldValue(action, prop);
+        if (!Array.isArray(value)) continue;
+        if (prop === "conditions") {
+            cost += conditionListCost([], value as Condition[]);
+        } else {
+            cost += actionListCost([], value as Action[]);
         }
     }
 
@@ -633,7 +694,10 @@ export function actionListCost(
     let cost = matchResult.matches.reduce((total, match) => total + match.cost, 0);
     cost += observed.filter((entry) => entry === null).length;
     cost += matchResult.unmatchedCurrent.length;
-    cost += matchResult.unmatchedDesired.length;
+    cost += matchResult.unmatchedDesired.reduce(
+        (total, entry) => total + actionCreationCost(entry.action),
+        0
+    );
     return cost;
 }
 

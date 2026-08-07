@@ -2,6 +2,7 @@ import type { Action } from "htsw/types";
 
 import {
     actionCost,
+    actionCreationCost,
     actionListCost,
     type DesiredActionEntry,
     type KnownCurrentAction,
@@ -21,7 +22,7 @@ export function scoreOptimality(
     cutoff = 8
 ): OptimalityScore {
     const greedyCost = actionListCost(
-        current.map((entry) => entry.action),
+        current.map((entry) => (entry.editable ? entry.action : null)),
         [...desired]
     );
     const known = current.filter(
@@ -78,7 +79,9 @@ function minimumBucketCost(
         if (currentIndex === current.length) {
             let adds = 0;
             for (let i = 0; i < desired.length; i++) {
-                if ((usedDesired & (1 << i)) === 0) adds++;
+                if ((usedDesired & (1 << i)) === 0) {
+                    adds += actionCreationCost(desired[i].action);
+                }
             }
             return adds;
         }

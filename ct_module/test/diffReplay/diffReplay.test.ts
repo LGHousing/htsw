@@ -4,8 +4,10 @@
 import { describe, expect, test } from "vitest";
 import type { Action } from "htsw/types";
 
+import { actionCreationCost } from "../../src/housingSync/actions/diff";
 import type { CurrentActionListEntry } from "../../src/housingSync/actions/diff/types";
 import { loadDiffCapture, parseDiffCapture, type DiffInputCapture } from "./loader";
+import { scoreOptimality } from "./optimal";
 import { replayDiffCaptures } from "./runner";
 
 const message = (text: string): Action => ({ type: "MESSAGE", message: text });
@@ -19,6 +21,42 @@ function capture(
 }
 
 describe("diff capture replay", () => {
+    test("prices container creation above scalar-only creation", () => {
+        const scalar = message("hello");
+        const container: Action = {
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [{ type: "IS_SNEAKING" }],
+            ifActions: [message("one"), message("two")],
+            elseActions: [],
+        };
+
+        expect(actionCreationCost(scalar)).toBe(4);
+        expect(actionCreationCost(container)).toBe(12);
+        expect(actionCreationCost(container)).toBeGreaterThan(
+            actionCreationCost(scalar)
+        );
+    });
+
+    test("keeps a mostly-equal action as an edit in the optimal reference", () => {
+        const current = {
+            type: "PLAY_SOUND",
+            sound: "random.orb",
+            volume: 0.7,
+            pitch: 1,
+        } as Action;
+        const desired = { ...current, volume: 0.8 } as Action;
+
+        const score = scoreOptimality(
+            [{ entryId: 0, index: 0, action: current, editable: true }],
+            [desired]
+        );
+
+        expect(score.greedyCost).toBe(4);
+        expect(score.optimalCost).toBe(4);
+        expect(score.excess).toBe(0);
+    });
+
     test("replays operation kinds and scores identical delete/add churn", () => {
         const repeated = message("same");
         const cleanBefore = message("before");
