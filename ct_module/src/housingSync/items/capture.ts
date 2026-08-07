@@ -2,11 +2,10 @@ import * as htsw from "htsw";
 
 import TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
-import { getItemFromSnbt } from "../../utils/nbt";
 import type { ItemFieldObservation } from "./fieldObservations";
 import { clickGoBack } from "../menus/menuUtils";
 import { timedWaitForMenu } from "../menus/menuWait";
-import { canonicalItemShellKey, snbtFromItem } from "./itemNbt";
+import { canonicalItemShellSnbtKey, snbtFromItem } from "./itemNbt";
 import {
     clearInventorySlot,
     inventoryIsFull,
@@ -44,10 +43,16 @@ export async function observeItemFromOpenEditorField(
     fieldName: string,
     displayNameHint: string
 ): Promise<ItemFieldObservation | null> {
-    return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) => ({
-        snbt: captured.recapturedSnbt,
-        canonicalKey: canonicalItemShellKey(getItemFromSnbt(captured.editorSnbt)),
-    }));
+    return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) =>
+        itemFieldObservationFromSnbt(captured.recapturedSnbt)
+    );
+}
+
+export function itemFieldObservationFromSnbt(snbt: string): ItemFieldObservation {
+    return {
+        snbt,
+        canonicalKey: canonicalItemShellSnbtKey(snbt),
+    };
 }
 
 async function withCapturedEditorItem<T>(

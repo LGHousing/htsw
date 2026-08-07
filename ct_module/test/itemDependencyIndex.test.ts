@@ -10,6 +10,7 @@ import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDiffContext } from "../src/importables/items/diff";
 import { createItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import { itemFieldObservationFromSnbt } from "../src/housingSync/items/capture";
 import {
     createItemVerificationTracker,
     verifiedItemDependencies,
@@ -179,6 +180,54 @@ describe("item dependency index", () => {
         );
 
         expect(context.actionsDiffer(observedAction, desiredAction)).toBe(true);
+    });
+
+    test("trust-off matches a recaptured wool item instead of the editor chrome", () => {
+        const wool: ImportableItem = {
+            type: "ITEM",
+            name: "white_wool",
+            nbt: {
+                type: "compound",
+                value: {
+                    id: { type: "string", value: "minecraft:wool" },
+                    Count: { type: "byte", value: 1 },
+                    Damage: { type: "short", value: 0 },
+                },
+            },
+        };
+        const desiredAction = {
+            type: "DROP_ITEM",
+            itemName: "white_wool",
+        } as Action;
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "drop wool",
+            actions: [desiredAction],
+        };
+        const importables = [wool, owner];
+        const registry = createProjectItemIndex(importables);
+        const index = createItemDependencyIndex(importables, registry);
+        const observations = createItemFieldObservationRecorder();
+        const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
+        const editorChrome =
+            "{id:\"minecraft:wool\",Damage:0s,tag:{overrideMeta:1b,HideFlags:255,display:{Name:\"§aItem\",Lore:[\"Current Value:\",\"Wool\",\"Click to change!\"]},AttributeModifiers:[]}}";
+        const recaptured = '{id:"minecraft:wool",Count:1b,Damage:0s}';
+        const observation = itemFieldObservationFromSnbt(recaptured);
+        observations.record(observedAction, "itemName", observation);
+        const context = createItemDiffContext(
+            [owner],
+            index,
+            registry,
+            undefined,
+            () => index.snapshotOf(owner),
+            observations
+        );
+
+        expect(itemFieldObservationFromSnbt(editorChrome).canonicalKey).not.toBe(
+            canonicalItemShellTagKey(wool.nbt)
+        );
+        expect(observation.canonicalKey).toBe(canonicalItemShellTagKey(wool.nbt));
+        expect(context.actionsDiffer(observedAction, desiredAction)).toBe(false);
     });
 
     test("verified dependency snapshots include every fully observed target", () => {

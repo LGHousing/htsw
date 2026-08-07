@@ -19,7 +19,7 @@ vi.mock("../src/utils/nbt", () => ({
     getItemFromSnbt: (snbt: string) => ({ snbt }),
 }));
 vi.mock("../src/housingSync/items/itemNbt", () => ({
-    canonicalItemShellKey: (item: { snbt: string }) => `shell:${item.snbt}`,
+    canonicalItemShellSnbtKey: (snbt: string) => `shell:${snbt}`,
     canonicalLiveItemKey: (item: { snbt: string }) =>
         item.snbt.replace(',tag:{captureEcho:"changed"}', ""),
     snbtFromItem: (item: { snbt: string }) => item.snbt,
@@ -222,10 +222,11 @@ describe("editor item capture inventory handling", () => {
         expect(inventory.restoredSlots).toEqual([0]);
     });
 
-    test("keys observations from editor SNBT while retaining recaptured SNBT", async () => {
-        const editorSnbt = '{id:"minecraft:stone",Count:1b,Damage:0s}';
+    test("keys observations from the recaptured item instead of editor chrome", async () => {
+        const editorSnbt =
+            '{id:"minecraft:wool",Damage:0s,tag:{overrideMeta:1b,HideFlags:255,display:{Name:"§aItem",Lore:["Current Value:","Wool","Click to change!"]},AttributeModifiers:[]}}';
         const recapturedSnbt =
-            '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{captureEcho:"changed"}}';
+            '{id:"minecraft:wool",Count:1b,Damage:0s}';
         const ctx = context(editorSnbt, 1, () => {
             inventory.slots[5] = {
                 slotId: 5,
@@ -241,6 +242,6 @@ describe("editor item capture inventory handling", () => {
         );
 
         expect(observation?.snbt).toBe(recapturedSnbt);
-        expect(observation?.canonicalKey).toBe(`shell:${editorSnbt}`);
+        expect(observation?.canonicalKey).toBe(`shell:${recapturedSnbt}`);
     });
 });
