@@ -55,6 +55,11 @@ import {
     startImportCodeViewTrace,
     stopImportCodeViewTrace,
 } from "../gui/right-panel/import-tab/codeViewTrace";
+import {
+    getDiffCapturePath,
+    isDiffCaptureEnabled,
+    setDiffCaptureEnabled,
+} from "../housingSync/actions/diff/diffCapture";
 
 type HtswSubcommand = {
     name: string;
@@ -266,6 +271,12 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         run: commandCodeViewTrace,
         usage: "codeview [start|stop|status|open]",
     },
+    {
+        name: "diffcapture",
+        summary: "Capture import diff inputs for offline replay",
+        run: commandDiffCapture,
+        usage: "diffcapture [on|off|status]",
+    },
 ];
 
 function commandDebug(args: string[]): void {
@@ -339,6 +350,28 @@ function commandTrace(args: string[]): void {
     }
     const path = setTaskTraceEnabled(true);
     ChatLib.chat(`&a[htsw] task trace on · &f${path}`);
+}
+
+function commandDiffCapture(args: string[]): void {
+    const action = (args[0] ?? "status").toLowerCase();
+    if (action === "on") {
+        const path = setDiffCaptureEnabled(true);
+        ChatLib.chat(`&a[htsw] diff input capture on · &f${path}`);
+        return;
+    }
+    if (action === "off") {
+        const path = setDiffCaptureEnabled(false);
+        ChatLib.chat(`&7[htsw] diff input capture off · &f${path}`);
+        return;
+    }
+    if (action === "status") {
+        ChatLib.chat(
+            `&7[htsw] diff input capture ${isDiffCaptureEnabled() ? "&aon" : "&coff"}` +
+                ` &7· &f${getDiffCapturePath()}`
+        );
+        return;
+    }
+    ChatLib.chat("&cUsage: /htsw debug diffcapture [on|off|status]");
 }
 
 function commandCodeViewTrace(args: string[]): void {

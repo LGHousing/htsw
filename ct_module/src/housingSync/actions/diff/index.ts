@@ -37,11 +37,11 @@ import type { UiFieldKind } from "../../fields/loreSpecs";
 import { isChildListFieldKind } from "../../fields/loreSpecs";
 import type { ItemDiffContext } from "./itemDiffContext";
 
-type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
+export type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
 };
 
-type DesiredActionEntry = {
+export type DesiredActionEntry = {
     index: number;
     action: Action;
 };
@@ -365,7 +365,7 @@ function indexOfNoteOnlyActionAtAnyIndex(
     );
 }
 
-function actionCost(
+export function actionCost(
     current: KnownCurrentAction,
     desired: DesiredActionEntry,
     listLength: number,
@@ -618,7 +618,7 @@ function matchActions(
     return { matches, unmatchedCurrent, unmatchedDesired };
 }
 
-function actionListCost(
+export function actionListCost(
     observed: Array<Observed | null>,
     desired: Action[],
     itemDiff?: ItemDiffContext

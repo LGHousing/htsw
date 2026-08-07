@@ -29,6 +29,7 @@ import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import type { ItemFieldContent } from "../items/fieldContent";
 import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
+import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -183,11 +184,18 @@ export async function hydrateActionListForPlan(
     if (!options.sync.trust.trustMode) {
         recordActionListConflict({ slots: observed }, desired, options);
     }
-    const diff = diffActionList(
-        baselineActionListFromSlots(observed),
-        desired,
-        options.sync.itemDiff
-    );
+    const current = baselineActionListFromSlots(observed);
+    if (isDiffCaptureEnabled()) {
+        captureDiffInput(
+            diffCaptureLabel(options),
+            current,
+            desired,
+            options.sync.itemDiff !== undefined,
+            "hydrated",
+            options.sync.trust.trustMode
+        );
+    }
+    const diff = diffActionList(current, desired, options.sync.itemDiff);
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     return { desired, observed, diff, phaseUnits };
 }
@@ -237,17 +245,31 @@ function knownActionListPlan(
         options,
         liveItemContent
     );
-    const diff = diffActionList(
-        baselineActionListFromSlots(observed),
-        desired,
-        options.sync.itemDiff
-    );
+    const currentEntries = baselineActionListFromSlots(observed);
+    if (isDiffCaptureEnabled()) {
+        captureDiffInput(
+            diffCaptureLabel(options),
+            currentEntries,
+            desired,
+            options.sync.itemDiff !== undefined,
+            "known",
+            options.sync.trust.trustMode
+        );
+    }
+    const diff = diffActionList(currentEntries, desired, options.sync.itemDiff);
     phaseUnits.applying = exactApplyUnits(diff, desired.length);
     return { desired, observed, diff, phaseUnits };
 }
 
 function exactApplyUnits(diff: ActionListDiff, desiredLength: number): number {
     return actionListDiffApplyUnits(diff, editUnitsWithChildLists, desiredLength);
+}
+
+function diffCaptureLabel(options: ActionListPlanOptions): string {
+    const target = options.conflictTarget;
+    return target === undefined
+        ? "actionList"
+        : `${target.type}:${target.identity}:${target.basePath}`;
 }
 
 function recordActionListConflict(
