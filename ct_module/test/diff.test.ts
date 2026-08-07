@@ -115,6 +115,32 @@ describe("diffActionList — adds / deletes", () => {
         expect(kindCounts(result)).toMatchObject({ delete: 1, edit: 0, add: 1 });
     });
 
+    test("rebuilds a same-type action when editing costs more", () => {
+        const current = conditional({
+            ifActions: [
+                message("one"),
+                message("two"),
+                message("three"),
+                message("four"),
+                message("five"),
+                message("six"),
+            ],
+        });
+        const desired = conditional();
+
+        expect(kindCounts(ops([obs(0, current)], [desired]))).toMatchObject({
+            delete: 1,
+            add: 1,
+            edit: 0,
+        });
+    });
+
+    test("keeps a cheap same-type change as an edit", () => {
+        const result = ops([obs(0, message("before"))], [message("after")]);
+
+        expect(kindCounts(result)).toMatchObject({ delete: 0, add: 0, edit: 1 });
+    });
+
     test("root adds store exact immediate child-list diffs", () => {
         const desired = conditional({
             conditions: [{ type: "IS_SNEAKING" }],

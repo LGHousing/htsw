@@ -28,10 +28,7 @@ import type {
     CurrentActionListEntry,
     RootAction,
 } from "./types";
-import {
-    assertOneLevelActionTree,
-    isChildAction,
-} from "../childActions";
+import { assertOneLevelActionTree, isChildAction } from "../childActions";
 import type { ChildActionListName, ChildListName } from "../../actionPath";
 import type { Observed, ObservedActionSlot } from "../../observedActions";
 import type { UiFieldKind } from "../../fields/loreSpecs";
@@ -315,7 +312,9 @@ function conditionListCost(
             ) {
                 continue;
             }
-
+            if (candidate.cost > 1 + conditionCreationCost(candidate.desired.condition)) {
+                continue;
+            }
             usedObserved.add(candidate.observed.index);
             usedDesired.add(candidate.desired.index);
             matchedObserved.add(candidate.observed.index);
@@ -594,6 +593,15 @@ function matchActions(
                 (entry) => entry.index === desiredEntry.index && !usedCurrent.has(entry)
             );
             if (positionalMatch) {
+                const cost = actionCost(
+                    positionalMatch,
+                    desiredEntry,
+                    listLength,
+                    itemDiff
+                );
+                if (cost > 1 + actionCreationCost(desiredEntry.action)) {
+                    continue;
+                }
                 usedCurrent.add(positionalMatch);
                 usedDesired.add(desiredEntry.index);
                 matches.push({
@@ -601,7 +609,7 @@ function matchActions(
                     desiredIndex: desiredEntry.index,
                     desired: desiredEntry.action,
                     kind: "same_type",
-                    cost: actionCost(positionalMatch, desiredEntry, listLength, itemDiff),
+                    cost,
                 });
             }
         }
@@ -646,6 +654,9 @@ function matchActions(
                     usedCurrent.has(candidate.current) ||
                     usedDesired.has(candidate.desired.index)
                 ) {
+                    continue;
+                }
+                if (candidate.cost > 1 + actionCreationCost(candidate.desired.action)) {
                     continue;
                 }
 
@@ -919,9 +930,7 @@ function diffChildActionList(
                     `${action.type} action cannot appear inside an action child list.`
                 );
             }
-            return conditionChildListDiffsOnly(
-                getAddedChildListDiffs(action, itemDiff)
-            );
+            return conditionChildListDiffsOnly(getAddedChildListDiffs(action, itemDiff));
         },
         itemDiff
     );
