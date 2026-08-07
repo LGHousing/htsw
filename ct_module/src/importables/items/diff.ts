@@ -194,7 +194,13 @@ export function createItemDiffContext(
                 return canonicalItemShellTagKey(desired.nbt);
             }
             const observation = observations?.get(owner, property);
-            return observation?.canonicalKey;
+            if (observation !== undefined) return observation.canonicalKey;
+            const itemName = (owner as unknown as Record<string, unknown>)[property];
+            if (typeof itemName !== "string") return undefined;
+            const cached = projectItems.resolve(itemName, owner);
+            return cached === undefined
+                ? undefined
+                : canonicalItemShellTagKey(cached.nbt);
         },
     };
 }

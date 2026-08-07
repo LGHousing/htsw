@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 import { scanConflictVerdict } from "../src/housingSync/actions/conflicts";
 import {
@@ -216,6 +216,57 @@ describe("readActionListPlan conflict detection", () => {
         expect(session.conflicts).toEqual([
             { type: "FUNCTION", identity: "Debug", basePath: "actions" },
         ]);
+    });
+
+    it("does not record a prompt-worthy conflict when hashes disagree but canonical fields do not", async () => {
+        const append = vi.fn();
+        vi.stubGlobal("FileLib", {
+            ...(FileLib as unknown as Record<string, unknown>),
+            append,
+        });
+        const desired = {
+            type: "DROP_ITEM",
+            itemName: "red_wool",
+            location: { type: "Current Location" },
+        } as Action;
+        const observed = JSON.parse(JSON.stringify(desired)) as Action;
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "force_accel",
+            actions: [desired],
+        };
+        mocks.scanActionList.mockResolvedValue({
+            slots: [observedSlot(0, observed)],
+        });
+        const session = sessionWithLock(importable, [desired], false);
+        const canonicalItem = () => "canonical-red-wool";
+        session.itemDiff = {
+            hasActionList: () => false,
+            actionsDiffer: () => false,
+            conditionsDiffer: () => false,
+            fieldContent: (owner) =>
+                owner === desired ? canonicalItem() : undefined,
+        };
+        session.trust.importables.get("FUNCTION:force_accel")!.lockListContentHashes = {
+            actions: actionListContentHashFromActions([desired], canonicalItem),
+        };
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: {
+                type: "FUNCTION",
+                identity: "force_accel",
+                basePath: "actions",
+            },
+        });
+
+        expect(session.conflicts).toEqual([]);
+        expect(session.conflictEvidence).toEqual([
+            expect.objectContaining({ canonicalDifferences: [] }),
+        ]);
+        expect(JSON.parse(String(append.mock.calls[0][1]))).toEqual(
+            expect.objectContaining({ hashComparisonDisagreement: true })
+        );
     });
 
     it("records no untrusted verdict when a slot remains unhydrated", async () => {

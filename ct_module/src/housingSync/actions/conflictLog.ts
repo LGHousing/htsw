@@ -31,6 +31,7 @@ export function logActionListConflict(args: {
     source: readonly Action[];
     liveItemContent?: ItemFieldContent;
     sourceItemContent?: ItemFieldContent;
+    hashComparisonDisagreement?: boolean;
 }): void {
     try {
         const liveScanHash =
@@ -48,6 +49,7 @@ export function logActionListConflict(args: {
             at: new Date().toISOString(),
             target: args.target,
             hashFamily: args.hashFamily,
+            hashComparisonDisagreement: args.hashComparisonDisagreement ?? false,
             liveScanHash,
             liveContentHash: liveContentHash ?? null,
             lockScanHash: args.lock.scanHash ?? null,

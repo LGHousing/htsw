@@ -15,7 +15,7 @@ import type { ItemFieldContent } from "../items/fieldContent";
 
 // V1 covers only action-type sequences and child-list type sequences; scalar fields and notes are excluded.
 export const ACTION_LIST_SCAN_HASH_VERSION = 2;
-export const ACTION_LIST_CONTENT_HASH_VERSION = 5;
+export const ACTION_LIST_CONTENT_HASH_VERSION = 6;
 
 type CanonicalChildList = {
     prop: ChildListName;

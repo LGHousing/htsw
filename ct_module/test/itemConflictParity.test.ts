@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Action } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 import { actionListConflictVerdict } from "../src/housingSync/actions/conflicts";
 import { actionListContentHashFromActions, actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
 import type { ItemFieldContent } from "../src/housingSync/items/fieldContent";
 import { observedSlot } from "./utils";
+import { createItemDiffContext } from "../src/importables/items/diff";
+import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
 
 function itemContent(key: string): ItemFieldContent {
     return () => key;
@@ -42,6 +45,32 @@ function verdicts(
 }
 
 describe("item conflict parity", () => {
+    it("canonicalizes the cached and source forms of the force_accel item field equally", () => {
+        const desiredAction = { type: "DROP_ITEM", itemName: "red_wool" } as Action;
+        const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "force_accel",
+            actions: [desiredAction],
+        };
+        const items = createProjectItemIndex([importable]);
+        const dependencies = createItemDependencyIndex([importable], items);
+        const context = createItemDiffContext(
+            [importable],
+            dependencies,
+            items,
+            "test-house",
+            () => undefined
+        );
+
+        expect(context.fieldContent?.(observedAction, "itemName")).toBe(
+            context.fieldContent?.(desiredAction, "itemName")
+        );
+        expect(
+            actionListContentHashFromActions([observedAction], context.fieldContent)
+        ).toBe(actionListContentHashFromActions([desiredAction], context.fieldContent));
+    });
+
     it("treats a direct .snbt reference and a live capture slug as the same item", () => {
         const source = {
             type: "GIVE_ITEM",

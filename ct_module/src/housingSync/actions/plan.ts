@@ -304,11 +304,23 @@ function recordActionListConflict(
         itemContent
     );
     if (verdict === "conflict") {
-        options.sync.conflicts.push(target);
         const liveActions =
             "actions" in live
                 ? live.actions
                 : fullyHydratedActionsFromSlots(live.slots);
+        const canonicalDifferences =
+            liveActions === null
+                ? null
+                : actionListConflictDifferences(
+                      liveActions,
+                      desired,
+                      liveItemContent ?? itemContent,
+                      itemContent
+                  );
+        const hashComparisonDisagreement = canonicalDifferences?.length === 0;
+        if (!hashComparisonDisagreement) {
+            options.sync.conflicts.push(target);
+        }
         if (liveActions !== null) {
             upsertConflictEvidence(
                 liveActions,
@@ -326,6 +338,7 @@ function recordActionListConflict(
             source: desired,
             liveItemContent: liveItemContent ?? itemContent,
             sourceItemContent: itemContent,
+            hashComparisonDisagreement,
         });
     }
     return verdict;
