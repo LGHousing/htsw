@@ -36,7 +36,7 @@ type VanillaVariationReference = {
 };
 
 export const VANILLA_VARIATION_REFERENCE_OVERRIDES: Readonly<
-    Record<string, VanillaVariationReference>
+    Partial<Record<string, VanillaVariationReference>>
 > = {
     acacia_wood: { id: "minecraft:log2", damage: 0 },
     dark_oak_wood: { id: "minecraft:log2", damage: 1 },
@@ -78,10 +78,10 @@ export const VANILLA_VARIATION_REFERENCE_COLLISIONS: readonly string[] = (() => 
         }
     }
     for (const name in VANILLA_VARIATION_REFERENCE_OVERRIDES) {
-        VANILLA_VARIATION_REFERENCES.set(
-            name,
-            VANILLA_VARIATION_REFERENCE_OVERRIDES[name]
-        );
+        const override = VANILLA_VARIATION_REFERENCE_OVERRIDES[name];
+        if (override !== undefined) {
+            VANILLA_VARIATION_REFERENCES.set(name, override);
+        }
     }
     return [...collisions].sort();
 })();
