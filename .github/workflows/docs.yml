@@ -6,8 +6,10 @@ on:
       - 'docs/**'
       - 'book.toml'
       - 'language/src/**'
+      - 'language/src/assets/items.json'
       - 'language/package.json'
       - 'scripts/docs-raw.mjs'
+      - 'scripts/gen-items-doc.mjs'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -40,6 +42,9 @@ jobs:
 
       - name: Build language package
         run: npm run build --workspace language
+
+      - name: Generate item names reference
+        run: node scripts/gen-items-doc.mjs
 
       - name: Bundle HTSW runtime for playground
         run: |

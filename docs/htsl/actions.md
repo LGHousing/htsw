@@ -264,10 +264,10 @@ Gives the player an item.
   in `.snbt`, resolved relative to the HTSL file containing this field. Bare
   base IDs such as `stone` do not resolve. Flattened variant names are derived
   from display names by lowercasing and replacing spaces with underscores.
-  Ambiguous names do not resolve; currently these are `acacia_wood` and
-  `dark_oak_wood`, while `wooden_slab` resolves to the base ID.
+  Ambiguous names do not resolve; currently these are `acacia_wood`,
+  `dark_oak_wood`, and `wooden_slab`.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
-  during import.
+  during import. See [Vanilla Item Names](items.md) for the full list.
 - **Allow Multiple:** A boolean flag. When disabled, if there is another item in the player's
   inventory with the exact same nbt, this action does nothing.
 - **Inventory Slot:** A selection that determines where in the player's inventory to give the item.
@@ -320,10 +320,10 @@ Removes an item from the player.
   in `.snbt`, resolved relative to the HTSL file containing this field. Bare
   base IDs such as `stone` do not resolve. Flattened variant names are derived
   from display names by lowercasing and replacing spaces with underscores.
-  Ambiguous names do not resolve; currently these are `acacia_wood` and
-  `dark_oak_wood`, while `wooden_slab` resolves to the base ID.
+  Ambiguous names do not resolve; currently these are `acacia_wood`,
+  `dark_oak_wood`, and `wooden_slab`.
   `minecraft:wool` and `white_wool` identify the same item and compare equal
-  during import.
+  during import. See [Vanilla Item Names](items.md) for the full list.
 
 #### HTSL
 

@@ -6,4 +6,5 @@
   - [Basic Syntax](./htsl/basic-syntax.md)
   - [Actions](./htsl/actions.md)
   - [Conditions](./htsl/conditions.md)
+  - [Vanilla Item Names](./htsl/items.md)
 - [Tooling](./tooling.md)

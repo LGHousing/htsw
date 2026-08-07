@@ -37,6 +37,11 @@ jobs:
       - name: Build language
         run: npm run build --workspace language
 
+      - name: Check item names reference
+        run: |
+          node scripts/gen-items-doc.mjs
+          git diff --exit-code docs/htsl/items.md
+
       - name: Bundle docs playground
         run: |
           npx esbuild docs/theme/htsw-playground-runner.js \
