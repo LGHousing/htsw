@@ -127,6 +127,11 @@ Required fields: `name`, `nbt`.
  containing the item's NBT data. See
  [here](https://minecraft.wiki/w/NBT_format#SNBT_format) for more information.
 
+Plain vanilla items do not need an ITEM importable or an `.snbt` file. This
+includes damage variants such as colored wool and stained clay. Reference
+those items directly from item fields in HTSL. Declare an ITEM importable only
+for an item with custom NBT or click-action scripts.
+
 ---
 
 ### Region

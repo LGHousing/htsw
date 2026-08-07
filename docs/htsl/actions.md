@@ -256,8 +256,18 @@ Gives the player an item.
   > Note that the item stack does not necessarily have to be singular. Thus, you
   can give the player up to 64 of the same item in the same Give Item action.
 
-  > Item is set by referencing the name of an existing item declared in
-  `import.json`.
+  Item accepts the name of an ITEM importable declared in `import.json`, which
+  is checked first; a vanilla base ID with the `minecraft:` prefix, such as
+  `minecraft:stone` or `minecraft:wool`, which always has damage 0; a flattened
+  damage-variant name such as `white_wool`, `red_wool`, or
+  `lime_stained_clay`, either bare or `minecraft:`-prefixed; or a path ending
+  in `.snbt`, resolved relative to the HTSL file containing this field. Bare
+  base IDs such as `stone` do not resolve. Flattened variant names are derived
+  from display names by lowercasing and replacing spaces with underscores.
+  Ambiguous names do not resolve; currently these are `acacia_wood` and
+  `dark_oak_wood`, while `wooden_slab` resolves to the base ID.
+  `minecraft:wool` and `white_wool` identify the same item and compare equal
+  during import.
 - **Allow Multiple:** A boolean flag. When disabled, if there is another item in the player's
   inventory with the exact same nbt, this action does nothing.
 - **Inventory Slot:** A selection that determines where in the player's inventory to give the item.
@@ -302,8 +312,18 @@ Removes an item from the player.
   > Note that the item stack does not necessarily have to be singular. Thus, you
   can remove up to 64 of the same item in the same Give Item action.
 
-  > Item is set by referencing the name of an existing item declared in
-  `import.json`.
+  Item accepts the name of an ITEM importable declared in `import.json`, which
+  is checked first; a vanilla base ID with the `minecraft:` prefix, such as
+  `minecraft:stone` or `minecraft:wool`, which always has damage 0; a flattened
+  damage-variant name such as `white_wool`, `red_wool`, or
+  `lime_stained_clay`, either bare or `minecraft:`-prefixed; or a path ending
+  in `.snbt`, resolved relative to the HTSL file containing this field. Bare
+  base IDs such as `stone` do not resolve. Flattened variant names are derived
+  from display names by lowercasing and replacing spaces with underscores.
+  Ambiguous names do not resolve; currently these are `acacia_wood` and
+  `dark_oak_wood`, while `wooden_slab` resolves to the base ID.
+  `minecraft:wool` and `white_wool` identify the same item and compare equal
+  during import.
 
 #### HTSL
 
