@@ -8,6 +8,7 @@ import { createProjectItemIndex } from "../src/importables/items/projectItems";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
 import {
     baselineActionListFromSlots,
     diffActionList,
@@ -161,6 +162,55 @@ describe("ActionListApplyResult", () => {
 
         expect(thrown).toBeInstanceOf(Error);
         expect(actionListApplyResultFromError(thrown)).toBeNull();
+    });
+
+    test("preserves nested direct-item content in a completed snapshot", async () => {
+        const desiredItem = {
+            type: "DROP_ITEM",
+            itemName: "../items/particle.snbt",
+        } as Action;
+        const desired = {
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [],
+            ifActions: [desiredItem],
+            elseActions: [],
+        } as Action;
+        const observed = JSON.parse(JSON.stringify(desired)) as Action;
+        const itemDiff: ItemDiffContext = {
+            hasActionList: () => true,
+            actionsDiffer: () => false,
+            conditionsDiffer: () => false,
+            fieldContent: (owner, property) => {
+                if (owner === desiredItem && property === "itemName") return "particle";
+                throw new Error("Missing span for field itemName");
+            },
+        };
+        const sync = syncContext();
+        sync.itemDiff = itemDiff;
+        const { applyActionListPlan } = await import(
+            "../src/housingSync/actions/apply"
+        );
+
+        const result = await applyActionListPlan(
+            null as never,
+            {
+                desired: [desired],
+                observed: [observedSlot(0, observed)],
+                diff: { desiredLength: 1, operations: [] },
+                phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+            },
+            { sync }
+        );
+        const clonedConditional = result.currentSnapshot[0] as Extract<
+            Action,
+            { type: "CONDITIONAL" }
+        >;
+
+        expect(clonedConditional).not.toBe(desired);
+        expect(
+            result.itemContent?.(clonedConditional.ifActions[0], "itemName")
+        ).toBe("particle");
     });
 
     test("exposes the updated result when a confirmed edit is followed by a later failure", async () => {

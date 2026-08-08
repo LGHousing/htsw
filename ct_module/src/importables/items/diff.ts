@@ -197,7 +197,7 @@ export function createItemDiffContext(
             if (observation !== undefined) return observation.canonicalKey;
             const itemName = (owner as unknown as Record<string, unknown>)[property];
             if (typeof itemName !== "string") return undefined;
-            const cached = projectItems.resolve(itemName, owner);
+            const cached = projectItems.resolve(itemName);
             return cached === undefined
                 ? undefined
                 : canonicalItemShellTagKey(cached.nbt);

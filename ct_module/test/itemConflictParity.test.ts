@@ -8,6 +8,10 @@ import { observedSlot } from "./utils";
 import { createItemDiffContext } from "../src/importables/items/diff";
 import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
 import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import type {
+    ProjectItem,
+    ProjectItemIndex,
+} from "../src/importables/items/projectItems";
 
 function itemContent(key: string): ItemFieldContent {
     return () => key;
@@ -69,6 +73,55 @@ describe("item conflict parity", () => {
         expect(
             actionListContentHashFromActions([observedAction], context.fieldContent)
         ).toBe(actionListContentHashFromActions([desiredAction], context.fieldContent));
+    });
+
+    it("does not source-resolve a direct item path from a spanless observed action", () => {
+        const itemName = "../items/particle.snbt";
+        const desiredAction = {
+            type: "DROP_ITEM",
+            itemName,
+        } as Action;
+        const observedAction = JSON.parse(JSON.stringify(desiredAction)) as Action;
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "particles",
+            actions: [desiredAction],
+        };
+        const directItem = {
+            name: itemName,
+            nbt: {
+                type: "compound",
+                value: { id: { type: "string", value: "minecraft:stone" } },
+            },
+            aliases: [],
+            source: "snbtPath",
+            path: "/project/items/particle.snbt",
+        } as unknown as ProjectItem;
+        const items = {
+            resolveFromSourcePath: () => directItem,
+            resolve: (_name: string, owner?: object) => {
+                if (owner !== undefined) {
+                    throw new Error("Missing span for field itemName");
+                }
+                return undefined;
+            },
+        } as unknown as ProjectItemIndex;
+        const dependencies = {
+            invalidationsFor: () => ({
+                hasInvalidatedSubtree: () => false,
+                isFieldInvalidated: () => false,
+            }),
+        } as never;
+        const context = createItemDiffContext(
+            [importable],
+            dependencies,
+            items,
+            "test-house",
+            () => undefined
+        );
+
+        expect(context.fieldContent?.(desiredAction, "itemName")).toBeDefined();
+        expect(context.fieldContent?.(observedAction, "itemName")).toBeUndefined();
     });
 
     it("treats a direct .snbt reference and a live capture slug as the same item", () => {

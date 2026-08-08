@@ -154,7 +154,7 @@ export class ActionListApplyRun {
 
             if (this.plan.diff.operations.length === 0) {
                 this.finish();
-                return this.result();
+                return this.result(this.plan.desired);
             }
 
             const phases = this.bucketOperations();
@@ -165,15 +165,19 @@ export class ActionListApplyRun {
 
             await goToPaginatedListPage(this.ctx, 1, ACTION_LIST_CONFIG);
             this.finish();
-            return this.result();
+            return this.result(this.plan.desired);
         } catch (error) {
             this.throwApplyError(error);
         }
     }
 
-    result(): ActionListApplyResult {
+    result(
+        source: ReadonlyArray<Action | null> = this.current.map(
+            (entry) => entry.action as Action | null
+        )
+    ): ActionListApplyResult {
         const cloned = cloneActionsWithItemFieldContent(
-            this.current.map((entry) => entry.action as Action | null),
+            source,
             this.options.sync.itemDiff?.fieldContent
         );
         return {
