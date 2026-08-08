@@ -22,130 +22,32 @@ import {
 import { normalizeSoundKey } from "../fields/sounds";
 import { canonicalVanillaItemCompareName } from "../items/itemReferences";
 
-const doubleBits = new DataView(new ArrayBuffer(8));
-
-function decimalDigitsForJava(value: number): { digits: string; decimalAt: number } {
-    const source = String(value);
-    const exponentAt = source.search(/[eE]/);
-    const coefficient = exponentAt === -1 ? source : source.substring(0, exponentAt);
-    const exponent = exponentAt === -1 ? 0 : Number(source.substring(exponentAt + 1));
-    const pointAt = coefficient.indexOf(".");
-    const decimalAt = pointAt === -1 ? coefficient.length : pointAt;
-    const untrimmed = coefficient.replace(".", "");
-    const firstNonzero = untrimmed.search(/[1-9]/);
-    let digits = firstNonzero === -1 ? "" : untrimmed.substring(firstNonzero);
-    if ((value < 0.001 || value >= 1e7) && digits.length === 1) digits += "0";
-    return { digits, decimalAt: decimalAt - firstNonzero + exponent };
-}
-
-function compareShortestDecimalToDouble(
-    digits: string,
-    decimalAt: number,
-    value: number
-): number {
-    doubleBits.setFloat64(0, value, false);
-    const high = doubleBits.getUint32(0, false);
-    const low = doubleBits.getUint32(4, false);
-    const exponentBits = (high >>> 20) & 0x7ff;
-    const fraction = (BigInt(high & 0xfffff) << 32n) | BigInt(low);
-    const mantissa = exponentBits === 0 ? fraction : (1n << 52n) | fraction;
-    const binaryExponent = exponentBits === 0 ? -1074 : exponentBits - 1075;
-    const decimalExponent = decimalAt - digits.length;
-
-    let decimalNumerator = BigInt(digits);
-    let decimalDenominator = 1n;
-    if (decimalExponent >= 0) {
-        decimalNumerator *= 10n ** BigInt(decimalExponent);
-    } else {
-        decimalDenominator = 10n ** BigInt(-decimalExponent);
-    }
-
-    let binaryNumerator = mantissa;
-    let binaryDenominator = 1n;
-    if (binaryExponent >= 0) {
-        binaryNumerator <<= BigInt(binaryExponent);
-    } else {
-        binaryDenominator <<= BigInt(-binaryExponent);
-    }
-
-    const decimalScaled = decimalNumerator * binaryDenominator;
-    const binaryScaled = binaryNumerator * decimalDenominator;
-    return decimalScaled < binaryScaled ? -1 : decimalScaled > binaryScaled ? 1 : 0;
-}
-
-function javaHalfEvenRoundsUp(
-    digits: string,
-    maximumDigits: number,
-    alreadyRounded: boolean,
-    valueExactAsDecimal: boolean
-): boolean {
-    const roundingDigit = digits.charAt(maximumDigits);
-    if (roundingDigit > "5") return true;
-    if (roundingDigit < "5") return false;
-    if (maximumDigits === digits.length - 1) {
-        if (alreadyRounded) return false;
-        if (!valueExactAsDecimal) return true;
-        return maximumDigits > 0 && Number(digits.charAt(maximumDigits - 1)) % 2 !== 0;
-    }
-    for (let i = maximumDigits + 1; i < digits.length; i++) {
-        if (digits.charAt(i) !== "0") return true;
-    }
-    return false;
-}
-
-function roundedJavaDecimalValue(digits: string, decimalAt: number): number {
-    if (digits === "") return 0;
-    return Number(`${digits}e${decimalAt - digits.length}`);
-}
+const HOUSING_VALUE_DISPLAY_SCALE = 1e3;
 
 function quantizeHousingDecimal(num: number): number {
     if (Math.floor(num) === num) return num;
     const magnitude = Math.abs(num);
-    let { digits, decimalAt } = decimalDigitsForJava(magnitude);
-    const decimalComparison = compareShortestDecimalToDouble(
-        digits,
-        decimalAt,
-        magnitude
-    );
-    const alreadyRounded = decimalComparison > 0;
-    const valueExactAsDecimal = decimalComparison === 0;
+    const scaled = magnitude * HOUSING_VALUE_DISPLAY_SCALE;
+    const lower = Math.floor(scaled);
+    const fraction = scaled - lower;
+    let rounded: number;
 
-    if (-decimalAt > 3) return num < 0 ? -0 : 0;
-    if (-decimalAt === 3) {
-        const roundsUp = javaHalfEvenRoundsUp(
-            digits,
-            0,
-            alreadyRounded,
-            valueExactAsDecimal
-        );
-        return roundsUp ? (num < 0 ? -0.001 : 0.001) : num < 0 ? -0 : 0;
+    if (fraction !== 0.5) {
+        rounded = Math.round(scaled);
+    } else {
+        const fixed = magnitude.toFixed(20);
+        const decimalPoint = fixed.indexOf(".");
+        const remainder = decimalPoint === -1 ? "" : fixed.substring(decimalPoint + 4);
+        const tie = "5" + new Array(remainder.length).join("0");
+        rounded =
+            remainder > tie
+                ? lower + 1
+                : remainder < tie
+                  ? lower
+                  : lower + (lower % 2);
     }
 
-    while (digits.length > 1 && digits.charAt(digits.length - 1) === "0") {
-        digits = digits.substring(0, digits.length - 1);
-    }
-    const maximumDigits = 3 + decimalAt;
-    if (maximumDigits >= 0 && maximumDigits < digits.length) {
-        if (
-            javaHalfEvenRoundsUp(
-                digits,
-                maximumDigits,
-                alreadyRounded,
-                valueExactAsDecimal
-            )
-        ) {
-            const kept = digits.substring(0, maximumDigits);
-            const incremented = (kept === "" ? 0n : BigInt(kept)) + 1n;
-            const incrementedDigits = String(incremented);
-            if (incrementedDigits.length > maximumDigits) decimalAt++;
-            digits = incrementedDigits;
-        } else {
-            digits = digits.substring(0, maximumDigits);
-        }
-    }
-
-    const rounded = roundedJavaDecimalValue(digits, decimalAt);
-    return num < 0 ? -rounded : rounded;
+    return (num < 0 ? -rounded : rounded) / HOUSING_VALUE_DISPLAY_SCALE;
 }
 
 function normalizeValueTextForCompare(value: string): string {
