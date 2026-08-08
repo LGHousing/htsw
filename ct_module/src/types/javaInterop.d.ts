@@ -179,8 +179,19 @@ declare global {
         getMethod(name: "zero"): HtswJavaReflectMethod<HtswLongValue>;
     }
 
+    interface HtswHousingDecimalFormatterClass {
+        getMethod(
+            name: "quantize",
+            parameterType: HtswJavaPrimitiveClass
+        ): HtswJavaReflectMethod<number>;
+    }
+
     interface HtswJavaUrlClassLoader {
         loadClass(name: "LongValue"): HtswLongValueClass;
+        loadClass(name: "HousingDecimalFormatter"): HtswHousingDecimalFormatterClass;
+        loadClass(
+            name: "LongValue" | "HousingDecimalFormatter"
+        ): HtswLongValueClass | HtswHousingDecimalFormatterClass;
     }
 
     interface HtswJavaUrlClassLoaderClass {

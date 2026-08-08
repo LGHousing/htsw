@@ -24,7 +24,7 @@ import { canonicalVanillaItemCompareName } from "../items/itemReferences";
 
 const HOUSING_VALUE_DISPLAY_SCALE = 1e3;
 
-function quantizeHousingDecimal(num: number): number {
+function fallbackHousingDecimalQuantizer(num: number): number {
     if (Math.floor(num) === num) return num;
     const magnitude = Math.abs(num);
     const scaled = magnitude * HOUSING_VALUE_DISPLAY_SCALE;
@@ -48,6 +48,20 @@ function quantizeHousingDecimal(num: number): number {
     }
 
     return (num < 0 ? -rounded : rounded) / HOUSING_VALUE_DISPLAY_SCALE;
+}
+
+let housingDecimalQuantizer = fallbackHousingDecimalQuantizer;
+
+function quantizeHousingDecimal(num: number): number {
+    return housingDecimalQuantizer(num);
+}
+
+export function setHousingDecimalQuantizer(
+    quantizer: (value: number) => number
+): (value: number) => number {
+    const previous = housingDecimalQuantizer;
+    housingDecimalQuantizer = quantizer;
+    return previous;
 }
 
 function normalizeValueTextForCompare(value: string): string {

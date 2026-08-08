@@ -1,18 +1,12 @@
 import * as htsw from "htsw";
+import { loadBundledJavaClass } from "./bundledJava";
 import { javaType } from "./utils/java";
 
-const Paths = javaType("java.nio.file.Paths");
-const URL = javaType("java.net.URL");
-const URLClassLoader = javaType("java.net.URLClassLoader");
-const ReflectArray = javaType("java.lang.reflect.Array");
 const JString = javaType("java.lang.String");
 const JDouble = javaType("java.lang.Double");
 const JInteger = javaType("java.lang.Integer");
 
-const urls = ReflectArray.newInstance<HtswJavaUrl>(URL, 1);
-urls[0] = Paths.get("./config/ChatTriggers/modules/HTSW").toUri().toURL();
-const classLoader = new URLClassLoader(urls);
-const longClass = classLoader.loadClass("LongValue");
+const longClass = loadBundledJavaClass("LongValue");
 
 const mFromString = longClass.getMethod("fromString", JString);
 const mFromNumber = longClass.getMethod("fromNumber", JDouble.TYPE);

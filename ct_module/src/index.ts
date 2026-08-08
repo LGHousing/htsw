@@ -1,6 +1,7 @@
 import "promise-polyfill/src/polyfill";
 import "./polyfills/promiseSyncDrain";
 import "./injectLong";
+import "./injectHousingDecimal";
 import "./tasks/manager";
 
 import { registerSlashCommands } from "./slashCommands";

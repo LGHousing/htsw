@@ -109,6 +109,9 @@ const iconShakePlugin = {
     closeBundle(): void {
         const distDir = path.resolve(srcDir, "../dist");
         const all = readAllJsBundles(distDir);
+        if (/(?:^|[^\w$])\d+n\b/.test(all)) {
+            throw new Error("The ChatTriggers bundle contains BigInt literal syntax unsupported by Rhino");
+        }
         const names = listIconNames();
         // Reset any previously-emitted icons so renaming/removing usages shrinks the deploy.
         try {

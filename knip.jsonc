@@ -14,7 +14,7 @@
             "entry": ["scripts/*.ts", "test/**/*.test.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
             "ignoreDependencies": ["@babel/preset-env"],
-            "ignoreBinaries": ["javac"]
+            "ignoreBinaries": ["java", "javac"]
         },
         "editors/code": {
             "entry": [
