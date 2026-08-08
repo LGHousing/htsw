@@ -1,9 +1,44 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import packageJson from "../package.json";
 import { ansi } from "./ansi";
 
 const DEFAULT_BASE = "https://legendarygames.dev/htsw";
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+interface UpdateCheckCache {
+    checkedAt: number;
+    latestVersion: string;
+}
+
+export async function checkForUpdate(): Promise<void> {
+    const cached = readUpdateCheckCache();
+    let latestVersion = cached?.latestVersion;
+
+    if (cached === undefined || Date.now() - cached.checkedAt >= UPDATE_CHECK_INTERVAL_MS) {
+        try {
+            const manifest = await fetchJson(
+                `${process.env.HTSW_BASE_URL ?? DEFAULT_BASE}/cli/latest.json`,
+                AbortSignal.timeout(1_000)
+            );
+            latestVersion = String(manifest.version ?? "");
+            writeUpdateCheckCache({ checkedAt: Date.now(), latestVersion });
+        } catch {
+            return;
+        }
+    }
+
+    if (latestVersion && isNewerVersion(latestVersion, packageJson.version)) {
+        console.error(
+            ansi(
+                "yellow",
+                `htsw ${latestVersion} is available. Run 'htsw upgrade' to update.`
+            )
+        );
+    }
+}
 
 export async function runUpgrade(args: string[]): Promise<void> {
     let force = false;
@@ -85,13 +120,65 @@ function sha256OfFile(filePath: string): string {
     return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
-async function fetchJson(url: string): Promise<Record<string, unknown>> {
-    const res = await fetch(url);
+async function fetchJson(
+    url: string,
+    signal?: AbortSignal
+): Promise<Record<string, unknown>> {
+    const res = await fetch(url, { signal });
     if (!res.ok) {
-        console.error(`Could not fetch ${url} (${res.status})`);
-        process.exit(1);
+        throw new Error(`Could not fetch ${url} (${res.status})`);
     }
     return res.json() as Promise<Record<string, unknown>>;
+}
+
+function updateCheckCachePath(): string {
+    const cacheRoot = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
+    return path.join(cacheRoot, "htsw", "update-check.json");
+}
+
+function readUpdateCheckCache(): UpdateCheckCache | undefined {
+    try {
+        const value = JSON.parse(fs.readFileSync(updateCheckCachePath(), "utf8"));
+        if (
+            typeof value.checkedAt === "number" &&
+            typeof value.latestVersion === "string"
+        ) {
+            return value;
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+}
+
+function writeUpdateCheckCache(cache: UpdateCheckCache): void {
+    try {
+        const cachePath = updateCheckCachePath();
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+        fs.writeFileSync(cachePath, JSON.stringify(cache));
+    } catch {
+        return;
+    }
+}
+
+function isNewerVersion(candidate: string, current: string): boolean {
+    const candidateParts = candidate.split(".").map(Number);
+    const currentParts = current.split(".").map(Number);
+    if (
+        candidateParts.length !== 3 ||
+        currentParts.length !== 3 ||
+        candidateParts.some(Number.isNaN) ||
+        currentParts.some(Number.isNaN)
+    ) {
+        return false;
+    }
+
+    for (let i = 0; i < 3; i++) {
+        if (candidateParts[i] !== currentParts[i]) {
+            return candidateParts[i] > currentParts[i];
+        }
+    }
+    return false;
 }
 
 async function fetchBuffer(url: string): Promise<Buffer> {

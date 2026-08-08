@@ -284,6 +284,15 @@ export function scrollHtswOverlay(rawX: number, rawY: number, delta: number): bo
 }
 
 let lastWheelPollAt = 0;
+let pendingWheelDelta = 0;
+let polledWheelCredit = 0;
+
+function matchingWheelDelta(value: number, credit: number): number {
+    if (value === 0 || credit === 0 || value > 0 !== credit > 0) {
+        return 0;
+    }
+    return (value > 0 ? 1 : -1) * Math.min(Math.abs(value), Math.abs(credit));
+}
 
 function pollWheel(): void {
     const dwheel = MouseClass.getDWheel();
@@ -294,12 +303,26 @@ function pollWheel(): void {
     // instead of applying a phantom scroll on the first overlay frame.
     const stale = now - lastWheelPollAt > 200;
     lastWheelPollAt = now;
-    if (dwheel === 0 || stale) return;
+    if (stale) {
+        pendingWheelDelta = 0;
+        polledWheelCredit = 0;
+        return;
+    }
+    let unmatchedPoll = dwheel;
+    const matchedPending = matchingWheelDelta(unmatchedPoll, pendingWheelDelta);
+    unmatchedPoll -= matchedPending;
+    pendingWheelDelta -= matchedPending;
+    if (dwheel !== 0) {
+        polledWheelCredit += unmatchedPoll;
+    }
+    const deltaToApply = dwheel !== 0 ? dwheel : pendingWheelDelta;
+    if (dwheel === 0) pendingWheelDelta = 0;
+    if (deltaToApply === 0) return;
     // Notches, keeping the hardware's real magnitude: a standard wheel click
     // is ±120, fast flicks coalesce into one larger reading, and high-res
     // wheels/touchpads report fractions of 120. Collapsing this to ±1 made
     // fast scrolling crawl.
-    const delta = dwheel / 120;
+    const delta = deltaToApply / 120;
     const mc = getMinecraft();
     const dh = mc.field_71440_d;
     const s = getEffectiveOverlayScale();
@@ -611,11 +634,9 @@ export function initHtswGui(): void {
     // Mouse wheel, three cooperating paths over the SAME routing decision
     // (`routeWheel`):
     //
-    // 1. Forge's GuiScreenEvent.MouseInputEvent.Pre — SUPPRESSION ONLY. It
-    //    fires per Mouse.next() event BEFORE GuiScreen.handleMouseInput runs,
-    //    which is the only place vanilla GuiContainer scroll and
-    //    GuiContainerCreative tab/item-list scrolling can be cancelled. It
-    //    does NOT apply the wheel to our scrolls.
+    // 1. Forge's GuiScreenEvent.MouseInputEvent.Pre fires per Mouse.next()
+    //    event before vanilla handling. It cancels wheel input over HTSW and
+    //    retains any delta the render poll has not already accounted for.
     // 2. Forge's global MouseEvent fills the no-screen import gap. It runs
     //    before Minecraft's in-world handling, so an HTSW scroll cannot also
     //    change the hotbar while Housing is waiting for a chat-entered value.
@@ -625,11 +646,12 @@ export function initHtswGui(): void {
     //    that the easing could only partially mask (20Hz velocity pulsing).
     //    The accumulator is refilled by Display.processMessages every FRAME
     //    and is independent of the per-event wheel (Mouse.getEventDWheel), so
-    //    polling it feeds the targets at render rate without double-applying
-    //    what the Pre handler saw. Draining it also doesn't starve MC — all
-    //    vanilla handling reads per-event wheel.
+    //    polling it feeds the targets at render rate. The retained-event and
+    //    polled deltas are reconciled here so either source can arrive first
+    //    without losing or double-applying input. Draining the accumulator
+    //    doesn't starve MC — vanilla handling reads per-event wheel.
     register(ForgeMouseInputEventPre, (event: ForgeEvent) => {
-        const dwheel = MouseClass.getEventDWheel();
+        let dwheel = MouseClass.getEventDWheel();
         if (dwheel === 0) return;
         const mc = getMinecraft();
         const screen = mc.field_71462_r;
@@ -641,7 +663,12 @@ export function initHtswGui(): void {
         const overlayScreenH = Math.floor(dh / s);
         const mx = Math.floor(MouseClass.getEventX() / s);
         const my = overlayScreenH - Math.floor(MouseClass.getEventY() / s) - 1;
-        if (routeWheel(mx, my, 0, false)) cancel(event);
+        if (!routeWheel(mx, my, 0, false)) return;
+        const matchedPoll = matchingWheelDelta(dwheel, polledWheelCredit);
+        dwheel -= matchedPoll;
+        polledWheelCredit -= matchedPoll;
+        pendingWheelDelta += dwheel;
+        cancel(event);
     });
     register(
         ForgeMouseEvent,

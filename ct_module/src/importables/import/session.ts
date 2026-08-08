@@ -1066,9 +1066,8 @@ function itemContentForLock(
     projectItems: ProjectItemIndex,
     preferred: ItemFieldContent | undefined
 ): ItemFieldContent {
-    const fallback = sourceItemFieldContent(importable, projectItems);
-    if (preferred === undefined) return fallback;
-    return (owner, property) => preferred(owner, property) ?? fallback(owner, property);
+    if (preferred !== undefined) return preferred;
+    return sourceItemFieldContent(importable, projectItems);
 }
 
 async function flushHouseLockEntries(

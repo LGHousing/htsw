@@ -96,11 +96,14 @@ HTSL (Housing Text Scripting Language) is the markup language used by HTSW to
 - Basic syntax: `.htsw/htsw/htsl/basic-syntax.md`
 - Actions: `.htsw/htsw/htsl/actions.md`
 - Conditions: `.htsw/htsw/htsl/conditions.md`
+- Vanilla item names: `.htsw/htsw/vanilla-item-names.md`
 
 #### Agent workflows
 
+Read these workflows before writing code.
 - Project structure and validation: `.htsw/agents/htsw-project-structure.md`
 - Live import queue: `.htsw/agents/htsw-import-queue.md`
+- Writing import-efficient HTSL: `.htsw/agents/writing-import-efficient-htsl.md`
 - Common Housing patterns: `.htsw/agents/list-of-common-patterns.md`
 
 #### Essential commands

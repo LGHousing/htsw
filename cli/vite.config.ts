@@ -13,6 +13,7 @@ export default defineConfig({
                 "node:path",
                 "node:url",
                 "node:crypto",
+                "node:os",
             ],
         },
     }

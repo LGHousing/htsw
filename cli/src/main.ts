@@ -8,7 +8,7 @@ import { ansi } from "./ansi";
 import { printDiagnostic } from "./diagnostics";
 import { Importable } from "htsw/types";
 import { run } from "./runtime";
-import { runUpgrade } from "./upgrade";
+import { checkForUpdate, runUpgrade } from "./upgrade";
 
 class NodeFileLoader {
     fileExists(filePath: string): boolean {
@@ -28,7 +28,7 @@ class NodeFileLoader {
     }
 }
 
-function main(): void {
+async function main(): Promise<void> {
     const args = process.argv.slice(2);
     const cmd = args[0];
 
@@ -38,20 +38,19 @@ function main(): void {
     }
 
     if (cmd === "check") {
+        await checkForUpdate();
         runCheck(args.slice(1));
         return;
     }
 
     if (cmd === "run") {
+        await checkForUpdate();
         runRun(args.slice(1));
         return;
     }
 
     if (cmd === "upgrade") {
-        runUpgrade(args.slice(1)).catch((err) => {
-            console.error(String((err as Error)?.message ?? err));
-            process.exit(1);
-        });
+        await runUpgrade(args.slice(1));
         return;
     }
 
@@ -59,6 +58,11 @@ function main(): void {
     printUsage();
     process.exit(2);
 }
+
+main().catch((err) => {
+    console.error(String((err as Error)?.message ?? err));
+    process.exit(1);
+});
 
 function printUsage(): void {
     console.log("Usage: htsw <command> [args]");
@@ -189,5 +193,3 @@ function printRunHelp(): void {
     console.log("  --ticks N    Tick the runtime N times after running htsw:main.");
     console.log("               Drives pauses and repeating functions (default 0).");
 }
-
-main();
