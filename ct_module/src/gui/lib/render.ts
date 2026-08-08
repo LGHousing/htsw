@@ -473,7 +473,8 @@ function renderItem(
         fillRect(borderCol, r.x + r.w - 1, r.y, 1, r.h);
         if (value.length === 0 && e.placeholder && !focused) {
             const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
-            const placeholder = `§r§8${e.placeholder}`;
+            const visiblePlaceholder = truncateToWidth(e.placeholder, r.w - 8);
+            const placeholder = `§r§8${visiblePlaceholder}`;
             if (e.placeholder.indexOf("&") === -1) {
                 frameFontRenderer.func_175065_a(
                     placeholder,
