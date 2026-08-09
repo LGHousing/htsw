@@ -2,6 +2,7 @@
   "functions": [
     {
       "name": "MetadataOnlyFn",
+      "description": "Runs every second.",
       "repeatTicks": 20,
       "icon": {
         "item": "minecraft:map",

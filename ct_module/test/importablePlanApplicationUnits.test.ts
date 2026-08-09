@@ -28,7 +28,7 @@ describe("planned importable application units", () => {
             },
             exists: true,
             actions: { kind: "planned", plan: actionsPlan },
-            settings: { icon: undefined, repeatTicks: 0 },
+            settings: { description: undefined, icon: undefined, repeatTicks: 0 },
         };
 
         const plan = planImportableFunction(read);

@@ -16,6 +16,7 @@ export type ImportableFunction = ImportableSource & {
     type: "FUNCTION";
     name: string;
     actions?: Action[];
+    description?: string;
     repeatTicks?: number;
     icon?: FunctionIcon;
 };

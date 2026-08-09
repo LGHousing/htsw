@@ -93,6 +93,9 @@
         "actions": {
           "$ref": "#/definitions/htslPath"
         },
+        "description": {
+          "type": "string"
+        },
         "repeatTicks": {
           "type": "number",
           "minimum": 4,

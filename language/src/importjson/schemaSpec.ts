@@ -135,6 +135,7 @@ export type RawFunctionIcon = {
 export type RawFunctionImportable = {
     name: string;
     actions?: string;
+    description?: string;
     repeatTicks?: number;
     icon?: RawFunctionIcon;
 };
@@ -330,6 +331,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     functionImportable: object<RawFunctionImportable>({
         name: required(string()),
         actions: optional(ref("htslPath")),
+        description: optional(string()),
         repeatTicks: optional(number({ minimum: 4, maximum: 18000 })),
         icon: optional(ref("functionIcon")),
     }),

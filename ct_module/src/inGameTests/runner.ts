@@ -687,6 +687,11 @@ function functionSettingsPlanFailures(
     const failures: string[] = [];
     for (const change of plan.settingsPlan) {
         switch (change.key) {
+            case "description":
+                failures.push(
+                    `settings description read=${change.current ?? "<unset>"} want=${change.desired ?? "<unset>"}`
+                );
+                break;
             case "icon":
                 failures.push("settings icon differs");
                 break;

@@ -39,6 +39,26 @@ type FunctionSettingHandler<K extends FunctionSettingKey> = {
 const FUNCTION_SETTING_HANDLERS: {
     [K in FunctionSettingKey]: FunctionSettingHandler<K>;
 } = {
+    description: {
+        change: (current, desired) => {
+            if (
+                desired.description === undefined ||
+                functionDescriptionsEqual(current.description, desired.description)
+            ) {
+                return null;
+            }
+            return {
+                key: "description",
+                current: current.description,
+                desired: desired.description,
+            };
+        },
+        writeExportValue: (observed, target) => {
+            if (observed.description !== undefined) {
+                target.description = observed.description;
+            }
+        },
+    },
     repeatTicks: {
         change: (current, desired) => {
             const currentValue = current.repeatTicks ?? 0;
@@ -77,6 +97,17 @@ function functionSettingKeys(): FunctionSettingKey[] {
     return Object.keys(FUNCTION_SETTING_HANDLERS) as FunctionSettingKey[];
 }
 
+function functionDescriptionsEqual(
+    current: string | undefined,
+    desired: string
+): boolean {
+    if (desired === "") return current === undefined;
+    if (current === desired) return true;
+
+    const visibleDesired = desired.replace(/&[0-9a-fk-or]/gi, "").trim();
+    return !/[,.!?]$/.test(visibleDesired) && current === `${desired}.`;
+}
+
 export function planFunctionSettingChanges(
     current: ObservedFunctionSettings,
     desired: ImportableFunction
@@ -110,6 +141,7 @@ function observedFunctionSettingsOf(
     settings: FunctionSettings
 ): ObservedFunctionSettings {
     return {
+        description: settings.description,
         repeatTicks: settings.repeatTicks,
         icon: settings.icon,
     };

@@ -1,10 +1,19 @@
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
 import { isUnspawnableItem } from "htsw";
 
-import { clickGoBack, setNumberValue } from "../../housingSync/menus/menuUtils";
+import {
+    clickGoBack,
+    resetStringValue,
+    setNumberValue,
+    setStringValue,
+} from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { setItemValue } from "../../housingSync/items/itemPicker";
-import { parseLoreKeyValueLine } from "../../housingSync/fields/loreParsing";
+import {
+    normalizeLoreValueFormatting,
+    parseLoreKeyValueLine,
+    stripWrapInheritedColor,
+} from "../../housingSync/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
@@ -132,6 +141,43 @@ function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
     return undefined;
 }
 
+function readFunctionDescription(ctx: TaskContext): string | undefined {
+    const lore = ctx.getItemSlot("Edit Description").getItem().getLore();
+    let separator = -1;
+    for (let i = 0; i < lore.length; i++) {
+        if (removedFormatting(lore[i]).trim() === "") {
+            separator = i;
+            break;
+        }
+    }
+    if (separator === -1) {
+        throw new Error("Could not read function description.");
+    }
+
+    const lines: string[] = [];
+    for (let i = separator + 1; i < lore.length; i++) {
+        if (removedFormatting(lore[i]).trim() === "") break;
+        const line = stripWrapInheritedColor(
+            normalizeLoreValueFormatting(lore[i])
+        ).trim();
+        if (line === "Click to rename!") break;
+        lines.push(line);
+    }
+    return lines.length === 0 ? undefined : lines.join(" ");
+}
+
+async function setFunctionDescription(
+    ctx: TaskContext,
+    description: string
+): Promise<void> {
+    const slot = ctx.getItemSlot("Edit Description");
+    if (description === "") {
+        await resetStringValue(ctx, slot);
+        return;
+    }
+    await setStringValue(ctx, slot, description);
+}
+
 async function setAutomaticExecutionTicksIfNeeded(
     ctx: TaskContext,
     repeatTicks: number
@@ -170,11 +216,8 @@ async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Pr
 }
 
 /**
- * Assuming the function-settings menu is open, apply the icon and
- * automatic-execution tick count from `importable`. Both setters short-circuit
- * when the current value already matches — the icon against its /functions-list
- * snapshot, the ticks against the live field — so this is a no-op for an
- * already in-sync function.
+ * Assuming the function-settings menu is open, apply requested metadata from
+ * `importable`.
  */
 export async function applyFunctionSettings(
     ctx: TaskContext,
@@ -183,6 +226,12 @@ export async function applyFunctionSettings(
 ): Promise<void> {
     for (const change of changes) {
         switch (change.key) {
+            case "description":
+                await functionSettingsStep(
+                    `setting description for function ${importable.name}`,
+                    () => setFunctionDescription(ctx, change.desired ?? "")
+                );
+                break;
             case "icon": {
                 const icon = change.desired;
                 if (icon === undefined) break;
@@ -219,6 +268,7 @@ export async function readFunctionSettings(
     try {
         return {
             icon,
+            description: readFunctionDescription(ctx),
             repeatTicks: readAutomaticExecutionTicks(ctx) ?? 0,
         };
     } finally {

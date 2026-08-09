@@ -58,6 +58,9 @@ export function parseImportableFunction(p: Parser): ImportableFunction {
             field.setField(im, "actions", parseHtsl);
             im.sourcePath = contentFilePath(field);
         }),
+        description: optionalRawField((field) =>
+            field.setField(im, "description", (p) => p.parseString())
+        ),
         repeatTicks: optionalRawField((field) =>
             field.setField(im, "repeatTicks", (p) =>
                 p.parseBoundedNumber(4, 18000)

@@ -394,6 +394,7 @@ describe("import.json basic passing behavior", () => {
         assertImportable(fn, "FUNCTION");
         expect(fn.name).toBe("MetadataOnlyFn");
         expect(fn.actions).toBeUndefined();
+        expect(fn.description).toBe("Runs every second.");
         expect(fn.repeatTicks).toBe(20);
         expect(fn.icon).toEqual({
             item: "minecraft:map",

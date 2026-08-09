@@ -697,6 +697,15 @@ export async function setStringValue(
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
 
+export async function resetStringValue(ctx: TaskContext, slot: ItemSlot): Promise<void> {
+    slot.click();
+    const started = Date.now();
+    await waitForChatInputPrompt(ctx);
+    await ctx.runCommand("/chatinput reset");
+    await waitForMenu(ctx);
+    recordTimedOp("chatInput", COST.chatInput, Date.now() - started);
+}
+
 export async function setStringOrPaginatedOptionValue(
     ctx: TaskContext,
     slot: ItemSlot,

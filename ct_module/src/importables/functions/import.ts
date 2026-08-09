@@ -82,7 +82,7 @@ export async function scanImportableFunction(
         ? null
         : exists
           ? await readFunctionSettings(ctx, importable.name)
-          : { icon: undefined, repeatTicks: 0 };
+          : { icon: undefined, description: undefined, repeatTicks: 0 };
     const actionsEditor = { opened: false };
     const actions = await scanActionListSync(ctx, {
         desired: importable.actions,
@@ -204,7 +204,9 @@ export function functionApplicationPlan(
             units +=
                 change.key === "icon"
                     ? COST.menuClickWait + COST.itemSelect
-                    : COST.signInput;
+                    : change.key === "description"
+                      ? COST.chatInput
+                      : COST.signInput;
         }
         steps.push(workStep("settings", units));
     }
