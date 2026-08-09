@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "mcp__htsw-bridge",
-      "Bash(npx tsc *)",
-      "Edit(/.claude/skills/gui-development/**)"
-    ]
-  }
-}
