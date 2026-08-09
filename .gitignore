@@ -9,6 +9,8 @@ coverage/
 
 # extension
 *.vsix
+editors/code/THIRD_PARTY_NOTICES.txt
+editors/code/Apache-2.0.txt
 
 # mdBook output
 book/

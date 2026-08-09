@@ -21,6 +21,11 @@
         "format": "npx prettier \"**/*.{ts,json}\" --write"
     },
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/LGHousing/htsw.git",
+        "directory": "ct_module"
+    },
     "dependencies": {
         "htsw": "file:../language",
         "htsw-editor-common": "file:../editors/common",

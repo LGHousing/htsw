@@ -7,7 +7,9 @@
     "license": "MIT",
     "type": "module",
     "repository": {
-        "url": "https://github.com/LGHousing/htsw"
+        "type": "git",
+        "url": "https://github.com/LGHousing/htsw.git",
+        "directory": "editors/code"
     },
     "engines": {
         "vscode": "^1.97.2"
@@ -17,15 +19,15 @@
         "generate:schema": "node --experimental-strip-types scripts/generateImportSchema.ts",
         "build": "npm run generate:grammar && npm run generate:schema && tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
         "check:schema": "node --experimental-strip-types scripts/generateImportSchema.ts --check",
-        "package:built": "vsce package --no-dependencies",
+        "package:built": "node scripts/stageLicenses.mjs && vsce package --no-dependencies",
         "package": "npm run build && npm run package:built"
     },
     "dependencies": {
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
         "jsonc-parser": "^3.3.1",
-        "minecraft-icon-items": "^0.4.5",
-        "typeface-minecraft": "^1.0.0"
+        "@south-paw/typeface-minecraft": "^1.0.0",
+        "minecraft-icon-items": "^0.4.5"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",

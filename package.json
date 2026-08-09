@@ -1,6 +1,7 @@
 {
     "name": "htsw-workspace",
     "private": true,
+    "license": "MIT",
     "workspaces": [
         "language",
         "cli",

@@ -1,6 +1,6 @@
 import * as htsw from "htsw";
 import * as itemIcons from "minecraft-icon-items";
-import minecraftFontDataUri from "typeface-minecraft/files/minecraft.woff2?inline";
+import minecraftFontDataUri from "@south-paw/typeface-minecraft/files/minecraft.woff2?inline";
 import { ampToSection } from "htsw-editor-common/text/colorCodes";
 
 type ItemViewEnchant = { name: string; level: number };

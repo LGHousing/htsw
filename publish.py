@@ -41,6 +41,11 @@ OUT_DIR = HERE / "dist-publish"
 SURFACES = ("ct", "vscode", "cli")
 ARTIFACT_FIELDS = {"ct": "zip", "vscode": "vsix", "cli": "cli"}
 PUBLIC_BASE_URL = "https://legendarygames.dev/htsw"
+DISTRIBUTION_NOTICES = (
+    HERE / "LICENSE.txt",
+    HERE / "THIRD_PARTY_NOTICES.txt",
+    HERE / "Apache-2.0.txt",
+)
 
 
 def executable(name: str) -> str:
@@ -176,6 +181,8 @@ def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> 
             if file.is_file():
                 archive.write(file, prefix + file.relative_to(dist).as_posix())
         archive.write(metadata, prefix + "metadata.json")
+        for notice in DISTRIBUTION_NOTICES:
+            archive.write(notice, prefix + notice.name)
 
 
 def stage_ct(do_build: bool, notes: str | None) -> None:
@@ -254,6 +261,8 @@ def stage_cli(do_build: bool, notes: str | None) -> None:
     shutil.copy2(destination, output / "htsw-cli-latest.mjs")
     shutil.copy2(CLI_DIR / "install.sh", output / "install.sh")
     shutil.copy2(CLI_DIR / "install.ps1", output / "install.ps1")
+    for notice in DISTRIBUTION_NOTICES:
+        shutil.copy2(notice, output / notice.name)
 
     digest = sha256_of(destination)
     (output / "latest.json").write_text(
@@ -480,6 +489,7 @@ def prepare_github_assets(surfaces: Sequence[str]) -> list[Path]:
     if "cli" in surfaces:
         assets.append(OUT_DIR / "cli" / "install.sh")
         assets.append(OUT_DIR / "cli" / "install.ps1")
+        assets.extend(OUT_DIR / "cli" / notice.name for notice in DISTRIBUTION_NOTICES)
     return assets
 
 
