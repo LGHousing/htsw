@@ -8,3 +8,5 @@
   - [Actions](./htsl/actions.md)
   - [Conditions](./htsl/conditions.md)
 - [Tooling](./tooling.md)
+  - [CLI](./tooling/cli.md)
+  - [VS Code Extension](./tooling/vscode-extension.md)
