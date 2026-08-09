@@ -25,6 +25,7 @@ export type ChestExportOptions = {
     rootDir: string;
     projectItems: readonly ImportableItem[];
     newExportTargetImportJson?: string;
+    showProgressMessages?: boolean;
 };
 
 export type ChestExportCounts = {
@@ -132,10 +133,12 @@ export async function exportCapturedChest(
     for (let i = 0; i < hints.length; i++) {
         ctx.displayMessage(`&e[export] ${hints[i]}`);
     }
-    ctx.displayMessage(
-        `&aExported menu '${options.name}' (${captured.slots.length} slot${captured.slots.length === 1 ? "" : "s"}, items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)`
-    );
-    ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    if (options.showProgressMessages !== false) {
+        ctx.displayMessage(
+            `&aExported menu '${options.name}' (${captured.slots.length} slot${captured.slots.length === 1 ? "" : "s"}, items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)`
+        );
+        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    }
 
     return {
         populatedSlots: captured.slots.length,

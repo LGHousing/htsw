@@ -1,4 +1,5 @@
 import { runOnMainThread } from "../utils/mainThread";
+import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 
 /**
  * promise-polyfill schedules every `.then()` callback via `setTimeout(fn, 0)`.
@@ -37,11 +38,9 @@ function enqueueAndDrain(fn: () => void): void {
                 try {
                     next();
                 } catch (_e) {
-                    // Promise-polyfill swallows callback exceptions itself; if one
-                    // escapes here, log via console and keep draining the queue.
-                    if (typeof console !== "undefined") {
-                        console.warn("Promise drain callback threw:", _e);
-                    }
+                    recordRuntimeDebug("promiseDrainCallbackFailed", {
+                        error: String(_e),
+                    });
                 }
             }
         }

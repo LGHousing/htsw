@@ -219,11 +219,6 @@ describe("readActionListPlan conflict detection", () => {
     });
 
     it("does not record a prompt-worthy conflict when hashes disagree but canonical fields do not", async () => {
-        const append = vi.fn();
-        vi.stubGlobal("FileLib", {
-            ...(FileLib as unknown as Record<string, unknown>),
-            append,
-        });
         const desired = {
             type: "DROP_ITEM",
             itemName: "red_wool",
@@ -264,9 +259,6 @@ describe("readActionListPlan conflict detection", () => {
         expect(session.conflictEvidence).toEqual([
             expect.objectContaining({ canonicalDifferences: [] }),
         ]);
-        expect(JSON.parse(String(append.mock.calls[0][1]))).toEqual(
-            expect.objectContaining({ hashComparisonDisagreement: true })
-        );
     });
 
     it("records no untrusted verdict when a slot remains unhydrated", async () => {

@@ -63,7 +63,7 @@ function filterNpcEntries(
     importJsonPath: string,
     entries: readonly NpcExportEntry[],
     skipExisting: boolean | undefined,
-    quiet: boolean
+    showProgressMessages: boolean
 ): NpcExportEntry[] {
     if (skipExisting !== true) return entries.slice();
 
@@ -76,7 +76,7 @@ function filterNpcEntries(
             out.push(entries[i]);
         }
     }
-    if (skipped > 0 && !quiet) {
+    if (skipped > 0 && showProgressMessages) {
         ctx.displayMessage(
             `&aResume detected ${skipped} already-exported NPC${skipped === 1 ? "" : "s"}; exporting ${out.length} remaining.`
         );
@@ -92,6 +92,7 @@ async function exportAllNpcsInner(
     const readOnly = options.output.kind !== "project";
     const cacheOnly = options.output.kind === "cache";
     const quiet = options.quiet === true;
+    const showProgressMessages = !quiet && options.progress === undefined;
     const verb = readOnly ? "Reading" : "Exporting";
     const lockHousingUuid =
         options.output.kind === "project"
@@ -116,10 +117,10 @@ async function exportAllNpcsInner(
         importJsonPath,
         requested,
         readOnly ? false : options.skipExisting,
-        quiet
+        showProgressMessages
     );
     if (exportEntries.length === 0) {
-        if (!quiet) {
+        if (showProgressMessages) {
             ctx.displayMessage(`&7No NPCs to ${readOnly ? "read" : "export"}.`);
         }
         try {
@@ -130,7 +131,7 @@ async function exportAllNpcsInner(
         return { total: 0, succeeded: 0, failed: 0 };
     }
 
-    if (!quiet) {
+    if (showProgressMessages) {
         ctx.displayMessage(
             `&a${verb} ${exportEntries.length} NPC${exportEntries.length === 1 ? "" : "s"}...`
         );
@@ -163,7 +164,7 @@ async function exportAllNpcsInner(
                 );
                 label = npcLabel(liveEntry);
                 options.progress?.item(i, label);
-                if (!quiet) {
+                if (showProgressMessages) {
                     ctx.displayMessage(
                         `&7[${i + 1}/${exportEntries.length}] &f${verb} NPC '${label}'`
                     );
@@ -181,6 +182,7 @@ async function exportAllNpcsInner(
                         rootDir,
                         output: options.output,
                         quiet,
+                        showProgressMessages,
                         onReadProgress:
                             itemProgress === undefined
                                 ? undefined
@@ -234,7 +236,8 @@ async function exportAllNpcsInner(
                     rootDir,
                     importJsonPath,
                     lockHousingUuid,
-                    options.newExportTargetImportJson
+                    options.newExportTargetImportJson,
+                    showProgressMessages
                 );
             }
             if (options.output.kind !== "memory") {
@@ -266,18 +269,20 @@ async function exportAllNpcsInner(
     const plural = exportEntries.length === 1 ? "" : "s";
     const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
     if (readOnly) {
-        if (!quiet) {
+        if (showProgressMessages) {
             ctx.displayMessage(
                 `&aRead ${succeeded} of ${exportEntries.length} NPC${plural}${failedNote}`
             );
         }
         return { total: exportEntries.length, succeeded, failed };
     }
-    const itemCounts = itemCaptures.counts();
-    ctx.displayMessage(
-        `&aExported ${succeeded} of ${exportEntries.length} NPC${plural} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failedNote}`
-    );
-    ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    if (showProgressMessages) {
+        const itemCounts = itemCaptures.counts();
+        ctx.displayMessage(
+            `&aExported ${succeeded} of ${exportEntries.length} NPC${plural} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failedNote}`
+        );
+        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    }
 
     return { total: exportEntries.length, succeeded, failed };
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const uploadDiagnosticsFile = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/settings", () => ({
-    getUploadSlowParseDiagnostics: () => true,
+    getUploadDiagnostics: () => true,
 }));
 vi.mock("../src/utils/filesystem", () => ({
     ensureParentDirs: () => undefined,

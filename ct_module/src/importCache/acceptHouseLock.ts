@@ -85,7 +85,6 @@ export function acceptHouseLockAsCurrent(
         }
         if (
             writeImportableCache(ctx, housingUuid, importable, "project-lock", {
-                quiet: true,
                 itemDependencies: dependencySnapshot,
             })
         ) {

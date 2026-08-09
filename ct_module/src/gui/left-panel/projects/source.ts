@@ -11,7 +11,7 @@ import {
     type CachedParse,
 } from "../../parsing/parses";
 import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
-import { recordPhase } from "../../lib/framePerf";
+import { isFramePerfEnabled, recordPhase } from "../../lib/framePerf";
 import { getImportJsonPath, setImportJsonPath } from "../../state";
 import { disposeLineModelCachesUnder } from "../../code-view/lineModel";
 import { BoundedLruMap } from "../../lib/boundedLruMap";
@@ -268,7 +268,8 @@ export function enumerationCacheSize(): number {
 }
 
 function enumerateForSourceUncached(s: Source): Result[] {
-    const startedAt = Date.now();
+    const perfEnabled = isFramePerfEnabled();
+    const startedAt = perfEnabled ? Date.now() : 0;
     const Paths = javaType("java.nio.file.Paths");
     const Files = javaType("java.nio.file.Files");
     const out: Result[] = [];
@@ -299,7 +300,9 @@ function enumerateForSourceUncached(s: Source): Result[] {
         }
         return out;
     } finally {
-        recordPhase("source-enumeration", Date.now() - startedAt);
+        if (perfEnabled) {
+            recordPhase("source-enumeration", Date.now() - startedAt);
+        }
     }
 }
 

@@ -263,7 +263,6 @@ describe("import conflict gate", () => {
             "test-house",
             {
                 itemDependencies: { version: 1, dependencies: [] },
-                quiet: true,
             }
         );
         expect(mocks.upsertHouseLockImportablesOffThread).not.toHaveBeenCalled();

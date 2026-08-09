@@ -11,6 +11,7 @@ import {
 } from "../tasks/specifics/waitFor";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
 import { readLocalVersion } from "../autoUpdate";
+import { getUploadDiagnostics } from "../settings";
 
 export type TaskFailureDetails = {
     phase: string;
@@ -79,6 +80,8 @@ export function writeTaskFailureLog(
     };
     ensureParentDirs(path);
     FileLib.write(path, JSON.stringify(body, null, 2), true);
-    uploadDiagnosticsFile(path, { chatUploadedId: true });
+    if (getUploadDiagnostics()) {
+        uploadDiagnosticsFile(path, { chatUploadedId: true });
+    }
     return path;
 }

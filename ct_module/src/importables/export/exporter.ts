@@ -151,7 +151,6 @@ export function refreshExportedItemDependencies(
                     verifiedItemNames
                 );
                 writeImportableCache(ctx, housingUuid, cached.importable, cached.writer, {
-                    quiet: true,
                     itemDependencies,
                 });
                 if (updateHouseLock) {
@@ -180,7 +179,6 @@ export function refreshExportedItemDependencies(
                 verifiedItemNames
             );
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
-                quiet: true,
                 itemDependencies,
             });
         }
@@ -202,6 +200,7 @@ export function defineHouseExporter<
         const readOnly = options.output.kind !== "project";
         const cacheOnly = options.output.kind === "cache";
         const quiet = options.quiet === true;
+        const showProgressMessages = !quiet && options.progress === undefined;
         const verb = readOnly ? "Reading" : "Exporting";
         const lockHousingUuid =
             options.output.kind === "project"
@@ -269,11 +268,12 @@ export function defineHouseExporter<
                       spec.noun,
                       names,
                       readOnly ? false : options.skipExisting,
-                      (name) => referencesExist(importJsonPath, name)
+                      (name) => referencesExist(importJsonPath, name),
+                      showProgressMessages
                   );
 
         if (exportNames.length === 0) {
-            if (!quiet) {
+            if (showProgressMessages) {
                 ctx.displayMessage(
                     `&7No ${spec.noun}s to ${readOnly ? "read" : "export"}.`
                 );
@@ -282,7 +282,7 @@ export function defineHouseExporter<
             return { total: 0, succeeded: 0, failed: 0 };
         }
 
-        if (!quiet) {
+        if (showProgressMessages) {
             ctx.displayMessage(
                 `&a${verb} ${exportNames.length} ${spec.noun}${plural(exportNames.length)}...`
             );
@@ -314,8 +314,7 @@ export function defineHouseExporter<
                         acceptCtx,
                         options.output.housingUuid,
                         importable,
-                        "reader",
-                        true
+                        "reader"
                     );
                 } else if (options.output.kind === "memory") {
                     options.output.accept(
@@ -406,7 +405,8 @@ export function defineHouseExporter<
                         options.rootDir,
                         importJsonPath,
                         lockHousingUuid,
-                        options.newExportTargetImportJson
+                        options.newExportTargetImportJson,
+                        showProgressMessages
                     );
                 }
                 if (
@@ -436,7 +436,7 @@ export function defineHouseExporter<
         const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
         if (!quiet) spec.afterLoop?.(ctx, state);
         if (readOnly) {
-            if (!quiet) {
+            if (showProgressMessages) {
                 ctx.displayMessage(
                     `&aRead ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${failedNote}`
                 );
@@ -445,10 +445,12 @@ export function defineHouseExporter<
         }
 
         const summary = spec.exportSummary?.(state) ?? "";
-        ctx.displayMessage(
-            `&aExported ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${summary}${failedNote}`
-        );
-        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+        if (showProgressMessages) {
+            ctx.displayMessage(
+                `&aExported ${succeeded} of ${exportNames.length} ${spec.noun}${plural(exportNames.length)}${summary}${failedNote}`
+            );
+            ctx.displayMessage(`&7  -> ${importJsonPath}`);
+        }
         return { total: exportNames.length, succeeded, failed };
     };
 }

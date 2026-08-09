@@ -54,8 +54,6 @@ class Handler(BaseHTTPRequestHandler):
         parsed.setdefault("upload", {})
         if isinstance(parsed["upload"], dict):
             parsed["upload"]["id"] = upload_id
-            parsed["upload"]["remoteAddr"] = self.headers.get("X-Forwarded-For", self.client_address[0])
-            parsed["upload"]["userAgent"] = self.headers.get("User-Agent", "")
 
         DEST_DIR.mkdir(parents=True, exist_ok=True)
         target = DEST_DIR / name
@@ -66,8 +64,6 @@ class Handler(BaseHTTPRequestHandler):
             "id": upload_id,
             "file": str(target),
             "uploadedAt": now,
-            "remoteAddr": self.headers.get("X-Forwarded-For", self.client_address[0]),
-            "userAgent": self.headers.get("User-Agent", ""),
             "htswVersion": parsed.get("htswVersion"),
             "context": parsed.get("context"),
             "errorMessage": (parsed.get("error") or {}).get("message")
@@ -96,7 +92,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def log_message(self, format: str, *args: object) -> None:
-        print(f"{self.address_string()} - {format % args}", flush=True)
+        print(format % args, flush=True)
 
 
 def main() -> None:

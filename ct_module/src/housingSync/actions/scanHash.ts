@@ -22,7 +22,7 @@ type CanonicalChildList = {
     types: readonly string[];
 };
 
-export type CanonicalScanSlot =
+type CanonicalScanSlot =
     { unknown: true } | { type: Action["type"]; childLists?: CanonicalChildList[] };
 
 function canonicalKnownSlot(
@@ -47,7 +47,7 @@ function hashCanonicalSlots(slots: readonly CanonicalScanSlot[]): string {
     return hashHex(JSON.stringify(slots));
 }
 
-export function actionListScanSlotsFromSlots(
+function actionListScanSlotsFromSlots(
     slots: readonly ObservedActionSlot[]
 ): CanonicalScanSlot[] {
     return slots.map((slot) => {
@@ -59,7 +59,7 @@ export function actionListScanSlotsFromSlots(
     });
 }
 
-export function actionListScanSlotsFromActions(
+function actionListScanSlotsFromActions(
     actions: readonly Action[]
 ): CanonicalScanSlot[] {
     return actions.map((action) =>

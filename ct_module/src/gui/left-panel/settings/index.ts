@@ -23,10 +23,12 @@ import {
     getShowChatPanel,
     getShowInventoryButtons,
     getSmoothScrolling,
+    getUploadDiagnostics,
     getWatchMode,
     setShowChatPanel,
     setShowInventoryButtons,
     setSmoothScrolling,
+    setUploadDiagnostics,
 } from "../../../settings";
 import { commandUpdate } from "../../../autoUpdate";
 import { setWatchModeEnabled } from "../../watchMode";
@@ -130,6 +132,12 @@ export function SettingsView(): Element {
                     commandUpdate([
                         getAutoUpdatePreference() === "enabled" ? "disable" : "enable",
                     ]),
+            }),
+            toggleRow({
+                icon: () => Icons.bug,
+                label: "Share diagnostics",
+                isOn: () => getUploadDiagnostics(),
+                onToggle: () => setUploadDiagnostics(!getUploadDiagnostics()),
             }),
         ],
     });

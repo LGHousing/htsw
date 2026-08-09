@@ -186,9 +186,6 @@ async function confirmImportConflicts(
     ctx: TaskContext,
     conflicts: readonly ImportConflict[]
 ): Promise<ImportConflictDecision> {
-    ChatLib.chat(
-        "&7[htsw] Conflict evidence (live/lock/source hashes and type sequences) logged to import-conflicts.log"
-    );
     const review = { requested: false };
     const proceed = await openAnswerableConflictPrompt(ctx, {
         chatMessage: conflictAwaitingConfirmationMessage(conflicts),

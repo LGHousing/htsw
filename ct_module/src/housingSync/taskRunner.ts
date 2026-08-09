@@ -10,7 +10,10 @@ import {
     setActiveTaskContext,
     type ActiveTaskKind,
 } from "../tasks/activeTask";
-import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
+import {
+    recordRuntimeDebug,
+    resetRuntimeDebugRecords,
+} from "../runtimeDebug/runtimeDebugBuffer";
 
 // Cancellation resolves undefined; other errors still reject.
 export async function runHousingSyncTask<T>(
@@ -26,9 +29,7 @@ export async function runHousingSyncTask<T>(
             // count is a canary that one slipped through the cleanup paths.
             const purged = resetEventContainers();
             if (purged > 0) {
-                ChatLib.chat(
-                    `&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`
-                );
+                recordRuntimeDebug("purgedWaiters", { count: purged });
             }
             setPacketCaptureForTask(true);
             const result = await task(ctx);

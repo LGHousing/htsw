@@ -65,7 +65,7 @@ import {
     mouseIsOverPopover,
 } from "./lib/popovers";
 import { maybeAutoStartTour } from "./popovers/tour";
-import { debugLog, flushGuiDebug, isGuiDebugArmed } from "./lib/debugLog";
+import { maybeOpenDiagnosticsConsent } from "./popovers/diagnosticsConsent";
 import {
     closeHoverCard,
     drawHoverCard,
@@ -73,7 +73,7 @@ import {
     mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
-import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
+import { areTaskSoundsMuted, setHousingUuid } from "./state";
 import { detectHousingUuid } from "../importCache/housingId";
 import {
     getHousingPresence,
@@ -118,7 +118,6 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
 import { processImportableCacheWarm } from "./cache-status/cacheWarm";
-import { logGuiCacheSizes } from "./cacheTelemetry";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -182,9 +181,6 @@ function anyHtswPanelVisible(): boolean {
 
 // Probe once per server while presence is unknown. Server transport resets the
 // verdict and cooldown so the next container open checks the new server.
-let lastDebugSampleAt = 0;
-let lastCacheTelemetryAt = 0;
-const CACHE_TELEMETRY_INTERVAL_MS = 5 * 60_000;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -844,27 +840,11 @@ export function initHtswGui(): void {
             // with the session's own cache writes.
             if (!isTaskRunning()) processImportableCacheWarm();
         }
-        // First-load walkthrough; once per session, never mid-import, and only
-        // while the GUI can actually render a popover.
+        // First-open consent comes before the walkthrough so two onboarding
+        // popovers never compete for the same screen.
         if (frameVisible() && !isTaskRunning()) {
-            maybeAutoStartTour();
+            if (!maybeOpenDiagnosticsConsent()) maybeAutoStartTour();
         }
-        if (isGuiDebugArmed()) {
-            const now = Date.now();
-            if (now - lastDebugSampleAt >= 250) {
-                lastDebugSampleAt = now;
-                debugLog(
-                    `tick frameVisible=${frameVisible()} popovers=${getOpenPopoverContents().length} ` +
-                    `uuid=${getHousingUuid()}`
-                );
-            }
-        }
-        const now = Date.now();
-        if (now - lastCacheTelemetryAt >= CACHE_TELEMETRY_INTERVAL_MS) {
-            lastCacheTelemetryAt = now;
-            logGuiCacheSizes();
-        }
-        flushGuiDebug();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped

@@ -7,6 +7,7 @@ import { runtimeString, type RuntimeString } from "./utils/java";
 const SETTINGS_PATH = "./config/ChatTriggers/modules/HTSW/gui-settings.json";
 
 export type AutoUpdatePreference = "unset" | "enabled" | "disabled";
+export type UploadDiagnosticsPreference = "unset" | "enabled" | "disabled";
 
 type Settings = {
     showInventoryButtons: boolean;
@@ -15,8 +16,7 @@ type Settings = {
     playImportCompletionSound: boolean;
     smoothScrolling: boolean;
     watchMode: boolean;
-    uploadSlowParseDiagnostics: boolean;
-    uploadSessionHeartbeat: boolean;
+    uploadDiagnostics: UploadDiagnosticsPreference;
     autoUpdate: AutoUpdatePreference;
 };
 
@@ -27,14 +27,20 @@ let state: Settings = {
     playImportCompletionSound: true,
     smoothScrolling: true,
     watchMode: false,
-    uploadSlowParseDiagnostics: true,
-    uploadSessionHeartbeat: true,
+    uploadDiagnostics: "unset",
     autoUpdate: "unset",
 };
 let loaded = false;
 
 function parseAutoUpdatePreference(value: unknown): AutoUpdatePreference {
     return value === "enabled" || value === "disabled" ? value : "unset";
+}
+
+function parseUploadDiagnosticsPreference(
+    value: unknown
+): UploadDiagnosticsPreference {
+    if (value === "enabled" || value === "disabled") return value;
+    return value === true ? "enabled" : "unset";
 }
 
 function load(): void {
@@ -64,9 +70,9 @@ function load(): void {
                     : parsed.playImportCompletionSound !== false,
             smoothScrolling: parsed.smoothScrolling !== false,
             watchMode: parsed.watchMode === true,
-            uploadSlowParseDiagnostics:
-                parsed.uploadSlowParseDiagnostics !== false,
-            uploadSessionHeartbeat: parsed.uploadSessionHeartbeat !== false,
+            uploadDiagnostics: parseUploadDiagnosticsPreference(
+                parsed.uploadDiagnostics
+            ),
             autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
         };
     } catch (_e) {
@@ -148,14 +154,20 @@ export function setWatchMode(value: boolean): void {
     persist();
 }
 
-export function getUploadSlowParseDiagnostics(): boolean {
+export function getUploadDiagnostics(): boolean {
     load();
-    return state.uploadSlowParseDiagnostics;
+    return state.uploadDiagnostics === "enabled";
 }
 
-export function getUploadSessionHeartbeat(): boolean {
+export function getUploadDiagnosticsPreference(): UploadDiagnosticsPreference {
     load();
-    return state.uploadSessionHeartbeat;
+    return state.uploadDiagnostics;
+}
+
+export function setUploadDiagnostics(value: boolean): void {
+    load();
+    state.uploadDiagnostics = value ? "enabled" : "disabled";
+    persist();
 }
 
 export function getAutoUpdatePreference(): AutoUpdatePreference {

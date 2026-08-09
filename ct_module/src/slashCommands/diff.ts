@@ -200,7 +200,6 @@ function adoptDiffLists(
                 update.importable,
                 "reader",
                 {
-                    quiet: true,
                     itemDependencies: update.itemDependencies,
                 }
             )

@@ -1189,7 +1189,6 @@ async function postProjectTree(webview: vscode.Webview): Promise<void> {
         roots = await discoverProjectTree();
     } catch (err) {
         error = err instanceof Error ? err.message : String(err);
-        console.error("[htsw] import.json tree discovery failed:", err);
     }
     // Always post a tree (even empty) so the webview clears its loading state
     // instead of hanging on "Loading…" when discovery fails.

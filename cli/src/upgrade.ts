@@ -14,8 +14,11 @@ interface UpdateCheckCache {
 }
 
 export async function checkForUpdate(): Promise<void> {
+    if (!process.stderr.isTTY) return;
+
     const cached = readUpdateCheckCache();
     let latestVersion = cached?.latestVersion;
+    let checkedFresh = false;
 
     if (cached === undefined || Date.now() - cached.checkedAt >= UPDATE_CHECK_INTERVAL_MS) {
         try {
@@ -25,12 +28,17 @@ export async function checkForUpdate(): Promise<void> {
             );
             latestVersion = String(manifest.version ?? "");
             writeUpdateCheckCache({ checkedAt: Date.now(), latestVersion });
+            checkedFresh = true;
         } catch {
             return;
         }
     }
 
-    if (latestVersion && isNewerVersion(latestVersion, packageJson.version)) {
+    if (
+        checkedFresh &&
+        latestVersion &&
+        isNewerVersion(latestVersion, packageJson.version)
+    ) {
         console.error(
             ansi(
                 "yellow",

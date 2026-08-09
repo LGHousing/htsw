@@ -38,7 +38,7 @@ import {
 } from "./includeTree";
 import { canonicalPath, getParseCacheRevision } from "../../parsing/parses";
 import { compactPath } from "../../lib/pathDisplay";
-import { recordPhase } from "../../lib/framePerf";
+import { isFramePerfEnabled, recordPhase } from "../../lib/framePerf";
 import {
     searchQuery,
     setSearchQuery,
@@ -924,11 +924,12 @@ export function revealInProjectsTree(target: ProjectsTreeRevealTarget): void {
 }
 
 export function renderRows(): Element[] {
-    const t0 = Date.now();
+    const perfEnabled = isFramePerfEnabled();
+    const t0 = perfEnabled ? Date.now() : 0;
     try {
         return renderRowsInner();
     } finally {
-        recordPhase("tree", Date.now() - t0);
+        if (perfEnabled) recordPhase("tree", Date.now() - t0);
     }
 }
 

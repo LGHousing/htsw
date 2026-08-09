@@ -88,14 +88,19 @@ function actionPath(snbtPath: string, side: "left" | "right"): string {
     return snbtPath.replace(/\.snbt$/i, `_${side}.htsl`);
 }
 
-function writeActions(ctx: TaskContext, path: string, actions: readonly Action[]): void {
+function writeActions(
+    ctx: TaskContext,
+    path: string,
+    actions: readonly Action[],
+    showProgressMessages: boolean
+): void {
     const printed = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diagnostic of printed.diagnostics) {
         ctx.displayMessage(`&7[export] &e${diagnostic.message}`);
     }
     ensureParentDirs(path);
     FileLib.write(path, printed.source, true);
-    ctx.displayMessage(`&7  -> ${path}`);
+    if (showProgressMessages) ctx.displayMessage(`&7  -> ${path}`);
 }
 
 export async function exportCapturedItems(
@@ -104,7 +109,8 @@ export async function exportCapturedItems(
     rootDir: string,
     importJsonPath: string,
     housingUuid: string,
-    newExportTargetImportJson?: string
+    newExportTargetImportJson?: string,
+    showProgressMessages = true
 ): Promise<number> {
     if (registry.newEntries().length === 0) return 0;
 
@@ -125,10 +131,20 @@ export async function exportCapturedItems(
         FileLib.write(target.snbtPath, portableItemSnbt(item.snbt), true);
 
         if (actions.left !== undefined) {
-            writeActions(ctx, actionPath(target.snbtPath, "left"), actions.left);
+            writeActions(
+                ctx,
+                actionPath(target.snbtPath, "left"),
+                actions.left,
+                showProgressMessages
+            );
         }
         if (actions.right !== undefined) {
-            writeActions(ctx, actionPath(target.snbtPath, "right"), actions.right);
+            writeActions(
+                ctx,
+                actionPath(target.snbtPath, "right"),
+                actions.right,
+                showProgressMessages
+            );
         }
 
         upsertImportableEntry(target.importJsonPath, "items", {
@@ -141,7 +157,7 @@ export async function exportCapturedItems(
                 ? { rightClickActions: actionReference(target.snbtReference, "right") }
                 : {}),
         });
-        ctx.displayMessage(`&7  -> ${target.snbtPath}`);
+        if (showProgressMessages) ctx.displayMessage(`&7  -> ${target.snbtPath}`);
     }
 
     const parsed = readParsedImportablesForExport(importJsonPath);
@@ -177,7 +193,6 @@ export async function exportCapturedItems(
             if (!interactionCacheReady) continue;
             const itemDependencies = dependencies.snapshotOf(importable);
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
-                quiet: true,
                 itemDependencies,
             });
             upsertHouseLockImportable(

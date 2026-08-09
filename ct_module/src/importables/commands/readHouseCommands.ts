@@ -18,6 +18,7 @@ import {
     defineHouseExporter,
     type ExportReadState,
 } from "../export/exporter";
+import type { ReadOptions } from "../export/reader";
 import {
     openCommandSettings,
     openExistingCommandActionsEditor,
@@ -102,10 +103,7 @@ async function writeCommandResult(
     ctx: TaskContext,
     name: string,
     importable: ImportableCommand,
-    options: {
-        importJsonPath: string;
-        newExportTargetImportJson?: string;
-    }
+    options: ReadOptions
 ): Promise<void> {
     const target = htslTargetForCommandExport(
         options.importJsonPath,
@@ -131,10 +129,12 @@ async function writeCommandResult(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    ctx.displayMessage(
-        `&aExported command '/${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
-    );
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    if (options.progress === undefined && options.quiet !== true) {
+        ctx.displayMessage(
+            `&aExported command '/${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
+        );
+        ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    }
 }
 
 export const readCommands = defineHouseExporter({

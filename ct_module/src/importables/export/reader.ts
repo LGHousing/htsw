@@ -119,6 +119,7 @@ export async function runReadLoop<Pending, Result>(
     params: ReadLoopParams<Pending, Result>
 ): Promise<{ succeeded: number; failed: number }> {
     const { names, verb, progress, reader, accept, quiet, onItemFailure } = params;
+    const showProgressMessages = quiet !== true && progress === undefined;
     const shown = (name: string): string =>
         params.displayName !== undefined ? params.displayName(name) : name;
 
@@ -136,7 +137,7 @@ export async function runReadLoop<Pending, Result>(
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.item(i, name);
-                if (quiet !== true) {
+                if (showProgressMessages) {
                     ctx.displayMessage(
                         `&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`
                     );
@@ -173,7 +174,7 @@ export async function runReadLoop<Pending, Result>(
                 ctx.checkCancelled();
                 const name = names[i];
                 progress?.itemReactivated?.(i);
-                if (quiet !== true) {
+                if (showProgressMessages) {
                     ctx.displayMessage(
                         `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
                     );
@@ -212,7 +213,7 @@ export async function runReadLoop<Pending, Result>(
             const name = names[i];
 
             progress?.item(i, name);
-            if (quiet !== true) {
+            if (showProgressMessages) {
                 ctx.displayMessage(
                     `&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`
                 );

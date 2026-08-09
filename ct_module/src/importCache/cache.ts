@@ -126,7 +126,6 @@ export function cacheEntryHashesAreCurrent(entry: ImportableCacheEntry): boolean
 }
 
 export type ImportableCacheWriteOptions = {
-    quiet?: boolean;
     itemDependencies?: ItemDependencySnapshot;
 };
 
@@ -214,27 +213,21 @@ export function writeImportableCache(
     housingUuid: string,
     importable: Importable,
     writer: CacheWriter,
-    quietOrOptions?: boolean | ImportableCacheWriteOptions,
-    itemDependencies?: ItemDependencySnapshot
+    options: ImportableCacheWriteOptions = {}
 ): boolean {
-    const options: ImportableCacheWriteOptions =
-        typeof quietOrOptions === "boolean"
-            ? { quiet: quietOrOptions, itemDependencies }
-            : (quietOrOptions ?? {});
     const prepared = prepareImportableCacheWrite(
         housingUuid,
         importable,
         writer,
         options.itemDependencies
     );
-    return commitImportableCacheWrite(ctx, housingUuid, importable, options, prepared);
+    return commitImportableCacheWrite(ctx, housingUuid, importable, prepared);
 }
 
 function commitImportableCacheWrite(
     ctx: TaskContext,
     housingUuid: string,
     importable: Importable,
-    options: ImportableCacheWriteOptions,
     prepared: PreparedImportableCacheWrite
 ): boolean {
     const { path, entry, serialized } = prepared;
@@ -268,7 +261,6 @@ function commitImportableCacheWrite(
             icon: importable.type === "FUNCTION" ? importable.icon : undefined,
             color: houseDisplayColor(importable),
         });
-        if (options.quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
         return true;
     } catch (error) {
         ctx.displayMessage(
@@ -317,7 +309,6 @@ function writeImportableCacheOffThread(
                                     ctx,
                                     housingUuid,
                                     importable,
-                                    options,
                                     prepared
                                 )
                             );

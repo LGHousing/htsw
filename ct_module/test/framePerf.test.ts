@@ -1,14 +1,18 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-    clearFramePerf,
     getFramePerfStats,
     recordPanelFrame,
     recordPhase,
+    setFramePerfEnabled,
 } from "../src/gui/lib/framePerf";
 
 beforeEach(() => {
-    clearFramePerf();
+    setFramePerfEnabled(true);
+});
+
+afterEach(() => {
+    setFramePerfEnabled(false);
 });
 
 describe("frame performance phases", () => {

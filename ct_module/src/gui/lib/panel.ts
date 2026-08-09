@@ -21,7 +21,11 @@ import {
 } from "./hoverCards";
 import { mcToOverlay } from "./overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
-import { recordPanelFrame, recordPhase } from "./framePerf";
+import {
+    isFramePerfEnabled,
+    recordPanelFrame,
+    recordPhase,
+} from "./framePerf";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
@@ -159,25 +163,30 @@ export class Panel {
             fillRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
         }
         const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
-        const renderStart = Date.now();
+        const perfEnabled = isFramePerfEnabled();
+        const renderStart = perfEnabled ? Date.now() : 0;
         let rebuild = this.needsRebuild(b);
         try {
             if (!rebuild && !this.advanceCachedScrolls()) rebuild = true;
             if (rebuild) {
-                const layoutStart = Date.now();
+                const layoutStart = perfEnabled ? Date.now() : 0;
                 this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
-                recordPhase("layout-total", Date.now() - layoutStart);
+                if (perfEnabled) {
+                    recordPhase("layout-total", Date.now() - layoutStart);
+                }
                 this.builtRevision = getGuiRevision();
                 this.builtBounds = b;
                 this.captureScrollOffsets();
             }
-            const drawStart = Date.now();
+            const drawStart = perfEnabled && rebuild ? Date.now() : 0;
             drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
-            if (rebuild) recordPhase("draw-rebuild", Date.now() - drawStart);
+            if (perfEnabled && rebuild) {
+                recordPhase("draw-rebuild", Date.now() - drawStart);
+            }
         } catch (err) {
             debugLogError("panel render", err);
         }
-        recordPanelFrame(Date.now() - renderStart, rebuild);
+        if (perfEnabled) recordPanelFrame(Date.now() - renderStart, rebuild);
     }
 
     public clickAt(rawX: number, rawY: number, btn: number): boolean {

@@ -17,6 +17,7 @@ type FrameSample = {
 
 const samples: FrameSample[] = [];
 let lastFrameAt = 0;
+let enabled = false;
 
 // Named slices of rebuild time (the tree's renderRows, the code view's
 // children build, ...). Children closures only run while a rebuild lays the
@@ -26,11 +27,13 @@ const phaseMaxes: { [name: string]: number } = {};
 let rebuildsSinceClear = 0;
 
 export function recordPhase(name: string, ms: number): void {
+    if (!enabled) return;
     phaseTotals[name] = (phaseTotals[name] ?? 0) + ms;
     phaseMaxes[name] = Math.max(phaseMaxes[name] ?? 0, ms);
 }
 
 export function recordPanelFrame(renderMs: number, rebuilt: boolean): void {
+    if (!enabled) return;
     if (rebuilt) rebuildsSinceClear++;
     const now = Date.now();
     // A gap while the overlay wasn't painting (GUI closed, other screen) is
@@ -42,12 +45,21 @@ export function recordPanelFrame(renderMs: number, rebuilt: boolean): void {
     if (samples.length > WINDOW) samples.shift();
 }
 
-export function clearFramePerf(): void {
+function clearFramePerf(): void {
     samples.length = 0;
     lastFrameAt = 0;
     rebuildsSinceClear = 0;
     for (const k in phaseTotals) delete phaseTotals[k];
     for (const k in phaseMaxes) delete phaseMaxes[k];
+}
+
+export function isFramePerfEnabled(): boolean {
+    return enabled;
+}
+
+export function setFramePerfEnabled(value: boolean): void {
+    enabled = value;
+    clearFramePerf();
 }
 
 export type FramePerfStats = {

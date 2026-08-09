@@ -297,11 +297,6 @@ function commitParseEntry(
             paths: [canon],
         };
         pendingFullParseReasons.delete(canon);
-        if (durationMs >= 1000) {
-            ChatLib.chat(
-                `&7[htsw] Full project parse took ${durationMs}ms: ${pendingReason.reason}: ${changedPathListSummary(pendingReason.paths)}`
-            );
-        }
         if (durationMs >= 5000) {
             uploadSlowParseDiagnostics({
                 canon,
@@ -342,20 +337,12 @@ function snapshotEntryIfFresh(
     );
 }
 
-function changedPathListSummary(paths: readonly string[]): string {
-    const shown = paths.slice(0, 3).join(", ");
-    return `${paths.length} changed — ${shown}${paths.length > 3 ? ", …" : ""}`;
-}
-
-function logFullParseReason(
+function recordFullParseReason(
     canon: string,
     reason: string,
     paths: readonly string[]
 ): void {
     pendingFullParseReasons.set(canon, { reason, paths: paths.slice() });
-    if (typeof console !== "undefined") {
-        console.log(`[htsw] Full project parse: ${reason}:\n${paths.join("\n")}`);
-    }
 }
 
 function parseImportJsonFromDisk(
@@ -460,7 +447,7 @@ export function parseImportJsonCurrentBlocking(rawPath: string): CachedParse {
             }
         }
         if (changedPaths.length !== 0) {
-            logFullParseReason(canon, "source files changed", changedPaths);
+            recordFullParseReason(canon, "source files changed", changedPaths);
             return parseImportJsonFromDisk(canon, rawPath, getMtimeMs(canon), Date.now());
         }
         resetFreshness(existing.freshness);
@@ -506,7 +493,7 @@ export async function parseImportJsonCurrent(rawPath: string): Promise<CachedPar
         }
     }
     if (changedPaths.length !== 0) {
-        logFullParseReason(canon, "source files changed", changedPaths);
+        recordFullParseReason(canon, "source files changed", changedPaths);
         return await queueOffThreadParse(canon, rawPath, true);
     }
     existing.mtime = mtime;
@@ -723,7 +710,7 @@ function pumpPendingParses(): void {
                     finishPendingParse(parseCanon, nextRaw, previousEntry, snapshotEntry);
                     return;
                 }
-                logFullParseReason(
+                recordFullParseReason(
                     parseCanon,
                     "saved parse is stale",
                     snapshotChanges.map((change) => change.path)
@@ -746,7 +733,7 @@ function pumpPendingParses(): void {
                 }
             }
             if (changedPaths.length !== 0) {
-                logFullParseReason(parseCanon, "source files changed", changedPaths);
+                recordFullParseReason(parseCanon, "source files changed", changedPaths);
             }
         }
         getMtimeMs(parseCanon);

@@ -39,6 +39,7 @@ export type ExportNpcWithSharedStateOptions = {
     eventsForList?: (label: string) => SyncEventHandler;
     output: ReadOutput;
     quiet?: boolean;
+    showProgressMessages?: boolean;
 };
 
 export type SharedNpcExportState = {
@@ -87,7 +88,8 @@ async function readOpenNpcActionList(
 function writeActionFile(
     ctx: TaskContext,
     target: HtslExportTarget,
-    actions: readonly Action[]
+    actions: readonly Action[],
+    showProgressMessages: boolean
 ): void {
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
@@ -95,7 +97,7 @@ function writeActionFile(
     }
     ensureParentDirs(target.htslPath);
     FileLib.write(target.htslPath, source, true);
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    if (showProgressMessages) ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
 export async function exportNpcWithSharedState(
@@ -153,10 +155,12 @@ export async function exportNpcWithSharedState(
         leftClickRedirect,
     };
     const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
+    const showProgressMessages =
+        options.showProgressMessages !== false && options.quiet !== true;
 
     if (options.output.kind === "cache") {
-        writeImportableCache(ctx, options.output.housingUuid, importable, "reader", true);
-        if (options.quiet !== true) {
+        writeImportableCache(ctx, options.output.housingUuid, importable, "reader");
+        if (showProgressMessages) {
             ctx.displayMessage(
                 `&aRead NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
             );
@@ -176,11 +180,21 @@ export async function exportNpcWithSharedState(
 
     if (leftActions !== undefined) {
         ctx.checkCancelled();
-        writeActionFile(ctx, options.leftClickTarget, leftActions);
+        writeActionFile(
+            ctx,
+            options.leftClickTarget,
+            leftActions,
+            showProgressMessages
+        );
     }
     if (rightActions !== undefined) {
         ctx.checkCancelled();
-        writeActionFile(ctx, options.rightClickTarget, rightActions);
+        writeActionFile(
+            ctx,
+            options.rightClickTarget,
+            rightActions,
+            showProgressMessages
+        );
     }
 
     upsertImportableEntry(options.declaringJsonPath, "npcs", {
@@ -197,7 +211,9 @@ export async function exportNpcWithSharedState(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    ctx.displayMessage(
-        `&aExported NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
-    );
+    if (showProgressMessages) {
+        ctx.displayMessage(
+            `&aExported NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
+        );
+    }
 }

@@ -61,7 +61,8 @@ async function readRegionActionList(
 function writeActionFile(
     ctx: TaskContext,
     target: HtslExportTarget,
-    actions: readonly Action[]
+    actions: readonly Action[],
+    showProgressMessages: boolean
 ): void {
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
@@ -69,7 +70,7 @@ function writeActionFile(
     }
     ensureParentDirs(target.htslPath);
     FileLib.write(target.htslPath, source, true);
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    if (showProgressMessages) ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
 async function readRegion(
@@ -115,15 +116,26 @@ async function writeRegionResult(
     importable: ImportableRegion,
     declaringJsonPath: string,
     onEnterTarget: HtslExportTarget,
-    onExitTarget: HtslExportTarget
+    onExitTarget: HtslExportTarget,
+    showProgressMessages: boolean
 ): Promise<void> {
     if (importable.onEnterActions !== undefined) {
         ctx.checkCancelled();
-        writeActionFile(ctx, onEnterTarget, importable.onEnterActions);
+        writeActionFile(
+            ctx,
+            onEnterTarget,
+            importable.onEnterActions,
+            showProgressMessages
+        );
     }
     if (importable.onExitActions !== undefined) {
         ctx.checkCancelled();
-        writeActionFile(ctx, onExitTarget, importable.onExitActions);
+        writeActionFile(
+            ctx,
+            onExitTarget,
+            importable.onExitActions,
+            showProgressMessages
+        );
     }
 
     upsertImportableEntry(declaringJsonPath, "regions", {
@@ -139,12 +151,14 @@ async function writeRegionResult(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    const actionCount =
-        (importable.onEnterActions?.length ?? 0) +
-        (importable.onExitActions?.length ?? 0);
-    ctx.displayMessage(
-        `&aExported region '${importable.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
-    );
+    if (showProgressMessages) {
+        const actionCount =
+            (importable.onEnterActions?.length ?? 0) +
+            (importable.onExitActions?.length ?? 0);
+        ctx.displayMessage(
+            `&aExported region '${importable.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
+        );
+    }
 }
 
 // Regions carry Entry/Exit action lists (and the items those actions reference),
@@ -187,7 +201,8 @@ export const readRegions = defineHouseExporter({
             importable,
             target.importJsonPath,
             target.onEnter,
-            target.onExit
+            target.onExit,
+            options.progress === undefined && options.quiet !== true
         );
     },
 });

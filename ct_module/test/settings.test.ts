@@ -1,30 +1,53 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-describe("session heartbeat setting", () => {
+describe("diagnostic upload setting", () => {
     beforeEach(() => {
         vi.resetModules();
         vi.unstubAllGlobals();
     });
 
-    test("defaults to on when the setting has not been persisted", async () => {
+    test("defaults to off when the setting has not been persisted", async () => {
         vi.stubGlobal("FileLib", {
             exists: () => false,
             read: () => null,
             write: () => undefined,
         });
-        const { getUploadSessionHeartbeat } = await import("../src/settings");
+        const { getUploadDiagnostics, getUploadDiagnosticsPreference } =
+            await import("../src/settings");
 
-        expect(getUploadSessionHeartbeat()).toBe(true);
+        expect(getUploadDiagnostics()).toBe(false);
+        expect(getUploadDiagnosticsPreference()).toBe("unset");
     });
 
-    test("honors an explicit off value", async () => {
+    test("honors an explicit on value", async () => {
         vi.stubGlobal("FileLib", {
             exists: () => true,
-            read: () => JSON.stringify({ uploadSessionHeartbeat: false }),
+            read: () => JSON.stringify({ uploadDiagnostics: "enabled" }),
             write: () => undefined,
         });
-        const { getUploadSessionHeartbeat } = await import("../src/settings");
+        const { getUploadDiagnostics } = await import("../src/settings");
 
-        expect(getUploadSessionHeartbeat()).toBe(false);
+        expect(getUploadDiagnostics()).toBe(true);
+    });
+
+    test("persists a declined prompt as disabled", async () => {
+        const written: string[] = [];
+        const write = vi.fn((_path: string, contents: string) => {
+            written.push(contents);
+        });
+        vi.stubGlobal("FileLib", {
+            exists: () => false,
+            read: () => null,
+            write,
+        });
+        const { getUploadDiagnosticsPreference, setUploadDiagnostics } =
+            await import("../src/settings");
+
+        setUploadDiagnostics(false);
+
+        expect(getUploadDiagnosticsPreference()).toBe("disabled");
+        expect(JSON.parse(written[0])).toMatchObject({
+            uploadDiagnostics: "disabled",
+        });
     });
 });

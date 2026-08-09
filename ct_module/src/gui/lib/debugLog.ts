@@ -19,13 +19,6 @@ function stamp(): string {
     );
 }
 
-// The interactive arm command was removed; the per-frame sampling gate that
-// reads this is dead and waits on a render.ts cleanup. Exception logging below
-// is the live channel.
-export function isGuiDebugArmed(): boolean {
-    return false;
-}
-
 export function debugLog(line: string): void {
     buffer.push(`[${stamp()}] ${line}`);
     if (buffer.length > 100) flushGuiDebug();

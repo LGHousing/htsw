@@ -18,6 +18,7 @@ import {
     defineHouseExporter,
     type ExportReadState,
 } from "../export/exporter";
+import type { ReadOptions } from "../export/reader";
 import {
     openFunctionEditor,
     readFunctionSettings,
@@ -107,10 +108,7 @@ async function writeFunctionResult(
     ctx: TaskContext,
     name: string,
     importable: ImportableFunction,
-    options: {
-        importJsonPath: string;
-        newExportTargetImportJson?: string;
-    }
+    options: ReadOptions
 ): Promise<void> {
     const target = htslTargetForFunctionExport(
         options.importJsonPath,
@@ -139,10 +137,12 @@ async function writeFunctionResult(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    ctx.displayMessage(
-        `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
-    );
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    if (options.progress === undefined && options.quiet !== true) {
+        ctx.displayMessage(
+            `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
+        );
+        ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    }
 }
 
 export const readFunctions = defineHouseExporter({

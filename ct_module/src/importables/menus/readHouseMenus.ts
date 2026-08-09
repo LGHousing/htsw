@@ -85,7 +85,8 @@ async function writeMenuResult(
     baseImportJsonPath: string,
     importJsonPath: string,
     rootDir: string,
-    shared: ExportMenuSharedState
+    shared: ExportMenuSharedState,
+    showProgressMessages: boolean
 ): Promise<void> {
     const { importable, live } = result;
     const { slotItemCaptures, writtenItems } = shared;
@@ -138,11 +139,13 @@ async function writeMenuResult(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    const withActions = jsonSlots.filter((s) => s.actions !== undefined).length;
-    ctx.displayMessage(
-        `&aExported menu '${importable.name}' (${jsonSlots.length} slot${jsonSlots.length === 1 ? "" : "s"}, ${withActions} with actions)`
-    );
-    ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    if (showProgressMessages) {
+        const withActions = jsonSlots.filter((s) => s.actions !== undefined).length;
+        ctx.displayMessage(
+            `&aExported menu '${importable.name}' (${jsonSlots.length} slot${jsonSlots.length === 1 ? "" : "s"}, ${withActions} with actions)`
+        );
+        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    }
 }
 
 export const readMenus = defineHouseExporter<string, "MENU", never, MenuReadResult>({
@@ -188,7 +191,8 @@ export const readMenus = defineHouseExporter<string, "MENU", never, MenuReadResu
             {
                 slotItemCaptures: state.menuSlotItemCaptures,
                 writtenItems: state.writtenItems,
-            }
+            },
+            options.progress === undefined && options.quiet !== true
         );
     },
 });

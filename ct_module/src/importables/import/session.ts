@@ -566,7 +566,6 @@ async function runImportSessionInner(
                 selection.housingUuid,
                 new Map(),
                 verifiedDependencyContext,
-                true,
                 (plan) => {
                     retainedKeys.push(
                         importableKey(
@@ -599,8 +598,7 @@ async function runImportSessionInner(
         observedPlans,
         selection.housingUuid,
         pendingHouseLockEntries,
-        verifiedDependencyContext,
-        true
+        verifiedDependencyContext
     );
     await flushHouseLockEntries(
         selection.sourcePath,
@@ -869,9 +867,6 @@ function writeImportConflictDiff(
         ctx.displayMessage(
             `&d[htsw] Housing conflict detected — diff saved to &f${path}`
         );
-        ctx.displayMessage(
-            "&7[htsw] Your coding agent can read that file to review the live Housing changes."
-        );
         return path;
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -1026,7 +1021,6 @@ async function writeObservedPlanCaches(
     housingUuid: string,
     pendingHouseLockEntries: PendingHouseLockEntries,
     verifiedContext: VerifiedDependencyContext,
-    quiet: boolean = false,
     onSaved?: (plan: ImportablePlan) => void
 ): Promise<number> {
     let savedCount = 0;
@@ -1034,14 +1028,13 @@ async function writeObservedPlanCaches(
         const observed = plan.reconstructObserved();
         if (observed === null) continue;
         const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
-        const options = quiet ? { itemDependencies, quiet: true } : { itemDependencies };
         if (
             !(await tryWriteImportableCache(
                 ctx,
                 observed,
                 "importer",
                 housingUuid,
-                options
+                { itemDependencies }
             ))
         ) {
             continue;

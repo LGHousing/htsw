@@ -54,8 +54,11 @@ export type ConfirmOptions = {
     cancelLabel?: string;
     /** Danger-tints the confirm button for destructive actions. */
     danger?: boolean;
+    /** Keeps the modal open until one of its own buttons is clicked. */
+    sticky?: boolean;
     onConfirm: () => void;
     onExtra?: () => void;
+    onCancel?: () => void;
     onClose?: () => void;
 };
 
@@ -145,7 +148,7 @@ function content(opts: ConfirmOptions, widths: number[]): Element {
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },
-                        onClick: () => closeSelf(),
+                        onClick: opts.onCancel ?? (() => closeSelf()),
                     }),
                 ],
             }),
@@ -164,6 +167,7 @@ export function openConfirmPopover(opts: ConfirmOptions): void {
         action();
     };
     const extraAction = opts.onExtra;
+    const cancelAction = opts.onCancel;
     const labels = [
         opts.confirmLabel ?? "Confirm",
         ...(opts.extraLabel !== undefined && opts.onExtra !== undefined
@@ -190,6 +194,10 @@ export function openConfirmPopover(opts: ConfirmOptions): void {
                 onConfirm: () => runAction(opts.onConfirm),
                 onExtra:
                     extraAction === undefined ? undefined : () => runAction(extraAction),
+                onCancel:
+                    cancelAction === undefined
+                        ? undefined
+                        : () => runAction(cancelAction),
             },
             buttonWidths(labels, width)
         ),
@@ -197,6 +205,7 @@ export function openConfirmPopover(opts: ConfirmOptions): void {
         height,
         key: "confirm",
         placement: "modal",
+        sticky: opts.sticky,
         onClose: () => {
             activeHandle = null;
             if (!handled) opts.onClose?.();

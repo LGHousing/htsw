@@ -1,4 +1,4 @@
-import { getUploadSlowParseDiagnostics } from "../settings";
+import { getUploadDiagnostics } from "../settings";
 import { cyrb53 } from "../utils/helpers";
 import { ensureParentDirs } from "../utils/filesystem";
 import { recentRuntimeDebugRecords } from "./runtimeDebugBuffer";
@@ -68,7 +68,7 @@ function redactAbsolutePaths(value: unknown): unknown {
 
 export function uploadSlowParseDiagnostics(details: SlowParseDetails): void {
     try {
-        if (!getUploadSlowParseDiagnostics() || uploadedProjects.has(details.canon)) {
+        if (!getUploadDiagnostics() || uploadedProjects.has(details.canon)) {
             return;
         }
         uploadedProjects.add(details.canon);

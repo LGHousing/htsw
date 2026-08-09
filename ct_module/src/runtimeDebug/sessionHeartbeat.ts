@@ -4,7 +4,7 @@ import {
     type GuiCacheSizes,
 } from "../gui/cacheTelemetry";
 import { readLocalVersion } from "../autoUpdate";
-import { getUploadSessionHeartbeat } from "../settings";
+import { getUploadDiagnostics } from "../settings";
 import { TaskManager } from "../tasks/manager";
 import { ensureParentDirs } from "../utils/filesystem";
 import { javaType } from "../utils/java";
@@ -118,7 +118,7 @@ export function createSessionHeartbeatBody(
 
 function uploadSessionHeartbeat(): void {
     try {
-        if (!getUploadSessionHeartbeat()) return;
+        if (!getUploadDiagnostics()) return;
         const body = createSessionHeartbeatBody();
         ensureParentDirs(HEARTBEAT_PATH);
         FileLib.write(HEARTBEAT_PATH, JSON.stringify(body), true);

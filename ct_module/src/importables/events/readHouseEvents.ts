@@ -18,6 +18,7 @@ import {
     defineHouseExporter,
     type ExportReadState,
 } from "../export/exporter";
+import type { ReadOptions } from "../export/reader";
 import { openEventEditor } from "./housing";
 import { listAllEventNames } from "./listEvents";
 
@@ -87,10 +88,7 @@ async function writeEventResult(
     ctx: TaskContext,
     name: string,
     importable: ImportableEvent,
-    options: {
-        importJsonPath: string;
-        newExportTargetImportJson?: string;
-    }
+    options: ReadOptions
 ): Promise<void> {
     const target = htslTargetForEventExport(
         options.importJsonPath,
@@ -113,10 +111,12 @@ async function writeEventResult(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    ctx.displayMessage(
-        `&aExported event '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
-    );
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    if (options.progress === undefined && options.quiet !== true) {
+        ctx.displayMessage(
+            `&aExported event '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
+        );
+        ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    }
 }
 
 export const readEvents = defineHouseExporter({

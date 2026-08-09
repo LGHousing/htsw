@@ -5,7 +5,8 @@ export function filterAlreadyExported(
     label: string,
     names: readonly string[],
     skipExisting: boolean | undefined,
-    isComplete: (name: string) => boolean
+    isComplete: (name: string) => boolean,
+    showMessage: boolean
 ): readonly string[] {
     if (!skipExisting || names.length === 0) return names;
 
@@ -20,7 +21,7 @@ export function filterAlreadyExported(
         }
     }
 
-    if (skipped > 0) {
+    if (skipped > 0 && showMessage) {
         ctx.displayMessage(
             `&aResume detected ${skipped} already-exported ${label}${skipped === 1 ? "" : "s"}; exporting ${remaining.length} remaining.`
         );

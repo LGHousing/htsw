@@ -40,6 +40,7 @@ function runChestExport(
             ),
             name,
             newExportTargetImportJson,
+            showProgressMessages: false,
         })
     )
         .then((result) => {

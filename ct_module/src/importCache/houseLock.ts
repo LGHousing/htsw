@@ -17,6 +17,7 @@ import type {
 } from "../importables/items/dependencyIndex";
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 import { memoizedImportableHash } from "./hashMemo";
+import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -245,7 +246,10 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
         FileLib.write(lockPath, JSON.stringify(lock, null, 4), true);
         return true;
     } catch (error) {
-        console.error(`[htsw] house.lock write failed: ${formatHouseLockError(error)}`);
+        recordRuntimeDebug("houseLockWriteFailed", {
+            path: lockPath,
+            error: formatHouseLockError(error),
+        });
         return false;
     }
 }
@@ -304,9 +308,10 @@ export function upsertHouseLockImportablesOffThread(
                         try {
                             prepared = snapshot.map(prepareHouseLockImportableUpdate);
                         } catch (error) {
-                            console.error(
-                                `[htsw] house.lock prepare failed: ${formatHouseLockError(error)}`
-                            );
+                            recordRuntimeDebug("houseLockPrepareFailed", {
+                                path: importJsonPath,
+                                error: formatHouseLockError(error),
+                            });
                         }
                         runOnMainThread(() => {
                             resolve(

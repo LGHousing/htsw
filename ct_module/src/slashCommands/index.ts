@@ -12,7 +12,11 @@ import { clickHtswOverlay, scrollHtswOverlay, toggleHtswGui } from "../gui/overl
 import { resetTimingStats } from "../housingSync/progress/timing";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/projects/tree";
-import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
+import {
+    getFramePerfStats,
+    isFramePerfEnabled,
+    setFramePerfEnabled,
+} from "../gui/lib/framePerf";
 import { debugLog, flushGuiDebug } from "../gui/lib/debugLog";
 import { resetOnboarding } from "../gui/persistence/onboarding";
 import { rearmTourAutoStart } from "../gui/popovers/tour";
@@ -161,6 +165,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Run the live importer tests",
         run: commandTest,
         usage: "test [coverage|slice]",
+        hidden: true,
     },
     {
         name: "groupperms",
@@ -196,6 +201,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "recompile",
         summary: "Rebuild + reload the module",
         run: () => recompile(),
+        hidden: true,
     },
     {
         name: "tour",
@@ -209,6 +215,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Diagnostics: waiters, perf, traces",
         run: commandDebug,
         usage: "debug [probe]",
+        hidden: true,
     },
 ];
 
@@ -229,7 +236,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         name: "guiperf",
         summary: "Overlay frame pacing + render cost (scroll while sampling)",
         run: commandGuiPerf,
-        usage: "guiperf [clear]",
+        usage: "guiperf [on|off|clear]",
     },
     {
         name: "parseperf",
@@ -537,11 +544,32 @@ function commandTour(): void {
 }
 
 function commandGuiPerf(args: string[]): void {
-    if (args.length > 0 && args[0].toLowerCase() === "clear") {
-        clearFramePerf();
+    const action = args[0]?.toLowerCase();
+    if (action === "on") {
+        setFramePerfEnabled(true);
         ChatLib.chat(
-            "&7[guiperf] samples cleared. Scroll around, then run /htsw debug guiperf."
+            "&a[guiperf] sampling on. Scroll around, then run /htsw debug guiperf."
         );
+        return;
+    }
+    if (action === "off") {
+        setFramePerfEnabled(false);
+        ChatLib.chat("&7[guiperf] sampling off and samples cleared.");
+        return;
+    }
+    if (action === "clear") {
+        setFramePerfEnabled(true);
+        ChatLib.chat(
+            "&7[guiperf] samples cleared and sampling on. Scroll around, then run /htsw debug guiperf."
+        );
+        return;
+    }
+    if (args.length > 0) {
+        ChatLib.chat("&cUsage: /htsw debug guiperf [on|off|clear]");
+        return;
+    }
+    if (!isFramePerfEnabled()) {
+        ChatLib.chat("&7[guiperf] sampling is off. Use /htsw debug guiperf on.");
         return;
     }
     const s = getFramePerfStats();

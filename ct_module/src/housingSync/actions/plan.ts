@@ -23,7 +23,6 @@ import {
 import type { ProgressScope } from "../syncEvents";
 import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
-import { logActionListConflict } from "./conflictLog";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
 import type { ItemFieldContent } from "../items/fieldContent";
@@ -330,16 +329,6 @@ function recordActionListConflict(
                 itemContent
             );
         }
-        logActionListConflict({
-            target,
-            hashFamily,
-            live,
-            lock,
-            source: desired,
-            liveItemContent: liveItemContent ?? itemContent,
-            sourceItemContent: itemContent,
-            hashComparisonDisagreement,
-        });
     }
     return verdict;
 }

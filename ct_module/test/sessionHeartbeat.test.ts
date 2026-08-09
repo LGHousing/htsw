@@ -48,7 +48,7 @@ vi.mock("../src/gui/cacheTelemetry", () => ({
     parsedManifestCount: () => 6,
 }));
 vi.mock("../src/settings", () => ({
-    getUploadSessionHeartbeat: () => true,
+    getUploadDiagnostics: () => true,
 }));
 vi.mock("../src/autoUpdate", () => ({
     readLocalVersion: () => "0.13.0-test.4",

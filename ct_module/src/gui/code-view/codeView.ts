@@ -28,7 +28,7 @@ import type {
 } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { getViewSelection, publishCodeView } from "./selection";
-import { recordPhase } from "../lib/framePerf";
+import { isFramePerfEnabled, recordPhase } from "../lib/framePerf";
 import { markGuiDirty } from "../lib/dirty";
 
 export type CodeViewProps = {
@@ -305,11 +305,14 @@ export function CodeView(props: CodeViewProps): Element {
         id: props.scrollId,
         style: { height: { kind: "grow" }, gap: 0 },
         children: () => {
-            const phaseStart = Date.now();
+            const perfEnabled = isFramePerfEnabled();
+            const phaseStart = perfEnabled ? Date.now() : 0;
             try {
                 return buildCodeViewChildren(props);
             } finally {
-                recordPhase("codeview", Date.now() - phaseStart);
+                if (perfEnabled) {
+                    recordPhase("codeview", Date.now() - phaseStart);
+                }
             }
         },
     });
@@ -349,8 +352,11 @@ function resetCodeViewScroll(scrollId: string): void {
 }
 
 function buildCodeViewChildren(props: CodeViewProps): Element[] {
-    recordPhase("codeview.model", 0);
-    recordPhase("codeview.modelmiss", 0);
+    const perfEnabled = isFramePerfEnabled();
+    if (perfEnabled) {
+        recordPhase("codeview.model", 0);
+        recordPhase("codeview.modelmiss", 0);
+    }
     const lineDecorator = extract(props.lineDecorator);
     const sourcePath = props.source !== undefined ? extract(props.source) : null;
     const sourceImportJsonPath =
@@ -364,7 +370,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
               ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
               : "__live__";
     synchronizeViewIdentity(props.scrollId, viewIdentity);
-    const linesStart = Date.now();
+    const linesStart = perfEnabled ? Date.now() : 0;
     let lines: readonly RenderableLine[] | null = null;
     if (props.lines !== undefined) {
         const explicit = extract(props.lines);
@@ -375,18 +381,18 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     if (lines === null && sourcePath !== null) {
         lines = linesForFile(sourcePath, sourceImportJsonPath);
     }
-    recordPhase("codeview.lines", Date.now() - linesStart);
+    if (perfEnabled) recordPhase("codeview.lines", Date.now() - linesStart);
     if (lines === null || lines.length === 0) {
         delete modelCache[props.scrollId];
-        const selectStart = Date.now();
+        const selectStart = perfEnabled ? Date.now() : 0;
         publishCodeView(props.scrollId, viewIdentity, []);
-        recordPhase("codeview.select", Date.now() - selectStart);
-        const rowsStart = Date.now();
+        if (perfEnabled) recordPhase("codeview.select", Date.now() - selectStart);
+        const rowsStart = perfEnabled ? Date.now() : 0;
         const rows = buildEmptyMessageRows(
             props.emptyMessage === undefined ? "(no file)" : extract(props.emptyMessage),
             bodyWidthForScroll(props.scrollId, 0, false, false)
         );
-        recordPhase("codeview.rows", Date.now() - rowsStart);
+        if (perfEnabled) recordPhase("codeview.rows", Date.now() - rowsStart);
         return rows;
     }
 
@@ -407,10 +413,10 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     ) {
         model = cachedModel.model;
     } else {
-        recordPhase("codeview.modelmiss", 1);
-        const modelStart = Date.now();
+        if (perfEnabled) recordPhase("codeview.modelmiss", 1);
+        const modelStart = perfEnabled ? Date.now() : 0;
         model = buildLineModel(props.scrollId, lines, lineDecorator);
-        recordPhase("codeview.model", Date.now() - modelStart);
+        if (perfEnabled) recordPhase("codeview.model", Date.now() - modelStart);
         if (decoratorKey !== null) {
             modelCache[props.scrollId] = {
                 lines,
@@ -438,13 +444,13 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         rowCache,
     } = model;
 
-    const selectStart = Date.now();
+    const selectStart = perfEnabled ? Date.now() : 0;
     publishCodeView(props.scrollId, viewIdentity, orderedLines);
     const resolvedSelection = resolveSelection(
         getViewSelection(props.scrollId, viewIdentity),
         idToOrdinal
     );
-    recordPhase("codeview.select", Date.now() - selectStart);
+    if (perfEnabled) recordPhase("codeview.select", Date.now() - selectStart);
 
     if (props.autoFollow !== undefined && extract(props.autoFollow)) {
         getScrollState(props.scrollId).contentLength = totalRows * LINE_H;
@@ -468,7 +474,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
         : totalRows;
 
     // ── Build only visible entries ───────────────────────────
-    const rowsStart = Date.now();
+    const rowsStart = perfEnabled ? Date.now() : 0;
     const out: Element[] = [];
     const firstIdx = firstEntryIntersecting(entryRowEnd, firstVisibleRow);
     const skippedBeforeRows = firstIdx > 0 ? entryRowEnd[firstIdx - 1] : 0;
@@ -525,7 +531,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
     if (skippedAfterRows > 0) {
         out.push(spacerRows(skippedAfterRows));
     }
-    recordPhase("codeview.rows", Date.now() - rowsStart);
+    if (perfEnabled) recordPhase("codeview.rows", Date.now() - rowsStart);
 
     return out;
 }
