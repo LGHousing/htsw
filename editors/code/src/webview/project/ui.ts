@@ -9,6 +9,7 @@ import type {
     ProjectImportableSummary,
     GitDecoration,
     ProjectImportJsonNode,
+    ProjectRawHtslFile,
     ProjectPosition,
     ProjectRegionBounds,
     ProjectTextSpan,
@@ -22,6 +23,7 @@ export type ProjectExplorerPersistedState = {
     selectedParent?: string;
     showCreate?: boolean;
     showAdd?: boolean;
+    showRawHtsl?: boolean;
     addKind?: ProjectImportableSummary["type"];
     addName?: string;
     addNpcX?: string;
@@ -68,6 +70,7 @@ type State = {
     selectedParent: string;
     showCreate: boolean;
     showAdd: boolean;
+    showRawHtsl: boolean;
     addKind: ImportableKind;
     addName: string;
     addNpcX: string;
@@ -116,6 +119,7 @@ type RestoredProjectState = {
     selectedParent: string;
     showCreate: boolean;
     showAdd: boolean;
+    showRawHtsl: boolean;
     addKind: ImportableKind;
     addName: string;
     addNpcX: string;
@@ -147,6 +151,7 @@ function restoreProjectState(saved: ProjectExplorerPersistedState | undefined): 
         selectedParent: typeof saved?.selectedParent === "string" ? saved.selectedParent : "",
         showCreate: saved?.showCreate === true,
         showAdd: saved?.showCreate === true ? false : saved?.showAdd === true,
+        showRawHtsl: saved?.showRawHtsl !== false,
         addKind,
         addName,
         addNpcX: typeof saved?.addNpcX === "string" ? saved.addNpcX : "",
@@ -218,6 +223,7 @@ export function mountProjectExplorer(
         selectedParent: persisted.selectedParent,
         showCreate: persisted.showCreate,
         showAdd: persisted.showAdd,
+        showRawHtsl: persisted.showRawHtsl,
         addKind: persisted.addKind,
         addName: persisted.addName,
         addNpcX: persisted.addNpcX,
@@ -324,6 +330,7 @@ export function mountProjectExplorer(
                 selectedParent: state.selectedParent,
                 showCreate: state.showCreate,
                 showAdd: state.showAdd,
+                showRawHtsl: state.showRawHtsl,
                 addKind: state.addKind,
                 addName: state.addName,
                 addNpcX: state.addNpcX,
@@ -369,8 +376,9 @@ export function mountProjectExplorer(
                 <div class="toolbar">
                     <div class="search">
                         ${SVG.search}
-                        <input id="projectQuery" value="${escapeAttr(state.query)}" placeholder="Search importables…">
+                        <input id="projectQuery" value="${escapeAttr(state.query)}" placeholder="Search project…">
                     </div>
+                    <button id="toggleRawHtsl" class="icon-button ${state.showRawHtsl ? "active" : ""}" type="button" title="${state.showRawHtsl ? "Hide" : "Show"} raw HTSL">${SVG.rawHtsl}</button>
                     <button id="sortProject" class="icon-button" type="button" title="Sort: ${SORT_LABEL[state.sort]}">${SVG.sort}</button>
                     <button id="refreshProject" class="icon-button" type="button" title="Refresh">${SVG.refresh}</button>
                     <button id="toggleAdd" class="icon-button ${state.showAdd ? "active" : ""}" type="button" title="Add importable">${SVG.addImportable}</button>
@@ -415,6 +423,12 @@ export function mountProjectExplorer(
         document.getElementById("sortProject")?.addEventListener("click", () => {
             const order: SortMode[] = ["default", "name", "type"];
             state.sort = order[(order.indexOf(state.sort) + 1) % order.length];
+            persistProjectState();
+            render();
+        });
+
+        document.getElementById("toggleRawHtsl")?.addEventListener("click", () => {
+            state.showRawHtsl = !state.showRawHtsl;
             persistProjectState();
             render();
         });
@@ -1132,11 +1146,11 @@ function renderTree(state: State): string {
     state.importableIndex = new Map();
     try {
         const rows = sortNodes(state.roots, state.sort)
-            .filter((root) => nodeMatches(root, query))
+            .filter((root) => nodeMatches(root, query, state.showRawHtsl))
             .map((root) => renderNode(root, state, 0, true, query))
             .join("");
         pruneSelection(state);
-        return rows || emptyState("No matching importables.");
+        return rows || emptyState("No matching project entries.");
     } catch (err) {
         return emptyState(`Failed to render tree: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1170,10 +1184,19 @@ function renderNode(
         `;
     }
     const expanded = query.length > 0 || state.expanded.has(node.fsPath);
-    const visibleChildren = sortNodes(node.children, state.sort).filter((child) => nodeMatches(child, query));
-    const visibleImportables = sortImportables(node.importables, state.sort)
-        .filter((entry) => importableMatches(entry, query));
-    const hasChildren = visibleChildren.length > 0 || visibleImportables.length > 0;
+    const visibleChildren = sortNodes(node.children, state.sort).filter((child) =>
+        nodeMatches(child, query, state.showRawHtsl)
+    );
+    const visibleImportables = sortImportables(node.importables, state.sort).filter(
+        (entry) => importableMatches(entry, query)
+    );
+    const rawFiles = state.showRawHtsl
+        ? matchingRawHtslFiles(node.rawHtslFiles ?? [], query)
+        : [];
+    const hasChildren =
+        visibleChildren.length > 0 ||
+        rawFiles.length > 0 ||
+        visibleImportables.length > 0;
     const selected = state.selectedParent === node.fsPath;
     const problem = node.missing || node.cycle;
     const count = subtreeCount(node);
@@ -1196,9 +1219,138 @@ function renderNode(
         </div>
     `;
     if (!expanded) return row;
-    return row +
-        visibleChildren.map((child) => renderNode(child, state, depth + 1, false, query)).join("") +
-        visibleImportables.map((entry) => renderImportable(entry, depth + 1, state, query, node.fsPath)).join("");
+    return (
+        row +
+        visibleChildren
+            .map((child) => renderNode(child, state, depth + 1, false, query))
+            .join("") +
+        renderRawHtslGroup(node, rawFiles, depth + 1, state, query) +
+        visibleImportables
+            .map((entry) => renderImportable(entry, depth + 1, state, query, node.fsPath))
+            .join("")
+    );
+}
+
+type RawHtslFolder = {
+    name: string;
+    relativePath: string;
+    folders: RawHtslFolder[];
+    files: ProjectRawHtslFile[];
+};
+
+function renderRawHtslGroup(
+    owner: ProjectImportJsonNode,
+    files: ProjectRawHtslFile[],
+    depth: number,
+    state: State,
+    query: string
+): string {
+    if (files.length === 0) return "";
+    const key = rawHtslGroupId(owner);
+    const expanded = query.length > 0 || state.expanded.has(key);
+    const tree = rawHtslTree(files);
+    const row = `
+        <div class="row file raw-group" data-toggle-row="${escapeAttr(key)}" title="Standalone scripts for append-only Housing action surfaces">
+            ${indentGuides(depth)}
+            <button class="twisty ${expanded ? "open" : ""}" type="button" data-toggle-node="${escapeAttr(key)}">${SVG.chevron}</button>
+            <span class="row-icon htsl">${SVG.rawHtsl}</span>
+            <span class="row-label">Raw HTSL</span>
+            <span class="row-count">${files.length}</span>
+        </div>
+    `;
+    if (!expanded) return row;
+    return row + renderRawHtslContents(owner, tree, depth + 1, state, query);
+}
+
+function renderRawHtslContents(
+    owner: ProjectImportJsonNode,
+    folder: RawHtslFolder,
+    depth: number,
+    state: State,
+    query: string
+): string {
+    const folders = folder.folders
+        .map((child) => {
+            const key = rawHtslFolderId(owner, child.relativePath);
+            const expanded = query.length > 0 || state.expanded.has(key);
+            const row = `
+            <div class="row file raw-folder" data-toggle-row="${escapeAttr(key)}" title="${escapeAttr(child.relativePath)}">
+                ${indentGuides(depth)}
+                <button class="twisty ${expanded ? "open" : ""}" type="button" data-toggle-node="${escapeAttr(key)}">${SVG.chevron}</button>
+                <span class="row-icon folder">${SVG.folder}</span>
+                <span class="row-label">${escapeHtml(child.name)}</span>
+                <span class="row-count">${rawHtslFileCount(child)}</span>
+            </div>
+        `;
+            return expanded
+                ? row + renderRawHtslContents(owner, child, depth + 1, state, query)
+                : row;
+        })
+        .join("");
+    const fileRows = folder.files
+        .map(
+            (file) => `
+        <div class="row raw-htsl" data-open-path="${escapeAttr(file.fsPath)}" title="${escapeAttr(file.relativePath)}">
+            ${indentGuides(depth)}
+            <span class="twisty empty"></span>
+            <span class="row-icon htsl">${SVG.rawHtsl}</span>
+            <span class="row-label ${gitClass(file.git)}">${escapeHtml(baseName(file.fsPath))}</span>
+            ${gitBadge(file.git)}
+        </div>
+    `
+        )
+        .join("");
+    return folders + fileRows;
+}
+
+function rawHtslTree(files: ProjectRawHtslFile[]): RawHtslFolder {
+    const root: RawHtslFolder = {
+        name: "",
+        relativePath: "",
+        folders: [],
+        files: [],
+    };
+    for (const file of files) {
+        const parts = file.relativePath.split("/");
+        parts.pop();
+        let folder = root;
+        for (const name of parts) {
+            let child = folder.folders.find((candidate) => candidate.name === name);
+            if (child === undefined) {
+                const relativePath = folder.relativePath
+                    ? `${folder.relativePath}/${name}`
+                    : name;
+                child = { name, relativePath, folders: [], files: [] };
+                folder.folders.push(child);
+            }
+            folder = child;
+        }
+        folder.files.push(file);
+    }
+    const sort = (folder: RawHtslFolder): void => {
+        folder.folders.sort((left, right) => left.name.localeCompare(right.name));
+        folder.files.sort((left, right) =>
+            left.relativePath.localeCompare(right.relativePath)
+        );
+        folder.folders.forEach(sort);
+    };
+    sort(root);
+    return root;
+}
+
+function rawHtslFileCount(folder: RawHtslFolder): number {
+    return (
+        folder.files.length +
+        folder.folders.reduce((total, child) => total + rawHtslFileCount(child), 0)
+    );
+}
+
+function rawHtslGroupId(node: ProjectImportJsonNode): string {
+    return `${node.fsPath}|raw-htsl`;
+}
+
+function rawHtslFolderId(node: ProjectImportJsonNode, relativePath: string): string {
+    return `${rawHtslGroupId(node)}|${relativePath}`;
 }
 
 function importJsonContext(node: ProjectImportJsonNode): string {
@@ -1514,6 +1666,16 @@ function expandedStateKeys(nodes: ProjectImportJsonNode[]): Set<string> {
     const visit = (node: ProjectImportJsonNode): void => {
         if (node.reference) return;
         keys.add(node.fsPath);
+        if ((node.rawHtslFiles ?? []).length > 0) {
+            keys.add(rawHtslGroupId(node));
+            const collectFolders = (folder: RawHtslFolder): void => {
+                for (const child of folder.folders) {
+                    keys.add(rawHtslFolderId(node, child.relativePath));
+                    collectFolders(child);
+                }
+            };
+            collectFolders(rawHtslTree(node.rawHtslFiles ?? []));
+        }
         for (const entry of node.importables) {
             if ((entry.subEntries ?? []).length > 0 || (entry.metadataEntries ?? []).length > 0) keys.add(entry.id);
         }
@@ -1574,11 +1736,27 @@ function subtreeCount(node: ProjectImportJsonNode): number {
     );
 }
 
-function nodeMatches(node: ProjectImportJsonNode, query: string): boolean {
+function nodeMatches(
+    node: ProjectImportJsonNode,
+    query: string,
+    showRawHtsl: boolean
+): boolean {
     if (!query) return true;
     if (`${node.label} ${node.name}`.toLowerCase().includes(query)) return true;
-    return node.importables.some((entry) => importableMatches(entry, query)) ||
-        node.children.some((child) => nodeMatches(child, query));
+    return (
+        node.importables.some((entry) => importableMatches(entry, query)) ||
+        (showRawHtsl &&
+            matchingRawHtslFiles(node.rawHtslFiles ?? [], query).length > 0) ||
+        node.children.some((child) => nodeMatches(child, query, showRawHtsl))
+    );
+}
+
+function matchingRawHtslFiles(
+    files: ProjectRawHtslFile[],
+    query: string
+): ProjectRawHtslFile[] {
+    if (!query || "raw htsl".includes(query)) return files;
+    return files.filter((file) => file.relativePath.toLowerCase().includes(query));
 }
 
 function importableMatches(entry: ProjectImportableSummary, query: string): boolean {
@@ -1635,6 +1813,7 @@ const SVG = {
     sort: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><line x1="3" y1="8" x2="10" y2="8"/><line x1="3" y1="11.5" x2="7" y2="11.5"/></svg>`,
     plus: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="8" y1="3.5" x2="8" y2="12.5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>`,
     addImportable: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><line x1="2.5" y1="8" x2="9" y2="8"/><line x1="2.5" y1="12" x2="7" y2="12"/><line x1="11.8" y1="9.6" x2="11.8" y2="14.4"/><line x1="9.4" y1="12" x2="14.2" y2="12"/></svg>`,
+    rawHtsl: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h5l3 3v9.4H4z"/><path d="M9 1.8v3h3"/><path d="m7 7-1.5 1.5L7 10M9 7l1.5 1.5L9 10"/></svg>`,
     braces: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 2.5C5 2.5 4.5 3.2 4.5 4.5v1.2c0 1-.5 1.5-1.3 1.5.8 0 1.3.5 1.3 1.5v1.3c0 1.3.5 2 1.9 2"/><path d="M9.6 2.5c1.4 0 1.9.7 1.9 2v1.2c0 1 .5 1.5 1.3 1.5-.8 0-1.3.5-1.3 1.5v1.3c0 1.3-.5 2-1.9 2"/></svg>`,
     folder: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.8 4.4c0-.7.5-1.2 1.2-1.2h2.9l1.5 1.6h5.6c.7 0 1.2.5 1.2 1.2v5.8c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/></svg>`,
     metadata: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 3.2h7.6"/><path d="M4.2 8h7.6"/><path d="M4.2 12.8h7.6"/><circle cx="2.5" cy="3.2" r=".6" fill="currentColor" stroke="none"/><circle cx="2.5" cy="8" r=".6" fill="currentColor" stroke="none"/><circle cx="2.5" cy="12.8" r=".6" fill="currentColor" stroke="none"/></svg>`,

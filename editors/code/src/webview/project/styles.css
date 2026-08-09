@@ -424,6 +424,18 @@ select {
     color: #d7ba7d;
 }
 
+.row-icon.folder {
+    color: #d7ba7d;
+}
+
+.row-icon.htsl {
+    color: #67a7e8;
+}
+
+.row.raw-folder .row-label {
+    color: var(--vscode-descriptionForeground);
+}
+
 .row-icon.glyph.function {
     color: #67a7e8;
 }

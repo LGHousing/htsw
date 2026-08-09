@@ -54,6 +54,7 @@ import type {
     ProjectImportableSummary,
     ProjectImportJsonNode,
     ProjectPosition,
+    ProjectRawHtslFile,
     ProjectRegionBounds,
     ProjectTextSpan,
     ProjectToHostMessage,
@@ -1312,10 +1313,13 @@ function workspaceLabel(): string | undefined {
 }
 
 async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
-    const importJsons = await vscode.workspace.findFiles(
-        "**/{import.json,*.import.json}",
-        "**/{node_modules,.git}/**",
-    );
+    const [importJsons, htslFiles] = await Promise.all([
+        vscode.workspace.findFiles(
+            "**/{import.json,*.import.json}",
+            "**/{node_modules,.git}/**"
+        ),
+        vscode.workspace.findFiles("**/*.htsl", "**/{node_modules,.git}/**"),
+    ]);
     const importJsonKeys = new Set(importJsons.map((uri) => absolutePathKey(uri.fsPath)));
     const includedKeys = new Set<string>();
     const fs = projectFsWithOpenDocuments();
@@ -1326,9 +1330,14 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
 
     const rootUris = importJsons.filter((uri) => !includedKeys.has(absolutePathKey(uri.fsPath)));
     const roots = rootUris.length > 0 ? rootUris : importJsons;
-    const projectRoots = roots
+    const mappedRoots = roots
         .map((uri) => rootNodeFromParse(uri.fsPath))
-        .sort((left, right) => left.label.localeCompare(right.label));
+        .sort((left, right) => left.node.label.localeCompare(right.node.label));
+    const projectRoots = mappedRoots.map((root) => root.node);
+    attachRawHtslFiles(
+        mappedRoots,
+        htslFiles.map((uri) => uri.fsPath)
+    );
     await addGitDecorations(projectRoots);
     return projectRoots;
 }
@@ -1337,7 +1346,7 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
 // jump-link references, missing includes) the in-game Importables tree
 // renders, served from the generation-keyed cache the diagnostics adapter
 // shares — so the two UIs can't drift and refreshes don't re-read the world.
-function rootNodeFromParse(rootPath: string): ProjectImportJsonNode {
+function rootNodeFromParse(rootPath: string): MappedFileNode {
     const rootDir = path.dirname(rootPath);
     let parse: ContextParse | null = null;
     try {
@@ -1348,21 +1357,97 @@ function rootNodeFromParse(rootPath: string): ProjectImportJsonNode {
     const tree = parse?.result.importJson.fileTree ?? null;
     if (parse === null || tree === null) {
         return {
-            fsPath: rootPath,
-            label: nodeLabel(rootPath, null, rootDir),
-            name: path.basename(path.dirname(rootPath)) || path.basename(rootPath),
-            importableCount: 0,
-            importables: [],
-            children: [],
-            missing: nodeProjectFs.exists(rootPath) ? undefined : true,
+            node: {
+                fsPath: rootPath,
+                label: nodeLabel(rootPath, null, rootDir),
+                name: path.basename(path.dirname(rootPath)) || path.basename(rootPath),
+                importableCount: 0,
+                importables: [],
+                children: [],
+                missing: nodeProjectFs.exists(rootPath) ? undefined : true,
+            },
+            filePaths: new Set([rootPath]),
         };
     }
-    const node = mapFileNode(tree, null, rootDir, parse).node;
-    patchReferenceNodes(node);
-    return node;
+    const mapped = mapFileNode(tree, null, rootDir, parse);
+    patchReferenceNodes(mapped.node);
+    return mapped;
 }
 
 type MappedFileNode = { node: ProjectImportJsonNode; filePaths: Set<string> };
+
+type RawHtslOwner = {
+    node: ProjectImportJsonNode;
+    dir: string;
+    treeDepth: number;
+};
+
+function attachRawHtslFiles(roots: MappedFileNode[], htslPaths: string[]): void {
+    const referenced = new Set<string>();
+    for (const root of roots) {
+        for (const filePath of root.filePaths) referenced.add(absolutePathKey(filePath));
+    }
+
+    const owners: RawHtslOwner[] = [];
+    const collectOwners = (node: ProjectImportJsonNode, treeDepth: number): void => {
+        if (!node.reference && !node.missing) {
+            owners.push({ node, dir: path.dirname(node.fsPath), treeDepth });
+        }
+        node.children.forEach((child) => collectOwners(child, treeDepth + 1));
+    };
+    roots.forEach((root) => collectOwners(root.node, 0));
+
+    for (const htslPath of htslPaths) {
+        if (referenced.has(absolutePathKey(htslPath))) continue;
+        const candidates = owners
+            .map((owner) => ({
+                owner,
+                relativePath: relativeFilePath(owner.dir, htslPath),
+            }))
+            .filter(
+                (candidate): candidate is { owner: RawHtslOwner; relativePath: string } =>
+                    candidate.relativePath !== null
+            )
+            .sort(
+                (left, right) =>
+                    right.owner.dir.length - left.owner.dir.length ||
+                    left.owner.treeDepth - right.owner.treeDepth ||
+                    importJsonOwnerPriority(left.owner.node.fsPath) -
+                        importJsonOwnerPriority(right.owner.node.fsPath) ||
+                    left.owner.node.fsPath.localeCompare(right.owner.node.fsPath)
+            );
+        const chosen = candidates[0];
+        if (chosen === undefined) continue;
+        const file: ProjectRawHtslFile = {
+            fsPath: htslPath,
+            relativePath: chosen.relativePath,
+        };
+        (chosen.owner.node.rawHtslFiles ??= []).push(file);
+    }
+
+    owners.forEach((owner) =>
+        owner.node.rawHtslFiles?.sort((left, right) =>
+            left.relativePath.localeCompare(right.relativePath)
+        )
+    );
+}
+
+function relativeFilePath(dir: string, filePath: string): string | null {
+    const relative = path.relative(dir, filePath);
+    if (
+        relative === "" ||
+        relative === ".." ||
+        relative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relative)
+    ) {
+        return null;
+    }
+    return relative.split(path.sep).join("/");
+}
+
+function importJsonOwnerPriority(filePath: string): number {
+    return path.basename(filePath).toLowerCase() === "import.json" ? 0 : 1;
+}
 
 function mapFileNode(
     fileNode: htsw.ImportJsonFileNode,

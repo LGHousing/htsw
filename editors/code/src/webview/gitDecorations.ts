@@ -108,6 +108,9 @@ export async function addGitDecorations(roots: ProjectImportJsonNode[]): Promise
                 sub.git = decorations.get(pathKey(sub.fsPath));
             }
         }
+        for (const file of node.rawHtslFiles ?? []) {
+            file.git = decorations.get(pathKey(file.fsPath));
+        }
         node.children.forEach(decorateFiles);
     };
     roots.forEach(decorateFiles);
@@ -124,11 +127,11 @@ export async function addGitDecorations(roots: ProjectImportJsonNode[]): Promise
     // final, since a reference can precede its home in traversal order.
     const applyRollups = (node: ProjectImportJsonNode): boolean => {
         if (node.reference) return false;
-        const entryDecorated = node.importables.some((entry) =>
+        const localFileDecorated = node.importables.some((entry) =>
             entry.git !== undefined || (entry.subEntries ?? []).some((sub) => sub.git !== undefined)
-        );
+        ) || (node.rawHtslFiles ?? []).some((file) => file.git !== undefined);
         const childFlags = node.children.map(applyRollups);
-        const subtreeDecorated = entryDecorated || childFlags.some(Boolean);
+        const subtreeDecorated = localFileDecorated || childFlags.some(Boolean);
         node.gitRollup = (node.git === undefined && subtreeDecorated) || undefined;
         return node.git !== undefined || subtreeDecorated;
     };

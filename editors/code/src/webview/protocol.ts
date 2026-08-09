@@ -121,6 +121,12 @@ export type ProjectImportableReveal = {
     identity: string;
 };
 
+export type ProjectRawHtslFile = {
+    fsPath: string;
+    relativePath: string;
+    git?: GitDecoration;
+};
+
 export type ProjectImportJsonNode = {
     fsPath: string;
     parentFsPath?: string;
@@ -138,6 +144,7 @@ export type ProjectImportJsonNode = {
      */
     reference?: boolean;
     children: ProjectImportJsonNode[];
+    rawHtslFiles?: ProjectRawHtslFile[];
     /** Diagnostics aggregated across this node's whole subtree (like a folder badge). */
     errors?: number;
     warnings?: number;
