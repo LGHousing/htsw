@@ -268,13 +268,26 @@
         }
       },
       "required": [
-        "name"
+        "name",
+        "bounds"
       ],
       "defaultSnippets": [
         {
-          "label": "{ \"name\" }",
+          "label": "{ \"name\", \"bounds\" }",
           "body": {
-            "name": "$1"
+            "name": "$1",
+            "bounds": {
+              "from": {
+                "x": "^$2",
+                "y": "^$3",
+                "z": "^$4"
+              },
+              "to": {
+                "x": "^$5",
+                "y": "^$6",
+                "z": "^$7"
+              }
+            }
           }
         }
       ]

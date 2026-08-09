@@ -144,7 +144,7 @@ export type RawPos = { x: number; y: number; z: number };
 export type RawBounds = { from: RawPos; to: RawPos };
 export type RawRegionImportable = {
     name: string;
-    bounds?: RawBounds;
+    bounds: RawBounds;
     onEnterActions?: string;
     onExitActions?: string;
 };
@@ -353,7 +353,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     }),
     regionImportable: object<RawRegionImportable>({
         name: required(string()),
-        bounds: optional(ref("bounds")),
+        bounds: required(ref("bounds")),
         onEnterActions: optional(ref("htslPath")),
         onExitActions: optional(ref("htslPath")),
     }),

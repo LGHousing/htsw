@@ -3,5 +3,10 @@
     {
       "repeatTicks": 20
     }
+  ],
+  "regions": [
+    {
+      "name": "Missing Bounds"
+    }
   ]
 }

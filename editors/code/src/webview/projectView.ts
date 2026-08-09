@@ -53,6 +53,8 @@ import type {
     ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
+    ProjectPosition,
+    ProjectRegionBounds,
     ProjectTextSpan,
     ProjectToHostMessage,
 } from "./protocol";
@@ -116,6 +118,7 @@ export async function handleProjectMessage(
                 message.importJsonPath,
                 message.kind,
                 message.identity,
+                message.regionBounds,
                 message.npcPosition,
                 message.createOnEnterActions,
                 message.createOnExitActions,
@@ -1077,7 +1080,8 @@ async function addImportable(
     importJsonPath: string,
     kind: ProjectImportableSummary["type"],
     identity: string,
-    npcPosition: { x: number; y: number; z: number } | undefined,
+    regionBounds: ProjectRegionBounds | undefined,
+    npcPosition: ProjectPosition | undefined,
     createOnEnterActions: boolean,
     createOnExitActions: boolean,
     createLeftClickActions: boolean,
@@ -1090,6 +1094,17 @@ async function addImportable(
         const id = identity.trim();
         if (!id) throw new Error(kind === "event" ? "Choose an event." : "Enter a name.");
         if (kind === "item") throw new Error("Items are created in the Item / SNBT editor.");
+        if (kind === "region" && (
+            regionBounds === undefined ||
+            !Number.isFinite(regionBounds.from.x) ||
+            !Number.isFinite(regionBounds.from.y) ||
+            !Number.isFinite(regionBounds.from.z) ||
+            !Number.isFinite(regionBounds.to.x) ||
+            !Number.isFinite(regionBounds.to.y) ||
+            !Number.isFinite(regionBounds.to.z)
+        )) {
+            throw new Error("Enter valid From and To coordinates for the region.");
+        }
         if (kind === "npc" && (
             npcPosition === undefined ||
             !Number.isFinite(npcPosition.x) ||
@@ -1120,12 +1135,13 @@ async function addImportable(
                 }
                 entry[kind === "event" ? "event" : "name"] = id;
                 entry.actions = target.htslReference;
-            } else if (kind === "region") {
+            } else if (kind === "region" && regionBounds !== undefined) {
                 const targets = htslTargetsForRegionExport(fs, importJsonPath, id);
                 targetImportJson = targets.importJsonPath;
                 openPath = targetImportJson;
                 requireNew(fs, targetImportJson, section, id, kind);
                 entry.name = id;
+                entry.bounds = regionBounds;
 
                 const selected = [
                     createOnEnterActions

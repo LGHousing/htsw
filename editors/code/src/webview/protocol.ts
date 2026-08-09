@@ -13,6 +13,9 @@ export type ImportTarget = {
     rootImportJsonPath: string;
 };
 
+export type ProjectPosition = { x: number; y: number; z: number };
+export type ProjectRegionBounds = { from: ProjectPosition; to: ProjectPosition };
+
 export type ItemEditorForm = {
     itemName: string;
     count: number;
@@ -161,7 +164,8 @@ export type ProjectToHostMessage =
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;
-          npcPosition?: { x: number; y: number; z: number };
+          regionBounds?: ProjectRegionBounds;
+          npcPosition?: ProjectPosition;
           createOnEnterActions: boolean;
           createOnExitActions: boolean;
           createLeftClickActions: boolean;

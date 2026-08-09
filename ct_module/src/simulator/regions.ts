@@ -6,8 +6,6 @@ export function registerRegionTriggers(): Trigger[] {
 }
 
 type ImportableRegion = Extract<Importable, { type: "REGION" }>;
-type BoundedRegion = ImportableRegion & { bounds: Bounds };
-
 class RegionState {
     static currentRegion: ImportableRegion | undefined;
 }
@@ -24,10 +22,10 @@ function tick() {
         if (importable.type === "REGION") regions.push(importable);
     }
 
-    const insideRegions: BoundedRegion[] = [];
+    const insideRegions: ImportableRegion[] = [];
     for (const region of regions) {
-        if (region.bounds !== undefined && isInsideBounds(region.bounds, pos)) {
-            insideRegions.push(region as BoundedRegion);
+        if (isInsideBounds(region.bounds, pos)) {
+            insideRegions.push(region);
         }
     }
 

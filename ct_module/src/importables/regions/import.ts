@@ -73,15 +73,6 @@ async function setRegionCorner(
     );
 }
 
-function requireRegionBounds(importable: ImportableRegion): { from: Pos; to: Pos } {
-    if (importable.bounds === undefined) {
-        throw new Error(
-            `Region "${importable.name}" has no bounds in import.json — add bounds before importing`
-        );
-    }
-    return importable.bounds;
-}
-
 async function findLiveRegion(
     ctx: TaskContext,
     name: string
@@ -97,7 +88,7 @@ async function setDesiredRegionSelection(
     ctx: TaskContext,
     importable: ImportableRegion
 ): Promise<void> {
-    const bounds = requireRegionBounds(importable);
+    const bounds = importable.bounds;
     if (!(await ensureCreativeFlight(ctx))) {
         throw new Error("Could not enter flight mode before setting region corners.");
     }
@@ -214,7 +205,6 @@ export async function scanImportableRegion(
     session: ImportContext,
     trustPlan?: ImportableTrustPlan
 ): Promise<RegionRead> {
-    requireRegionBounds(importable);
     const setup = createSetupStepEmitter(session.actions.events, 2);
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
@@ -284,10 +274,7 @@ export function planImportableRegion(read: RegionRead): RegionImportPlan {
         liveRegion: read.liveRegion,
         boundsMatch:
             read.liveRegion !== null &&
-            regionBoundsEqual(
-                read.liveRegion.bounds,
-                requireRegionBounds(read.importable)
-            ),
+            regionBoundsEqual(read.liveRegion.bounds, read.importable.bounds),
         enterPlan: actionListPlanFromRead(read.enter),
         exitPlan: actionListPlanFromRead(read.exit),
     };

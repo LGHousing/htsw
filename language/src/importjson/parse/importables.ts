@@ -80,7 +80,7 @@ export function parseImportableRegion(p: Parser): ImportableRegion {
         name: requiredRawField((field) =>
             field.setField(im, "name", (p) => p.parseString())
         ),
-        bounds: optionalRawField((field) =>
+        bounds: requiredRawField((field) =>
             field.setField(im, "bounds", parseBounds)
         ),
         onEnterActions: optionalRawField((field) => {

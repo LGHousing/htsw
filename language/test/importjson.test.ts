@@ -552,11 +552,16 @@ describe("import.json diagnostics readability", () => {
 
     it("reports missing required keys", () => {
         const result = parseImportables(caseFilePath("missing_required"));
-        const diag = result.diagnostics.find((it) =>
-            it.message.includes("Missing required field 'name'")
-        );
-
-        expect(diag).toBeDefined();
+        expect(
+            result.diagnostics.some((it) =>
+                it.message.includes("Missing required field 'name'")
+            )
+        ).toBe(true);
+        expect(
+            result.diagnostics.some((it) =>
+                it.message.includes("Missing required field 'bounds'")
+            )
+        ).toBe(true);
     });
 
     it("reports malformed action files without crashing checker passes", () => {

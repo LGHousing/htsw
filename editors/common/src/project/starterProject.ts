@@ -14,8 +14,11 @@ export const STARTER_FILES: { [name: string]: string } = {
     "events": [
         { "event": "Player Join", "actions": "join.htsl" }
     ],
-    "regions": [
-        { "name": "Starter Region", "onEnterActions": "region_enter.htsl" }
+    "commands": [
+        {
+            "name": "starter",
+            "actions": "starter_command.htsl"
+        }
     ],
     "items": [
         {
@@ -39,9 +42,8 @@ if and (var starter/runs >= 5) {
     "join.htsl": `// Runs when a player joins — see "events" in import.json.
 chat "Welcome to the starter house!"
 `,
-    "region_enter.htsl": `// Runs when a player walks into Starter Region.
-// Set the region's bounds in-game after importing.
-chat "You entered the starter region."
+    "starter_command.htsl": `// Runs when a player uses /starter.
+chat "You ran the starter command!"
 `,
     "wand_use.htsl": `// Right-clicking the Starter Wand runs this list —
 // declared via "rightClickActions" on the item in import.json.

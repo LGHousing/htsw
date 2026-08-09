@@ -15,6 +15,8 @@
     "scripts": {
         "build": "npm run build --workspace language && npm run build --workspace ct_module && npm run build --workspace cli && npm run build --workspace editors/code",
         "test": "npm test --workspace language && npm test --workspace ct_module",
+        "generate:docs:importables": "node --experimental-strip-types scripts/gen-importables-doc.mjs",
+        "check:docs:importables": "node --experimental-strip-types scripts/gen-importables-doc.mjs --check",
         "knip": "knip",
         "deploy:ct": "python ct_module/install.py",
         "deploy:ct:no-build": "python ct_module/install.py --no-build",

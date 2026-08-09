@@ -1365,8 +1365,6 @@ export function estimateImportableUnits(
         trustMode &&
         importable.type === "REGION" &&
         cacheEntry.importable.type === "REGION" &&
-        importable.bounds !== undefined &&
-        cacheEntry.importable.bounds !== undefined &&
         regionBoundsEqual(importable.bounds, cacheEntry.importable.bounds)
     ) {
         total -=

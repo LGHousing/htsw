@@ -42,6 +42,9 @@ jobs:
           node scripts/gen-items-doc.mjs
           git diff --exit-code docs/vanilla-item-names.md
 
+      - name: Check importables reference
+        run: npm run check:docs:importables
+
       - name: Bundle docs playground
         run: |
           npx esbuild docs/theme/htsw-playground-runner.js \

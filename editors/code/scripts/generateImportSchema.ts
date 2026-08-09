@@ -126,7 +126,7 @@ function snippetValue(
         case "array":
             return [];
         case "object": {
-            if (depth >= 2) return {};
+            if (depth >= 4) return {};
             const body: Record<string, unknown> = {};
             for (const [key, property] of Object.entries(spec.properties)) {
                 if (!property.required) continue;
@@ -138,7 +138,7 @@ function snippetValue(
             const target = IMPORT_JSON_SCHEMA_DEFINITIONS[
                 spec.ref as keyof typeof IMPORT_JSON_SCHEMA_DEFINITIONS
             ];
-            if (target === undefined || depth >= 2) return `$${counter.next++}`;
+            if (target === undefined || depth >= 4) return `$${counter.next++}`;
             return snippetValue(target, counter, depth + 1);
         }
     }

@@ -60,9 +60,6 @@ export function importableMetadataEntries(
         ];
     }
     if (importable.type === "REGION") {
-        if (importable.bounds === undefined) {
-            return [{ key: "bounds", label: "Bounds", value: "(not set)", jsonPath: ["bounds"] }];
-        }
         return [
             { key: "boundsFrom", label: "From", value: formatPos(importable.bounds.from), jsonPath: ["bounds", "from"] },
             { key: "boundsTo", label: "To", value: formatPos(importable.bounds.to), jsonPath: ["bounds", "to"] },
@@ -120,9 +117,9 @@ export function importableMetadataComparisonValue(
         case "bounds":
             return importable.type === "REGION" ? importable.bounds : undefined;
         case "boundsFrom":
-            return importable.type === "REGION" ? importable.bounds?.from : undefined;
+            return importable.type === "REGION" ? importable.bounds.from : undefined;
         case "boundsTo":
-            return importable.type === "REGION" ? importable.bounds?.to : undefined;
+            return importable.type === "REGION" ? importable.bounds.to : undefined;
         case "size":
             return importable.type === "MENU" ? importable.size : undefined;
         case "pos":

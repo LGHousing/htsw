@@ -9,6 +9,8 @@ import type {
     ProjectImportableSummary,
     GitDecoration,
     ProjectImportJsonNode,
+    ProjectPosition,
+    ProjectRegionBounds,
     ProjectTextSpan,
     ProjectToHostMessage,
 } from "../protocol";
@@ -25,6 +27,12 @@ export type ProjectExplorerPersistedState = {
     addNpcX?: string;
     addNpcY?: string;
     addNpcZ?: string;
+    addRegionFromX?: string;
+    addRegionFromY?: string;
+    addRegionFromZ?: string;
+    addRegionToX?: string;
+    addRegionToY?: string;
+    addRegionToZ?: string;
     createOnEnterActions?: boolean;
     createOnExitActions?: boolean;
     createLeftClickActions?: boolean;
@@ -65,6 +73,12 @@ type State = {
     addNpcX: string;
     addNpcY: string;
     addNpcZ: string;
+    addRegionFromX: string;
+    addRegionFromY: string;
+    addRegionFromZ: string;
+    addRegionToX: string;
+    addRegionToY: string;
+    addRegionToZ: string;
     createOnEnterActions: boolean;
     createOnExitActions: boolean;
     createLeftClickActions: boolean;
@@ -107,6 +121,12 @@ type RestoredProjectState = {
     addNpcX: string;
     addNpcY: string;
     addNpcZ: string;
+    addRegionFromX: string;
+    addRegionFromY: string;
+    addRegionFromZ: string;
+    addRegionToX: string;
+    addRegionToY: string;
+    addRegionToZ: string;
     createOnEnterActions: boolean;
     createOnExitActions: boolean;
     createLeftClickActions: boolean;
@@ -132,6 +152,12 @@ function restoreProjectState(saved: ProjectExplorerPersistedState | undefined): 
         addNpcX: typeof saved?.addNpcX === "string" ? saved.addNpcX : "",
         addNpcY: typeof saved?.addNpcY === "string" ? saved.addNpcY : "",
         addNpcZ: typeof saved?.addNpcZ === "string" ? saved.addNpcZ : "",
+        addRegionFromX: typeof saved?.addRegionFromX === "string" ? saved.addRegionFromX : "",
+        addRegionFromY: typeof saved?.addRegionFromY === "string" ? saved.addRegionFromY : "",
+        addRegionFromZ: typeof saved?.addRegionFromZ === "string" ? saved.addRegionFromZ : "",
+        addRegionToX: typeof saved?.addRegionToX === "string" ? saved.addRegionToX : "",
+        addRegionToY: typeof saved?.addRegionToY === "string" ? saved.addRegionToY : "",
+        addRegionToZ: typeof saved?.addRegionToZ === "string" ? saved.addRegionToZ : "",
         createOnEnterActions: saved?.createOnEnterActions === true,
         createOnExitActions: saved?.createOnExitActions === true,
         createLeftClickActions: saved?.createLeftClickActions === true,
@@ -197,6 +223,12 @@ export function mountProjectExplorer(
         addNpcX: persisted.addNpcX,
         addNpcY: persisted.addNpcY,
         addNpcZ: persisted.addNpcZ,
+        addRegionFromX: persisted.addRegionFromX,
+        addRegionFromY: persisted.addRegionFromY,
+        addRegionFromZ: persisted.addRegionFromZ,
+        addRegionToX: persisted.addRegionToX,
+        addRegionToY: persisted.addRegionToY,
+        addRegionToZ: persisted.addRegionToZ,
         createOnEnterActions: persisted.createOnEnterActions,
         createOnExitActions: persisted.createOnExitActions,
         createLeftClickActions: persisted.createLeftClickActions,
@@ -297,6 +329,12 @@ export function mountProjectExplorer(
                 addNpcX: state.addNpcX,
                 addNpcY: state.addNpcY,
                 addNpcZ: state.addNpcZ,
+                addRegionFromX: state.addRegionFromX,
+                addRegionFromY: state.addRegionFromY,
+                addRegionFromZ: state.addRegionFromZ,
+                addRegionToX: state.addRegionToX,
+                addRegionToY: state.addRegionToY,
+                addRegionToZ: state.addRegionToZ,
                 createOnEnterActions: state.createOnEnterActions,
                 createOnExitActions: state.createOnExitActions,
                 createLeftClickActions: state.createLeftClickActions,
@@ -435,6 +473,24 @@ export function mountProjectExplorer(
         bindAddInput("addNpcZ", (value) => {
             state.addNpcZ = value;
         });
+        bindAddInput("addRegionFromX", (value) => {
+            state.addRegionFromX = value;
+        });
+        bindAddInput("addRegionFromY", (value) => {
+            state.addRegionFromY = value;
+        });
+        bindAddInput("addRegionFromZ", (value) => {
+            state.addRegionFromZ = value;
+        });
+        bindAddInput("addRegionToX", (value) => {
+            state.addRegionToX = value;
+        });
+        bindAddInput("addRegionToY", (value) => {
+            state.addRegionToY = value;
+        });
+        bindAddInput("addRegionToZ", (value) => {
+            state.addRegionToZ = value;
+        });
 
         const addParent = document.getElementById("addParent") as HTMLSelectElement | null;
         addParent?.addEventListener("change", () => {
@@ -472,6 +528,12 @@ export function mountProjectExplorer(
                 renderStatus();
                 return;
             }
+            const regionBounds = state.addKind === "region" ? readRegionBounds() : undefined;
+            if (state.addKind === "region" && regionBounds === undefined) {
+                state.status = { kind: "error", text: "Enter valid From and To coordinates." };
+                renderStatus();
+                return;
+            }
             state.status = { kind: "idle", text: "Adding…" };
             renderStatus();
             post(vscode, {
@@ -479,6 +541,7 @@ export function mountProjectExplorer(
                 importJsonPath: state.selectedParent,
                 kind: state.addKind,
                 identity,
+                regionBounds,
                 npcPosition,
                 createOnEnterActions: state.createOnEnterActions,
                 createOnExitActions: state.createOnExitActions,
@@ -507,16 +570,30 @@ export function mountProjectExplorer(
             });
         }
 
-        function readNpcPosition(): { x: number; y: number; z: number } | undefined {
+        function readNpcPosition(): ProjectPosition | undefined {
+            return readPosition("addNpcX", "addNpcY", "addNpcZ");
+        }
+
+        function readRegionBounds(): ProjectRegionBounds | undefined {
+            const from = readPosition("addRegionFromX", "addRegionFromY", "addRegionFromZ");
+            const to = readPosition("addRegionToX", "addRegionToY", "addRegionToZ");
+            return from === undefined || to === undefined ? undefined : { from, to };
+        }
+
+        function readPosition(
+            xId: string,
+            yId: string,
+            zId: string,
+        ): ProjectPosition | undefined {
             const read = (id: string): number | undefined => {
                 const raw = (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
                 if (raw === "") return undefined;
                 const value = Number(raw);
                 return Number.isFinite(value) ? value : undefined;
             };
-            const x = read("addNpcX");
-            const y = read("addNpcY");
-            const z = read("addNpcZ");
+            const x = read(xId);
+            const y = read(yId);
+            const z = read(zId);
             return x === undefined || y === undefined || z === undefined ? undefined : { x, y, z };
         }
 
@@ -940,6 +1017,26 @@ function renderAddPanel(state: State): string {
             </div>`;
     }
 
+    if (state.addKind === "region") {
+        identityField += `
+            <div class="create-field">
+                <span>From</span>
+                <div class="create-coordinates">
+                    <input id="addRegionFromX" type="number" step="any" value="${escapeAttr(state.addRegionFromX)}" placeholder="X" aria-label="Region from X coordinate">
+                    <input id="addRegionFromY" type="number" step="any" value="${escapeAttr(state.addRegionFromY)}" placeholder="Y" aria-label="Region from Y coordinate">
+                    <input id="addRegionFromZ" type="number" step="any" value="${escapeAttr(state.addRegionFromZ)}" placeholder="Z" aria-label="Region from Z coordinate">
+                </div>
+            </div>
+            <div class="create-field">
+                <span>To</span>
+                <div class="create-coordinates">
+                    <input id="addRegionToX" type="number" step="any" value="${escapeAttr(state.addRegionToX)}" placeholder="X" aria-label="Region to X coordinate">
+                    <input id="addRegionToY" type="number" step="any" value="${escapeAttr(state.addRegionToY)}" placeholder="Y" aria-label="Region to Y coordinate">
+                    <input id="addRegionToZ" type="number" step="any" value="${escapeAttr(state.addRegionToZ)}" placeholder="Z" aria-label="Region to Z coordinate">
+                </div>
+            </div>`;
+    }
+
     const starterOptions = state.addKind === "region"
         ? [
             { id: "createOnEnterActions", label: "On enter", checked: state.createOnEnterActions },
@@ -966,7 +1063,7 @@ function renderAddPanel(state: State): string {
         : "";
 
     const hint = state.addKind === "region"
-        ? `Adds the region to the chosen <code>import.json</code>. Choose one or both triggers to create and link starter <code>.htsl</code> files.`
+        ? `Adds the region with the given bounds. Choose one or both triggers to create and link starter <code>.htsl</code> files.`
         : state.addKind === "npc"
             ? `HTSW cannot place NPCs. An NPC must already exist at these exact coordinates, or the importer will refuse the import.`
         : state.addKind === "menu"

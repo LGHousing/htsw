@@ -29,7 +29,7 @@ export type FunctionIcon = {
 export type ImportableRegion = ImportableSource & {
     type: "REGION";
     name: string;
-    bounds?: Bounds;
+    bounds: Bounds;
     onEnterActions?: Action[];
     onEnterActionsPath?: string;
     onExitActions?: Action[];

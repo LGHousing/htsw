@@ -46,13 +46,10 @@ entry in a new included file.
 
 ### Create region enter and exit actions
 
-When adding a region, use the **Starter HTSL** checkboxes to choose **On enter**,
-**On exit**, or both. The extension creates the selected `.htsl` files and links
-them through `onEnterActions` and `onExitActions`.
-
-This creates an action-only region entry. Add the region's `bounds` in
-`import.json` before importing it; the in-game importer uses those coordinates
-to create or move the Housing region.
+When adding a region, enter the **From** and **To** coordinates for its bounds,
+then use the **Starter HTSL** checkboxes to choose **On enter**, **On exit**, or
+both. The extension writes the bounds and creates and links the selected
+`.htsl` files through `onEnterActions` and `onExitActions`.
 
 ### Create NPC click actions
 

@@ -10,6 +10,7 @@ on:
       - 'language/package.json'
       - 'scripts/docs-raw.mjs'
       - 'scripts/gen-items-doc.mjs'
+      - 'scripts/gen-importables-doc.mjs'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -45,6 +46,9 @@ jobs:
 
       - name: Generate item names reference
         run: node scripts/gen-items-doc.mjs
+
+      - name: Generate importables reference
+        run: npm run generate:docs:importables
 
       - name: Bundle HTSW runtime for playground
         run: |
