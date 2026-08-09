@@ -25,3 +25,9 @@ examples/imports/
 # session scratch files
 .claude/tmp/
 .htsw/
+
+# Private AI workspace configuration lives in LGHousing/htsw-workspace.
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
