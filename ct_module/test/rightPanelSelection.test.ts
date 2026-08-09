@@ -114,3 +114,24 @@ describe("right-panel live import tab", () => {
         ]);
     });
 });
+
+describe("right-panel project tabs", () => {
+    test("closes only tabs from the project being left", () => {
+        const oldProject = "C:/projects/old/import.json";
+        const newProject = "C:/projects/new/import.json";
+        selection.confirmSelect("C:/projects/old/one.htsl", oldProject);
+        selection.confirmSelect("C:/projects/old/two.htsl", oldProject);
+        selection.confirmSelect("C:/projects/new/keep.htsl", newProject);
+
+        selection.closeTabsForProject(oldProject);
+
+        expect(selection.getTabs()).toEqual([
+            {
+                kind: "file",
+                path: "C:/projects/new/keep.htsl",
+                importJsonPath: newProject,
+                confirmed: true,
+            },
+        ]);
+    });
+});

@@ -461,14 +461,14 @@ function singleFieldContent(jsonPath: string, imp: Importable, fieldKey: string,
                 style: { width: { kind: "grow" }, height: { kind: "px", value: 18 }, gap: 4 },
                 children: [
                     Button({
-                        text: "Save",
-                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                        onClick: () => saveField(jsonPath, imp, fieldKey),
-                    }),
-                    Button({
                         text: "Clear",
                         style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
                         onClick: () => { editingValue = ""; saveField(jsonPath, imp, fieldKey); },
+                    }),
+                    Button({
+                        text: "Save",
+                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        onClick: () => saveField(jsonPath, imp, fieldKey),
                     }),
                 ],
             }),
@@ -501,14 +501,14 @@ function iconFieldContent(jsonPath: string, imp: Importable): Element {
                 style: { width: { kind: "grow" }, height: { kind: "px", value: 18 }, gap: 4 },
                 children: [
                     Button({
-                        text: "Save",
-                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                        onClick: () => saveField(jsonPath, imp, "icon"),
-                    }),
-                    Button({
                         text: "Clear",
                         style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
                         onClick: () => { editingValue = ""; saveField(jsonPath, imp, "icon"); },
+                    }),
+                    Button({
+                        text: "Save",
+                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        onClick: () => saveField(jsonPath, imp, "icon"),
                     }),
                 ],
             }),

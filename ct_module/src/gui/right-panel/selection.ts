@@ -197,6 +197,15 @@ export function closeTabsUnder(dirPath: string): void {
     }
 }
 
+export function closeTabsForProject(importJsonPath: string): void {
+    const all = getTabs();
+    for (let i = 0; i < all.length; i++) {
+        const tab = all[i];
+        if (tab.kind !== "file" || tab.importJsonPath !== importJsonPath) continue;
+        closeTab(tab.path, tab.importJsonPath);
+    }
+}
+
 export function closeTab(path: string, importJsonPath?: string | null): void {
     const exact = arguments.length >= 2;
     const target = fileSelection(path, importJsonPath);

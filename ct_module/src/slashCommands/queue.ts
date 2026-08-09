@@ -247,6 +247,8 @@ function commandQueueRun(): void {
         );
         return;
     }
-    ChatLib.chat(`&a[htsw] Running queue with ${getQueue().length} item(s)`);
-    startImport();
+    const count = getQueue().length;
+    if (startImport()) {
+        ChatLib.chat(`&a[htsw] Running queue with ${count} item(s)`);
+    }
 }

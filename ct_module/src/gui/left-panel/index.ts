@@ -22,7 +22,7 @@ export function LeftPanel(width: number): Element {
             height: { kind: "grow" },
         },
         children: () => [
-            TabBar(width - PANEL_PAD * 2),
+            TabBar(),
             Divider(),
             Container({
                 anchorKey: "tour:left-body",

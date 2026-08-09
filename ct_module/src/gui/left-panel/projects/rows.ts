@@ -1064,12 +1064,12 @@ function queueCheckbox(
             if (info.button !== 0) return;
             onToggle(checked());
         },
+        tooltip: () => (checked() ? "Queued" : "Add to queue"),
+        tooltipColor: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
         children: [
             Icon({
                 name: () => (checked() ? Icons.squareCheck : Icons.square),
                 color: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
-                tooltip: () => (checked() ? "Queued" : "Add to queue"),
-                tooltipColor: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -1221,12 +1221,12 @@ function houseBindControl(fullPath: string): Element | false {
                 if (info.button !== 0 || info.isDoubleClickSecond) return;
                 confirmRebind(fullPath, current);
             },
+            tooltip: `Bind to ${houseDisplayName(current)}`,
+            tooltipColor: COLOR_TEXT_DIM,
             children: [
                 Icon({
                     name: Icons.house,
                     color: COLOR_TEXT_FAINT,
-                    tooltip: `Bind to ${houseDisplayName(current)}`,
-                    tooltipColor: COLOR_TEXT_DIM,
                     style: {
                         width: { kind: "px", value: 10 },
                         height: { kind: "px", value: 10 },
@@ -1254,12 +1254,12 @@ function houseBindControl(fullPath: string): Element | false {
             if (info.button !== 0 || info.isDoubleClickSecond) return;
             openMenu(info.x, info.y, houseBindingActions(fullPath));
         },
+        tooltip: tip,
+        tooltipColor: color,
         children: [
             Icon({
                 name: Icons.house,
                 color,
-                tooltip: tip,
-                tooltipColor: color,
                 style: {
                     width: { kind: "px", value: 9 },
                     height: { kind: "px", value: 9 },
@@ -1268,8 +1268,6 @@ function houseBindControl(fullPath: string): Element | false {
             Text({
                 text: houseDisplayName(boundUuid),
                 color,
-                tooltip: tip,
-                tooltipColor: color,
             }),
         ],
     });
@@ -1644,12 +1642,13 @@ function includeReferenceRow(
         },
         onClick: rowHandler(actions, () => onJump?.()),
         onDoubleClick: () => confirmSelect(fullPath, parent.fullPath),
+        tooltip: "Also included here — click to jump to its contents",
+        tooltipColor: COLOR_TEXT_FAINT,
         children: [
             rowSlot(DISCLOSURE_W),
             Icon({
                 name: Icons.cornerUpLeft,
                 color: COLOR_TEXT_FAINT,
-                tooltip: "Also included here — click to jump to its contents",
             }),
             rowSlot(INNER_GAP),
             Text({

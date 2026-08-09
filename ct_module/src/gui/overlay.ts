@@ -73,7 +73,7 @@ import {
     mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
-import { areTaskSoundsMuted, setHousingUuid } from "./state";
+import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { detectHousingUuid } from "../importCache/housingId";
 import {
     getHousingPresence,
@@ -115,9 +115,11 @@ import {
     getOverlayScreenH,
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
-import { openBoundProjectForHouse } from "./boundProject";
+import { closeBoundProjectForHouse, openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
 import { processImportableCacheWarm } from "./cache-status/cacheWarm";
+import { clearQueue } from "./right-panel/import-tab/queue";
+import { cancelActiveTask } from "../tasks/activeTask";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -184,13 +186,30 @@ function anyHtswPanelVisible(): boolean {
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
+let housingServerRevision = 0;
+
+function leaveHousingServer(): void {
+    housingServerRevision++;
+    const uuid = getHousingUuid();
+    cancelActiveTask();
+    closeBoundProjectForHouse(uuid);
+    clearQueue();
+    setHousingUuid(null);
+    resetHousingPresence();
+    lastUuidFetchAt = 0;
+}
 
 function maybeAutoFetchHousingUuid(): void {
     if (uuidFetchInFlight) return;
     if (getHousingPresence() !== "unknown") return;
     if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
+    const serverRevision = housingServerRevision;
     const task = TaskManager.tryRun(async (ctx) => {
         const uuid = await detectHousingUuid(ctx);
+        if (serverRevision !== housingServerRevision) {
+            resetHousingPresence();
+            return;
+        }
         if (uuid !== null) {
             setHousingUuid(uuid);
             openBoundProjectForHouse(uuid);
@@ -428,16 +447,12 @@ export function initHtswGui(): void {
         const msg = ChatLib.getChatMessage(event, false);
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
-        setHousingUuid(null);
-        resetHousingPresence();
-        lastUuidFetchAt = 0;
+        leaveHousingServer();
     });
 
     register("worldLoad", () => {
         invalidateContainerBoundsCache();
-        setHousingUuid(null);
-        resetHousingPresence();
-        lastUuidFetchAt = 0;
+        leaveHousingServer();
     });
 
     // Single fullscreen panel; the element tree (RootTree) wraps around the

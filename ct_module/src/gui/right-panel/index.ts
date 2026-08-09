@@ -22,6 +22,7 @@ import {
     ACCENT_TEAL,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
+    COLOR_TEXT_DIM,
     GLYPH_DOT,
     SIZE_ROW_H,
 } from "../lib/theme";
@@ -77,6 +78,9 @@ const TAB_DOT_W = 8;
 const TAB_ICON_W = 9;
 const TAB_ICON_GAP = 3;
 const TAB_ICON_SLOT_W = TAB_ICON_W + TAB_ICON_GAP;
+const TAB_HANDLE_W = 9;
+const TAB_HANDLE_GAP = 2;
+const TAB_HANDLE_SLOT_W = TAB_HANDLE_W + TAB_HANDLE_GAP;
 
 function tabActions(tab: Extract<Tab, { kind: "file" }>): MenuAction[] {
     if (!tab.confirmed) {
@@ -176,6 +180,7 @@ function tabButton(tab: Tab): Element {
     const labelW = Renderer.getStringWidth(labelText);
     const tabW =
         (hasDot ? TAB_DOT_W : 0) +
+        (isDraggable ? TAB_HANDLE_SLOT_W : 0) +
         (isLive ? TAB_ICON_SLOT_W : 0) +
         (isQueued ? TAB_ICON_SLOT_W : 0) +
         labelW +
@@ -227,6 +232,23 @@ function tabButton(tab: Tab): Element {
                     ],
                 },
                 children: [
+                    isDraggable &&
+                        Icon({
+                            name: Icons.gripVertical,
+                            color: COLOR_TEXT_DIM,
+                            style: {
+                                width: { kind: "px", value: TAB_HANDLE_W },
+                                height: { kind: "px", value: 10 },
+                            },
+                        }),
+                    isDraggable &&
+                        Container({
+                            style: {
+                                width: { kind: "px", value: TAB_HANDLE_GAP },
+                                height: { kind: "grow" },
+                            },
+                            children: [],
+                        }),
                     isLive &&
                         Icon({
                             name:

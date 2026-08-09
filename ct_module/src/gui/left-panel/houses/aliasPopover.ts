@@ -86,20 +86,20 @@ function popoverContent(uuid: string): Element {
                 },
                 children: [
                     Button({
-                        text: "Save",
-                        style: {
-                            width: { kind: "grow" },
-                            height: { kind: "px", value: 18 },
-                        },
-                        onClick: () => save(uuid),
-                    }),
-                    Button({
                         text: "Clear",
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "px", value: 18 },
                         },
                         onClick: () => clear(uuid),
+                    }),
+                    Button({
+                        text: "Save",
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                        },
+                        onClick: () => save(uuid),
                     }),
                 ],
             }),

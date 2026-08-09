@@ -66,19 +66,9 @@ import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
 import { markGuiDirty } from "../../lib/dirty";
 
-// Rhino lacks String.prototype.repeat, so cycle through a fixed table.
-const SCAN_DOTS = ["", ".", "..", "..."];
-
-function scanLabel(t: HouseContentType, uuid: string | null): string {
-    if (t.scanInFlight()) {
-        return `Scanning${SCAN_DOTS[Math.floor(Date.now() / 350) % SCAN_DOTS.length]}`;
-    }
-    return t.scanned(uuid) ? "Rescan" : "Scan";
-}
-
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
-const SCAN_BUTTON_W = 22;
+const SEARCH_ROW_H = SIZE_ROW_H + 6;
 
 const HOUSE_LINK_STATUSES: LinkStatusOption[] = [
     { key: "matches", label: "Matches project" },
@@ -99,7 +89,7 @@ type HouseSortId = "alphabetical" | "status";
 type HouseSortDir = "ASC" | "DESC";
 const HOUSE_SORT_FIELDS: { id: HouseSortId; label: string }[] = [
     { id: "alphabetical", label: "Alphabetically" },
-    { id: "status", label: "By status" },
+    { id: "status", label: "By import/export status" },
 ];
 // Actionable-first when sorting by status: rows that differ from your files
 // come before matches and the rest.
@@ -164,8 +154,6 @@ function typeTabButton(t: HouseContentType, showLabel: boolean): Element {
     const children: Element[] = [
         Icon({
             name: t.icon,
-            tooltip: showLabel ? undefined : t.label,
-            tooltipColor: COLOR_TEXT,
         }),
     ];
     if (showLabel) {
@@ -175,6 +163,8 @@ function typeTabButton(t: HouseContentType, showLabel: boolean): Element {
     }
     return Button({
         children,
+        tooltip: showLabel ? undefined : t.label,
+        tooltipColor: COLOR_TEXT,
         style: {
             width: { kind: "grow" },
             height: { kind: "grow" },
@@ -187,42 +177,8 @@ function typeTabButton(t: HouseContentType, showLabel: boolean): Element {
     });
 }
 
-function rescanButton(t: HouseContentType, uuid: string | null): Element {
-    return Button({
-        style: {
-            width: { kind: "px", value: SCAN_BUTTON_W },
-            height: { kind: "grow" },
-            background: COLOR_BUTTON,
-            hoverBackground: COLOR_BUTTON_HOVER,
-        },
-        onClick: () => {
-            if (!t.scanInFlight()) t.scan();
-        },
-        children: [
-            Icon({
-                name: Icons.refreshCw,
-                // "names" + "(fast)" to set it apart from the slow deep Read,
-                // which lives in the export dropdown ("Read … into knowledge").
-                tooltip: () => {
-                    const l = scanLabel(t, uuid);
-                    return l.indexOf("Scanning") === 0 ? l : `${l} names (fast)`;
-                },
-                tooltipColor: COLOR_TEXT_DIM,
-                style: {
-                    width: { kind: "px", value: 12 },
-                    height: { kind: "px", value: 12 },
-                },
-            }),
-        ],
-    });
-}
-
-// The search bar is the rescan button's home: it stays put through the
-// not-scanned and empty states so the button is always in the same place,
-// instead of hiding as a small icon in the tab strip.
 // The sort/filter buttons mirror the Projects bar: no background until active
-// (then the same green tint), so only the refresh button — which keeps its
-// button background — reads as a distinct action.
+// (then the same green tint).
 // Background must be a function: passing a bare `undefined` value makes Button
 // fall back to its default COLOR_BUTTON box, which is what boxed these controls.
 // A function that returns undefined reads as "no background", like the Projects
@@ -235,17 +191,17 @@ function barControlButton(
 ): Element {
     return Button({
         style: {
-            width: { kind: "px", value: SCAN_BUTTON_W },
+            width: { kind: "px", value: SEARCH_ROW_H },
             height: { kind: "grow" },
             background: () => (isActive() ? FILTER_ACTIVE_BG : undefined),
             hoverBackground: () => (isActive() ? FILTER_ACTIVE_HOVER_BG : undefined),
         },
+        tooltip,
+        tooltipColor: COLOR_TEXT_DIM,
         onClick: (rect) => onClick(rect),
         children: [
             Icon({
                 name: iconName,
-                tooltip,
-                tooltipColor: COLOR_TEXT_DIM,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -265,7 +221,7 @@ function houseSortButton(): Element {
                 key: "houses-sort",
                 anchor: rect,
                 content: houseSortPopoverContent(),
-                width: 140,
+                width: 190,
                 height: HOUSE_SORT_FIELDS.length * 20 + 6,
             });
         }
@@ -311,7 +267,7 @@ function houseSortPopoverContent(): Element {
     });
 }
 
-function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): Element {
+function searchRow(t: HouseContentType): Element {
     const children: Element[] = [
         Input({
             id: "houses-item-search",
@@ -323,15 +279,14 @@ function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): 
             placeholder: `Search ${t.label.toLowerCase()}…`,
             style: {
                 width: { kind: "grow" },
-                height: { kind: "px", value: SIZE_ROW_H + 6 },
+                height: { kind: "px", value: SEARCH_ROW_H },
             },
         }),
     ];
     children.push(houseSortButton());
     children.push(houseStatusFilterButton());
-    if (canScan) children.push(rescanButton(t, uuid));
     return Row({
-        style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H + 6 } },
+        style: { gap: 4, height: { kind: "px", value: SEARCH_ROW_H } },
         children,
     });
 }
@@ -475,12 +430,12 @@ function itemRowActionButton(
             if (info.button !== 0 || info.isDoubleClickSecond) return;
             action.run(name);
         },
+        tooltip: action.label,
+        tooltipColor: COLOR_TEXT_DIM,
         children: [
             Icon({
                 name: action.icon,
                 color: COLOR_TEXT_DIM,
-                tooltip: action.label,
-                tooltipColor: COLOR_TEXT_DIM,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -664,6 +619,23 @@ function exportActionBar(
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
+                    t.scanNames !== false &&
+                        Button({
+                            icon: Icons.scanText,
+                            text: () => (t.scanInFlight() ? "Scanning…" : "Scan Names"),
+                            disabled: () => t.scanInFlight(),
+                            style: {
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: COLOR_BUTTON_HOVER,
+                            },
+                            tooltip: "Refresh the names listed for this house",
+                            tooltipColor: COLOR_TEXT_DIM,
+                            onClick: () => {
+                                if (!t.scanInFlight()) t.scan();
+                            },
+                        }),
                     deepRead !== undefined &&
                         Button({
                             children: [
@@ -769,25 +741,6 @@ function exportActionBar(
                             }
                         },
                     }),
-                    selectedCount > 0 &&
-                        Button({
-                            children: [
-                                Icon({
-                                    name: Icons.x,
-                                    style: {
-                                        width: { kind: "px", value: 12 },
-                                        height: { kind: "px", value: 12 },
-                                    },
-                                }),
-                            ],
-                            style: {
-                                width: { kind: "px", value: 22 },
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: COLOR_BUTTON_HOVER,
-                            },
-                            onClick: () => clearExportSelection(),
-                        }),
                 ],
             }),
             t.type === "MENU" &&
@@ -884,26 +837,31 @@ export function typeBrowserSection(
             const scanned = t.scanned(uuid);
             const items = scanned ? t.items(uuid) : [];
             const shown: HouseRow[] = [];
-            // Keep the search bar (with the rescan button) present whenever you
-            // can scan or there's something to search, so the button doesn't
-            // vanish in the not-scanned / empty states.
+            // Keep search and filtering available before the first scan and in
+            // empty states; Scan Names itself stays in the bottom action row.
             if (canScan || items.length > 0) {
-                out.push(searchRow(t, uuid, canScan));
+                out.push(searchRow(t));
             }
             if (!scanned) {
                 out.push(
-                    Text({
-                        text: () => {
-                            if (!canScan) {
-                                return `Stand in this house and Scan to list its ${t.label.toLowerCase()}.`;
-                            }
-                            return t.scanInFlight()
-                                ? "Scanning…"
-                                : `Click Scan to list this house's ${t.label.toLowerCase()}.`;
-                        },
-                        color: COLOR_TEXT_FAINT,
+                    Col({
+                        style: { height: { kind: "grow" } },
+                        children: [
+                            Text({
+                                text: () => {
+                                    if (!canScan) {
+                                        return `Stand in this house and Scan Names to list its ${t.label.toLowerCase()}.`;
+                                    }
+                                    return t.scanInFlight()
+                                        ? "Scanning…"
+                                        : `Click Scan Names to list this house's ${t.label.toLowerCase()}.`;
+                                },
+                                color: COLOR_TEXT_FAINT,
+                            }),
+                        ],
                     })
                 );
+                if (canExport) out.push(exportActionBar(t, uuid, items, shown));
                 return out;
             }
             if (items.length === 0) {

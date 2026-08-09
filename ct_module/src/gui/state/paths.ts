@@ -36,3 +36,9 @@ export function setExportImportJsonPath(path: string): void {
     exportImportJsonPath = next;
     markGuiDirty();
 }
+
+export function clearExportImportJsonPath(): void {
+    if (exportImportJsonPath === null) return;
+    exportImportJsonPath = null;
+    markGuiDirty();
+}

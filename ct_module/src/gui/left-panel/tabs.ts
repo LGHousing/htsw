@@ -1,8 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Element } from "../lib/layout";
-import { Button, Container, Icon, Row, Text } from "../lib/components";
-import { Icons, IconName } from "../lib/icons.generated";
+import { Button, Container, Row } from "../lib/components";
+import { Icons } from "../lib/icons.generated";
 import { ProjectsView } from "./projects";
 import { HousesView } from "./houses";
 import { SettingsView } from "./settings";
@@ -19,12 +19,12 @@ import { markGuiDirty } from "../lib/dirty";
 
 type TabId = "projects" | "houses" | "settings";
 
-type Tab = { id: TabId; label: string; icon: IconName; content: (bodyW: number) => Element };
+type Tab = { id: TabId; label: string; content: (bodyW: number) => Element };
 
 const TABS: Tab[] = [
-    { id: "projects", label: "Projects", icon: Icons.compass, content: ProjectsView },
-    { id: "houses", label: "Houses", icon: Icons.house, content: HousesView },
-    { id: "settings", label: "Settings", icon: Icons.settings, content: SettingsView },
+    { id: "projects", label: "Projects", content: ProjectsView },
+    { id: "houses", label: "Houses", content: HousesView },
+    { id: "settings", label: "Settings", content: SettingsView },
 ];
 
 let activeTab: TabId = "projects";
@@ -40,10 +40,8 @@ export function setActiveLeftTab(id: TabId): void {
     markGuiDirty();
 }
 
-// Tab geometry, needed to decide whether the text labels fit or the bar must
-// fall back to icon-only. Mirrors the Button defaults (padding x:4, icon 16,
-// icon→text gap 4) and the bar's own gap so the fit test matches what is
-// actually laid out.
+// Shared geometry for the icon-and-label house content tabs. Their labels
+// collapse when the available width cannot fit the widest one.
 export const TAB_GAP = 2;
 const TAB_BUTTON_PAD_X = 4;
 const TAB_ICON_W = 16;
@@ -51,8 +49,7 @@ const TAB_ICON_LABEL_GAP = 4;
 const LABEL_FIT_MARGIN = 4;
 
 export function tabLabelsFit(perTabW: number, labels: string[]): boolean {
-    const labelSpace =
-        perTabW - TAB_BUTTON_PAD_X * 2 - TAB_ICON_W - TAB_ICON_LABEL_GAP;
+    const labelSpace = perTabW - TAB_BUTTON_PAD_X * 2 - TAB_ICON_W - TAB_ICON_LABEL_GAP;
     let widestLabel = 0;
     for (let i = 0; i < labels.length; i++) {
         const w = Renderer.getStringWidth(labels[i]);
@@ -61,16 +58,8 @@ export function tabLabelsFit(perTabW: number, labels: string[]): boolean {
     return labelSpace - LABEL_FIT_MARGIN >= widestLabel;
 }
 
-function tabButton(t: Tab, showLabel: boolean): Element {
+function tabButton(t: Tab): Element {
     const isActive = activeTab === t.id;
-    const content: Element[] = [
-        Icon({
-            name: t.icon,
-            tooltip: showLabel ? undefined : t.label,
-            tooltipColor: COLOR_TEXT,
-        }),
-    ];
-    if (showLabel) content.push(Text({ text: t.label }));
     return Container({
         style: {
             direction: "col",
@@ -79,7 +68,7 @@ function tabButton(t: Tab, showLabel: boolean): Element {
         },
         children: [
             Button({
-                children: content,
+                text: t.label,
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
@@ -102,21 +91,58 @@ function tabButton(t: Tab, showLabel: boolean): Element {
     });
 }
 
-// `availW` is the tab bar's own width (the left panel minus its padding). The
-// labels show only when the WIDEST one fits its tab; otherwise every tab drops
-// to icon-only (with a hover tooltip) so a narrow panel never paints a
-// half-clipped label into the next tab.
-export function TabBar(availW: number): Element {
-    const n = TABS.length;
-    const perTab = (availW - TAB_GAP * (n - 1)) / n;
-    const showLabels = tabLabelsFit(perTab, TABS.map((t) => t.label));
-    const buttons = TABS.map((t) => tabButton(t, showLabels));
+function settingsButton(): Element {
+    const settings = TABS[2];
+    const isActive = activeTab === settings.id;
+    return Container({
+        style: {
+            direction: "col",
+            width: { kind: "px", value: SIZE_TAB_H + 2 },
+            height: { kind: "grow" },
+        },
+        children: [
+            Button({
+                icon: Icons.settings,
+                tooltip: settings.label,
+                tooltipColor: COLOR_TEXT,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    padding: 0,
+                    background: isActive ? COLOR_TAB_ACTIVE : COLOR_TAB,
+                    hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
+                },
+                onClick: () => setActiveLeftTab(settings.id),
+            }),
+            Container({
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 2 },
+                    background: isActive ? COLOR_TAB_ACCENT : undefined,
+                },
+                children: [],
+            }),
+        ],
+    });
+}
+
+export function TabBar(): Element {
     return Row({
         style: {
-            gap: TAB_GAP,
+            gap: 6,
             height: { kind: "px", value: SIZE_TAB_H + 2 },
             width: { kind: "grow" },
         },
-        children: buttons,
+        children: [
+            Row({
+                style: {
+                    gap: TAB_GAP,
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                },
+                children: [tabButton(TABS[0]), tabButton(TABS[1])],
+            }),
+            settingsButton(),
+        ],
     });
 }

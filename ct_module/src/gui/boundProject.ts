@@ -4,9 +4,15 @@ import { boundImportJsonPath } from "../importCache/houseBindings";
 import { canonicalPath } from "./parsing/parses";
 import { addRecent } from "./persistence/recents";
 import { forceImportExpand } from "./left-panel/projects/rows";
-import { queueSourcePath } from "./left-panel/projects/source";
+import { getSources, queueSourcePath, removeSource } from "./left-panel/projects/source";
 import { setActiveLeftTab } from "./left-panel/tabs";
-import { setExportImportJsonPath, setImportJsonPath } from "./state";
+import {
+    clearExportImportJsonPath,
+    getImportJsonPath,
+    setExportImportJsonPath,
+    setImportJsonPath,
+} from "./state";
+import { closeTabsForProject } from "./right-panel/selection";
 
 export function openBoundProjectForHouse(uuid: string | null): boolean {
     if (uuid === null) return false;
@@ -20,4 +26,16 @@ export function openBoundProjectForHouse(uuid: string | null): boolean {
     addRecent(bound);
     setActiveLeftTab("projects");
     return true;
+}
+
+export function closeBoundProjectForHouse(uuid: string | null): void {
+    const bound = uuid === null ? null : boundImportJsonPath(uuid);
+    if (bound !== null) {
+        const canon = canonicalPath(bound);
+        closeTabsForProject(canon);
+        getSources();
+        removeSource(canon);
+        if (canonicalPath(getImportJsonPath()) === canon) setImportJsonPath("");
+    }
+    clearExportImportJsonPath();
 }

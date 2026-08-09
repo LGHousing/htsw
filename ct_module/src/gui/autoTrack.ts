@@ -17,6 +17,9 @@ import {
 import {
     addToQueue,
     makeImportableQueueItem,
+    queueItemKey,
+    reconcileAutoTrackedQueue,
+    type ImportQueueItem,
 } from "./right-panel/import-tab/queue";
 import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
@@ -36,6 +39,29 @@ type ModifiedQueueOptions = {
     blockingCacheRead?: boolean;
 };
 
+type PlannedQueueItem = {
+    item: ImportQueueItem;
+    changed: boolean;
+    required: boolean;
+    workKey: string;
+};
+
+type ModifiedQueuePlan = {
+    changed: number;
+    required: number;
+    complete: boolean;
+    items: PlannedQueueItem[];
+};
+
+function importableStatus(
+    imp: Importable,
+    blockingCacheRead: boolean
+): "current" | "modified" | "unknown" | null {
+    return blockingCacheRead
+        ? statusForImportableBlocking(imp)
+        : cachedStatusForImportable(imp);
+}
+
 export function needsModifiedQueue(
     imp: Importable,
     blockingCacheRead = false
@@ -44,22 +70,24 @@ export function needsModifiedQueue(
     // New importables must queue too, or auto-track never picks up newly
     // created functions/menus. (A cache that merely isn't loaded yet
     // returns null, not "unknown", and re-queues via the cache-warm event.)
-    const status = blockingCacheRead
-        ? statusForImportableBlocking(imp)
-        : cachedStatusForImportable(imp);
+    const status = importableStatus(imp, blockingCacheRead);
     return status === "modified" || status === "unknown";
 }
 
-export function queueModifiedImportables(
+function planModifiedImportables(
     sourcePath: string,
     parsed: ImportablesParseResult,
     importables: readonly Importable[] = parsed.value,
     options: ModifiedQueueOptions = {}
-): ModifiedQueueResult {
+): ModifiedQueuePlan {
     const canonicalSourcePath = canonicalPath(sourcePath);
     const modified: Importable[] = [];
+    let complete = true;
     for (const imp of importables) {
-        if (needsModifiedQueue(imp, options.blockingCacheRead)) {
+        const status = importableStatus(imp, options.blockingCacheRead ?? false);
+        if (status === null) {
+            complete = false;
+        } else if (status === "modified" || status === "unknown") {
             modified.push(imp);
         }
     }
@@ -77,34 +105,59 @@ export function queueModifiedImportables(
     for (const importable of required) {
         requiredKeys.add(`${importable.type}:${importableIdentity(importable)}`);
     }
-    let newlyQueuedRequired = 0;
-    let newlyQueuedChanged = 0;
     const modifiedKeys = new Set<string>();
     for (const importable of modified) {
         modifiedKeys.add(`${importable.type}:${importableIdentity(importable)}`);
     }
-    const workKeys: string[] = [];
+    const items: PlannedQueueItem[] = [];
     for (const importable of work) {
         const identityKey = `${importable.type}:${importableIdentity(importable)}`;
-        workKeys.push(`${canonicalSourcePath}|${identityKey}`);
-        const added = addToQueue(
-            makeImportableQueueItem(importable, canonicalSourcePath)
-        );
-        if (added && modifiedKeys.has(identityKey)) newlyQueuedChanged++;
-        if (
-            added &&
-            requiredKeys.has(identityKey)
-        ) {
-            newlyQueuedRequired++;
-        }
+        items.push({
+            item: makeImportableQueueItem(importable, canonicalSourcePath),
+            changed: modifiedKeys.has(identityKey),
+            required: requiredKeys.has(identityKey),
+            workKey: `${canonicalSourcePath}|${identityKey}`,
+        });
     }
     return {
         changed: modified.length,
         required: required.length,
+        complete,
+        items,
+    };
+}
+
+function enqueueModifiedPlan(
+    plan: ModifiedQueuePlan,
+    add: (item: ImportQueueItem) => boolean = addToQueue
+): ModifiedQueueResult {
+    let newlyQueuedRequired = 0;
+    let newlyQueuedChanged = 0;
+    const workKeys: string[] = [];
+    for (const planned of plan.items) {
+        workKeys.push(planned.workKey);
+        if (!add(planned.item)) continue;
+        if (planned.changed) newlyQueuedChanged++;
+        if (planned.required) newlyQueuedRequired++;
+    }
+    return {
+        changed: plan.changed,
+        required: plan.required,
         newlyQueuedChanged,
         newlyQueuedRequired,
         workKeys,
     };
+}
+
+export function queueModifiedImportables(
+    sourcePath: string,
+    parsed: ImportablesParseResult,
+    importables: readonly Importable[] = parsed.value,
+    options: ModifiedQueueOptions = {}
+): ModifiedQueueResult {
+    return enqueueModifiedPlan(
+        planModifiedImportables(sourcePath, parsed, importables, options)
+    );
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
@@ -121,16 +174,42 @@ export function autoTrackRefresh(
     let newlyQueuedChanged = 0;
     let newlyQueuedRequired = 0;
     const detectedWorkKeys: string[] = [];
+    const plans: ModifiedQueuePlan[] = [];
+    const seenTracked = new Set<string>();
+    let reconciliationComplete = true;
     forEachCachedParse((entry) => {
-        if (entry.parsed === null) return;
         if (!tracked.has(entry.canonicalPath)) return;
-        const result = queueModifiedImportables(entry.canonicalPath, entry.parsed);
-        changed += result.changed;
-        required += result.required;
-        newlyQueuedChanged += result.newlyQueuedChanged;
-        newlyQueuedRequired += result.newlyQueuedRequired;
-        for (const key of result.workKeys) detectedWorkKeys.push(key);
+        seenTracked.add(entry.canonicalPath);
+        if (entry.parsed === null) {
+            reconciliationComplete = false;
+            return;
+        }
+        const plan = planModifiedImportables(entry.canonicalPath, entry.parsed);
+        plans.push(plan);
+        if (!plan.complete) reconciliationComplete = false;
+        changed += plan.changed;
+        required += plan.required;
+        for (const planned of plan.items) {
+            detectedWorkKeys.push(planned.workKey);
+        }
     });
+    if (seenTracked.size !== tracked.size) reconciliationComplete = false;
+
+    const desiredItems: ImportQueueItem[] = [];
+    for (const plan of plans) {
+        for (const planned of plan.items) desiredItems.push(planned.item);
+    }
+    const autoAddedKeys = reconcileAutoTrackedQueue(
+        desiredItems,
+        reconciliationComplete
+    );
+    for (const plan of plans) {
+        for (const planned of plan.items) {
+            if (!autoAddedKeys.has(queueItemKey(planned.item))) continue;
+            if (planned.changed) newlyQueuedChanged++;
+            if (planned.required) newlyQueuedRequired++;
+        }
+    }
     if (newlyQueuedRequired > 0) {
         showToast(
             `Auto-Track: ${changed} changed + ${required} required = ${changed + required} queued`,

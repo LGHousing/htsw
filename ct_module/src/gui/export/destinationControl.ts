@@ -1,61 +1,45 @@
 import type { Element } from "../lib/layout";
-import { Button, Col, Container, Icon, Text } from "../lib/components";
+import { Button, Container, Icon } from "../lib/components";
 import { Icons } from "../lib/icons.generated";
-import {
-    ACCENT_DANGER,
-    ACCENT_WARN,
-    COLOR_BUTTON,
-    COLOR_BUTTON_HOVER,
-    COLOR_TEXT,
-    COLOR_TEXT_DIM,
-} from "../lib/theme";
-import { basename, dirname, shortPath } from "../lib/pathDisplay";
+import { COLOR_BUTTON, COLOR_BUTTON_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
 import { togglePopover } from "../lib/popovers";
-import { getEffectiveNewExportTarget } from "../state";
 import { exportDestinationPicker } from "./destinationPicker";
 import { getExportDestinationStatus } from "./destinationStatus";
 
-/**
- * Label the export destination relative to the project, since the row
- * above already names the project. The base file reads as `import.json`; a
- * sub-target reads as its folder path within the project.
- */
-function newTargetLabel(projectImportJson: string): string {
-    const target = shortPath(getEffectiveNewExportTarget());
-    const projectDir = shortPath(projectImportJson);
-    const targetKey = target.toLowerCase();
-    const projectKey = projectDir.toLowerCase();
-    if (targetKey === projectKey) return "import.json";
-    if (targetKey.indexOf(`${projectKey}/`) === 0) {
-        return target.substring(projectDir.length + 1);
-    }
-    return target;
-}
-
-export function exportDestinationControl(): Element {
+export function exportDestinationButton(): Element {
     return Container({
         anchorKey: "tour:export-destination",
-        style: { width: { kind: "grow" }, height: { kind: "px", value: 34 } },
+        style: {
+            width: { kind: "px", value: 24 },
+            height: { kind: "grow" },
+        },
         children: [
             Button({
-                style: {
-                    direction: "row",
-                    justify: "start",
-                    gap: 6,
-                    padding: { side: "x", value: 8 },
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                    align: "center",
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
+                children: [
+                    Icon({
+                        name: Icons.folderOutput,
+                        style: {
+                            width: { kind: "px", value: 12 },
+                            height: { kind: "px", value: 12 },
+                        },
+                    }),
+                ],
                 tooltip: () => {
                     const status = getExportDestinationStatus();
                     if (status.kind === "ready") return "Change where exports go";
-                    if (status.kind === "missing") return "Choose a replacement export project";
+                    if (status.kind === "missing") {
+                        return "Choose a replacement export project";
+                    }
                     return "Choose an export project";
                 },
                 tooltipColor: COLOR_TEXT_DIM,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    padding: 0,
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
                 onClick: (rect) =>
                     togglePopover({
                         key: "houses-export-destination",
@@ -64,66 +48,6 @@ export function exportDestinationControl(): Element {
                         width: 380,
                         height: 320,
                     }),
-                children: () => {
-                    const status = getExportDestinationStatus();
-                    if (status.kind === "none") {
-                        return [
-                            Icon({ name: Icons.folderPlus, color: ACCENT_WARN }),
-                            Col({
-                                style: { gap: 2, width: { kind: "grow" } },
-                                children: [
-                                    Text({ text: "No export project selected", color: ACCENT_WARN }),
-                                    Text({
-                                        text: "Choose or create a project before exporting",
-                                        color: COLOR_TEXT_DIM,
-                                        truncate: true,
-                                    }),
-                                ],
-                            }),
-                            Icon({ name: Icons.chevronRight, color: COLOR_TEXT_DIM }),
-                        ];
-                    }
-                    if (status.kind === "missing") {
-                        return [
-                            Icon({ name: Icons.folderX, color: ACCENT_DANGER }),
-                            Col({
-                                style: { gap: 2, width: { kind: "grow" } },
-                                children: [
-                                    Text({ text: "Export project is missing", color: ACCENT_DANGER }),
-                                    Text({
-                                        text: shortPath(status.path),
-                                        color: COLOR_TEXT_DIM,
-                                        tooltip: status.path,
-                                        tooltipColor: COLOR_TEXT_DIM,
-                                        truncate: true,
-                                    }),
-                                ],
-                            }),
-                            Icon({ name: Icons.chevronRight, color: ACCENT_DANGER }),
-                        ];
-                    }
-                    return [
-                        Icon({ name: Icons.folderOutput }),
-                        Col({
-                            style: { gap: 2, width: { kind: "grow" } },
-                            children: [
-                                Text({
-                                    text: `Project: ${basename(dirname(status.path))}`,
-                                    color: COLOR_TEXT,
-                                    truncate: true,
-                                }),
-                                Text({
-                                    text: `Export destination: ${newTargetLabel(status.path)}`,
-                                    color: COLOR_TEXT_DIM,
-                                    tooltip: getEffectiveNewExportTarget(),
-                                    tooltipColor: COLOR_TEXT_DIM,
-                                    truncate: true,
-                                }),
-                            ],
-                        }),
-                        Icon({ name: Icons.chevronRight, color: COLOR_TEXT_DIM }),
-                    ];
-                },
             }),
         ],
     });

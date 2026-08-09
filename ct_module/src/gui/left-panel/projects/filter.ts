@@ -8,7 +8,7 @@ import {
 } from "../../cache-status";
 import {
     PROJECT_LINK_STATUSES,
-    checkboxRow,
+    optionRow,
     statusFilterRows,
     popoverWidthForLabels,
     FILTER_ROW_HOVER_BG,
@@ -93,13 +93,19 @@ export function filterPopoverContent(): Element {
         style: { padding: 4, gap: 2 },
         children: () => {
             const rows: Element[] = ALL_IMPORTABLE_TYPES.map((t) =>
-                checkboxRow(selectedTypes.has(t), () => toggleType(t), Container({
-                    style: {
-                        width: { kind: "px", value: 6 }, height: { kind: "px", value: 12 },
-                        background: IMPORTABLE_TYPE_COLORS[t],
-                    },
-                    children: [],
-                }), t)
+                optionRow(
+                    selectedTypes.has(t),
+                    () => toggleType(t),
+                    Container({
+                        style: {
+                            width: { kind: "px", value: 6 }, height: { kind: "px", value: 12 },
+                            background: IMPORTABLE_TYPE_COLORS[t],
+                        },
+                        children: [],
+                    }),
+                    t,
+                    ""
+                )
             );
             rows.push(Container({
                 style: { height: { kind: "px", value: 3 }, background: FILTER_ROW_HOVER_BG },

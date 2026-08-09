@@ -248,9 +248,7 @@ export function drawLaid(
 function drawTooltip(t: QueuedTooltip): void {
     const padX = 3;
     const padY = 2;
-    // Measure with a trailing space — the text is left-anchored, so without
-    // it the last glyph sits flush against the tooltip's right edge.
-    const tw = Renderer.getStringWidth(`${t.text} `);
+    const tw = Renderer.getStringWidth(t.text);
     const w = tw + padX * 2;
     const h = LINE_H + padY * 2;
     const screenW = getOverlayScreenW();

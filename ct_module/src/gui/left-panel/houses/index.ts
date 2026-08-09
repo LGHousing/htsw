@@ -43,7 +43,7 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { typeBrowserSection } from "./contentBrowser";
-import { exportDestinationControl } from "../../export/destinationControl";
+import { exportDestinationButton } from "../../export/destinationControl";
 
 // Trust glyph tint: green when trusted, faint otherwise.
 const TRUST_ICON_ON = 0xff5cb85c | 0;
@@ -230,6 +230,8 @@ function houseDropdownRow(uuid: string): Element {
                     if (info.button !== 0) return;
                     confirmDeleteHouse(uuid, () => closeHouseDropdown());
                 },
+                tooltip: "Remove this house",
+                tooltipColor: ACCENT_DANGER,
                 children: [
                     Icon({
                         name: Icons.trash2,
@@ -238,8 +240,6 @@ function houseDropdownRow(uuid: string): Element {
                             width: { kind: "px", value: 12 },
                             height: { kind: "px", value: 12 },
                         },
-                        tooltip: "Remove this house",
-                        tooltipColor: ACCENT_DANGER,
                     }),
                 ],
             }),
@@ -439,11 +439,12 @@ function housePickerRow(): Element {
             const trusted = viewed !== null && isHouseTrusted(viewed);
             return [
                 houseSelector(viewed),
-                trustButton(viewed, trusted),
                 houseActionButton(Icons.pencil, "Rename this house", (rect: Rect) => {
                     if (viewed === null) return;
                     openAliasPopover(rect, viewed);
                 }),
+                exportDestinationButton(),
+                trustButton(viewed, trusted),
             ];
         },
     });
@@ -479,11 +480,7 @@ export function HousesView(bodyW: number): Element {
         style: { gap: 6, height: { kind: "grow" }, padding: 4 },
         children: () => {
             if (knownHouses().length === 0) return [emptyState()];
-            return [
-                housePickerRow(),
-                exportDestinationControl(),
-                typeBrowserSection(viewedUuid, bodyW - 8),
-            ];
+            return [housePickerRow(), typeBrowserSection(viewedUuid, bodyW - 8)];
         },
     });
 }

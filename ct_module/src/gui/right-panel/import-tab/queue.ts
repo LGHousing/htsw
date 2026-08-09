@@ -92,6 +92,7 @@ let itemsRevision = 0;
 let lookupRevision = -1;
 const byKey = new Map<string, number>();
 const byImportWork = new Map<string, number>();
+const autoTrackedKeys = new Set<string>();
 
 /**
  * Keys of the queue items that belong to the currently-running import
@@ -130,7 +131,12 @@ export function endQueueSession(removeSessionItems: boolean): void {
     const beforeLen = items.length;
     if (sessionKeys !== null && removeSessionItems) {
         const keys = sessionKeys;
-        items = items.filter((i) => !keys.has(queueItemKey(i)));
+        items = items.filter((i) => {
+            const key = queueItemKey(i);
+            if (!keys.has(key)) return true;
+            autoTrackedKeys.delete(key);
+            return false;
+        });
         itemsRevision++;
     }
     sessionKeys = null;
@@ -191,6 +197,44 @@ export function addToQueue(item: QueueItem): boolean {
 }
 
 /**
+ * Sync Auto-Track's part of the queue with its latest detected work. When
+ * detection is incomplete, callers can keep stale rows until a later refresh
+ * confirms whether they are still needed. Manually queued rows are never
+ * claimed or removed, and active-session rows stay until the task releases them.
+ */
+export function reconcileAutoTrackedQueue(
+    desiredItems: readonly ImportQueueItem[],
+    removeStale = true
+): ReadonlySet<string> {
+    const desiredKeys = new Set<string>();
+    for (const item of desiredItems) desiredKeys.add(queueItemKey(item));
+
+    const beforeLen = items.length;
+    if (removeStale) {
+        items = items.filter((item) => {
+            const key = queueItemKey(item);
+            if (!autoTrackedKeys.has(key) || desiredKeys.has(key)) return true;
+            if (sessionKeys !== null && sessionKeys.has(key)) return true;
+            autoTrackedKeys.delete(key);
+            return false;
+        });
+    }
+    if (items.length !== beforeLen) {
+        itemsRevision++;
+        queueChanged();
+    }
+
+    const addedKeys = new Set<string>();
+    for (const item of desiredItems) {
+        if (!addToQueue(item)) continue;
+        const key = queueItemKey(item);
+        autoTrackedKeys.add(key);
+        addedKeys.add(key);
+    }
+    return addedKeys;
+}
+
+/**
  * Add an item mid-run as part of the active session. The importer widens
  * its work set after the session snapshot (click-action item dependencies),
  * so a plain addToQueue would land the row in the "pending" group below the
@@ -210,12 +254,16 @@ export function removeFromQueueKey(key: string): void {
     const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);
     itemsRevision++;
-    if (items.length !== beforeLen) queueChanged();
+    if (items.length !== beforeLen) {
+        autoTrackedKeys.delete(key);
+        queueChanged();
+    }
 }
 
 export function removeFromQueue(item: QueueItem): void {
     const index = queuedItemIndex(item);
     if (index < 0) return;
+    autoTrackedKeys.delete(queueItemKey(items[index]));
     items = items.slice(0, index).concat(items.slice(index + 1));
     itemsRevision++;
     queueChanged();
@@ -231,10 +279,14 @@ export function toggleQueue(item: QueueItem): boolean {
 }
 
 export function clearQueue(): void {
-    if (items.length === 0 && sessionKeys === null) return;
+    if (items.length === 0 && sessionKeys === null) {
+        autoTrackedKeys.clear();
+        return;
+    }
     items = [];
     itemsRevision++;
     sessionKeys = null;
+    autoTrackedKeys.clear();
     queueChanged();
 }
 

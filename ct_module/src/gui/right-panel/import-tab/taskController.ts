@@ -627,8 +627,8 @@ export function isImportPreparationRunning(): boolean {
 export function startImport(
     explicit?: readonly ImportQueueItem[],
     options: ImportStartOptions = {}
-): void {
-    startImportIfIdle(explicit, options);
+): boolean {
+    return startImportIfIdle(explicit, options);
 }
 
 type ImportStartOptions = {
@@ -657,7 +657,9 @@ export function startImportIfIdle(
         },
         (error: unknown) => {
             importPreparationRunning = false;
-            ChatLib.chat(`&c[htsw] Couldn't prepare import: ${String(error)}`);
+            ChatLib.chat(
+                `&c[htsw] Import failed: Couldn't prepare import: ${String(error)}`
+            );
         }
     );
     return true;
@@ -679,7 +681,7 @@ async function prepareAndStartImport(
     if (TaskManager.isBusy()) {
         if (options.silentBusy !== true) {
             ChatLib.chat(
-                "&c[htsw] Another task started while the project was being checked."
+                "&c[htsw] Import failed: Another task started while the project was being checked."
             );
         }
         return;
@@ -689,7 +691,7 @@ async function prepareAndStartImport(
             explicit !== undefined
                 ? "Nothing matched the selection — try checking importables in the Projects tab first."
                 : "Queue is empty — right-click something and Add to queue.";
-        ChatLib.chat(`&c[htsw] ${msg}`);
+        ChatLib.chat(`&c[htsw] Import failed: ${msg}`);
         return;
     }
     const failed = batches
@@ -891,6 +893,9 @@ async function prepareAndStartImport(
         } catch (err) {
             if (isTaskCancelled(err)) {
                 cancelled = true;
+                ChatLib.chat(
+                    `&e[htsw] Import cancelled by user &7· &f${totalImported}&e imported`
+                );
             } else {
                 unexpectedError = err;
             }

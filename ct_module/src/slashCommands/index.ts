@@ -429,40 +429,50 @@ function commandGui(): void {
 
 function commandBridge(args: string[]): void {
     const action = (args[0] ?? "").toLowerCase();
-    const point = bridgePoint(args.slice(1));
-    if (point === null) return;
     if (action === "click") {
+        const point = bridgePoint(args.slice(1));
+        if (point === null) return;
         const buttonName = (args[3] ?? "left").toLowerCase();
         const buttons: Partial<Record<string, number>> = { left: 0, right: 1, middle: 2 };
         const button = buttons[buttonName];
         if (button === undefined) {
-            ChatLib.chat(
-                "&cUsage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]"
+            bridgeFailed(
+                "Usage: /htsw bridge click <x> <y> [left|right|middle] [framebuffer|gui]"
             );
             return;
         }
-        clickHtswOverlay(point.x, point.y, button);
+        if (!clickHtswOverlay(point.x, point.y, button)) {
+            bridgeFailed("Click did not hit an HTSW control.");
+        }
         return;
     }
     if (action === "scroll") {
+        const point = bridgePoint(args.slice(1));
+        if (point === null) return;
         const delta = Number(args[3]);
         if (!isFinite(delta) || delta === 0) {
-            ChatLib.chat(
-                "&cUsage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]"
+            bridgeFailed(
+                "Usage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]"
             );
             return;
         }
-        scrollHtswOverlay(point.x, point.y, delta);
+        if (!scrollHtswOverlay(point.x, point.y, delta / 120)) {
+            bridgeFailed("Scroll did not hit an HTSW scroll area.");
+        }
         return;
     }
-    ChatLib.chat("&cUsage: /htsw bridge <click|scroll> ...");
+    bridgeFailed("Usage: /htsw bridge <click|scroll> ...");
+}
+
+function bridgeFailed(message: string): void {
+    ChatLib.chat(`&c[htsw] Bridge failed: ${message}`);
 }
 
 function bridgePoint(args: string[]): { x: number; y: number } | null {
     let x = Number(args[0]);
     let y = Number(args[1]);
     if (!isFinite(x) || !isFinite(y)) {
-        ChatLib.chat("&cHTSW bridge coordinates must be numbers.");
+        bridgeFailed("Coordinates must be numbers.");
         return null;
     }
     const space = (args[3] ?? "framebuffer").toLowerCase();
@@ -471,7 +481,7 @@ function bridgePoint(args: string[]): { x: number; y: number } | null {
         x = Math.floor((x * Renderer.screen.getWidth()) / mc.field_71443_c);
         y = Math.floor((y * Renderer.screen.getHeight()) / mc.field_71440_d);
     } else if (space !== "gui") {
-        ChatLib.chat("&cHTSW bridge coordinate space must be framebuffer or gui.");
+        bridgeFailed("Coordinate space must be framebuffer or gui.");
         return null;
     }
     if (
@@ -480,7 +490,7 @@ function bridgePoint(args: string[]): { x: number; y: number } | null {
         x >= Renderer.screen.getWidth() ||
         y >= Renderer.screen.getHeight()
     ) {
-        ChatLib.chat("&cHTSW bridge coordinates are outside the current screen.");
+        bridgeFailed("Coordinates are outside the current screen.");
         return null;
     }
     return { x, y };

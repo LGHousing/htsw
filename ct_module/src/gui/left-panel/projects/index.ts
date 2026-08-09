@@ -193,11 +193,11 @@ function emptyStateRow(): Element {
                                 onClick: () => createStarterProject(),
                             }),
                             Button({
+                                tooltip: "Hide this (restore with /htsw tour)",
+                                tooltipColor: COLOR_TEXT_DIM,
                                 children: [
                                     Icon({
                                         name: Icons.x,
-                                        tooltip: "Hide this (restore with /htsw tour)",
-                                        tooltipColor: COLOR_TEXT_DIM,
                                         style: {
                                             width: { kind: "px", value: 12 },
                                             height: { kind: "px", value: 12 },
