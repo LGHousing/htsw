@@ -457,6 +457,8 @@ function readActionReferencesForSection(
 }
 
 function pickHtslFilename(
+    fs: ProjectFs,
+    importJsonPath: string,
     refs: { current: string | null; usedByOthers: Set<string> },
     identity: string,
     label: string
@@ -468,14 +470,18 @@ function pickHtslFilename(
 
     const usedLower = new Set<string>();
     refs.usedByOthers.forEach((name) => usedLower.add(name.toLowerCase()));
+    const dir = fs.parentDir(importJsonPath);
+    const isAvailable = (candidate: string): boolean =>
+        !usedLower.has(candidate.toLowerCase()) &&
+        !fs.exists(fs.resolvePath(dir, candidate));
 
     const slug = canonicalSlug(identity);
     const preferred = `${slug}.htsl`;
-    if (!usedLower.has(preferred.toLowerCase())) return preferred;
+    if (isAvailable(preferred)) return preferred;
 
     for (let i = 2; i < 1000; i++) {
         const candidate = `${slug}_${i}.htsl`;
-        if (!usedLower.has(candidate.toLowerCase())) return candidate;
+        if (isAvailable(candidate)) return candidate;
     }
 
     throw new Error(`Could not find an unused filename for ${label} "${identity}".`);
@@ -553,7 +559,7 @@ function htslTargetForSection(
         identityField,
         identity
     );
-    const htslReference = pickHtslFilename(refs, identity, label);
+    const htslReference = pickHtslFilename(fs, importJsonPath, refs, identity, label);
     return {
         importJsonPath,
         htslPath: fs.resolvePath(fs.parentDir(importJsonPath), htslReference),
@@ -663,6 +669,8 @@ function readActionReferencesForFields(
 }
 
 function pickHtslFilenameFromBase(
+    fs: ProjectFs,
+    importJsonPath: string,
     current: string | null,
     usedLower: Set<string>,
     baseName: string,
@@ -679,16 +687,20 @@ function pickHtslFilenameFromBase(
         }
     }
 
+    const dir = fs.parentDir(importJsonPath);
+    const isAvailable = (candidate: string): boolean =>
+        !usedLower.has(candidate.toLowerCase()) &&
+        !fs.exists(fs.resolvePath(dir, candidate));
     const slug = canonicalSlug(baseName);
     const preferred = `${slug}.htsl`;
-    if (!usedLower.has(preferred.toLowerCase())) {
+    if (isAvailable(preferred)) {
         usedLower.add(preferred.toLowerCase());
         return preferred;
     }
 
     for (let i = 2; i < 1000; i++) {
         const candidate = `${slug}_${i}.htsl`;
-        if (!usedLower.has(candidate.toLowerCase())) {
+        if (isAvailable(candidate)) {
             usedLower.add(candidate.toLowerCase());
             return candidate;
         }
@@ -724,12 +736,16 @@ export function htslTargetsForRegionExport(
     refs.usedByOthers.forEach((name) => usedLower.add(name.toLowerCase()));
 
     const onEnterReference = pickHtslFilenameFromBase(
+        fs,
+        importJsonPath,
         refs.current.onEnterActions,
         usedLower,
         `${identity}_enter`,
         `region entry actions for "${identity}"`
     );
     const onExitReference = pickHtslFilenameFromBase(
+        fs,
+        importJsonPath,
         refs.current.onExitActions,
         usedLower,
         `${identity}_exit`,
@@ -814,12 +830,16 @@ export function htslTargetsForNpcExport(
     const base = `${entry.name}_${entry.pos.x}_${entry.pos.y}_${entry.pos.z}`;
 
     const leftReference = pickHtslFilenameFromBase(
+        fs,
+        importJsonPath,
         refs.current.leftClickActions,
         usedLower,
         `${base}_left`,
         `NPC left-click actions for "${entry.name}"`
     );
     const rightReference = pickHtslFilenameFromBase(
+        fs,
+        importJsonPath,
         refs.current.rightClickActions,
         usedLower,
         `${base}_right`,

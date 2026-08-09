@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
+    htslTargetForFunctionExport,
+    htslTargetsForNpcExport,
+    htslTargetsForRegionExport,
     moveImportableEntry,
     npcExportReferencesExist,
     type ProjectFs,
@@ -40,6 +43,32 @@ function memoryFs(files: Record<string, string>): ProjectFs {
         pathKey: normalize,
     };
 }
+
+describe("HTSL export targets", () => {
+    test("do not claim existing unreferenced files for new importables", () => {
+        const fs = memoryFs({
+            "/project/import.json": JSON.stringify({ functions: [], regions: [] }),
+            "/project/Clock.htsl": "chat \"old function\"\n",
+            "/project/Spawn_enter.htsl": "chat \"old enter\"\n",
+            "/project/Spawn_exit.htsl": "chat \"old exit\"\n",
+            "/project/Guide_1_64_-2_left.htsl": "chat \"old left\"\n",
+            "/project/Guide_1_64_-2_right.htsl": "chat \"old right\"\n",
+        });
+
+        expect(htslTargetForFunctionExport(fs, "/project/import.json", "Clock").htslReference)
+            .toBe("Clock_2.htsl");
+        const region = htslTargetsForRegionExport(fs, "/project/import.json", "Spawn");
+        expect(region.onEnter.htslReference).toBe("Spawn_enter_2.htsl");
+        expect(region.onExit.htslReference).toBe("Spawn_exit_2.htsl");
+        const npc = htslTargetsForNpcExport(
+            fs,
+            "/project/import.json",
+            { name: "Guide", pos: { x: 1, y: 64, z: -2 } },
+        );
+        expect(npc.leftClick.htslReference).toBe("Guide_1_64_-2_left_2.htsl");
+        expect(npc.rightClick.htslReference).toBe("Guide_1_64_-2_right_2.htsl");
+    });
+});
 
 describe("npcExportReferencesExist", () => {
     test("accepts NPC entries with no action references", () => {

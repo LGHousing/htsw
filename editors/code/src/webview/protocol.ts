@@ -161,6 +161,11 @@ export type ProjectToHostMessage =
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;
+          npcPosition?: { x: number; y: number; z: number };
+          createOnEnterActions: boolean;
+          createOnExitActions: boolean;
+          createLeftClickActions: boolean;
+          createRightClickActions: boolean;
       }
     | {
           type: "moveImportable";

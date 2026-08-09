@@ -22,6 +22,13 @@ export type ProjectExplorerPersistedState = {
     showAdd?: boolean;
     addKind?: ProjectImportableSummary["type"];
     addName?: string;
+    addNpcX?: string;
+    addNpcY?: string;
+    addNpcZ?: string;
+    createOnEnterActions?: boolean;
+    createOnExitActions?: boolean;
+    createLeftClickActions?: boolean;
+    createRightClickActions?: boolean;
     pendingReveal?: ProjectImportableReveal;
 };
 
@@ -55,6 +62,13 @@ type State = {
     showAdd: boolean;
     addKind: ImportableKind;
     addName: string;
+    addNpcX: string;
+    addNpcY: string;
+    addNpcZ: string;
+    createOnEnterActions: boolean;
+    createOnExitActions: boolean;
+    createLeftClickActions: boolean;
+    createRightClickActions: boolean;
     pendingReveal: ProjectImportableReveal | undefined;
     workspaceName: string;
     status: { kind: "idle" | "ok" | "error"; text: string };
@@ -90,6 +104,13 @@ type RestoredProjectState = {
     showAdd: boolean;
     addKind: ImportableKind;
     addName: string;
+    addNpcX: string;
+    addNpcY: string;
+    addNpcZ: string;
+    createOnEnterActions: boolean;
+    createOnExitActions: boolean;
+    createLeftClickActions: boolean;
+    createRightClickActions: boolean;
     pendingReveal: ProjectImportableReveal | undefined;
 };
 
@@ -108,6 +129,13 @@ function restoreProjectState(saved: ProjectExplorerPersistedState | undefined): 
         showAdd: saved?.showCreate === true ? false : saved?.showAdd === true,
         addKind,
         addName,
+        addNpcX: typeof saved?.addNpcX === "string" ? saved.addNpcX : "",
+        addNpcY: typeof saved?.addNpcY === "string" ? saved.addNpcY : "",
+        addNpcZ: typeof saved?.addNpcZ === "string" ? saved.addNpcZ : "",
+        createOnEnterActions: saved?.createOnEnterActions === true,
+        createOnExitActions: saved?.createOnExitActions === true,
+        createLeftClickActions: saved?.createLeftClickActions === true,
+        createRightClickActions: saved?.createRightClickActions === true,
         pendingReveal: validImportableReveal(saved?.pendingReveal) ? saved.pendingReveal : undefined,
     };
 }
@@ -166,6 +194,13 @@ export function mountProjectExplorer(
         showAdd: persisted.showAdd,
         addKind: persisted.addKind,
         addName: persisted.addName,
+        addNpcX: persisted.addNpcX,
+        addNpcY: persisted.addNpcY,
+        addNpcZ: persisted.addNpcZ,
+        createOnEnterActions: persisted.createOnEnterActions,
+        createOnExitActions: persisted.createOnExitActions,
+        createLeftClickActions: persisted.createLeftClickActions,
+        createRightClickActions: persisted.createRightClickActions,
         pendingReveal: persisted.pendingReveal,
         workspaceName: "",
         status: { kind: "idle", text: "" },
@@ -259,6 +294,13 @@ export function mountProjectExplorer(
                 showAdd: state.showAdd,
                 addKind: state.addKind,
                 addName: state.addName,
+                addNpcX: state.addNpcX,
+                addNpcY: state.addNpcY,
+                addNpcZ: state.addNpcZ,
+                createOnEnterActions: state.createOnEnterActions,
+                createOnExitActions: state.createOnExitActions,
+                createLeftClickActions: state.createLeftClickActions,
+                createRightClickActions: state.createRightClickActions,
                 pendingReveal: state.pendingReveal,
             },
         });
@@ -372,6 +414,28 @@ export function mountProjectExplorer(
             persistProjectState();
         });
 
+        bindAddCheckbox("createOnEnterActions", (value) => {
+            state.createOnEnterActions = value;
+        });
+        bindAddCheckbox("createOnExitActions", (value) => {
+            state.createOnExitActions = value;
+        });
+        bindAddCheckbox("createLeftClickActions", (value) => {
+            state.createLeftClickActions = value;
+        });
+        bindAddCheckbox("createRightClickActions", (value) => {
+            state.createRightClickActions = value;
+        });
+        bindAddInput("addNpcX", (value) => {
+            state.addNpcX = value;
+        });
+        bindAddInput("addNpcY", (value) => {
+            state.addNpcY = value;
+        });
+        bindAddInput("addNpcZ", (value) => {
+            state.addNpcZ = value;
+        });
+
         const addParent = document.getElementById("addParent") as HTMLSelectElement | null;
         addParent?.addEventListener("change", () => {
             if (addParent.value === NEW_IMPORT_JSON) {
@@ -402,6 +466,12 @@ export function mountProjectExplorer(
                 | null;
             const identity = (nameField?.value ?? state.addName).trim();
             if (!state.selectedParent || !identity) return;
+            const npcPosition = state.addKind === "npc" ? readNpcPosition() : undefined;
+            if (state.addKind === "npc" && npcPosition === undefined) {
+                state.status = { kind: "error", text: "Enter valid X, Y, and Z coordinates." };
+                renderStatus();
+                return;
+            }
             state.status = { kind: "idle", text: "Adding…" };
             renderStatus();
             post(vscode, {
@@ -409,12 +479,46 @@ export function mountProjectExplorer(
                 importJsonPath: state.selectedParent,
                 kind: state.addKind,
                 identity,
+                npcPosition,
+                createOnEnterActions: state.createOnEnterActions,
+                createOnExitActions: state.createOnExitActions,
+                createLeftClickActions: state.createLeftClickActions,
+                createRightClickActions: state.createRightClickActions,
             });
             state.addName = "";
             state.showAdd = false;
             persistProjectState();
             render();
         });
+
+        function bindAddCheckbox(id: string, update: (value: boolean) => void): void {
+            const checkbox = document.getElementById(id) as HTMLInputElement | null;
+            checkbox?.addEventListener("change", () => {
+                update(checkbox.checked);
+                persistProjectState();
+            });
+        }
+
+        function bindAddInput(id: string, update: (value: string) => void): void {
+            const input = document.getElementById(id) as HTMLInputElement | null;
+            input?.addEventListener("input", () => {
+                update(input.value);
+                persistProjectState();
+            });
+        }
+
+        function readNpcPosition(): { x: number; y: number; z: number } | undefined {
+            const read = (id: string): number | undefined => {
+                const raw = (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
+                if (raw === "") return undefined;
+                const value = Number(raw);
+                return Number.isFinite(value) ? value : undefined;
+            };
+            const x = read("addNpcX");
+            const y = read("addNpcY");
+            const z = read("addNpcZ");
+            return x === undefined || y === undefined || z === undefined ? undefined : { x, y, z };
+        }
 
         document.getElementById("cancelAdd")?.addEventListener("click", () => {
             state.showAdd = false;
@@ -824,10 +928,57 @@ function renderAddPanel(state: State): string {
             </label>`;
     }
 
+    if (state.addKind === "npc") {
+        identityField += `
+            <div class="create-field">
+                <span>Position</span>
+                <div class="create-coordinates">
+                    <input id="addNpcX" type="number" step="any" value="${escapeAttr(state.addNpcX)}" placeholder="X" aria-label="NPC X coordinate">
+                    <input id="addNpcY" type="number" step="any" value="${escapeAttr(state.addNpcY)}" placeholder="Y" aria-label="NPC Y coordinate">
+                    <input id="addNpcZ" type="number" step="any" value="${escapeAttr(state.addNpcZ)}" placeholder="Z" aria-label="NPC Z coordinate">
+                </div>
+            </div>`;
+    }
+
+    const starterOptions = state.addKind === "region"
+        ? [
+            { id: "createOnEnterActions", label: "On enter", checked: state.createOnEnterActions },
+            { id: "createOnExitActions", label: "On exit", checked: state.createOnExitActions },
+        ]
+        : state.addKind === "npc"
+            ? [
+                { id: "createLeftClickActions", label: "Left click", checked: state.createLeftClickActions },
+                { id: "createRightClickActions", label: "Right click", checked: state.createRightClickActions },
+            ]
+            : [];
+    const starterActions = starterOptions.length > 0
+        ? `
+            <div class="create-field">
+                <span>Starter HTSL</span>
+                <div class="create-checks">
+                    ${starterOptions.map((option) => `
+                        <label class="create-check">
+                            <input id="${option.id}" type="checkbox" ${option.checked ? "checked" : ""}>
+                            <span>${option.label}</span>
+                        </label>`).join("")}
+                </div>
+            </div>`
+        : "";
+
+    const hint = state.addKind === "region"
+        ? `Adds the region to the chosen <code>import.json</code>. Choose one or both triggers to create and link starter <code>.htsl</code> files.`
+        : state.addKind === "npc"
+            ? `HTSW cannot place NPCs. An NPC must already exist at these exact coordinates, or the importer will refuse the import.`
+        : state.addKind === "menu"
+            ? `Adds an empty menu. Right-click it afterward to add a slot; <code>Item + actions</code> also creates the slot's linked <code>.htsl</code>.`
+        : state.addKind === "function" || state.addKind === "event" || state.addKind === "command"
+            ? `Adds the entry to the chosen <code>import.json</code> and creates its linked starter <code>.htsl</code>.`
+            : `Adds the entry to the chosen <code>import.json</code>.`;
+
     return `
         <form id="addImportableForm" class="create-panel">
             <div class="create-title">Add importable</div>
-            <p class="create-hint">Adds the entry to the chosen <code>import.json</code> — plus a starter <code>.htsl</code> for functions and events.</p>
+            <p class="create-hint">${hint}</p>
             <label class="create-field">
                 <span>In file</span>
                 <select id="addParent">${parentOptions(state, true).join("")}</select>
@@ -837,6 +988,7 @@ function renderAddPanel(state: State): string {
                 <select id="addKind">${typeOptions}</select>
             </label>
             ${identityField}
+            ${starterActions}
             <div class="create-actions">
                 <button id="cancelAdd" class="secondary" type="button">Cancel</button>
                 <button type="submit">${isItem ? "Open Item Editor" : "Add"}</button>

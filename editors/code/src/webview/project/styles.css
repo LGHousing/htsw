@@ -199,6 +199,31 @@ select {
     border-color: var(--vscode-focusBorder);
 }
 
+.create-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.create-coordinates {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.create-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.create-check input {
+    width: auto;
+    min-height: 0;
+    margin: 0;
+}
+
 .create-actions {
     display: flex;
     justify-content: flex-end;

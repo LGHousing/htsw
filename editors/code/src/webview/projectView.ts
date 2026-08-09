@@ -12,9 +12,12 @@ import {
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
+    htslTargetsForNpcExport,
+    htslTargetsForRegionExport,
     importableMetadataEntries,
     importableEntryMatchesIdentity,
     moveImportableEntry,
+    npcPosIdentity,
     normalizeRelativeProjectPath,
     planDeleteImportableEntry,
     readEntryValue,
@@ -108,7 +111,17 @@ export async function handleProjectMessage(
             await createProjectImportJson(webview, message.rootImportJsonPath);
             return;
         case "addImportable":
-            await addImportable(webview, message.importJsonPath, message.kind, message.identity);
+            await addImportable(
+                webview,
+                message.importJsonPath,
+                message.kind,
+                message.identity,
+                message.npcPosition,
+                message.createOnEnterActions,
+                message.createOnExitActions,
+                message.createLeftClickActions,
+                message.createRightClickActions,
+            );
             return;
         case "moveImportable":
             await moveImportable(webview, message.importJsonPath, message.kind, message.identity);
@@ -1064,6 +1077,11 @@ async function addImportable(
     importJsonPath: string,
     kind: ProjectImportableSummary["type"],
     identity: string,
+    npcPosition: { x: number; y: number; z: number } | undefined,
+    createOnEnterActions: boolean,
+    createOnExitActions: boolean,
+    createLeftClickActions: boolean,
+    createRightClickActions: boolean,
 ): Promise<void> {
     try {
         if (!nodeProjectFs.exists(importJsonPath)) {
@@ -1072,13 +1090,20 @@ async function addImportable(
         const id = identity.trim();
         if (!id) throw new Error(kind === "event" ? "Choose an event." : "Enter a name.");
         if (kind === "item") throw new Error("Items are created in the Item / SNBT editor.");
-        if (kind === "npc") throw new Error("NPC entries are created by exporting an existing in-game NPC.");
+        if (kind === "npc" && (
+            npcPosition === undefined ||
+            !Number.isFinite(npcPosition.x) ||
+            !Number.isFinite(npcPosition.y) ||
+            !Number.isFinite(npcPosition.z)
+        )) {
+            throw new Error("Enter valid X, Y, and Z coordinates for the existing NPC.");
+        }
 
         const section = SECTION_BY_KIND[kind];
         const result = await runProjectMutation((fs) => {
             let targetImportJson: string;
             const entry: Record<string, unknown> = {};
-            const created: string[] = [];
+            let openPath: string;
 
             if (kind === "function" || kind === "event" || kind === "command") {
                 const target = kind === "function"
@@ -1087,26 +1112,74 @@ async function addImportable(
                         ? htslTargetForEventExport(fs, importJsonPath, id)
                         : htslTargetForCommandExport(fs, importJsonPath, id);
                 targetImportJson = target.importJsonPath;
+                openPath = target.htslPath;
                 requireNew(fs, targetImportJson, section, id, kind);
                 if (!fs.exists(target.htslPath)) {
                     fs.ensureDir(path.dirname(target.htslPath));
                     fs.writeFile(target.htslPath, "\n");
-                    created.push(target.htslPath);
                 }
                 entry[kind === "event" ? "event" : "name"] = id;
                 entry.actions = target.htslReference;
+            } else if (kind === "region") {
+                const targets = htslTargetsForRegionExport(fs, importJsonPath, id);
+                targetImportJson = targets.importJsonPath;
+                openPath = targetImportJson;
+                requireNew(fs, targetImportJson, section, id, kind);
+                entry.name = id;
+
+                const selected = [
+                    createOnEnterActions
+                        ? { field: "onEnterActions", target: targets.onEnter }
+                        : null,
+                    createOnExitActions
+                        ? { field: "onExitActions", target: targets.onExit }
+                        : null,
+                ].filter((value) => value !== null);
+                for (const action of selected) {
+                    if (!fs.exists(action.target.htslPath)) {
+                        fs.ensureDir(path.dirname(action.target.htslPath));
+                        fs.writeFile(action.target.htslPath, "\n");
+                    }
+                    entry[action.field] = action.target.htslReference;
+                    if (openPath === targetImportJson) openPath = action.target.htslPath;
+                }
+            } else if (kind === "npc" && npcPosition !== undefined) {
+                const pos = { x: npcPosition.x, y: npcPosition.y, z: npcPosition.z };
+                const npc = { name: id, pos };
+                const targets = htslTargetsForNpcExport(fs, importJsonPath, npc);
+                targetImportJson = targets.importJsonPath;
+                openPath = targetImportJson;
+                requireNew(fs, targetImportJson, section, npcPosIdentity(pos), kind);
+                entry.name = id;
+                entry.pos = pos;
+
+                const selected = [
+                    createLeftClickActions
+                        ? { field: "leftClickActions", target: targets.leftClick }
+                        : null,
+                    createRightClickActions
+                        ? { field: "rightClickActions", target: targets.rightClick }
+                        : null,
+                ].filter((value) => value !== null);
+                for (const action of selected) {
+                    fs.ensureDir(path.dirname(action.target.htslPath));
+                    fs.writeFile(action.target.htslPath, "\n");
+                    entry[action.field] = action.target.htslReference;
+                    if (openPath === targetImportJson) openPath = action.target.htslPath;
+                }
             } else {
                 targetImportJson = resolveImportableFile(fs, importJsonPath, section, id);
+                openPath = targetImportJson;
                 requireNew(fs, targetImportJson, section, id, kind);
                 entry.name = id;
                 if (kind === "menu") entry.slots = [];
             }
 
             upsertImportableEntry(fs, targetImportJson, section, entry);
-            return { targetImportJson, created };
+            return { openPath };
         });
 
-        await openProjectFile(result.created[0] ?? result.targetImportJson, false);
+        await openProjectFile(result.openPath, false);
         await webview.postMessage({
             type: "projectResult",
             ok: true,
@@ -1139,6 +1212,12 @@ function requireNew(
     kind: string,
 ): void {
     if (!importableExists(fs, importJsonPath, section, identity)) return;
+    if (kind === "npc") {
+        throw new Error(
+            `An NPC at ${identity} already exists in ` +
+                `${vscode.workspace.asRelativePath(importJsonPath, false)}.`,
+        );
+    }
     throw new Error(
         `A ${kind} named "${identity}" already exists in ` +
             `${vscode.workspace.asRelativePath(importJsonPath, false)}.`,
@@ -1154,10 +1233,8 @@ function importableExists(
     const tree = parseImportJson(fs, importJsonPath);
     const sectionNode = tree ? json.findNodeAtLocation(tree, [section]) : null;
     if (!sectionNode || sectionNode.type !== "array") return false;
-    const idField = section === "events" ? "event" : "name";
     for (const item of sectionNode.children ?? []) {
-        const idNode = json.findNodeAtLocation(item, [idField]);
-        if (idNode?.type === "string" && idNode.value === identity) return true;
+        if (importableEntryMatchesIdentity(section, item, identity)) return true;
     }
     return false;
 }
