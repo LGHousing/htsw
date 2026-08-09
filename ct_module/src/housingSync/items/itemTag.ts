@@ -13,6 +13,13 @@ function isEmptyCompound(tag: TagLike | undefined): boolean {
     return tag?.type === "compound" && Object.keys(compoundEntries(tag)).length === 0;
 }
 
+function isEmptyList(tag: TagLike | undefined): boolean {
+    return (
+        tag?.type === "list" &&
+        (tag.value as { type: string; value: unknown[] }).value.length === 0
+    );
+}
+
 // Remove the tag at `path`, pruning only compounds emptied by that removal.
 function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
     if (tag.type !== "compound") return tag;
@@ -42,6 +49,10 @@ function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
 // known paths; other empty compounds are authored item data.
 function stripEmptyServerShells(tag: TagLike): TagLike {
     let normalized = tag;
+    const lore = tagChild(tagChild(tagChild(normalized, "tag"), "display"), "Lore");
+    if (isEmptyList(lore)) {
+        normalized = withoutTagAtPath(normalized, ["tag", "display", "Lore"]);
+    }
     const display = tagChild(tagChild(normalized, "tag"), "display");
     if (isEmptyCompound(display)) {
         normalized = withoutTagAtPath(normalized, ["tag", "display"]);

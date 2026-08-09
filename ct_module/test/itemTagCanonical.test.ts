@@ -166,6 +166,43 @@ describe("canonicalItemShellTag", () => {
         expect(withBlank).toEqual(snapshot);
     });
 
+    test("server-stripped empty display lore equals missing lore", () => {
+        const withoutLore = compound({
+            id: str("minecraft:stained_glass_pane"),
+            Count: byte(1),
+            Damage: short(15),
+            tag: compound({
+                HideFlags: byte(63),
+                display: compound({ Name: str("§8") }),
+            }),
+        });
+        const emptyLore = compound({
+            id: str("minecraft:stained_glass_pane"),
+            Count: byte(1),
+            Damage: short(15),
+            tag: compound({
+                HideFlags: byte(63),
+                display: compound({ Name: str("§8"), Lore: loreList([]) }),
+            }),
+        });
+        const nonemptyLore = compound({
+            id: str("minecraft:stained_glass_pane"),
+            Count: byte(1),
+            Damage: short(15),
+            tag: compound({
+                HideFlags: byte(63),
+                display: compound({ Name: str("§8"), Lore: loreList(["§7Line"]) }),
+            }),
+        });
+
+        expect(canonicalLiveItemTag(emptyLore)).toEqual(
+            canonicalLiveItemTag(withoutLore)
+        );
+        expect(canonicalLiveItemTag(nonemptyLore)).not.toEqual(
+            canonicalLiveItemTag(withoutLore)
+        );
+    });
+
     test("a blank lore separator survives export verbatim", () => {
         // The exported snbt is ground truth: rewriting "" to "§7" on the way
         // out made the two variants byte-identical on disk, so you could not
