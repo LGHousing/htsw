@@ -18,6 +18,7 @@ import {
     npcPlanApplicationUnits,
     type NpcImportPlan,
 } from "../src/importables/npcs/import";
+import { validateSupportedNpcFields } from "../src/importables/npcs/housing";
 import {
     planImportableTeam,
     teamApplicationPlan,
@@ -34,6 +35,28 @@ function actionPlan(messageText: string) {
 }
 
 describe("secondary importable application plans", () => {
+    test("NPC live import rejects equipment but accepts the other settings", () => {
+        expect(() =>
+            validateSupportedNpcFields({
+                type: "NPC",
+                name: "supported",
+                pos: { x: 1, y: 2, z: 3 },
+                lookAtPlayers: true,
+                hideNameTag: false,
+                skin: "Players Skin",
+            })
+        ).not.toThrow();
+
+        expect(() =>
+            validateSupportedNpcFields({
+                type: "NPC",
+                name: "unsupported",
+                pos: { x: 1, y: 2, z: 3 },
+                equipment: { helmet: "items/helmet.snbt" },
+            })
+        ).toThrow("NPC equipment import is not currently supported.");
+    });
+
     test("item application keeps left and right action lists as ordered steps", () => {
         const leftPlan = actionPlan("left");
         const rightPlan = actionPlan("right");
@@ -93,6 +116,7 @@ describe("secondary importable application plans", () => {
                 name: "planned",
                 pos: { x: 1, y: 2, z: 3 },
                 leftClickRedirect: true,
+                lookAtPlayers: true,
                 leftClickActions: leftPlan.desired,
                 rightClickActions: rightPlan.desired,
             },
@@ -102,6 +126,11 @@ describe("secondary importable application plans", () => {
                 pos: { x: 1, y: 2, z: 3 },
             },
             nameHandled: false,
+            settings: {
+                lookAtPlayers: null,
+                hideNameTag: null,
+            },
+            settingsHandled: false,
             leftClickRedirectHandled: false,
             leftPlan,
             rightPlan,
@@ -113,6 +142,7 @@ describe("secondary importable application plans", () => {
 
         expect(application.steps.map((step) => step.key)).toEqual([
             "rename",
+            "settings",
             "openLeftActions",
             "leftClickRedirect",
             "leftActions",

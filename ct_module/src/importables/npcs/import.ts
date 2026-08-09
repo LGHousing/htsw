@@ -15,13 +15,16 @@ import {
 import type { ImportContext } from "../import/context";
 import { importableIdentity } from "../identity";
 import {
+    applyNpcSettings,
     npcNamesMatch,
     openNpcLeftClickActions,
     openNpcRightClickActions,
     readLeftClickRedirect,
+    readNpcSettings,
     renameNpcIfNeeded,
     setLeftClickRedirect,
     validateSupportedNpcFields,
+    type NpcSettings,
 } from "./housing";
 import { openNpcEditorForPos, type NpcListEntry } from "./listNpcs";
 import { COST } from "../../housingSync/progress/costs";
@@ -40,6 +43,8 @@ export type NpcImportPlan = {
     trustPlan?: ImportableTrustPlan;
     liveNpc: NpcListEntry;
     nameHandled: boolean;
+    settings: NpcSettings;
+    settingsHandled: boolean;
     leftClickRedirectHandled: boolean;
     leftPlan: ActionListPlan | null;
     rightPlan: ActionListPlan | null;
@@ -50,6 +55,7 @@ export type NpcRead = {
     importable: ImportableNpc;
     trustPlan?: ImportableTrustPlan;
     liveNpc: NpcListEntry;
+    settings: NpcSettings;
     leftClickRedirect: boolean | null;
     left: ActionListSyncScanResult;
     right: ActionListSyncScanResult;
@@ -78,6 +84,7 @@ export async function scanImportableNpc(
     const setup = createSetupStepEmitter(session.actions.events, 1);
 
     const liveNpc = await openNpcEditorForPos(ctx, importable.pos, session.npcLookup);
+    const settings = readNpcSettings(ctx);
     setup(`opened NPC ${liveNpc.name}`);
 
     const leftEditor = { opened: false };
@@ -125,6 +132,7 @@ export async function scanImportableNpc(
         importable,
         trustPlan,
         liveNpc,
+        settings,
         leftClickRedirect,
         left,
         right,
@@ -151,6 +159,13 @@ export function planImportableNpc(read: NpcRead): NpcImportPlan {
         trustPlan: read.trustPlan,
         liveNpc: read.liveNpc,
         nameHandled: npcNamesMatch(read.liveNpc.name, importable.name),
+        settings: read.settings,
+        settingsHandled:
+            (importable.lookAtPlayers === undefined ||
+                read.settings.lookAtPlayers === importable.lookAtPlayers) &&
+            (importable.hideNameTag === undefined ||
+                read.settings.hideNameTag === importable.hideNameTag) &&
+            importable.skin === undefined,
         leftClickRedirectHandled:
             read.leftClickRedirect === null ||
             read.leftClickRedirect === importable.leftClickRedirect,
@@ -169,6 +184,13 @@ export async function applyImportableNpcPlan(
         await application.run("rename", () =>
             renameNpcIfNeeded(ctx, plan.liveNpc, plan.importable, session.npcLookup)
         );
+    }
+
+    if (!plan.settingsHandled) {
+        await application.run("settings", async () => {
+            await openNpcEditorForPos(ctx, plan.importable.pos, session.npcLookup);
+            await applyNpcSettings(ctx, plan.importable);
+        });
     }
 
     if (plan.leftPlan !== null || !plan.leftClickRedirectHandled) {
@@ -215,7 +237,13 @@ export function npcPlanIsNoOp(plan: NpcImportPlan): boolean {
     const leftNoOp = plan.leftPlan === null || plan.leftPlan.diff.operations.length === 0;
     const rightNoOp =
         plan.rightPlan === null || plan.rightPlan.diff.operations.length === 0;
-    return plan.nameHandled && plan.leftClickRedirectHandled && leftNoOp && rightNoOp;
+    return (
+        plan.nameHandled &&
+        plan.settingsHandled &&
+        plan.leftClickRedirectHandled &&
+        leftNoOp &&
+        rightNoOp
+    );
 }
 
 export function npcPlanApplicationUnits(plan: NpcImportPlan): number {
@@ -231,6 +259,25 @@ export function npcApplicationPlan(plan: NpcImportPlan): ApplicationPlan {
         COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 3;
     if (!plan.nameHandled) {
         steps.push(workStep("rename", openEditorUnits + COST.chatInput));
+    }
+    if (!plan.settingsHandled) {
+        let settingsUnits = openEditorUnits;
+        if (!(
+            plan.importable.lookAtPlayers === undefined ||
+            plan.settings.lookAtPlayers === plan.importable.lookAtPlayers
+        )) {
+            settingsUnits += COST.menuClickWait;
+        }
+        if (!(
+            plan.importable.hideNameTag === undefined ||
+            plan.settings.hideNameTag === plan.importable.hideNameTag
+        )) {
+            settingsUnits += COST.menuClickWait;
+        }
+        if (plan.importable.skin !== undefined) {
+            settingsUnits += COST.menuClickWait * 2;
+        }
+        steps.push(workStep("settings", settingsUnits));
     }
     if (plan.leftPlan !== null || !plan.leftClickRedirectHandled) {
         steps.push(workStep("openLeftActions", openEditorUnits + COST.menuClickWait));

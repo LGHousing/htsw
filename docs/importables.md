@@ -89,6 +89,7 @@ Nested fields marked required are required whenever their containing object is p
 | --- | --- | --- |
 | `name` | Yes | string |
 | `actions` | No | path ending in `.htsl` |
+| `description` | No | string |
 | `repeatTicks` | No | number from 4 to 18000 |
 | `icon` | No | function icon object |
 | `icon.item` | Yes | string |
@@ -100,9 +101,10 @@ Nested fields marked required are required whenever their containing object is p
 Functions are matched by `name`. `actions` may be omitted when only the
 function's settings or an empty function shell are needed.
 
+`description` sets the description shown in Housing's function list.
 `repeatTicks` makes the function repeat at that interval. Omitting it means the
-function does not repeat. Omitting `icon` leaves the existing setting unchanged;
-a new function uses Housing's default icon.
+function does not repeat. Omitting `description` or `icon` leaves the existing
+setting unchanged; a new function uses Housing's defaults.
 
 ```json
 {
@@ -110,6 +112,7 @@ a new function uses Housing's default icon.
     {
       "name": "Loop 10t",
       "actions": "src/loop_10t.htsl",
+      "description": "Updates the game loop.",
       "repeatTicks": 10,
       "icon": {
         "item": "minecraft:clock",
@@ -343,8 +346,9 @@ Nested fields marked required are required whenever their containing object is p
 <!-- importables-schema:npcImportable END -->
 
 NPCs are matched by their exact `pos`, not by name. This allows HTSW to rename
-and configure the NPC at those coordinates. Equipment fields point to SNBT
-files for the item worn or held in each slot.
+and configure the NPC at those coordinates. `equipment` is reserved in the
+format but is not currently supported by live Housing import; declaring it
+aborts that NPC before any changes are applied.
 
 ```json
 {
@@ -357,10 +361,7 @@ files for the item worn or held in each slot.
       "leftClickRedirect": true,
       "lookAtPlayers": true,
       "hideNameTag": false,
-      "skin": "Players Skin",
-      "equipment": {
-        "hand": "items/guide_book.snbt"
-      }
+      "skin": "Players Skin"
     }
   ]
 }

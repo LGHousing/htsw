@@ -716,6 +716,17 @@ export function mountProjectExplorer(
             });
         }
 
+        for (const row of document.querySelectorAll<HTMLElement>("[data-toggle-row]")) {
+            row.addEventListener("click", (event) => {
+                if ((event.target as HTMLElement | null)?.closest("button")) return;
+                const key = row.dataset.toggleRow;
+                if (!key) return;
+                toggleExpanded(state, key);
+                persistProjectState();
+                renderTreeOnly();
+            });
+        }
+
         for (const row of document.querySelectorAll<HTMLElement>("[data-open-path]")) {
             row.addEventListener("click", (event) => {
                 const target = event.target as HTMLElement | null;
