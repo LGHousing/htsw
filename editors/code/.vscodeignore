@@ -4,5 +4,7 @@ src
 scripts
 *.config.ts
 tsconfig.json
+knip.jsonc
+package-lock.json
 dist/**/*.map
 *.vsix

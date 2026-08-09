@@ -1,0 +1,17 @@
+{
+    "name": "htsw-scripts",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "generate:docs:items": "node gen-items-doc.mjs",
+        "generate:docs:importables": "node --experimental-strip-types gen-importables-doc.mjs",
+        "check:docs:importables": "node --experimental-strip-types gen-importables-doc.mjs --check",
+        "bundle:docs": "esbuild ../docs/theme/htsw-playground-runner.js --bundle --format=iife --global-name=htswPlayground --outfile=../docs/htsw-playground-runner.bundle.js --resolve-extensions=.js,.ts",
+        "emit:docs:raw": "node docs-raw.mjs",
+        "knip": "knip"
+    },
+    "devDependencies": {
+        "esbuild": "^0.28.1",
+        "knip": "^6.31.0"
+    }
+}

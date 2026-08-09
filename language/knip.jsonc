@@ -1,0 +1,8 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "project": ["src/**/*.ts", "test/**/*.ts"],
+    "ignoreIssues": {
+        "src/check/helpers.ts": ["files"],
+        "src/importjson/schemaSpec.ts": ["exports", "types"]
+    }
+}

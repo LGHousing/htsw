@@ -1,9 +1,14 @@
 version: 2
 updates:
-  # Workspace root: the single root package-lock.json covers every workspace
-  # member (language, cli, ct_module, editors/*), so one entry manages them all.
   - package-ecosystem: npm
-    directory: /
+    directories:
+      - /language
+      - /cli
+      - /ct_module
+      - /editors/common
+      - /editors/code
+      - /editors/monaco
+      - /scripts
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -14,24 +19,6 @@ updates:
     ignore:
       - dependency-name: "@babel/*"
         update-types: ["version-update:semver-major"]
-    groups:
-      dev-dependencies:
-        applies-to: version-updates
-        dependency-type: development
-      prod-dependencies:
-        applies-to: version-updates
-        dependency-type: production
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-
-  # mcp is a standalone package, not part of the npm workspace.
-  - package-ecosystem: npm
-    directory: /mcp
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
     groups:
       dev-dependencies:
         applies-to: version-updates

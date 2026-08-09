@@ -57,7 +57,7 @@ if (missingMarkers.length > 0) {
 if (checkOnly) {
     if (generated !== source) {
         throw new Error(
-            "docs/importables.md is stale; run npm run generate:docs:importables"
+            "docs/importables.md is stale; run npm --prefix scripts run generate:docs:importables"
         );
     }
 } else {

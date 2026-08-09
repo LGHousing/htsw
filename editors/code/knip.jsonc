@@ -1,0 +1,9 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": [
+        "src/webview/tools/main.ts",
+        "src/webview/itemEditor/main.ts",
+        "src/webview/soundPreviewer/main.ts"
+    ],
+    "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}"]
+}

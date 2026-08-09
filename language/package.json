@@ -13,10 +13,6 @@
             "import": "./dist/types/index.js",
             "types": "./dist/types/index.d.ts"
         },
-        "./htsw": {
-            "import": "./dist/htsw/index.js",
-            "types": "./dist/htsw/index.d.ts"
-        },
         "./runtime": {
             "import": "./dist/runtime/index.js",
             "types": "./dist/runtime/index.d.ts"
@@ -33,6 +29,7 @@
     "scripts": {
         "build": "tsc",
         "test": "vitest run",
+        "knip": "knip",
         "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write",
         "prepare": "npm run build"
     },
@@ -50,6 +47,7 @@
     "devDependencies": {
         "@types/node": "^26.1.2",
         "@vitest/coverage-v8": "^4.1.10",
+        "knip": "^6.31.0",
         "prettier": "^3.9.6",
         "typescript": "^7.0.2",
         "vitest": "4.1.10"

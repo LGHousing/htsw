@@ -1,0 +1,11 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": ["scripts/*.ts", "test/**/*.test.ts"],
+    "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+    "ignoreDependencies": ["@babel/preset-env"],
+    "ignoreBinaries": ["java", "javac"],
+    "ignoreIssues": {
+        "src/gui/lib/theme.ts": ["duplicates"],
+        "src/tui/elements.ts": ["exports"]
+    }
+}

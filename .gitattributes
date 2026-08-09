@@ -1,2 +1,2 @@
 *.sh text eol=lf
-ops/htsw-deploy text eol=lf
+scripts/ops/htsw-deploy text eol=lf

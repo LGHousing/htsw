@@ -13,56 +13,140 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test:
+  language:
+    name: Language
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
+          cache-dependency-path: language/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm test --prefix language
+      - run: npm run knip --prefix language
 
+  cli:
+    name: CLI
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            cli/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix cli
+      - run: npm run knip --prefix cli
+      - run: npm run build --prefix cli
+
+  editor-common:
+    name: Editor common
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix editors/common
+      - run: npm run typecheck --prefix editors/common
+      - run: npm run knip --prefix editors/common
+
+  ct-module:
+    name: ChatTriggers module
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+            ct_module/package-lock.json
       - uses: actions/setup-java@v5
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "21"
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix editors/common
+      - run: npm ci --prefix ct_module
+      - run: npm test --prefix ct_module
+      - run: npm run verify --prefix ct_module
+      - run: npm run build --prefix ct_module
 
-      - name: Install dependencies
-        run: npm ci
+  vscode:
+    name: VS Code extension
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+            editors/code/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix editors/common
+      - run: npm ci --prefix editors/code
+      - run: npm run knip --prefix editors/code
+      - run: npm run check:schema --prefix editors/code
+      - run: npm run build --prefix editors/code
 
-      - name: Check unused code
-        run: npm run knip
+  monaco:
+    name: Monaco
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+            editors/monaco/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix editors/common
+      - run: npm ci --prefix editors/monaco
+      - run: npm run typecheck --prefix editors/monaco
+      - run: npm run knip --prefix editors/monaco
 
-      - name: Build language
-        run: npm run build --workspace language
-
-      - name: Check item names reference
-        run: |
-          node scripts/gen-items-doc.mjs
-          git diff --exit-code docs/vanilla-item-names.md
-
-      - name: Check importables reference
-        run: npm run check:docs:importables
-
-      - name: Bundle docs playground
-        run: |
-          npx esbuild docs/theme/htsw-playground-runner.js \
-            --bundle --format=iife --global-name=htswPlayground \
-            --outfile=docs/htsw-playground-runner.bundle.js \
-            '--resolve-extensions=.js,.ts'
-
-      - name: Test CT module
-        run: npm test --workspace ct_module
-
-      - name: Build CT module
-        run: npm run build --workspace ct_module
-
-      - name: Build CLI
-        run: npm run build --workspace cli
-
-      - name: Check VS Code schema
-        run: npm run check:schema --workspace editors/code
-
-      - name: Build VS Code extension
-        run: npm run build --workspace editors/code
+  docs-tooling:
+    name: Docs tooling
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            scripts/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix scripts
+      - run: npm run knip --prefix scripts
+      - run: npm run generate:docs:items --prefix scripts
+      - run: git diff --exit-code docs/vanilla-item-names.md
+      - run: npm run check:docs:importables --prefix scripts
+      - run: npm run bundle:docs --prefix scripts

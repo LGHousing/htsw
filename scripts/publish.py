@@ -1,13 +1,13 @@
 """Build, deploy, verify, and release HTSW artifacts.
 
 Commands:
-  python publish.py stage
-  python publish.py deploy
-  python publish.py verify
-  python publish.py release --tag v0.9.9 --notes-file release-notes.txt
+  python scripts/publish.py stage
+  python scripts/publish.py deploy
+  python scripts/publish.py verify
+  python scripts/publish.py release --tag v0.9.9 --notes-file release-notes.txt
 
 The deploy command sends dist-publish/{ct,vscode,cli} to the checked-in
-ops/htsw-deploy server command. Release performs a clean-tree preflight,
+scripts/ops/htsw-deploy server command. Release performs a clean-tree preflight,
 stages every surface, deploys it, and creates or updates the GitHub release.
 """
 
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Sequence
 
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 CT_DIR = HERE / "ct_module"
 VSCODE_DIR = HERE / "editors" / "code"
 CLI_DIR = HERE / "cli"
@@ -41,10 +41,9 @@ OUT_DIR = HERE / "dist-publish"
 SURFACES = ("ct", "vscode", "cli")
 ARTIFACT_FIELDS = {"ct": "zip", "vscode": "vsix", "cli": "cli"}
 PUBLIC_BASE_URL = "https://legendarygames.dev/htsw"
-DISTRIBUTION_NOTICES = (
-    HERE / "LICENSE.txt",
-    HERE / "THIRD_PARTY_NOTICES.txt",
-    HERE / "Apache-2.0.txt",
+DISTRIBUTION_FILES = (
+    (HERE / "LICENSE.txt", "LICENSE.txt"),
+    (HERE / "docs" / "legal" / "third-party-licenses.txt", "THIRD_PARTY_NOTICES.txt"),
 )
 
 
@@ -181,8 +180,8 @@ def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> 
             if file.is_file():
                 archive.write(file, prefix + file.relative_to(dist).as_posix())
         archive.write(metadata, prefix + "metadata.json")
-        for notice in DISTRIBUTION_NOTICES:
-            archive.write(notice, prefix + notice.name)
+        for source, name in DISTRIBUTION_FILES:
+            archive.write(source, prefix + name)
 
 
 def stage_ct(do_build: bool, notes: str | None) -> None:
@@ -261,8 +260,8 @@ def stage_cli(do_build: bool, notes: str | None) -> None:
     shutil.copy2(destination, output / "htsw-cli-latest.mjs")
     shutil.copy2(CLI_DIR / "install.sh", output / "install.sh")
     shutil.copy2(CLI_DIR / "install.ps1", output / "install.ps1")
-    for notice in DISTRIBUTION_NOTICES:
-        shutil.copy2(notice, output / notice.name)
+    for source, name in DISTRIBUTION_FILES:
+        shutil.copy2(source, output / name)
 
     digest = sha256_of(destination)
     (output / "latest.json").write_text(
@@ -280,7 +279,7 @@ def stage(
     per_surface_notes: dict[str, str],
 ) -> None:
     if do_build:
-        run(["npm", "run", "build", "--workspace", "language"])
+        run(["npm", "run", "build"], HERE / "language")
 
     builders = {"ct": stage_ct, "vscode": stage_vscode, "cli": stage_cli}
     for surface in surfaces:
@@ -489,7 +488,7 @@ def prepare_github_assets(surfaces: Sequence[str]) -> list[Path]:
     if "cli" in surfaces:
         assets.append(OUT_DIR / "cli" / "install.sh")
         assets.append(OUT_DIR / "cli" / "install.ps1")
-        assets.extend(OUT_DIR / "cli" / notice.name for notice in DISTRIBUTION_NOTICES)
+        assets.extend(OUT_DIR / "cli" / name for _, name in DISTRIBUTION_FILES)
     return assets
 
 

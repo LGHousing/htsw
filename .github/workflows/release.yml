@@ -35,6 +35,12 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+            ct_module/package-lock.json
+            cli/package-lock.json
+            editors/code/package-lock.json
 
       - uses: actions/setup-java@v5
         with:
@@ -42,7 +48,12 @@ jobs:
           java-version: "21"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci --prefix language
+          npm ci --prefix editors/common
+          npm ci --prefix ct_module
+          npm ci --prefix cli
+          npm ci --prefix editors/code
 
       - name: Resolve release tag
         id: tag
@@ -84,4 +95,4 @@ jobs:
           HTSW_DEPLOY_KNOWN_HOSTS: ${{ secrets.HTSW_DEPLOY_KNOWN_HOSTS }}
           HTSW_RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
           HTSW_RELEASE_NOTES_VSCODE: ${{ github.event.inputs.vscode_notes || '' }}
-        run: python publish.py release --tag "${{ steps.tag.outputs.tag }}"
+        run: python scripts/publish.py release --tag "${{ steps.tag.outputs.tag }}"

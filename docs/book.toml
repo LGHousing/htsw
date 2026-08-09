@@ -2,17 +2,17 @@
 title = "HTSW Documentation"
 authors = ["sndyx", "callanftw", "j_sse"]
 language = "en"
-src = "docs"
+src = "."
 
 [build]
-build-dir = "book"
+build-dir = "../book"
 
 [output.html]
 git-repository-url = "https://github.com/LGHousing/htsw"
-edit-url-template = "https://github.com/LGHousing/htsw/edit/main/{path}"
+edit-url-template = "https://github.com/LGHousing/htsw/edit/main/docs/{path}"
 site-url = "/htsw/"
-theme = "docs/theme"
-additional-js = ["docs/htsw-playground-runner.bundle.js", "docs/theme/htsl-playground.js"]
+theme = "theme"
+additional-js = ["htsw-playground-runner.bundle.js", "theme/htsl-playground.js"]
 
 [output.html.playground]
 runnable = true

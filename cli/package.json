@@ -13,13 +13,15 @@
         "htsw": "dist/htsw-cli.js"
     },
     "scripts": {
-        "build": "vite build --mode production"
+        "build": "vite build --mode production",
+        "knip": "knip"
     },
     "engines": {
         "node": ">=20"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",
+        "knip": "^6.31.0",
         "typescript": "^7.0.2",
         "vite": "^8.2.0"
     },

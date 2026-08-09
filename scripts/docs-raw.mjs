@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const docsDirectory = path.resolve("docs");
-const rawDirectory = path.resolve("book", "raw");
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const docsDirectory = path.join(repositoryRoot, "docs");
+const rawDirectory = path.join(repositoryRoot, "book", "raw");
 
 function findMarkdownFiles(directory) {
   const files = [];

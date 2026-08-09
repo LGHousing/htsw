@@ -1,11 +1,11 @@
 # HTSW server operations
 
-`htsw-deploy` is the restricted receiver used by both `publish.py` and the
+`htsw-deploy` is the restricted receiver used by both `scripts/publish.py` and the
 GitHub release workflow. Install it on the web VM before changing the release
 workflow:
 
 ```sh
-install -m 0755 ops/htsw-deploy ~/bin/htsw-deploy
+install -m 0755 scripts/ops/htsw-deploy ~/bin/htsw-deploy
 ```
 
 The GitHub deploy key's `authorized_keys` entry should force this command. It
@@ -25,6 +25,6 @@ listens on loopback.
 Install an updated copy and restart its service after changing the script:
 
 ```sh
-sudo install -o opc -g opc -m 0755 ops/import-error-upload-server.py /opt/htsw/import-error-upload-server.py
+sudo install -o opc -g opc -m 0755 scripts/ops/import-error-upload-server.py /opt/htsw/import-error-upload-server.py
 sudo systemctl restart htsw-import-error-upload
 ```

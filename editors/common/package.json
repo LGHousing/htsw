@@ -10,11 +10,16 @@
         "./text/colorCodes": "./src/text/colorCodes.ts",
         "./project": "./src/project/index.ts"
     },
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "knip": "knip"
+    },
     "dependencies": {
         "htsw": "file:../../language",
         "jsonc-parser": "^3.3.1"
     },
     "devDependencies": {
+        "knip": "^6.31.0",
         "typescript": "~7.0.2"
     }
 }
