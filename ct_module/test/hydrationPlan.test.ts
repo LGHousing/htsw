@@ -4,6 +4,7 @@ import type { Action, Condition } from "htsw/types";
 import { applyActionListTrust } from "../src/housingSync/actions/applyTrust";
 import { matchObservedToDesired } from "../src/housingSync/actions/diff/childListMatching";
 import {
+    actionHasItemFieldsToCapture,
     createActionHydrationPlan,
     fullyHydratedActionsFromSlots,
     type ActionHydrationPlan,
@@ -81,6 +82,13 @@ function plannedIndexes(p: ReturnType<typeof plan>): number[] {
 }
 
 describe("createActionHydrationPlan", () => {
+    test("does not capture an omitted Remove Item field", () => {
+        expect(actionHasItemFieldsToCapture({ type: "REMOVE_ITEM" })).toBe(false);
+        expect(
+            actionHasItemFieldsToCapture({ type: "REMOVE_ITEM", itemName: "stone" })
+        ).toBe(true);
+    });
+
     test("visits a multi-page hydration plan from the last entry to the first", () => {
         const first = observed(0, { conditions: ["REQUIRE_ITEM"] });
         const last = observed(89, { conditions: ["REQUIRE_ITEM"] });

@@ -36,7 +36,7 @@ export type PrintActionsContext = {
     diagnostics: PrinterDiagnostic[];
 };
 
-const ITEM_PLACEHOLDER = "<item-not-supported>";
+const ITEM_PLACEHOLDER = "<item-not-provided>";
 
 /**
  * Print an action list at a given indent depth. Each action emits one or more

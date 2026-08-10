@@ -163,7 +163,7 @@ async function readActionsListPage(
             observed.hydrated =
                 childList.childListsToRead.size === 0 &&
                 truncatedFields.length === 0 &&
-                (!captureItems || !actionHasItemFieldsToCapture(action.type));
+                (!captureItems || !actionHasItemFieldsToCapture(action));
             observed.truncatedFields = truncatedFields;
             observed.childListSummaries = childList.summaries;
             observed.childListsToRead = childList.childListsToRead;

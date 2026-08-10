@@ -90,6 +90,15 @@ function errorMessages(result: htsw.ParseResult<unknown>) {
 }
 
 describe("Main API", () => {
+    it("exports an omitted Remove Item field as an invalid item reference", () => {
+        const source = htsw.htsl.printActions([{ type: "REMOVE_ITEM" }]);
+
+        expect(source).toBe('removeItem "<item-not-provided>"\n');
+        expect(errorMessages(parseFunctionWithActions(source))).toContain(
+            "Unknown item '<item-not-provided>'"
+        );
+    });
+
     it("runs semantic checks for clean files when a sibling file has parse errors", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

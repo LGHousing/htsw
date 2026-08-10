@@ -64,4 +64,12 @@ describe("parseActionListItem", () => {
             preventTeleportInsideBlocks: false,
         });
     });
+
+    test("drops Remove Item's unselected item placeholder", () => {
+        expect(parseActionListItem(slotWithLore([
+            "Item: Select an Item",
+            "",
+            "Click to edit!",
+        ]), "REMOVE_ITEM")).toEqual({ type: "REMOVE_ITEM" });
+    });
 });

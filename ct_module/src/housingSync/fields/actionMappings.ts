@@ -583,6 +583,10 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
         ) ?? { type: "Player" };
     }
 
+    if (action.type === "REMOVE_ITEM" && action.itemName === "Select an Item") {
+        delete action.itemName;
+    }
+
     dropNotSetLocationIfOptional(action);
 
     return action;

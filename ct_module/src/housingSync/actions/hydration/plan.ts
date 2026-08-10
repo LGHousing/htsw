@@ -126,21 +126,20 @@ export function addScalarHydrationEntries(
     }
 }
 
-function getItemFieldsForCapture(
-    actionType: Action["type"]
-): Array<{ label: string; prop: string }> {
-    const loreFields = getActionLoreFields(actionType);
+function getItemFieldsForCapture(action: Observed): Array<{ label: string; prop: string }> {
+    const loreFields = getActionLoreFields(action.type);
     const result: Array<{ label: string; prop: string }> = [];
     for (const label in loreFields) {
-        if (loreFields[label].kind === "item") {
-            result.push({ label: label, prop: loreFields[label].prop });
-        }
+        const field = loreFields[label];
+        if (field.kind !== "item") continue;
+        if (typeof (action as Record<string, unknown>)[field.prop] !== "string") continue;
+        result.push({ label: label, prop: field.prop });
     }
     return result;
 }
 
-export function actionHasItemFieldsToCapture(actionType: Action["type"]): boolean {
-    return getItemFieldsForCapture(actionType).length > 0;
+export function actionHasItemFieldsToCapture(action: Observed): boolean {
+    return getItemFieldsForCapture(action).length > 0;
 }
 
 export function addItemCaptureEntries(
@@ -149,7 +148,7 @@ export function addItemCaptureEntries(
 ): void {
     for (const entry of observed) {
         if (entry.action === null) continue;
-        addItemFieldsToCapture(plan, entry, getItemFieldsForCapture(entry.action.type));
+        addItemFieldsToCapture(plan, entry, getItemFieldsForCapture(entry.action));
     }
 }
 
