@@ -414,7 +414,15 @@ export class DiagnosticsAdapter {
     }
 
     private formatDiagnosticMessage(diagnostic: htsw.Diagnostic): string {
-        return diagnostic.message;
+        const primaryLabel = diagnostic.spans.find(
+            (span) => span.kind === "primary"
+        )?.label;
+
+        if (!primaryLabel || primaryLabel === diagnostic.message) {
+            return diagnostic.message;
+        }
+
+        return `${diagnostic.message}: ${primaryLabel}`;
     }
 
     private buildRelatedInformation(
