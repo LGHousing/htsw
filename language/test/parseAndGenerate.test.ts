@@ -73,3 +73,29 @@ describe("HTSL printer round-trip", () => {
         expect(parseSource(printed)).toEqual(actions);
     });
 });
+
+describe("sound catalogue", () => {
+    it("contains every Housing sound without duplicate names", () => {
+        const names = htsw.types.SOUNDS.map((sound) => sound.name.toLowerCase());
+
+        expect(htsw.types.SOUNDS).toHaveLength(696);
+        expect(new Set(names).size).toBe(names.length);
+    });
+
+    it("parses and prints every sound", () => {
+        for (const sound of htsw.types.SOUNDS) {
+            const actions = parseSource(
+                `sound "${sound.name}" 0.7 1.0 Invokers_Location\n`,
+            );
+
+            expect(actions).toHaveLength(1);
+            expect(actions[0]).toMatchObject({
+                type: "PLAY_SOUND",
+                sound: sound.path,
+            });
+
+            const printed = htsw.htsl.printActions(actions);
+            expect(parseSource(printed)).toEqual(actions);
+        }
+    });
+});

@@ -139,6 +139,17 @@ describe("action comparison — Housing input canonicalization", () => {
         const desired = { type: "DROP_ITEM", itemName: "white_wool" } as Action;
         expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
+
+    test("modern Housing sound labels compare equal to their sound keys", () => {
+        const observed = playSound({
+            sound: "Item Flintandsteel Use" as unknown as ActionPlaySound["sound"],
+        });
+        const desired = playSound({
+            sound: "item.flintandsteel.use" as unknown as ActionPlaySound["sound"],
+        });
+
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
 });
 
 describe("action comparison — select/cycle shape coercion", () => {
