@@ -62,7 +62,7 @@ const lines = [
   "",
   "# Vanilla Item Names",
   "",
-  "[HTSL item fields](./htsl/actions.md) accept the name of an ITEM importable, one of the vanilla names below, or a direct `.snbt` path. Base IDs require the `minecraft:` prefix; a bare name such as `stone` does not resolve. Derived variant names work either bare or with the `minecraft:` prefix. Different names that resolve to the same ID and damage value are the same item to the importer.",
+  "Use these names in [HTSL item fields](./htsl/actions.md). Base item IDs require the `minecraft:` prefix; variant names work with or without it.",
   "",
   "<details>",
   `<summary>Full list (${rows.length} names)</summary>`,
