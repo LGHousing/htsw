@@ -29,7 +29,7 @@ export * as nbt from "./nbt";
 export * as items from "./items";
 export * as runtime from "./runtime";
 
-export const VERSION = "v0.0.1-beta";
+export const VERSION = "v1.0.0";
 
 export type ParseResult<T> = {
     value: T;
