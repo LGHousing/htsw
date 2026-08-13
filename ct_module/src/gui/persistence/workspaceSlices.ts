@@ -260,6 +260,7 @@ const parseQueue: ValueParser<QueueItem[]> = asEntryArray<QueueItem>((entry) => 
         housingUuid:
             typeof entry.housingUuid === "string" ? entry.housingUuid : null,
         identity: entry.identity,
+        all: entry.all === true,
         type: entry.type as Importable["type"],
         label,
     };

@@ -28,6 +28,7 @@ import {
     removeFromQueueKey,
     type ImportQueueItem,
 } from "./queue";
+import type { QueueExecutionResult } from "./queue";
 import { parseImportJsonCurrent } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
@@ -516,10 +517,14 @@ function startConflictReview(request: ConflictReviewRequest): void {
         importJsonPath: request.batch.sourcePath,
         parsed: request.batch.parsed,
         summaryLabel: "changed importable",
-        onSuccess: () =>
-            openReview(
-                "&7[htsw] Kept the available changes and read the remaining lists — the View tab shows what changed in Housing."
-            ),
+        onSuccess: () => {
+            if (firstSourcePath !== undefined) {
+                previewSelect(firstSourcePath, request.batch.sourcePath);
+            }
+            ChatLib.chat(
+                "&7[htsw] Queued the changed lists for Read — run the queue to update the View tab."
+            );
+        },
     });
 }
 
@@ -624,18 +629,12 @@ export function isImportPreparationRunning(): boolean {
     return importPreparationRunning;
 }
 
-export function startImport(
-    explicit?: readonly ImportQueueItem[],
-    options: ImportStartOptions = {}
-): boolean {
-    return startImportIfIdle(explicit, options);
-}
-
 type ImportStartOptions = {
     silentBusy?: boolean;
     onStarted?: () => void;
     onComplete?: (successful: boolean) => void;
     onAbortedForErrors?: () => void;
+    onSettled?: (outcome: QueueExecutionResult) => void;
 };
 
 export function startImportIfIdle(
@@ -657,12 +656,23 @@ export function startImportIfIdle(
         },
         (error: unknown) => {
             importPreparationRunning = false;
-            ChatLib.chat(
-                `&c[htsw] Import failed: Couldn't prepare import: ${String(error)}`
-            );
+            ChatLib.chat(`&c[htsw] Couldn't prepare import: ${String(error)}`);
+            options.onSettled?.({ kind: "failed", error: String(error) });
         }
     );
     return true;
+}
+
+export function runQueuedImport(item: ImportQueueItem): Promise<QueueExecutionResult> {
+    return new Promise((resolve) => {
+        const started = startImportIfIdle([item], {
+            silentBusy: true,
+            onSettled: resolve,
+        });
+        if (!started) {
+            resolve({ kind: "failed", error: "Another Housing operation is running" });
+        }
+    });
 }
 
 async function prepareAndStartImport(
@@ -675,6 +685,10 @@ async function prepareAndStartImport(
                 "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
             );
         }
+        options.onSettled?.({
+            kind: "failed",
+            error: "Another task started during preparation",
+        });
         return;
     }
     const batches = await buildBatches(explicit);
@@ -691,7 +705,8 @@ async function prepareAndStartImport(
             explicit !== undefined
                 ? "Nothing matched the selection — try checking importables in the Projects tab first."
                 : "Queue is empty — right-click something and Add to queue.";
-        ChatLib.chat(`&c[htsw] Import failed: ${msg}`);
+        ChatLib.chat(`&c[htsw] ${msg}`);
+        options.onSettled?.({ kind: "failed", error: msg });
         return;
     }
     const failed = batches
@@ -707,6 +722,10 @@ async function prepareAndStartImport(
             printDiagnostics(batch.parsed.gcx.sourceMap, errors);
         }
         options.onAbortedForErrors?.();
+        options.onSettled?.({
+            kind: "failed",
+            error: `${failed.length} project file${failed.length === 1 ? " has" : "s have"} errors`,
+        });
         return;
     }
     const trustMode = isCurrentHouseTrusted();
@@ -770,8 +789,6 @@ async function prepareAndStartImport(
     for (const addition of dependencyAdditions) {
         addToQueue(makeImportableQueueItem(addition.importable, addition.sourcePath));
     }
-    beginQueueSession();
-
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
     const sessionItemKeys: string[] = (
@@ -785,6 +802,7 @@ async function prepareAndStartImport(
             if (sessionItemKeys.indexOf(key) < 0) sessionItemKeys.push(key);
         }
     }
+    beginQueueSession(sessionItemKeys);
     if (dependencyAdditions.length > 0) {
         const totalCount = batches.reduce(
             (total, batch) => total + batch.importables.length,
@@ -801,6 +819,10 @@ async function prepareAndStartImport(
         );
     }
     let reviewRequest: ConflictReviewRequest | null = null;
+    let settledOutcome: QueueExecutionResult = {
+        kind: "failed",
+        error: "Import ended without an outcome",
+    };
     options.onStarted?.();
 
     runHousingSyncTask("import", async (ctx) => {
@@ -934,6 +956,14 @@ async function prepareAndStartImport(
                 showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
             }
             finishTaskProgress(failureMessage);
+            settledOutcome = importSucceeded
+                ? { kind: "success" }
+                : cancelled
+                  ? { kind: "cancelled" }
+                  : {
+                        kind: "failed",
+                        error: failureMessage ?? "Import failed",
+                    };
             // End the queue session after the 1.5s done-state window. A fully
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the
@@ -953,18 +983,19 @@ async function prepareAndStartImport(
                 if (!isTaskRunning() || reviewRequest !== null) {
                     endQueueSession(false);
                     if (removeSessionItems || cancelled) clearLastFinishedProgress();
+                    if (reviewRequest !== null) {
+                        const request = reviewRequest;
+                        setTimeout(() => startConflictReview(request), 0);
+                    }
                 }
+                options.onSettled?.(settledOutcome);
             }, 1500);
         }
         if (unexpectedError !== null) {
             if (unexpectedError instanceof Error) throw unexpectedError;
             throw new Error(errorMessage(unexpectedError));
         }
-    })
-        .then(() => {
-            if (reviewRequest !== null) startConflictReview(reviewRequest);
-        })
-        .catch((err: unknown) => {
-            ChatLib.chat(`&c[htsw] Import failed: ${String(err)}`);
-        });
+    }).catch((err: unknown) => {
+        ChatLib.chat(`&c[htsw] Import failed: ${String(err)}`);
+    });
 }

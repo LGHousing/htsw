@@ -26,7 +26,6 @@ import {
     getActiveTaskLabel,
     getFinishedTaskFailure,
     getFinishedTaskSummary,
-    getSessionVerb,
     getTaskProgress,
     isCurrentQueueItem,
 } from "./import-tab/taskProgress";
@@ -34,6 +33,7 @@ import { isLiveTabActive } from "./selection";
 import {
     clearQueue,
     getQueueLength,
+    isQueueProcessing,
     queueDisplayGroups,
     type QueueItem,
 } from "./import-tab/queue";
@@ -99,9 +99,7 @@ function queueSummary(): Element {
                 background: () =>
                     queueFollowRequested ? COLOR_ROW_SELECTED : COLOR_BUTTON,
                 hoverBackground: () =>
-                    queueFollowRequested
-                        ? COLOR_ROW_SELECTED_HOVER
-                        : COLOR_BUTTON_HOVER,
+                    queueFollowRequested ? COLOR_ROW_SELECTED_HOVER : COLOR_BUTTON_HOVER,
             },
             onClick: (_rect, info) => {
                 if (info.button !== 0) return;
@@ -113,7 +111,8 @@ function queueSummary(): Element {
         }),
         Button({
             text: "Clear",
-            disabled: () => isTaskRunning() || getQueueLength() === 0,
+            disabled: () =>
+                isTaskRunning() || isQueueProcessing() || getQueueLength() === 0,
             style: {
                 width: { kind: "px", value: 38 },
                 height: { kind: "grow" },
@@ -321,10 +320,7 @@ function virtualQueueRows(): Child[] {
             );
             const last = Math.max(
                 first,
-                Math.min(
-                    children.length,
-                    Math.floor((maxY - blockTop) / stride) + 1
-                )
+                Math.min(children.length, Math.floor((maxY - blockTop) / stride) + 1)
             );
             for (let j = first; j < last; j++) {
                 const top = blockTop + j * stride;
@@ -374,7 +370,7 @@ function pendingDividerRow(): Element {
         },
         children: [
             Text({
-                text: "Pending — added during import, runs next",
+                text: "Pending — added during the current operation",
                 color: COLOR_TEXT_FAINT,
             }),
         ],
@@ -392,13 +388,9 @@ export function viewFooter(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" } },
         children: () => {
-            const taskListIsInView =
-                getTaskProgress() !== null && getSessionVerb() !== "import";
             const children: Child[] = [divider()];
-            if (!taskListIsInView) {
-                children.push(queueSummary());
-                if (isQueueExpanded()) children.push(queueScroll());
-            }
+            children.push(queueSummary());
+            if (isQueueExpanded()) children.push(queueScroll());
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             else if (isLiveTabActive() && getFinishedTaskFailure() !== null) {
                 children.push(failedTaskFooterPanel());

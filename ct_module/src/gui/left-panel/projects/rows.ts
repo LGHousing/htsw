@@ -60,7 +60,9 @@ import {
 } from "htsw-editor-common/project";
 import {
     addToQueue,
+    addToQueueDetailed,
     isQueueItemQueued,
+    makeExportQueueItem,
     makeImportableQueueItem,
     queueItemKey,
     removeFromQueue,
@@ -111,12 +113,7 @@ import type { Importable, MenuSlot } from "htsw/types";
 import { tagChild } from "../../../housingSync/items/itemTag";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
-import { exportBatch, exportExisting } from "../../../importables/export/session";
-import { type HouseExportTypeName } from "../../../importables/export/exportTypes";
-import { readProjectExportDestination } from "../../../importables/export/projectDestination";
 import { itemChanges } from "../../../importables/items/changes";
-import { runHousingSyncTask } from "../../../housingSync/taskRunner";
-import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
 import { HOUSE_READERS } from "../../../importables/export/readers";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
@@ -615,20 +612,6 @@ function openInHousingAction(imp: Importable): MenuAction | null {
     return null;
 }
 
-function importableExportType(type: Importable["type"]): HouseExportTypeName | null {
-    if (
-        type === "FUNCTION" ||
-        type === "EVENT" ||
-        type === "MENU" ||
-        type === "REGION" ||
-        type === "COMMAND" ||
-        type === "TEAM" ||
-        type === "GROUP"
-    )
-        return type;
-    return null;
-}
-
 function projectBindingWarning(parent: ResultImport): string[] {
     const bound = parent.parse?.importJson.houseUuid ?? null;
     const current = getHousingUuid();
@@ -637,57 +620,40 @@ function projectBindingWarning(parent: ResultImport): string[] {
         : [];
 }
 
-function finishProjectReExport(
-    parent: ResultImport,
-    importJsonPath: string,
-    count: number
-): void {
-    markParseStale(parent.fullPath);
-    requestParse(parent.fullPath);
-    bumpTreeRevision();
-    showToast(
-        `Re-exported ${count} declared${count === 1 ? " importable" : " importables"} → ${shortPath(importJsonPath)}`,
-        ACCENT_SUCCESS
-    );
-}
-
 function runProjectReExport(
-    parent: ResultImport,
     importJsonPath: string,
     importables: readonly Importable[]
 ): void {
-    if (TaskManager.isBusy()) {
-        showToast("A task is already running — wait for it to finish", ACCENT_WARN);
-        return;
-    }
-    runHousingSyncTask("export", (ctx) =>
-        exportExisting(
-            ctx,
-            readProjectExportDestination({
-                rootDir: projectDirOf(importJsonPath),
+    const housingUuid = getHousingUuid();
+    if (housingUuid === null) return;
+    let added = 0;
+    let blocked = 0;
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        if (HOUSE_READERS[imp.type] === null) continue;
+        const result = addToQueueDetailed(
+            makeExportQueueItem(
+                "export",
+                imp.type,
+                importableIdentity(imp),
                 importJsonPath,
-            }),
-            importables
-        )
-    )
-        .then((result) => {
-            if (result === undefined) return;
-            if (result.failed > 0) {
-                markParseStale(parent.fullPath);
-                requestParse(parent.fullPath);
-                bumpTreeRevision();
-                showToast(
-                    `Re-export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
-                    ACCENT_DANGER,
-                    8000
-                );
-                return;
-            }
-            finishProjectReExport(parent, importJsonPath, houseExportCount(importables));
-        })
-        .catch((err: unknown) => {
-            showToast(`Re-export failed: ${String(err)}`, ACCENT_DANGER, 8000);
-        });
+                housingUuid,
+                importableLabel(imp)
+            )
+        );
+        if (result.kind === "added") added++;
+        else if (result.kind === "blocked") blocked++;
+    }
+    if (added > 0) {
+        showToast(
+            `Queued ${added} export${added === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+            ACCENT_SUCCESS
+        );
+    } else if (blocked > 0) {
+        showToast("Queued export is blocked by conflicting work", ACCENT_WARN, 8000);
+    } else {
+        showToast("Those exports are already queued", ACCENT_INFO);
+    }
 }
 
 function confirmProjectReExport(
@@ -704,7 +670,7 @@ function confirmProjectReExport(
         ],
         confirmLabel: "Re-export",
         danger: true,
-        onConfirm: () => runProjectReExport(parent, importJsonPath, importables),
+        onConfirm: () => runProjectReExport(importJsonPath, importables),
     });
 }
 
@@ -845,43 +811,7 @@ function readImportableAction(parent: ResultImport, imp: Importable): MenuAction
 }
 
 function runSingleImportableReExport(parent: ResultImport, imp: Importable): void {
-    if (TaskManager.isBusy()) {
-        showToast("A task is already running — wait for it to finish", ACCENT_WARN);
-        return;
-    }
-    const destination = readProjectExportDestination({
-        rootDir: projectDirOf(parent.fullPath),
-        importJsonPath: parent.fullPath,
-    });
-    runHousingSyncTask("export", (ctx) => {
-        if (imp.type === "NPC") {
-            return exportBatch(ctx, destination, {
-                type: "NPC",
-                entries: [{ name: imp.name, pos: imp.pos }],
-            });
-        }
-        const type = importableExportType(imp.type);
-        if (type === null) return Promise.resolve({ total: 0, succeeded: 0, failed: 0 });
-        return exportBatch(ctx, destination, {
-            type,
-            names: [importableIdentity(imp)],
-        });
-    })
-        .then((result) => {
-            if (result === undefined) return;
-            if (result.failed > 0) {
-                showToast(
-                    `Re-export failed for ${importableLabel(imp)}`,
-                    ACCENT_DANGER,
-                    8000
-                );
-                return;
-            }
-            finishProjectReExport(parent, parent.fullPath, 1);
-        })
-        .catch((err: unknown) => {
-            showToast(`Re-export failed: ${String(err)}`, ACCENT_DANGER, 8000);
-        });
+    runProjectReExport(parent.fullPath, [imp]);
 }
 
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {

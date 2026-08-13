@@ -8,6 +8,12 @@ import {
 import { runHousingSyncTask } from "../src/housingSync/taskRunner";
 import { cancelActiveTask } from "../src/tasks/activeTask";
 import { isTaskRunning } from "../src/tasks/runningState";
+import {
+    addToQueueDetailed,
+    clearQueue,
+    getQueue,
+    makeExportQueueItem,
+} from "../src/gui/right-panel/import-tab/queue";
 
 function deferred(): {
     promise: Promise<void>;
@@ -22,9 +28,30 @@ function deferred(): {
 
 afterEach(() => {
     clearTaskProgress();
+    clearQueue();
 });
 
 describe("task-wide gates", () => {
+    test("export progress does not create or remove durable queue work", () => {
+        const queued = makeExportQueueItem(
+            "export",
+            "FUNCTION",
+            "durable",
+            "C:/project/import.json",
+            "house"
+        );
+        addToQueueDetailed(queued);
+
+        const progress = createExportProgressSink("FUNCTION", "C:/project/import.json");
+        progress.start(["durable", "discovered"]);
+        progress.item(0, "durable");
+        progress.itemFinished?.(0);
+        progress.item(1, "discovered");
+        progress.done();
+
+        expect(getQueue()).toEqual([queued]);
+    });
+
     test("stay active through export cleanup and between batches", async () => {
         await runHousingSyncTask("export", async () => {
             const first = createExportProgressSink("FUNCTION", "");

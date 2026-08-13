@@ -12,10 +12,8 @@
  * op. Content for sizing comes from the cache (post-Read/sync) or the
  * destination import.json; names with neither get the average of the rest.
  *
- * The sink also mirrors the batch into the queue UI (rows appear at start,
- * clear at done) because item names are only known once the batch lists them.
- * The import-running flag is NOT owned here — the session initiator
- * (startExport / deep read) owns its own task lifecycle.
+ * Queue membership belongs to the operation controller; this sink only owns
+ * detailed progress for the active operation.
  */
 
 import type { Importable } from "htsw/types";
@@ -34,22 +32,14 @@ import {
     setTaskProgress,
     startTaskProgress,
 } from "../right-panel/import-tab/taskProgress";
-import {
-    addToQueue,
-    makeExportQueueItem,
-    queueItemKey,
-    removeFromQueueKey,
-    type QueueItem,
-} from "../right-panel/import-tab/queue";
 import { createReadLivePreview } from "../right-panel/import-tab/readLivePreview";
 
 export function createExportProgressSink(
     type: Importable["type"],
     importJsonPath: string,
     verb: "export" | "read" = "export",
-    labels?: ReadonlyMap<string, string>
+    _labels?: ReadonlyMap<string, string>
 ): ExportProgressSink {
-    const queueItems: QueueItem[] = [];
     let names: readonly string[] = [];
     let units: number[] = [];
     let state = initialReducerState();
@@ -160,18 +150,6 @@ export function createExportProgressSink(
                 etaRough: resolved.knownCount === 0,
             });
             livePreview.start(ns);
-            for (const n of ns) {
-                const item = makeExportQueueItem(
-                    verb,
-                    type,
-                    n,
-                    importJsonPath,
-                    getHousingUuid(),
-                    labels?.get(n)
-                );
-                queueItems.push(item);
-                addToQueue(item);
-            }
         },
         scanStarted() {
             if (names.length === 0) return;
@@ -241,8 +219,6 @@ export function createExportProgressSink(
                 emit({ kind: "sessionFinished" });
             }
             livePreview.clear();
-            for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
-            queueItems.length = 0;
         },
     };
 }

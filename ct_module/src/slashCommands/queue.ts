@@ -10,10 +10,12 @@ import {
     addToQueue,
     clearQueue,
     getQueue,
+    getQueueItemState,
+    isQueueProcessing,
     makeImportableQueueItem,
     removeFromQueue,
 } from "../gui/right-panel/import-tab/queue";
-import { startImport } from "../gui/right-panel/import-tab/taskController";
+import { startOperationQueue } from "../gui/right-panel/import-tab/operationQueueController";
 import { importableIdentity } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
@@ -53,9 +55,7 @@ export function commandQueue(args: string[]): void {
 
 function printQueueUsage(): void {
     ChatLib.chat("&7[htsw] /htsw queue add <import.json path>");
-    ChatLib.chat(
-        "&7[htsw] /htsw queue add <import.json path> <TYPE> <identity...>"
-    );
+    ChatLib.chat("&7[htsw] /htsw queue add <import.json path> <TYPE> <identity...>");
     ChatLib.chat("&7[htsw] /htsw queue modified <import.json path>");
     ChatLib.chat("&7[htsw] /htsw queue list");
     ChatLib.chat("&7[htsw] /htsw queue remove <index>");
@@ -145,9 +145,7 @@ async function commandQueueAdd(args: string[]): Promise<void> {
     );
 }
 
-function splitAddArguments(
-    args: string[]
-): { path: string; remaining: string[] } | null {
+function splitAddArguments(args: string[]): { path: string; remaining: string[] } | null {
     for (let i = 1; i <= args.length; i++) {
         const path = resolvePath(args.slice(0, i));
         if (FileLib.exists(path)) {
@@ -163,9 +161,7 @@ function resolvePath(args: string[]): string {
 
 function commandQueueModified(args: string[]): void {
     if (args.length === 0) {
-        ChatLib.chat(
-            "&c[htsw] Usage: /htsw queue modified <import.json path>"
-        );
+        ChatLib.chat("&c[htsw] Usage: /htsw queue modified <import.json path>");
         return;
     }
     const path = resolvePath(args);
@@ -190,24 +186,27 @@ function commandQueueList(): void {
     }
     for (let i = 0; i < queue.length; i++) {
         const item = queue[i];
+        const state = getQueueItemState(item);
+        const suffix =
+            state.error === null ? state.status : `${state.status}: ${state.error}`;
         if (item.operation === "import" && item.kind === "importJson") {
             ChatLib.chat(
-                `&7[htsw] ${i + 1}. &fimport/importJson IMPORT_JSON ${item.label} ${compactFileLabel(item.sourcePath)}`
+                `&7[htsw] ${i + 1}. &fimport/importJson IMPORT_JSON ${item.label} ${compactFileLabel(item.sourcePath)} &8[${suffix}]`
             );
         } else if (item.operation === "import") {
             ChatLib.chat(
-                `&7[htsw] ${i + 1}. &fimport/importable ${item.type} ${item.identity} ${compactFileLabel(item.sourcePath)}`
+                `&7[htsw] ${i + 1}. &fimport/importable ${item.type} ${item.identity} ${compactFileLabel(item.sourcePath)} &8[${suffix}]`
             );
         } else {
             ChatLib.chat(
-                `&7[htsw] ${i + 1}. &f${item.operation}/importable ${item.type} ${item.identity} ${compactFileLabel(item.destinationPath)}`
+                `&7[htsw] ${i + 1}. &f${item.operation}/importable ${item.type} ${item.identity} ${compactFileLabel(item.destinationPath)} &8[${suffix}]`
             );
         }
     }
 }
 
 function commandQueueRemove(args: string[]): void {
-    if (isTaskRunning()) {
+    if (isTaskRunning() || isQueueProcessing()) {
         ChatLib.chat("&c[htsw] Cannot remove queue items while a task is running");
         return;
     }
@@ -228,7 +227,7 @@ function commandQueueRemove(args: string[]): void {
 }
 
 function commandQueueClear(): void {
-    if (isTaskRunning()) {
+    if (isTaskRunning() || isQueueProcessing()) {
         ChatLib.chat("&c[htsw] Cannot clear the queue while a task is running");
         return;
     }
@@ -247,8 +246,6 @@ function commandQueueRun(): void {
         );
         return;
     }
-    const count = getQueue().length;
-    if (startImport()) {
-        ChatLib.chat(`&a[htsw] Running queue with ${count} item(s)`);
-    }
+    ChatLib.chat(`&a[htsw] Running queue with ${getQueue().length} item(s)`);
+    startOperationQueue();
 }

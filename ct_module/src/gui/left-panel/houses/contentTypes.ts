@@ -104,6 +104,7 @@ export type HouseContentType = {
     // Export reads the live housing menu, so the view still gates it on standing
     // in the house. A type without this hook is browse-only.
     export?: {
+        all: () => void;
         selected: (
             names: string[],
             onDone: () => void,
@@ -115,6 +116,7 @@ export type HouseContentType = {
 
 function exportHook(spec: ExportSpec): HouseContentType["export"] {
     return {
+        all: () => startExport(spec),
         selected: (names, onDone, labels) => startExport(spec, names, onDone, labels),
     };
 }
@@ -359,7 +361,7 @@ HOUSE_CONTENT_TYPES.push({
     scanInFlight: () => false,
     scanNames: false,
     standaloneAction: {
-        label: "Export held item",
+        label: "Queue held item (captured on run)",
         run: () =>
             startExport({ type: "ITEM", label: "held item", read: exportHeldItem }),
     },

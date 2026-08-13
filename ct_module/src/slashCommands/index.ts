@@ -33,7 +33,8 @@ import {
     setLagProbeEnabled,
 } from "../perf/lagProbe";
 import { commandTest } from "../inGameTests/command";
-import { startImport } from "../gui/right-panel/import-tab/taskController";
+import { addToQueue } from "../gui/right-panel/import-tab/queue";
+import { startOperationQueue } from "../gui/right-panel/import-tab/operationQueueController";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
@@ -784,14 +785,13 @@ function commandImport(args: string[]) {
     // progress UI. buildBatches parses the file on demand via the parse
     // cache and gates on diagnostics, so no separate parse pass is needed.
     const canon = canonicalPath(importPath);
-    startImport([
-        {
-            operation: "import",
-            kind: "importJson",
-            sourcePath: canon,
-            label: compactFileLabel(canon),
-        },
-    ]);
+    addToQueue({
+        operation: "import",
+        kind: "importJson",
+        sourcePath: canon,
+        label: compactFileLabel(canon),
+    });
+    startOperationQueue();
 }
 
 function isRawImportToken(token: string | undefined): boolean {

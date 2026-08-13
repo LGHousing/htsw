@@ -24,10 +24,7 @@ import {
 } from "../../lib/theme";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 
-import {
-    getHousingUuid,
-    isCurrentHouseTrusted,
-} from "../../state";
+import { getHousingUuid, isCurrentHouseTrusted } from "../../state";
 import {
     getQueueItemRunState,
     isCurrentQueueItem,
@@ -37,22 +34,22 @@ import { importableIdentity } from "../../../importables/identity";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import { getImportCacheWriteRevision } from "../../../importCache/cache";
 import {
-    isQueueSessionItem,
+    cancelQueueItem,
+    getQueueItemState,
     queueItemKey,
     removeFromQueueKey,
+    retryQueueItem,
     type QueueItem,
 } from "./queue";
-import {
-    canonicalPath,
-    getParseCacheRevision,
-    requestParse,
-} from "../../parsing/parses";
+import { canonicalPath, getParseCacheRevision, requestParse } from "../../parsing/parses";
 import { orderImportablesForSession } from "../../../importables/import/session";
 import { isTaskRunning } from "../../../tasks/runningState";
+import { cancelActiveTask } from "../../../tasks/activeTask";
 import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
 import type { IncludeNode } from "../../left-panel/projects/includeTree";
+import { shortPath } from "../../lib/pathDisplay";
 
 type QueueSourceIndex = {
     importables: Map<string, Importable>;
@@ -140,7 +137,9 @@ function declaringFolder(item: QueueItem): string | null {
     if (item.operation !== "import" || item.kind !== "importable") return null;
     const index = queueSourceIndex(item.sourcePath);
     if (index === null) return null;
-    return index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null;
+    return (
+        index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null
+    );
 }
 
 function declaringFolderElement(item: QueueItem): Element | false {
@@ -308,6 +307,123 @@ function queueStateRail(color: number | undefined): Element {
     });
 }
 
+function operationColor(item: QueueItem): number {
+    if (item.operation === "import") return PHASE_APPLYING;
+    if (item.operation === "read") return PHASE_READING;
+    return PHASE_HYDRATING;
+}
+
+function queueTargetElement(item: QueueItem): Element {
+    const target = item.operation === "import" ? item.sourcePath : item.destinationPath;
+    return Text({
+        text: shortPath(target),
+        color: COLOR_TEXT_FAINT,
+        tooltip: target,
+        tooltipColor: COLOR_TEXT_DIM,
+        truncate: true,
+        style: { width: { kind: "px", value: 96 } },
+    });
+}
+
+function queueItemControls(item: QueueItem): Element {
+    const key = queueItemKey(item);
+    const state = getQueueItemState(item);
+    const controls: Element[] = [];
+    if (
+        state.status === "failed" ||
+        state.status === "cancelled" ||
+        state.status === "blocked"
+    ) {
+        controls.push(
+            Container({
+                style: {
+                    direction: "col",
+                    align: "center",
+                    justify: "center",
+                    width: { kind: "px", value: 14 },
+                    height: { kind: "grow" },
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button === 0) retryQueueItem(key);
+                },
+                children: [
+                    Icon({
+                        name: Icons.rotateCcw,
+                        tooltip:
+                            state.status === "blocked"
+                                ? (state.error ?? "Retry after resolving the conflict")
+                                : "Retry",
+                        tooltipColor:
+                            state.status === "blocked" || state.status === "failed"
+                                ? ACCENT_DANGER
+                                : COLOR_TEXT_DIM,
+                    }),
+                ],
+            })
+        );
+    }
+    controls.push(
+        Container({
+            style: {
+                direction: "col",
+                align: "center",
+                justify: "center",
+                width: { kind: "px", value: 14 },
+                height: { kind: "grow" },
+                hoverBackground: 0x40e85c5c | 0,
+            },
+            onClick: (_rect, info) => {
+                if (info.button !== 0) return;
+                if (state.status === "running") cancelActiveTask();
+                else if (state.status === "queued") cancelQueueItem(key);
+                else removeFromQueueKey(key);
+            },
+            children: [
+                Icon({
+                    name: Icons.x,
+                    tooltip:
+                        state.status === "running"
+                            ? "Cancel current operation"
+                            : state.status === "queued"
+                              ? "Cancel queued operation"
+                              : "Dismiss",
+                    tooltipColor: ACCENT_DANGER,
+                }),
+            ],
+        })
+    );
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "px", value: controls.length * 14 },
+            height: { kind: "grow" },
+        },
+        children: controls,
+    });
+}
+
+function queueStatusIcon(item: QueueItem): Element {
+    const state = getQueueItemState(item);
+    const visual =
+        state.status === "blocked"
+            ? { icon: Icons.triangleAlert, color: ACCENT_DANGER, label: "Blocked" }
+            : state.status === "failed"
+              ? { icon: Icons.circleX, color: ACCENT_DANGER, label: "Failed" }
+              : state.status === "cancelled"
+                ? { icon: Icons.ban, color: COLOR_TEXT_FAINT, label: "Cancelled" }
+                : state.status === "running"
+                  ? { icon: Icons.play, color: operationColor(item), label: "Running" }
+                  : { icon: Icons.clock, color: COLOR_TEXT_DIM, label: "Queued" };
+    return Icon({
+        name: visual.icon,
+        color: visual.color,
+        tooltip: state.error === null ? visual.label : `${visual.label}: ${state.error}`,
+        tooltipColor: visual.color,
+        style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+    });
+}
+
 function queueImportableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
@@ -361,7 +477,13 @@ export function queueRow(item: QueueItem): Element {
     const { teal: skip, tooltip: skipTooltip } = skipBadge(item, runState);
     const canExpand = item.operation === "import" && item.kind === "importJson";
     const expanded = canExpand && isQueueImportJsonExpanded(item);
-    const stateColor = activeQueueItemColor(runState);
+    const lifecycle = getQueueItemState(item);
+    const stateColor =
+        lifecycle.status === "failed" || lifecycle.status === "blocked"
+            ? ACCENT_DANGER
+            : lifecycle.status === "cancelled"
+              ? COLOR_TEXT_FAINT
+              : activeQueueItemColor(runState);
     return Container({
         style: {
             direction: "col",
@@ -410,6 +532,11 @@ export function queueRow(item: QueueItem): Element {
                             ],
                         }),
                     Text({
+                        text: item.operation.toUpperCase(),
+                        color: operationColor(item),
+                        style: { width: { kind: "px", value: 48 } },
+                    }),
+                    Text({
                         text: typeText,
                         color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
                         tooltip: skipTooltip,
@@ -424,32 +551,9 @@ export function queueRow(item: QueueItem): Element {
                         truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
-                    declaringFolderElement(item),
-                    // No removal while an import is running — the queue is
-                    // locked for the duration of the run.
-                    isTaskRunning() || isQueueSessionItem(queueItemKey(item))
-                        ? Container({
-                              style: {
-                                  width: { kind: "px", value: 14 },
-                                  height: { kind: "grow" },
-                              },
-                              children: [],
-                          })
-                        : Container({
-                              style: {
-                                  direction: "col",
-                                  width: { kind: "px", value: 14 },
-                                  height: { kind: "grow" },
-                                  align: "center",
-                                  justify: "center",
-                                  hoverBackground: 0x40e85c5c | 0,
-                              },
-                              onClick: (_rect, info) => {
-                                  if (info.button !== 0) return;
-                                  removeFromQueueKey(queueItemKey(item));
-                              },
-                              children: [Icon({ name: Icons.x })],
-                          }),
+                    queueTargetElement(item),
+                    queueStatusIcon(item),
+                    queueItemControls(item),
                 ],
             }),
             queueRowMiniBar(runState),

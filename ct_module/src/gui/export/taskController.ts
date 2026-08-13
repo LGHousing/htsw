@@ -2,11 +2,11 @@
 
 import type { Importable } from "htsw/types";
 
-import { getNewExportTarget } from "../state";
-import { getParseAt, markParseStale } from "../parsing/parses";
+import { getHousingUuid, getNewExportTarget } from "../state";
+import { markParseStale, parseImportJsonBlocking } from "../parsing/parses";
 import type { ReadFn } from "../../importables/export/reader";
 import { projectExportDestinationFromParsedImportJson } from "../../importables/export/projectDestination";
-import { isTaskCancelled, TaskManager } from "../../tasks/manager";
+import { isTaskCancelled } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
 import { createExportProgressSink } from "./progressSink";
@@ -14,6 +14,16 @@ import { showToast } from "../toast";
 import { runHousingSyncTask } from "../../housingSync/taskRunner";
 import { getExportDestinationStatus } from "./destinationStatus";
 import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
+import { HOUSE_READERS } from "../../importables/export/readers";
+import { exportHeldItem } from "../../importables/items/export";
+import { recordHouseScan } from "../../importCache/cache";
+import { getCurrentHousingUuid } from "../../importCache/housingId";
+import {
+    addToQueueDetailed,
+    makeExportQueueItem,
+    type ExportQueueItem,
+    type QueueExecutionResult,
+} from "../right-panel/import-tab/queue";
 
 export type ExportSpec = {
     type: Importable["type"];
@@ -53,70 +63,134 @@ export function startExport(
         showToast("Nothing selected to export", 0xffe5bc4b);
         return;
     }
-    if (TaskManager.isBusy()) {
-        showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
-        return;
+    const housingUuid = getHousingUuid();
+    const queueItems =
+        names === undefined
+            ? [
+                  makeExportQueueItem(
+                      "export",
+                      spec.type,
+                      spec.type === "ITEM" ? "held item" : "*",
+                      importJsonPath,
+                      housingUuid,
+                      spec.type === "ITEM" ? "Held item" : `All ${spec.label}s`,
+                      spec.type !== "ITEM"
+                  ),
+              ]
+            : names.map((name) =>
+                  makeExportQueueItem(
+                      "export",
+                      spec.type,
+                      name,
+                      importJsonPath,
+                      housingUuid,
+                      labels?.get(name) ?? name
+                  )
+              );
+    let added = 0;
+    let blocked = 0;
+    for (let i = 0; i < queueItems.length; i++) {
+        const result = addToQueueDetailed(queueItems[i]);
+        if (result.kind === "added") added++;
+        else if (result.kind === "blocked") blocked++;
     }
-    const dir = importJsonDir(importJsonPath);
-    const count = names === undefined ? null : names.length;
-    const newExportTarget = getNewExportTarget();
-    runHousingSyncTask("export", (ctx) => {
-        const exportContext = projectExportDestinationFromParsedImportJson(
-            { rootDir: dir, importJsonPath },
-            getParseAt(importJsonPath)?.parsed
+    if (added > 0 || blocked > 0) {
+        showToast(
+            blocked > 0
+                ? `Queued ${added} export${added === 1 ? "" : "s"}; ${blocked} blocked by conflicting work`
+                : `Queued ${added} export${added === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+            blocked > 0 ? 0xffe5bc4b : 0xff5c9ded,
+            6000
         );
-        return spec.read(ctx, {
-            ...exportContext,
-            output: { kind: "project" },
-            ...(newExportTarget !== null
-                ? { newExportTargetImportJson: newExportTarget }
-                : {}),
-            names,
-            progress: createExportProgressSink(
-                spec.type,
-                importJsonPath,
-                "export",
-                labels
-            ),
-        });
-    })
-        .then((result) => {
-            if (result === undefined) return;
-            markParseStale(importJsonPath);
-            if (result.failed > 0) {
-                showToast(
-                    `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
-                    0xffe85c5c,
-                    8000
+        if (added > 0) onSuccess?.();
+    } else {
+        showToast("That export is already queued", 0xffe5bc4b);
+    }
+}
+
+export async function runQueuedExport(
+    item: ExportQueueItem
+): Promise<QueueExecutionResult> {
+    const reader = item.type === "ITEM" ? exportHeldItem : HOUSE_READERS[item.type];
+    const importJsonPath = item.destinationPath;
+    const dir = importJsonDir(importJsonPath);
+    const newExportTarget = getNewExportTarget();
+    const labels = new Map<string, string>();
+    const housingUuid = item.housingUuid;
+    if (!item.all) labels.set(item.identity, item.label);
+    try {
+        const result = await runHousingSyncTask("export", async (ctx) => {
+            const currentHousingUuid = await getCurrentHousingUuid(ctx);
+            if (housingUuid !== null && currentHousingUuid !== housingUuid) {
+                throw new Error(
+                    `Queued for house ${housingUuid}, but you are now in ${currentHousingUuid}`
                 );
-                return;
             }
-            if (result.total === 0) {
-                showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
-                return;
-            }
-            showToast(
-                count === null
-                    ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
-                    : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
-                0xff5cb85c
+            const exportContext = projectExportDestinationFromParsedImportJson(
+                { rootDir: dir, importJsonPath },
+                parseImportJsonBlocking(importJsonPath).parsed
             );
-            if (onSuccess !== undefined) onSuccess();
-        })
-        .catch((err: unknown) => {
-            if (!isTaskCancelled(err)) {
-                writeTaskFailureLog(
-                    {
-                        phase: "export",
-                        sourcePath: importJsonPath,
-                        housingUuid: "",
-                        importableType: spec.type,
-                    },
-                    err
-                );
-            }
-            showToast(`Export failed: ${String(err)}`, 0xffe85c5c, 8000);
+            return await reader(ctx, {
+                ...exportContext,
+                output: { kind: "project" },
+                ...(newExportTarget !== null
+                    ? { newExportTargetImportJson: newExportTarget }
+                    : {}),
+                names: item.all ? undefined : [item.identity],
+                ...(item.all && housingUuid !== null
+                    ? {
+                          onNamesListed: (names: readonly string[]) =>
+                              recordHouseScan(housingUuid, item.type, names.slice()),
+                      }
+                    : {}),
+                progress: createExportProgressSink(
+                    item.type,
+                    importJsonPath,
+                    "export",
+                    labels
+                ),
+            });
         });
+        markParseStale(importJsonPath);
+        if (result === undefined) {
+            showToast(`Export cancelled · ${item.label}`, 0xffe5bc4b, 6000);
+            return { kind: "cancelled" };
+        }
+        if (result.failed > 0) {
+            showToast(
+                `Export failed · ${item.label} · ${result.failed} failed`,
+                0xffe85c5c,
+                8000
+            );
+            return {
+                kind: "failed",
+                error: `${result.failed} export${result.failed === 1 ? "" : "s"} failed`,
+            };
+        }
+        showToast(
+            result.total === 0
+                ? `No ${item.label.toLowerCase()} found to export`
+                : `Exported ${item.label} → ${shortPath(importJsonPath)}`,
+            result.total === 0 ? 0xffe5bc4b : 0xff5cb85c
+        );
+        return { kind: "success" };
+    } catch (error) {
+        if (!isTaskCancelled(error)) {
+            writeTaskFailureLog(
+                {
+                    phase: "export",
+                    sourcePath: importJsonPath,
+                    housingUuid: item.housingUuid ?? "",
+                    importableType: item.type,
+                },
+                error
+            );
+        }
+        showToast(`Export failed · ${item.label}: ${String(error)}`, 0xffe85c5c, 8000);
+        return isTaskCancelled(error)
+            ? { kind: "cancelled" }
+            : { kind: "failed", error: String(error) };
+    }
 }
 
 function importJsonDir(path: string): string {

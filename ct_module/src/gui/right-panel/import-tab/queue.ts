@@ -54,11 +54,25 @@ export type ExportQueueItem = {
     /** House being read/exported from. Null when not known by the caller. */
     housingUuid: string | null;
     identity: string;
+    all: boolean;
     type: Importable["type"];
     label: string;
 };
 
 export type QueueItem = ImportQueueItem | ExportQueueItem;
+
+export type QueueItemState = {
+    status: "queued" | "blocked" | "running" | "failed" | "cancelled";
+    error: string | null;
+};
+
+export type QueueAddResult =
+    | { kind: "added"; key: string }
+    | { kind: "duplicate"; key: string }
+    | { kind: "blocked"; key: string; conflictingKey: string; error: string };
+
+export type QueueExecutionResult =
+    { kind: "success" } | { kind: "failed"; error: string } | { kind: "cancelled" };
 
 /** Stable identity string for a queue item. Used for set membership / removal. */
 const queueItemKeys = new WeakMap<QueueItem, string>();
@@ -72,7 +86,7 @@ export function queueItemKey(item: QueueItem): string {
     } else if (item.kind === "importJson") {
         key = `json:${item.sourcePath}`;
     } else {
-        key = `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;
+        key = `${item.operation}:${item.housingUuid ?? "unknown-house"}|${item.destinationPath}|${item.type}:${item.identity}`;
     }
     queueItemKeys.set(item, key);
     return key;
@@ -88,6 +102,7 @@ export function isImportQueueItem(item: QueueItem): item is ImportQueueItem {
 }
 
 let items: QueueItem[] = [];
+const itemStates = new Map<string, QueueItemState>();
 let itemsRevision = 0;
 let lookupRevision = -1;
 const byKey = new Map<string, number>();
@@ -129,10 +144,14 @@ function queueChanged(): void {
     markGuiDirty();
 }
 
-export function beginQueueSession(): void {
+export function beginQueueSession(keys?: readonly string[]): void {
     sessionKeys = new Set<string>();
-    for (let i = 0; i < items.length; i++) {
-        sessionKeys.add(queueItemKey(items[i]));
+    if (keys !== undefined) {
+        for (let i = 0; i < keys.length; i++) sessionKeys.add(keys[i]);
+    } else {
+        for (let i = 0; i < items.length; i++) {
+            sessionKeys.add(queueItemKey(items[i]));
+        }
     }
     markGuiDirty();
 }
@@ -155,6 +174,7 @@ export function endQueueSession(removeSessionItems: boolean): void {
             restoredKeys.delete(key);
             return false;
         });
+        for (const key of keys) itemStates.delete(key);
         itemsRevision++;
     }
     sessionKeys = null;
@@ -169,10 +189,66 @@ export function getQueueLength(): number {
     return items.length;
 }
 
+export function hasRunnableQueueItem(): boolean {
+    for (let i = 0; i < items.length; i++) {
+        const status = stateForKey(queueItemKey(items[i])).status;
+        if (status === "running") continue;
+        return status === "queued";
+    }
+    return false;
+}
+
 function importWorkKey(item: QueueItem): string | null {
     return item.operation === "import" && item.kind === "importable"
         ? `${item.type}:${item.identity}`
         : null;
+}
+
+function targetsOverlap(left: QueueItem, right: QueueItem): boolean {
+    if (left.kind !== "importable" || right.kind !== "importable") return false;
+    if (left.type !== right.type) return false;
+    const leftAll = left.operation !== "import" && left.all;
+    const rightAll = right.operation !== "import" && right.all;
+    return leftAll || rightAll || left.identity === right.identity;
+}
+
+function operationsConflict(left: QueueItem, right: QueueItem): boolean {
+    if (left.operation === right.operation) return false;
+    if (left.kind === "importJson" || right.kind === "importJson") return true;
+    return targetsOverlap(left, right);
+}
+
+function sameOperationOverlap(left: QueueItem, right: QueueItem): boolean {
+    if (left.operation !== right.operation) return false;
+    if (left.operation === "import" || right.operation === "import") return false;
+    return (
+        left.destinationPath === right.destinationPath &&
+        left.housingUuid === right.housingUuid &&
+        targetsOverlap(left, right)
+    );
+}
+
+function operationLabel(item: QueueItem): string {
+    return item.operation.charAt(0).toUpperCase() + item.operation.substring(1);
+}
+
+function stateForKey(key: string): QueueItemState {
+    return itemStates.get(key) ?? { status: "queued", error: null };
+}
+
+export function getQueueItemState(item: QueueItem): QueueItemState {
+    return stateForKey(queueItemKey(item));
+}
+
+function conflictFor(item: QueueItem, excludingKey?: string): QueueItem | null {
+    for (let i = 0; i < items.length; i++) {
+        const existing = items[i];
+        const key = queueItemKey(existing);
+        if (key === excludingKey) continue;
+        if (stateForKey(key).status === "cancelled") continue;
+        if (operationsConflict(item, existing)) return existing;
+    }
+    return null;
 }
 
 function rebuildQueueLookups(): void {
@@ -207,11 +283,36 @@ export function isQueueItemQueued(item: QueueItem): boolean {
 }
 
 export function addToQueue(item: QueueItem): boolean {
-    if (isQueueItemQueued(item)) return false;
+    return addToQueueDetailed(item).kind === "added";
+}
+
+export function addToQueueDetailed(item: QueueItem): QueueAddResult {
+    const existingKey = getQueuedItemKey(item);
+    if (existingKey !== null) return { kind: "duplicate", key: existingKey };
+    for (let i = 0; i < items.length; i++) {
+        const existing = items[i];
+        if (
+            stateForKey(queueItemKey(existing)).status !== "cancelled" &&
+            sameOperationOverlap(item, existing)
+        ) {
+            return { kind: "duplicate", key: queueItemKey(existing) };
+        }
+    }
+    const key = queueItemKey(item);
+    const conflict = conflictFor(item);
     items = items.concat([item]);
+    if (conflict !== null) {
+        const conflictingKey = queueItemKey(conflict);
+        const error = `${operationLabel(item)} conflicts with queued ${operationLabel(conflict)} work for ${item.label}.`;
+        itemStates.set(key, { status: "blocked", error });
+        itemsRevision++;
+        queueChanged();
+        return { kind: "blocked", key, conflictingKey, error };
+    }
+    itemStates.set(key, { status: "queued", error: null });
     itemsRevision++;
     queueChanged();
-    return true;
+    return { kind: "added", key };
 }
 
 /**
@@ -307,6 +408,7 @@ export function addSessionQueueItem(item: QueueItem): void {
 export function removeFromQueueKey(key: string): void {
     const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);
+    itemStates.delete(key);
     itemsRevision++;
     if (items.length !== beforeLen) {
         autoTrackedKeys.delete(key);
@@ -322,6 +424,7 @@ export function removeFromQueue(item: QueueItem): void {
     autoTrackedKeys.delete(key);
     restoredKeys.delete(key);
     items = items.slice(0, index).concat(items.slice(index + 1));
+    itemStates.delete(key);
     itemsRevision++;
     queueChanged();
 }
@@ -342,11 +445,103 @@ export function clearQueue(): void {
         return;
     }
     items = [];
+    itemStates.clear();
     itemsRevision++;
     sessionKeys = null;
     autoTrackedKeys.clear();
     restoredKeys.clear();
     queueChanged();
+}
+
+export function cancelQueueItem(key: string): boolean {
+    for (let i = 0; i < items.length; i++) {
+        if (queueItemKey(items[i]) !== key) continue;
+        const current = stateForKey(key);
+        if (current.status === "cancelled" || current.status === "running") return false;
+        itemStates.set(key, { status: "cancelled", error: null });
+        queueChanged();
+        return true;
+    }
+    return false;
+}
+
+export function retryQueueItem(key: string): boolean {
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (queueItemKey(item) !== key) continue;
+        const state = stateForKey(key);
+        if (
+            state.status !== "blocked" &&
+            state.status !== "failed" &&
+            state.status !== "cancelled"
+        ) {
+            return false;
+        }
+        const conflict = conflictFor(item, key);
+        if (conflict !== null) {
+            const error = `${operationLabel(item)} conflicts with queued ${operationLabel(conflict)} work for ${item.label}.`;
+            itemStates.set(key, { status: "blocked", error });
+            queueChanged();
+            return false;
+        }
+        itemStates.set(key, { status: "queued", error: null });
+        queueChanged();
+        return true;
+    }
+    return false;
+}
+
+function nextQueuedItem(): QueueItem | null {
+    for (let i = 0; i < items.length; i++) {
+        const status = stateForKey(queueItemKey(items[i])).status;
+        if (status === "queued") return items[i];
+        if (status !== "running") return null;
+    }
+    return null;
+}
+
+let processing: Promise<void> | null = null;
+
+export function isQueueProcessing(): boolean {
+    return processing !== null;
+}
+
+export function processQueue(
+    execute: (item: QueueItem) => Promise<QueueExecutionResult>
+): Promise<void> {
+    if (processing !== null) return processing;
+    processing = (async () => {
+        try {
+            let item = nextQueuedItem();
+            while (item !== null) {
+                const key = queueItemKey(item);
+                itemStates.set(key, { status: "running", error: null });
+                queueChanged();
+                let result: QueueExecutionResult;
+                try {
+                    result = await execute(item);
+                } catch (error) {
+                    result = { kind: "failed", error: String(error) };
+                }
+                if (result.kind === "success") {
+                    removeFromQueueKey(key);
+                    item = nextQueuedItem();
+                    continue;
+                }
+                itemStates.set(
+                    key,
+                    result.kind === "failed"
+                        ? { status: "failed", error: result.error }
+                        : { status: "cancelled", error: null }
+                );
+                queueChanged();
+                return;
+            }
+        } finally {
+            processing = null;
+        }
+    })();
+    return processing;
 }
 
 /**
@@ -379,23 +574,12 @@ export function queueDisplayGroups(): {
 }
 
 /**
- * Returns the queue items sorted to match execution order: ITEMs first
- * (because action lists reference items by name and need them to exist
- * first), then the rest in queue insertion order. importJson group rows
- * are kept in insertion order alongside the non-ITEM importables. Use
- * this for display so the user sees the same order things will run in.
+ * Preserve FIFO order. Import sessions still order their own resolved
+ * dependencies internally; the operation queue must not move later work
+ * ahead of a different operation.
  */
 function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
-    const itemImportables: QueueItem[] = [];
-    const rest: QueueItem[] = [];
-    for (const item of queue) {
-        if (item.operation === "import" && item.kind === "importable" && item.type === "ITEM") {
-            itemImportables.push(item);
-        } else {
-            rest.push(item);
-        }
-    }
-    return itemImportables.concat(rest);
+    return queue.slice();
 }
 
 // ── Path-based helpers ─────────────────────────────────────────────────
@@ -406,7 +590,10 @@ function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
  * rows that want "everything under this import.json" add those importables
  * individually so queue rows stay concrete.
  */
-export function queueItemsForPath(filePath: string, importJsonPath?: string | null): QueueItem[] {
+export function queueItemsForPath(
+    filePath: string,
+    importJsonPath?: string | null
+): QueueItem[] {
     const target = canonicalPath(filePath);
     return findImportableQueueItems(target, importJsonPath);
 }
@@ -427,7 +614,10 @@ export function queueItemsCacheSize(): number {
  * Locate every importable across every cached parse whose source file
  * matches `target` (canonical). Returns one queue item per match.
  */
-function findImportableQueueItems(target: string, importJsonPath?: string | null): QueueItem[] {
+function findImportableQueueItems(
+    target: string,
+    importJsonPath?: string | null
+): QueueItem[] {
     const rev = getParseCacheRevision();
     if (rev !== queueItemsCacheRev) {
         queueItemsCache.clear();
@@ -506,7 +696,8 @@ export function makeExportQueueItem(
     identity: string,
     destinationPath: string,
     housingUuid: string | null,
-    label: string = identity
+    label: string = identity,
+    all = false
 ): ExportQueueItem {
     return {
         operation,
@@ -514,6 +705,7 @@ export function makeExportQueueItem(
         destinationPath: canonicalPath(destinationPath),
         housingUuid,
         identity,
+        all,
         type,
         label,
     };

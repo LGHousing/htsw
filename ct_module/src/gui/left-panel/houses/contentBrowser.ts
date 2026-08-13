@@ -66,6 +66,7 @@ import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
 import { markGuiDirty } from "../../lib/dirty";
 import { getUnmatchedFunctionsFirst } from "../../../settings";
+import { bulkQueueConfirmation } from "./bulkQueueConfirmation";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
@@ -594,6 +595,15 @@ function confirmDestructiveExport(
     });
 }
 
+function confirmBulkQueue(
+    operation: "read" | "export",
+    t: HouseContentType,
+    run: () => void
+): void {
+    const copy = bulkQueueConfirmation(operation, t.label, getExportImportJsonPath());
+    openConfirmPopover({ ...copy, onConfirm: run });
+}
+
 function exportActionBar(
     t: HouseContentType,
     uuid: string,
@@ -617,6 +627,7 @@ function exportActionBar(
     const canExportPrimary = hasDest && (selectedCount > 0 || shownCount > 0);
     const canReadPrimary =
         deepRead !== undefined && hasDest && (selectedCount > 0 || shownCount > 0);
+    const canReadAll = deepRead !== undefined && hasDest;
     const noShownItemsTooltip =
         houseCount === 0
             ? `No ${t.label.toLowerCase()} in this house`
@@ -655,7 +666,7 @@ function exportActionBar(
                                     text:
                                         selectedCount > 0
                                             ? `Read (${selectedCount})`
-                                            : `Read All (${shownCount})`,
+                                            : `Read shown (${shownCount})`,
                                     color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
                                     truncate: true,
                                     style: { width: { kind: "grow" } },
@@ -701,7 +712,7 @@ function exportActionBar(
                                 text:
                                     selectedCount > 0
                                         ? `Export (${selectedCount})`
-                                        : `Export All (${shownCount})`,
+                                        : `Export shown (${shownCount})`,
                                 color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
                                 truncate: true,
                                 style: { width: { kind: "grow" } },
@@ -751,6 +762,44 @@ function exportActionBar(
                     }),
                 ],
             }),
+            t.export !== undefined &&
+                Row({
+                    style: { gap: 4, height: { kind: "px", value: 20 } },
+                    children: [
+                        deepRead !== undefined &&
+                            Button({
+                                text: `Read all (${houseCount})`,
+                                icon: Icons.scanEye,
+                                disabled: !canReadAll,
+                                tooltip:
+                                    "Refresh current-house names, then queue every entry regardless of filters",
+                                style: {
+                                    width: { kind: "grow" },
+                                    height: { kind: "grow" },
+                                },
+                                onClick: () => {
+                                    if (!canReadAll) return;
+                                    confirmBulkQueue("read", t, () => {
+                                        deepRead();
+                                    });
+                                },
+                            }),
+                        Button({
+                            text: `Export all (${houseCount})`,
+                            icon: Icons.fileUp,
+                            disabled: !hasDest,
+                            tooltip:
+                                "Refresh current-house names, then queue every entry regardless of filters",
+                            style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                            onClick: () => {
+                                if (!hasDest || t.export === undefined) return;
+                                confirmBulkQueue("export", t, () => {
+                                    t.export?.all();
+                                });
+                            },
+                        }),
+                    ],
+                }),
             t.type === "MENU" &&
                 Row({
                     style: { height: { kind: "px", value: 20 } },
