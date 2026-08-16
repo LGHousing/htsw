@@ -593,17 +593,21 @@ async function runImportSessionInner(
         }
     }
 
+    // Cache the observed reads so a retry can skip re-reading the house, but
+    // keep them out of house.lock.json. The lock is the "state as of the last
+    // import" baseline the conflict prompt accuses Housing against, and
+    // everything below is about to change the house. Recording the pre-apply
+    // state there and then writing to those very lists leaves the lock
+    // describing a house that no longer exists the moment the session is
+    // interrupted — a crash, disconnect or Housing kick skips every handler
+    // that would have corrected it — so the next import reports this import's
+    // own writes as someone else's Housing edits.
     await writeObservedPlanCaches(
         ctx,
         observedPlans,
         selection.housingUuid,
-        pendingHouseLockEntries,
+        new Map(),
         verifiedDependencyContext
-    );
-    await flushHouseLockEntries(
-        selection.sourcePath,
-        selection.housingUuid,
-        pendingHouseLockEntries
     );
 
     let activePlanIndex: number | null = null;
@@ -792,7 +796,18 @@ async function runImportSessionInner(
         }
         await session.itemPlacement.restore(ctx);
     } catch (error) {
-        if (!isTaskCancelled(error)) throw error;
+        if (!isTaskCancelled(error)) {
+            // Importables applied above already hold their post-apply lock
+            // entries in the pending map. Dropping them here would leave the
+            // house ahead of its baseline, so the next import blames Housing
+            // for the actions this session wrote.
+            await flushHouseLockEntries(
+                selection.sourcePath,
+                selection.housingUuid,
+                pendingHouseLockEntries
+            );
+            throw error;
+        }
 
         let invalidatedCurrent = false;
         let invalidationFailed = false;
