@@ -488,7 +488,12 @@ export async function applyImportableMenuPlan(
             );
             workDone++;
         }
-        await application.run("clear:back", () => clickGoBack(ctx));
+        // Back to the settings screen for the resize below. The elements grid
+        // is exactly `rows * 9` element slots plus the player inventory — it
+        // has no "Go Back" button, so re-open the editor instead of clicking.
+        await application.run("clear:back", () =>
+            openMenuEditor(ctx, importable.name)
+        );
         workDone++;
         remainingOps = diff.ops.filter((op) => op.clear !== true);
     }
