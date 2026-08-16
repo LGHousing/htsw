@@ -4,6 +4,7 @@ import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Scroll, Text } from "../../lib/components";
 import { Icons, IconName } from "../../lib/icons.generated";
 import {
+    clearHouseTrust,
     getExportImportJsonPath,
     getHousingUuid,
     isHouseTrusted,
@@ -129,7 +130,7 @@ function deleteHouse(uuid: string): void {
     const label = houseDisplayName(uuid);
     const cacheResult = deleteHousingCache(uuid);
     const aliasCleared = clearAlias(uuid);
-    const trustCleared = setHouseTrust(uuid, false);
+    const trustCleared = clearHouseTrust(uuid);
     if (getHousingUuid() === uuid) {
         setHousingUuid(null);
     }
