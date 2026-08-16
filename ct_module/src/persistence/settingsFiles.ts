@@ -10,16 +10,37 @@ export function settingsFilePath(fileName: string): string {
     return `${SETTINGS_ROOT}/${fileName}`;
 }
 
-function removeLegacyFiles(fileName: string): void {
+/**
+ * Every path a document may have lived at before, newest first.
+ *
+ * Two kinds feed in here. `LEGACY_ROOTS` are earlier spellings of the
+ * settings directory itself, so they keep the same basename. `extraLegacy`
+ * are explicit full paths with their own basenames — used to lift the
+ * `gui-*.json` family out of `./config/ChatTriggers/modules/HTSW`, which the
+ * auto-updater rewrites and a reinstall wipes.
+ */
+function legacyPathsFor(fileName: string, extraLegacy: readonly string[]): string[] {
+    const paths: string[] = [];
     for (let i = 0; i < LEGACY_ROOTS.length; i++) {
-        const path = `${LEGACY_ROOTS[i]}/${fileName}`;
+        paths.push(`${LEGACY_ROOTS[i]}/${fileName}`);
+    }
+    for (let i = 0; i < extraLegacy.length; i++) paths.push(extraLegacy[i]);
+    return paths;
+}
+
+function removeLegacyFiles(fileName: string, extraLegacy: readonly string[]): void {
+    const paths = legacyPathsFor(fileName, extraLegacy);
+    for (let i = 0; i < paths.length; i++) {
         try {
-            if (FileLib.exists(path)) FileLib.delete(path);
+            if (FileLib.exists(paths[i])) FileLib.delete(paths[i]);
         } catch (_e) {}
     }
 }
 
-export function readSettingsFile(fileName: string): string | null {
+export function readSettingsFile(
+    fileName: string,
+    extraLegacy: readonly string[] = []
+): string | null {
     const path = settingsFilePath(fileName);
     if (FileLib.exists(path)) {
         const value = FileLib.read(path) as RuntimeString | null | undefined;
@@ -27,19 +48,20 @@ export function readSettingsFile(fileName: string): string | null {
             throw new Error(`Could not read settings file: ${path}`);
         }
         const raw = runtimeString(value);
-        removeLegacyFiles(fileName);
+        removeLegacyFiles(fileName, extraLegacy);
         return raw;
     }
 
-    for (let i = 0; i < LEGACY_ROOTS.length; i++) {
-        const legacyPath = `${LEGACY_ROOTS[i]}/${fileName}`;
+    const legacyPaths = legacyPathsFor(fileName, extraLegacy);
+    for (let i = 0; i < legacyPaths.length; i++) {
+        const legacyPath = legacyPaths[i];
         if (!FileLib.exists(legacyPath)) continue;
         const value = FileLib.read(legacyPath) as RuntimeString | null | undefined;
         if (value === null || value === undefined) {
             throw new Error(`Could not read settings file: ${legacyPath}`);
         }
         const raw = runtimeString(value);
-        if (atomicWriteText(path, raw)) removeLegacyFiles(fileName);
+        if (atomicWriteText(path, raw)) removeLegacyFiles(fileName, extraLegacy);
         return raw;
     }
     return null;
@@ -50,9 +72,12 @@ export type JsonSettingsRead =
     | { ok: true; found: true; value: unknown }
     | { ok: false };
 
-export function readJsonSettingsFile(fileName: string): JsonSettingsRead {
+export function readJsonSettingsFile(
+    fileName: string,
+    extraLegacy: readonly string[] = []
+): JsonSettingsRead {
     try {
-        const raw = readSettingsFile(fileName);
+        const raw = readSettingsFile(fileName, extraLegacy);
         if (raw === null || raw.trim() === "") return { ok: true, found: false };
         return { ok: true, found: true, value: JSON.parse(raw) as unknown };
     } catch (_e) {
