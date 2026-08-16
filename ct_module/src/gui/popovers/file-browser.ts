@@ -103,6 +103,19 @@ function setCwd(next: string): void {
     selectedFilePath = null;
     selectedFileName = null;
     if (browserMode.kind === "htsl") rememberAppendHtslDir(cwd);
+    else preselectImportJson();
+}
+
+/**
+ * A folder holding an import.json is, for picking purposes, that import.json —
+ * so entering one arms the Select button straight away instead of making the
+ * user click the file too.
+ */
+function preselectImportJson(): void {
+    const target = `${cwd}/import.json`;
+    if (!pathExists(target)) return;
+    selectedFilePath = target;
+    selectedFileName = "import.json";
 }
 
 function navigateTo(next: string): void {
