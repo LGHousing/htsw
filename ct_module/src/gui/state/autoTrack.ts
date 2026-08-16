@@ -2,66 +2,46 @@
 
 import { canonicalPath } from "../parsing/parses";
 import {
-    readJsonSettingsFile,
-    writeJsonSettingsFile,
-} from "../../persistence/settingsFiles";
+    asStringSetValue,
+    defineRootDoc,
+    serializeStringSet,
+} from "../../persistence/store";
 
-const AUTO_TRACK_FILE_NAME = "auto-track.json";
-let autoTrackSourcesLoaded = false;
-const autoTrackSources: Set<string> = new Set();
-
-function loadAutoTrackSources(): boolean {
-    if (autoTrackSourcesLoaded) return true;
-    const stored = readJsonSettingsFile(AUTO_TRACK_FILE_NAME);
-    if (!stored.ok) return false;
-    if (stored.found && !Array.isArray(stored.value)) return false;
-
-    const values: unknown[] = stored.found ? stored.value as unknown[] : [];
-    for (let i = 0; i < values.length; i++) {
-        if (typeof values[i] !== "string") return false;
-    }
-    autoTrackSources.clear();
-    for (let i = 0; i < values.length; i++) {
-        autoTrackSources.add(canonicalPath(values[i] as string));
-    }
-    autoTrackSourcesLoaded = true;
-    return true;
-}
-
-function saveAutoTrackSources(): boolean {
-    const sources: string[] = [];
-    autoTrackSources.forEach((source) => sources.push(source));
-    sources.sort();
-    return writeJsonSettingsFile(AUTO_TRACK_FILE_NAME, sources);
-}
+const autoTrackSources = defineRootDoc<Set<string>>({
+    file: "auto-track.json",
+    fallback: new Set<string>(),
+    // Canonicalize on read so a path stored under a different spelling still
+    // matches the canonical paths every caller tests against.
+    parse: (raw, fallback) => {
+        const parsed = asStringSetValue(raw, fallback);
+        if (parsed === fallback) return fallback;
+        const out = new Set<string>();
+        parsed.forEach((source) => out.add(canonicalPath(source)));
+        return out;
+    },
+    serialize: serializeStringSet,
+});
 
 export function isAutoTrackSource(sourcePath: string): boolean {
-    loadAutoTrackSources();
-    return autoTrackSources.has(canonicalPath(sourcePath));
+    return autoTrackSources.get().has(canonicalPath(sourcePath));
 }
+
 export function toggleAutoTrackSource(sourcePath: string): boolean | null {
-    if (!loadAutoTrackSources()) return null;
+    if (!autoTrackSources.healthy()) return null;
     const canon = canonicalPath(sourcePath);
-    if (autoTrackSources.has(canon)) {
-        autoTrackSources.delete(canon);
-        if (!saveAutoTrackSources()) {
-            autoTrackSources.add(canon);
-            return null;
-        }
-        return false;
-    }
-    autoTrackSources.add(canon);
-    if (!saveAutoTrackSources()) {
-        autoTrackSources.delete(canon);
-        return null;
-    }
-    return true;
+    const current = autoTrackSources.get();
+    const next = new Set<string>(current);
+    const enabling = !current.has(canon);
+    if (enabling) next.add(canon);
+    else next.delete(canon);
+    if (!autoTrackSources.set(next)) return null;
+    return enabling;
 }
+
 export function isAnyAutoTrackEnabled(): boolean {
-    loadAutoTrackSources();
-    return autoTrackSources.size > 0;
+    return autoTrackSources.get().size > 0;
 }
+
 export function getAutoTrackSources(): ReadonlySet<string> {
-    loadAutoTrackSources();
-    return autoTrackSources;
+    return autoTrackSources.get();
 }

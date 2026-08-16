@@ -1,77 +1,59 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { pathExists, runtimeString, type RuntimeString } from "../lib/java";
+import { pathExists } from "../lib/java";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { defineRootDoc } from "../../persistence/store";
 
-const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
 const MAX_RECENTS = 8;
 const PRUNE_THROTTLE_MS = 1000;
 
-let recents: string[] = [];
-let loaded = false;
 let lastPruneAt = 0;
 
-function load(): void {
-    if (loaded) return;
-    loaded = true;
-    try {
-        if (!FileLib.exists(RECENTS_PATH)) return;
-        const stored = FileLib.read(RECENTS_PATH) as RuntimeString | null | undefined;
-        const raw = runtimeString(stored);
-        if (raw.trim() === "") return;
-        const parsed: unknown = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-            // Normalize + dedupe: older versions stored whatever spelling the
-            // caller had (absolute vs ./htsw/...), so one file could sit in
-            // the list twice.
-            const filtered: string[] = [];
-            for (let i = 0; i < parsed.length; i++) {
-                const recent: unknown = parsed[i];
-                if (typeof recent !== "string") continue;
-                const norm = normalizeHtswPath(recent);
-                if (filtered.indexOf(norm) === -1) filtered.push(norm);
-            }
-            recents = filtered;
+const store = defineRootDoc<string[]>({
+    file: "recents.json",
+    legacyPaths: ["./config/ChatTriggers/modules/HTSW/gui-recents.json"],
+    onReadError: "defaults",
+    pretty: true,
+    fallback: [],
+    // Normalize + dedupe on read: older versions stored whatever spelling the
+    // caller had (absolute vs ./htsw/...), so one file could sit in the list
+    // twice.
+    parse: (raw, fallback) => {
+        if (!Array.isArray(raw)) return fallback;
+        const out: string[] = [];
+        for (let i = 0; i < raw.length; i++) {
+            const entry: unknown = raw[i];
+            if (typeof entry !== "string") continue;
+            const norm = normalizeHtswPath(entry);
+            if (out.indexOf(norm) === -1) out.push(norm);
         }
-    } catch (_e) {
-        recents = [];
-    }
-}
-
-function persist(): void {
-    try {
-        FileLib.write(RECENTS_PATH, JSON.stringify(recents, null, 2), true);
-    } catch (_e) {
-        // ignore
-    }
-}
+        return out;
+    },
+});
 
 // A recent whose file is gone does nothing when clicked, so drop it from the
 // list. Throttled: getRecents runs every frame a picker is open.
-function pruneMissing(): void {
+function pruneMissing(recents: string[]): string[] {
     const now = Date.now();
-    if (now - lastPruneAt < PRUNE_THROTTLE_MS) return;
+    if (now - lastPruneAt < PRUNE_THROTTLE_MS) return recents;
     lastPruneAt = now;
     const kept = recents.filter((p) => pathExists(p));
-    if (kept.length === recents.length) return;
-    recents = kept;
-    persist();
+    if (kept.length === recents.length) return recents;
+    store.set(kept);
+    return kept;
 }
 
 export function getRecents(): string[] {
-    load();
-    pruneMissing();
-    return recents;
+    return pruneMissing(store.get());
 }
 
 export function addRecent(path: string): void {
-    load();
     const norm = normalizeHtswPath(path);
+    const recents = store.get();
     const next: string[] = [norm];
     for (let i = 0; i < recents.length; i++) {
         if (recents[i] !== norm) next.push(recents[i]);
         if (next.length >= MAX_RECENTS) break;
     }
-    recents = next;
-    persist();
+    store.set(next);
 }

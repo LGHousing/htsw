@@ -34,10 +34,7 @@ import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
-import {
-    readJsonSettingsFile,
-    writeJsonSettingsFile,
-} from "../../persistence/settingsFiles";
+import { asNullableString, defineRootDoc } from "../../persistence/store";
 
 type Entry = {
     name: string;
@@ -68,24 +65,28 @@ type BrowserMode =
 
 let browserMode: BrowserMode = { kind: "importJson", onSelect: null };
 
-const APPEND_HTSL_DIRECTORY_FILE = "append-htsl-directory.json";
-let rememberedAppendHtslDir: string | null | undefined;
+const appendHtslDir = defineRootDoc<string | null>({
+    file: "append-htsl-directory.json",
+    // A convenience breadcrumb, not user data — a bad file just means the
+    // browser opens at its default location and re-learns on the next pick.
+    onReadError: "defaults",
+    fallback: null,
+    parse: asNullableString,
+});
 
 function readRememberedAppendHtslDir(): string | null {
-    if (rememberedAppendHtslDir !== undefined) return rememberedAppendHtslDir;
-    const stored = readJsonSettingsFile(APPEND_HTSL_DIRECTORY_FILE);
-    rememberedAppendHtslDir =
-        stored.ok && stored.found && typeof stored.value === "string" && dirExists(stored.value)
-            ? normalizeHtswPath(stored.value)
-            : null;
-    return rememberedAppendHtslDir;
+    // Checked on read rather than write: the directory can be deleted between
+    // sessions, and a remembered path that no longer exists must not be used
+    // as the browser's starting point.
+    const stored = appendHtslDir.get();
+    if (stored === null || !dirExists(stored)) return null;
+    return normalizeHtswPath(stored);
 }
 
 function rememberAppendHtslDir(path: string): void {
     const normalized = normalizeHtswPath(path);
-    if (normalized === rememberedAppendHtslDir) return;
-    rememberedAppendHtslDir = normalized;
-    writeJsonSettingsFile(APPEND_HTSL_DIRECTORY_FILE, normalized);
+    if (normalized === appendHtslDir.get()) return;
+    appendHtslDir.set(normalized);
 }
 
 function boundProjectPath(): string | null {

@@ -7,68 +7,43 @@
  * its fresh-install state.
  */
 
-import { runtimeString, type RuntimeString } from "../lib/java";
+import { asBoolean, defineDoc, defineValue } from "../../persistence/store";
 
-const ONBOARDING_PATH = "./config/ChatTriggers/modules/HTSW/gui-onboarding.json";
+const ONBOARDING = defineDoc({
+    file: "onboarding.json",
+    legacyPaths: ["./config/ChatTriggers/modules/HTSW/gui-onboarding.json"],
+    onReadError: "defaults",
+    pretty: true,
+});
 
-type OnboardingState = {
-    sampleDismissed: boolean;
-    tourDone: boolean;
-};
-
-let state: OnboardingState = { sampleDismissed: false, tourDone: false };
-let loaded = false;
-
-function load(): void {
-    if (loaded) return;
-    loaded = true;
-    try {
-        if (!FileLib.exists(ONBOARDING_PATH)) return;
-        const stored = FileLib.read(ONBOARDING_PATH) as RuntimeString | null | undefined;
-        const raw = runtimeString(stored);
-        if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw) as Partial<OnboardingState>;
-        state = {
-            sampleDismissed: parsed.sampleDismissed === true,
-            tourDone: parsed.tourDone === true,
-        };
-    } catch (_e) {
-        // fresh state on a bad file
-    }
-}
-
-function persist(): void {
-    try {
-        FileLib.write(ONBOARDING_PATH, JSON.stringify(state, null, 2), true);
-    } catch (_e) {
-        // best-effort
-    }
-}
+const sampleDismissed = defineValue(ONBOARDING, {
+    key: "sampleDismissed",
+    fallback: false,
+    parse: asBoolean,
+});
+const tourDone = defineValue(ONBOARDING, {
+    key: "tourDone",
+    fallback: false,
+    parse: asBoolean,
+});
 
 export function isSampleDismissed(): boolean {
-    load();
-    return state.sampleDismissed;
+    return sampleDismissed.get();
 }
 
 export function setSampleDismissed(): void {
-    load();
-    state.sampleDismissed = true;
-    persist();
+    sampleDismissed.set(true);
 }
 
 export function isTourDone(): boolean {
-    load();
-    return state.tourDone;
+    return tourDone.get();
 }
 
 export function setTourDone(): void {
-    load();
-    state.tourDone = true;
-    persist();
+    tourDone.set(true);
 }
 
 export function resetOnboarding(): void {
-    load();
-    state = { sampleDismissed: false, tourDone: false };
-    persist();
+    sampleDismissed.set(false);
+    tourDone.set(false);
 }

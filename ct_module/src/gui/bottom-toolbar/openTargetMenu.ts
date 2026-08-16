@@ -4,7 +4,7 @@ import { Rect } from "../lib/layout";
 import { Col, Container, Text } from "../lib/components";
 import { togglePopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
-import { runtimeString, type RuntimeString } from "../lib/java";
+import { asEnum, defineDoc, defineValue } from "../../persistence/store";
 
 /** Hypixel housing chat-command shortcuts surfaced in the toolbar dropdown. */
 type OpenTargetId = "functions" | "eventactions" | "regions" | "menus";
@@ -18,58 +18,29 @@ const OPEN_TARGETS: OpenTarget[] = [
     { id: "menus", label: "Menus", command: "/menus" },
 ];
 
-const PERSIST_PATH = "./config/ChatTriggers/modules/HTSW/gui-open-target.json";
+const OPEN_TARGET = defineDoc({
+    file: "open-target.json",
+    legacyPaths: ["./config/ChatTriggers/modules/HTSW/gui-open-target.json"],
+    onReadError: "defaults",
+    pretty: true,
+});
 
-let lastTarget: OpenTargetId = "functions";
-let loaded = false;
-
-function load(): void {
-    if (loaded) return;
-    loaded = true;
-    try {
-        if (!FileLib.exists(PERSIST_PATH)) return;
-        const stored = FileLib.read(PERSIST_PATH) as RuntimeString | null | undefined;
-        const raw = runtimeString(stored);
-        if (raw.trim() === "") return;
-        const parsed: unknown = JSON.parse(raw);
-        if (
-            parsed !== null &&
-            typeof parsed === "object" &&
-            "id" in parsed &&
-            typeof parsed.id === "string"
-        ) {
-            for (let i = 0; i < OPEN_TARGETS.length; i++) {
-                if (OPEN_TARGETS[i].id === parsed.id) {
-                    lastTarget = parsed.id;
-                    return;
-                }
-            }
-        }
-    } catch (_e) {
-        // ignore
-    }
-}
-
-function persist(): void {
-    try {
-        FileLib.write(PERSIST_PATH, JSON.stringify({ id: lastTarget }, null, 2), true);
-    } catch (_e) {
-        // ignore
-    }
-}
+const lastTarget = defineValue<OpenTargetId>(OPEN_TARGET, {
+    key: "id",
+    fallback: "functions",
+    parse: asEnum(["functions", "eventactions", "regions", "menus"] as const),
+});
 
 export function getLastOpenTarget(): OpenTarget {
-    load();
+    const id = lastTarget.get();
     for (let i = 0; i < OPEN_TARGETS.length; i++) {
-        if (OPEN_TARGETS[i].id === lastTarget) return OPEN_TARGETS[i];
+        if (OPEN_TARGETS[i].id === id) return OPEN_TARGETS[i];
     }
     return OPEN_TARGETS[0];
 }
 
 export function runOpenTarget(target: OpenTarget): void {
-    load();
-    lastTarget = target.id;
-    persist();
+    lastTarget.set(target.id);
     try {
         ChatLib.command(target.command.replace(/^\//, ""));
     } catch (err) {

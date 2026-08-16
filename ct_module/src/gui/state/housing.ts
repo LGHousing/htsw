@@ -2,8 +2,12 @@
 
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { setExportImportJsonPath } from "./paths";
-import { runtimeString, type RuntimeString } from "../lib/java";
 import { markGuiDirty } from "../lib/dirty";
+import {
+    asNullableString,
+    defineDoc,
+    defineValue,
+} from "../../persistence/store";
 
 // Persisted across /ct reload: the in-memory uuid being wiped left every
 // house-derived UI (bind chips, bound markers, house names) in its gray
@@ -12,45 +16,28 @@ import { markGuiDirty } from "../lib/dirty";
 // the "Sending you to…" transport handler nulls it on any server change,
 // and that null is persisted too, so a reload in a lobby doesn't resurrect
 // a house you already left.
-const HOUSING_STATE_PATH = "./config/ChatTriggers/modules/HTSW/gui-housing.json";
+const HOUSING = defineDoc({
+    file: "housing.json",
+    legacyPaths: ["./config/ChatTriggers/modules/HTSW/gui-housing.json"],
+    onReadError: "defaults",
+});
 
-let housingUuid: string | null = null;
-let loaded = false;
-
-function load(): void {
-    if (loaded) return;
-    loaded = true;
-    try {
-        if (!FileLib.exists(HOUSING_STATE_PATH)) return;
-        const stored = FileLib.read(HOUSING_STATE_PATH) as RuntimeString | null | undefined;
-        const raw = runtimeString(stored);
-        if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw) as { uuid?: unknown };
-        if (typeof parsed.uuid === "string" && parsed.uuid.length > 0) {
-            housingUuid = parsed.uuid;
-        }
-    } catch (_e) {
-        // fresh state on a bad file
-    }
-}
-
-function persist(): void {
-    try {
-        FileLib.write(HOUSING_STATE_PATH, JSON.stringify({ uuid: housingUuid }), true);
-    } catch (_e) {
-        // best-effort
-    }
-}
+const storedUuid = defineValue<string | null>(HOUSING, {
+    key: "uuid",
+    fallback: null,
+    parse: (raw, fallback) => {
+        const value = asNullableString(raw, fallback);
+        // An empty string is not a house; treat it as "no uuid".
+        return value === null || value.length === 0 ? null : value;
+    },
+});
 
 export function getHousingUuid(): string | null {
-    load();
-    return housingUuid;
+    return storedUuid.get();
 }
 export function setHousingUuid(uuid: string | null): void {
-    load();
-    const changed = uuid !== housingUuid;
-    housingUuid = uuid;
-    persist();
+    const changed = uuid !== storedUuid.get();
+    storedUuid.set(uuid);
     if (changed) markGuiDirty();
     // Entering a bound house points the export/compare destination at its
     // import.json, so the Houses tab and exporters line up without a manual

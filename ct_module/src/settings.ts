@@ -1,182 +1,154 @@
 /// <reference types="../CTAutocomplete" />
 
-import { runtimeString, type RuntimeString } from "./utils/java";
+import {
+    asBoolean,
+    asEnum,
+    defineDoc,
+    defineValue,
+    type ValueParser,
+} from "./persistence/store";
 
-// Persisted user preferences. One JSON file for all of them so adding a
-// setting is a new field, not a new file with its own load/persist pair.
-const SETTINGS_PATH = "./config/ChatTriggers/modules/HTSW/gui-settings.json";
+// Persisted user preferences. One document for all of them so adding a
+// setting is a new declaration, not a new file with its own load/persist pair.
+//
+// Lives under `./htsw/.settings/` rather than the module directory it used to
+// occupy: the module directory is the artifact the auto-updater rewrites and a
+// reinstall wipes, which is no place to keep the user's preferences.
 
 export type AutoUpdatePreference = "unset" | "enabled" | "disabled";
 export type UploadDiagnosticsPreference = "unset" | "enabled" | "disabled";
 
-type Settings = {
-    showInventoryButtons: boolean;
-    showChatPanel: boolean;
-    muteTaskSounds: boolean;
-    playImportCompletionSound: boolean;
-    smoothScrolling: boolean;
-    watchMode: boolean;
-    uploadDiagnostics: UploadDiagnosticsPreference;
-    autoUpdate: AutoUpdatePreference;
-};
+const LEGACY_SETTINGS_PATH = "./config/ChatTriggers/modules/HTSW/gui-settings.json";
 
-let state: Settings = {
-    showInventoryButtons: true,
-    showChatPanel: true,
-    muteTaskSounds: false,
-    playImportCompletionSound: true,
-    smoothScrolling: true,
-    watchMode: false,
-    uploadDiagnostics: "unset",
-    autoUpdate: "unset",
-};
-let loaded = false;
-
-function parseAutoUpdatePreference(value: unknown): AutoUpdatePreference {
-    return value === "enabled" || value === "disabled" ? value : "unset";
-}
-
-function parseUploadDiagnosticsPreference(
-    value: unknown
-): UploadDiagnosticsPreference {
-    if (value === "enabled" || value === "disabled") return value;
-    return value === true ? "enabled" : "unset";
-}
-
-function load(): void {
-    if (loaded) return;
-    loaded = true;
-    try {
-        if (!FileLib.exists(SETTINGS_PATH)) return;
-        const stored = FileLib.read(SETTINGS_PATH) as RuntimeString | null | undefined;
-        const raw = runtimeString(stored);
-        if (raw.trim() === "") return;
-        const decoded: unknown = JSON.parse(raw);
-        if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
-            return;
+const SETTINGS = defineDoc({
+    file: "settings.json",
+    legacyPaths: [LEGACY_SETTINGS_PATH],
+    // A hand-mangled preferences file should reset to defaults rather than
+    // latch every toggle off with no way for the user to recover in-game.
+    onReadError: "defaults",
+    pretty: true,
+    migrate(data) {
+        // `muteImportSounds` split into a mute toggle and a completion-chime
+        // toggle. Only fold when the newer keys are absent, so a user who has
+        // since set them explicitly keeps their choice.
+        if (!Object.prototype.hasOwnProperty.call(data, "muteImportSounds")) return;
+        const legacyMuted = data.muteImportSounds === true;
+        if (data.muteTaskSounds === undefined) data.muteTaskSounds = legacyMuted;
+        if (data.playImportCompletionSound === undefined) {
+            data.playImportCompletionSound = !legacyMuted;
         }
-        const parsed = decoded as Record<string, unknown>;
-        const legacySoundsMuted = parsed.muteImportSounds === true;
-        state = {
-            showInventoryButtons: parsed.showInventoryButtons !== false,
-            showChatPanel: parsed.showChatPanel !== false,
-            muteTaskSounds:
-                parsed.muteTaskSounds === undefined
-                    ? legacySoundsMuted
-                    : parsed.muteTaskSounds === true,
-            playImportCompletionSound:
-                parsed.playImportCompletionSound === undefined
-                    ? !legacySoundsMuted
-                    : parsed.playImportCompletionSound !== false,
-            smoothScrolling: parsed.smoothScrolling !== false,
-            watchMode: parsed.watchMode === true,
-            uploadDiagnostics: parseUploadDiagnosticsPreference(
-                parsed.uploadDiagnostics
-            ),
-            autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
-        };
-    } catch (_e) {
-        // fresh defaults on a bad file
-    }
-}
+        delete data.muteImportSounds;
+    },
+});
 
-function persist(): void {
-    try {
-        FileLib.write(SETTINGS_PATH, JSON.stringify(state, null, 2), true);
-    } catch (_e) {
-        // best-effort
-    }
-}
+const parseUploadDiagnostics: ValueParser<UploadDiagnosticsPreference> = (
+    raw,
+    fallback
+) => {
+    if (raw === "enabled" || raw === "disabled") return raw;
+    // Predates the tri-state: a bare `true` meant opted in.
+    return raw === true ? "enabled" : fallback;
+};
+
+const showInventoryButtons = defineValue(SETTINGS, {
+    key: "showInventoryButtons",
+    fallback: true,
+    parse: asBoolean,
+});
+const showChatPanel = defineValue(SETTINGS, {
+    key: "showChatPanel",
+    fallback: true,
+    parse: asBoolean,
+});
+const muteTaskSounds = defineValue(SETTINGS, {
+    key: "muteTaskSounds",
+    fallback: false,
+    parse: asBoolean,
+});
+const playImportCompletionSound = defineValue(SETTINGS, {
+    key: "playImportCompletionSound",
+    fallback: true,
+    parse: asBoolean,
+});
+const smoothScrolling = defineValue(SETTINGS, {
+    key: "smoothScrolling",
+    fallback: true,
+    parse: asBoolean,
+});
+const watchMode = defineValue(SETTINGS, {
+    key: "watchMode",
+    fallback: false,
+    parse: asBoolean,
+});
+const uploadDiagnostics = defineValue<UploadDiagnosticsPreference>(SETTINGS, {
+    key: "uploadDiagnostics",
+    fallback: "unset",
+    parse: parseUploadDiagnostics,
+});
+const autoUpdate = defineValue<AutoUpdatePreference>(SETTINGS, {
+    key: "autoUpdate",
+    fallback: "unset",
+    parse: asEnum(["enabled", "disabled"] as const) as ValueParser<AutoUpdatePreference>,
+});
 
 export function getShowInventoryButtons(): boolean {
-    load();
-    return state.showInventoryButtons;
+    return showInventoryButtons.get();
 }
-
 export function setShowInventoryButtons(value: boolean): void {
-    load();
-    state.showInventoryButtons = value;
-    persist();
+    showInventoryButtons.set(value);
 }
 
 export function getShowChatPanel(): boolean {
-    load();
-    return state.showChatPanel;
+    return showChatPanel.get();
 }
-
 export function setShowChatPanel(value: boolean): void {
-    load();
-    state.showChatPanel = value;
-    persist();
+    showChatPanel.set(value);
 }
 
 export function getMuteTaskSounds(): boolean {
-    load();
-    return state.muteTaskSounds;
+    return muteTaskSounds.get();
 }
-
 export function setMuteTaskSounds(value: boolean): void {
-    load();
-    state.muteTaskSounds = value;
-    persist();
+    muteTaskSounds.set(value);
 }
 
 export function getPlayImportCompletionSound(): boolean {
-    load();
-    return state.playImportCompletionSound;
+    return playImportCompletionSound.get();
 }
-
 export function setPlayImportCompletionSound(value: boolean): void {
-    load();
-    state.playImportCompletionSound = value;
-    persist();
+    playImportCompletionSound.set(value);
 }
 
 export function getSmoothScrolling(): boolean {
-    load();
-    return state.smoothScrolling;
+    return smoothScrolling.get();
 }
-
 export function setSmoothScrolling(value: boolean): void {
-    load();
-    state.smoothScrolling = value;
-    persist();
+    smoothScrolling.set(value);
 }
 
 export function getWatchMode(): boolean {
-    load();
-    return state.watchMode;
+    return watchMode.get();
 }
-
 export function setWatchMode(value: boolean): void {
-    load();
-    state.watchMode = value;
-    persist();
+    watchMode.set(value);
 }
 
 export function getUploadDiagnostics(): boolean {
-    load();
-    return state.uploadDiagnostics === "enabled";
+    return uploadDiagnostics.get() === "enabled";
 }
 
 export function getUploadDiagnosticsPreference(): UploadDiagnosticsPreference {
-    load();
-    return state.uploadDiagnostics;
+    return uploadDiagnostics.get();
 }
 
 export function setUploadDiagnostics(value: boolean): void {
-    load();
-    state.uploadDiagnostics = value ? "enabled" : "disabled";
-    persist();
+    uploadDiagnostics.set(value ? "enabled" : "disabled");
 }
 
 export function getAutoUpdatePreference(): AutoUpdatePreference {
-    load();
-    return state.autoUpdate;
+    return autoUpdate.get();
 }
 
 export function setAutoUpdatePreference(value: AutoUpdatePreference): void {
-    load();
-    state.autoUpdate = value;
-    persist();
+    autoUpdate.set(value);
 }

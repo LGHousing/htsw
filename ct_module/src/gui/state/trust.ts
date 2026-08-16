@@ -2,62 +2,42 @@
 
 import { getHousingUuid } from "./housing";
 import {
-    readJsonSettingsFile,
-    writeJsonSettingsFile,
-} from "../../persistence/settingsFiles";
+    asStringSetValue,
+    defineRootDoc,
+    serializeStringSet,
+} from "../../persistence/store";
 import { markGuiDirty } from "../lib/dirty";
 
-const TRUSTED_HOUSES_FILE_NAME = "trusted-houses.json";
-let trustedHousesLoaded = false;
-const trustedHouses: Set<string> = new Set();
+// Default `refuse` read policy: a trust list that cannot be parsed must never
+// be replaced with an empty one. Silently forgetting which houses are trusted
+// turns the next import into a full re-read, and the user has no way to know
+// why or to reconstruct the list.
+const trustedHouses = defineRootDoc<Set<string>>({
+    file: "trusted-houses.json",
+    fallback: new Set<string>(),
+    parse: asStringSetValue,
+    serialize: serializeStringSet,
+});
 
-function loadTrustedHouses(): boolean {
-    if (trustedHousesLoaded) return true;
-    const stored = readJsonSettingsFile(TRUSTED_HOUSES_FILE_NAME);
-    if (!stored.ok) return false;
-    if (stored.found && !Array.isArray(stored.value)) return false;
+export function isHouseTrusted(uuid: string): boolean {
+    return trustedHouses.get().has(uuid);
+}
 
-    const values: unknown[] = stored.found ? stored.value as unknown[] : [];
-    for (let i = 0; i < values.length; i++) {
-        if (typeof values[i] !== "string") return false;
-    }
-    trustedHouses.clear();
-    for (let i = 0; i < values.length; i++) {
-        trustedHouses.add(values[i] as string);
-    }
-    trustedHousesLoaded = true;
+export function setHouseTrust(uuid: string, trusted: boolean): boolean {
+    if (!trustedHouses.healthy()) return false;
+    const current = trustedHouses.get();
+    if (current.has(uuid) === trusted) return true;
+    const next = new Set<string>(current);
+    if (trusted) next.add(uuid);
+    else next.delete(uuid);
+    if (!trustedHouses.set(next)) return false;
+    markGuiDirty();
     return true;
 }
 
-function saveTrustedHouses(): boolean {
-    const values: string[] = [];
-    trustedHouses.forEach((uuid) => values.push(uuid));
-    values.sort();
-    return writeJsonSettingsFile(TRUSTED_HOUSES_FILE_NAME, values);
-}
-
-export function isHouseTrusted(uuid: string): boolean {
-    loadTrustedHouses();
-    return trustedHouses.has(uuid);
-}
-export function setHouseTrust(uuid: string, trusted: boolean): boolean {
-    if (!loadTrustedHouses()) return false;
-    const wasTrusted = trustedHouses.has(uuid);
-    if (wasTrusted === trusted) return true;
-    if (trusted) trustedHouses.add(uuid);
-    else trustedHouses.delete(uuid);
-    if (saveTrustedHouses()) {
-        markGuiDirty();
-        return true;
-    }
-    if (wasTrusted) trustedHouses.add(uuid);
-    else trustedHouses.delete(uuid);
-    return false;
-}
 /** Trust mode is per-house: an in-flight import trusts the cache iff the
  *  current housing UUID is in the trusted-houses set. */
 export function isCurrentHouseTrusted(): boolean {
-    loadTrustedHouses();
     const uuid = getHousingUuid();
-    return uuid !== null && trustedHouses.has(uuid);
+    return uuid !== null && trustedHouses.get().has(uuid);
 }
