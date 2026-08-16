@@ -11,6 +11,8 @@ import {
 import {
     getQueue,
     isImportQueueItem,
+    isRestoredQueueItem,
+    queueItemKey,
     type ImportQueueItem,
 } from "./right-panel/import-tab/queue";
 import { getAutoTrackSources } from "./state";
@@ -94,6 +96,12 @@ function trackedImportQueue(
     for (const item of getQueue()) {
         if (!isImportQueueItem(item)) continue;
         if (item.kind !== "importable" || !trackedSources.has(item.sourcePath)) continue;
+        // A row restored from the saved workspace is not evidence of changed
+        // work — it is only evidence of what was queued last session. Acting
+        // on it would let a reload start driving Housing menus unprompted,
+        // possibly in a house the player has not even entered yet. Auto-Track
+        // clears the flag once it re-detects the file as genuinely changed.
+        if (isRestoredQueueItem(queueItemKey(item))) continue;
         result.push(item);
     }
     return result;

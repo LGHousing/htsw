@@ -80,6 +80,11 @@ const watchMode = defineValue(SETTINGS, {
     fallback: false,
     parse: asBoolean,
 });
+const restoreWorkspace = defineValue(SETTINGS, {
+    key: "restoreWorkspace",
+    fallback: true,
+    parse: asBoolean,
+});
 const uploadDiagnostics = defineValue<UploadDiagnosticsPreference>(SETTINGS, {
     key: "uploadDiagnostics",
     fallback: "unset",
@@ -131,6 +136,14 @@ export function getWatchMode(): boolean {
 }
 export function setWatchMode(value: boolean): void {
     watchMode.set(value);
+}
+
+/** Whether the projects list, tabs and queue come back after a reload. */
+export function getRestoreWorkspace(): boolean {
+    return restoreWorkspace.get();
+}
+export function setRestoreWorkspace(value: boolean): void {
+    restoreWorkspace.set(value);
 }
 
 export function getUploadDiagnostics(): boolean {

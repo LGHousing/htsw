@@ -104,6 +104,23 @@ const autoTrackedKeys = new Set<string>();
  */
 let sessionKeys: Set<string> | null = null;
 
+/**
+ * Keys of rows brought back from a saved workspace that Auto-Track has not
+ * independently re-detected yet.
+ *
+ * Watch mode fires whenever tracked work sits in the queue. Before the queue
+ * persisted, an empty queue after a reload was what kept it from importing
+ * unprompted; restoring rows removes that accident, so restored rows are
+ * explicitly not watch-eligible. A row leaves this set the moment Auto-Track
+ * reports it as genuinely changed, which is the same evidence watch mode
+ * would have waited for anyway.
+ */
+const restoredKeys = new Set<string>();
+
+export function isRestoredQueueItem(key: string): boolean {
+    return restoredKeys.has(key);
+}
+
 export function getQueue(): readonly QueueItem[] {
     return items;
 }
@@ -135,6 +152,7 @@ export function endQueueSession(removeSessionItems: boolean): void {
             const key = queueItemKey(i);
             if (!keys.has(key)) return true;
             autoTrackedKeys.delete(key);
+            restoredKeys.delete(key);
             return false;
         });
         itemsRevision++;
@@ -226,12 +244,48 @@ export function reconcileAutoTrackedQueue(
 
     const addedKeys = new Set<string>();
     for (const item of desiredItems) {
-        if (!addToQueue(item)) continue;
         const key = queueItemKey(item);
+        // Auto-Track has independently confirmed this row is real work, which
+        // is exactly the evidence a restored row was waiting for. Hand it over
+        // to Auto-Track's ownership so watch mode may act on it.
+        if (restoredKeys.has(key)) {
+            restoredKeys.delete(key);
+            autoTrackedKeys.add(key);
+        }
+        if (!addToQueue(item)) continue;
         autoTrackedKeys.add(key);
         addedKeys.add(key);
     }
     return addedKeys;
+}
+
+// ── Workspace capture / restore ────────────────────────────────────────
+
+/**
+ * The queue rows worth saving: everything the user put there by hand.
+ * Auto-tracked rows are omitted because `reconcileAutoTrackedQueue`
+ * regenerates them from disk state on the next pass — saving them would
+ * reintroduce rows that are stale by definition.
+ */
+export function captureQueueItems(): QueueItem[] {
+    const out: QueueItem[] = [];
+    for (let i = 0; i < items.length; i++) {
+        if (autoTrackedKeys.has(queueItemKey(items[i]))) continue;
+        out.push(items[i]);
+    }
+    return out;
+}
+
+/**
+ * Restore saved rows. They join the queue as ordinary pending work — never as
+ * session items, because the import session they may have belonged to died
+ * with the reload.
+ */
+export function restoreQueueItems(saved: readonly QueueItem[]): void {
+    for (let i = 0; i < saved.length; i++) {
+        if (!addToQueue(saved[i])) continue;
+        restoredKeys.add(queueItemKey(saved[i]));
+    }
 }
 
 /**
@@ -256,6 +310,7 @@ export function removeFromQueueKey(key: string): void {
     itemsRevision++;
     if (items.length !== beforeLen) {
         autoTrackedKeys.delete(key);
+        restoredKeys.delete(key);
         queueChanged();
     }
 }
@@ -263,7 +318,9 @@ export function removeFromQueueKey(key: string): void {
 export function removeFromQueue(item: QueueItem): void {
     const index = queuedItemIndex(item);
     if (index < 0) return;
-    autoTrackedKeys.delete(queueItemKey(items[index]));
+    const key = queueItemKey(items[index]);
+    autoTrackedKeys.delete(key);
+    restoredKeys.delete(key);
     items = items.slice(0, index).concat(items.slice(index + 1));
     itemsRevision++;
     queueChanged();
@@ -281,12 +338,14 @@ export function toggleQueue(item: QueueItem): boolean {
 export function clearQueue(): void {
     if (items.length === 0 && sessionKeys === null) {
         autoTrackedKeys.clear();
+        restoredKeys.clear();
         return;
     }
     items = [];
     itemsRevision++;
     sessionKeys = null;
     autoTrackedKeys.clear();
+    restoredKeys.clear();
     queueChanged();
 }
 

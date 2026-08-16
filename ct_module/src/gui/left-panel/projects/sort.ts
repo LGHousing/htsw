@@ -35,7 +35,33 @@ const DEFAULT_SORT: { id: SortFieldId; direction: SortDir } = {
     id: "type",
     direction: "ASC",
 };
-let activeSort: { id: SortFieldId; direction: SortDir } = DEFAULT_SORT;
+// Copied, not aliased: `selectSort` mutates `activeSort.direction` in place,
+// which through a shared reference also rewrote DEFAULT_SORT — leaving
+// `isSortDefault` comparing the object to itself and always reporting true.
+let activeSort: { id: SortFieldId; direction: SortDir } = {
+    id: DEFAULT_SORT.id,
+    direction: DEFAULT_SORT.direction,
+};
+
+export type SortState = { id: SortFieldId; direction: SortDir };
+
+export function getActiveSort(): SortState {
+    return { id: activeSort.id, direction: activeSort.direction };
+}
+
+export function setActiveSort(next: SortState): void {
+    if (activeSort.id === next.id && activeSort.direction === next.direction) return;
+    activeSort = { id: next.id, direction: next.direction };
+    bumpTreeRevision();
+}
+
+export function isSortFieldId(value: unknown): value is SortFieldId {
+    return value === "type" || value === "alphabetical";
+}
+
+export function isSortDir(value: unknown): value is SortDir {
+    return value === "ASC" || value === "DESC";
+}
 
 function getSortField(id: SortFieldId): SortField {
     for (let i = 0; i < SORT_FIELDS.length; i++)

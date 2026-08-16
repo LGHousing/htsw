@@ -34,6 +34,14 @@ export function getActiveTab(): Tab {
     return TABS[0];
 }
 
+export function getActiveLeftTabId(): TabId {
+    return activeTab;
+}
+
+export function isLeftTabId(value: unknown): value is TabId {
+    return value === "projects" || value === "houses" || value === "settings";
+}
+
 export function setActiveLeftTab(id: TabId): void {
     if (activeTab === id) return;
     activeTab = id;

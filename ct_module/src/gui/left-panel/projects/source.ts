@@ -114,6 +114,23 @@ export function getSources(): Source[] {
     return sources;
 }
 
+/** The open projects, for the saved workspace. */
+export function sourcePaths(): string[] {
+    const out: string[] = [];
+    const open = getSources();
+    for (let i = 0; i < open.length; i++) out.push(open[i].fullPath);
+    return out;
+}
+
+/**
+ * Reopen projects from a saved workspace. Paths that no longer resolve are
+ * dropped by `addSourceFromAbsolute`'s existence check, so a project deleted
+ * or moved between sessions simply doesn't come back.
+ */
+export function restoreSourcePaths(paths: readonly string[]): void {
+    for (let i = 0; i < paths.length; i++) queueSourcePath(paths[i]);
+}
+
 export function removeSource(fullPath: string): void {
     for (let i = 0; i < sources.length; i++) {
         if (sources[i].fullPath === fullPath) {

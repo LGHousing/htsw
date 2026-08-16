@@ -27,6 +27,40 @@ export function getFilterRevision(): number {
     return filterRevision;
 }
 
+export type FilterState = { types: string[]; statuses: string[] };
+
+export function getFilterState(): FilterState {
+    const types: string[] = [];
+    const statuses: string[] = [];
+    selectedTypes.forEach((t) => types.push(t));
+    selectedStatuses.forEach((s) => statuses.push(s));
+    types.sort();
+    statuses.sort();
+    return { types, statuses };
+}
+
+export function setFilterState(next: FilterState): void {
+    selectedTypes.clear();
+    selectedStatuses.clear();
+    for (let i = 0; i < next.types.length; i++) {
+        const type = next.types[i] as ImportableType;
+        // Ignore unknown names: an importable type removed since the file was
+        // written must not resurrect as a filter nothing can satisfy.
+        if (ALL_IMPORTABLE_TYPES.indexOf(type) >= 0) selectedTypes.add(type);
+    }
+    for (let i = 0; i < next.statuses.length; i++) {
+        const status = next.statuses[i] as LinkStatusKey;
+        for (let j = 0; j < PROJECT_LINK_STATUSES.length; j++) {
+            if (PROJECT_LINK_STATUSES[j].key === status) {
+                selectedStatuses.add(status);
+                break;
+            }
+        }
+    }
+    filterRevision++;
+    bumpTreeRevision();
+}
+
 function isImportableTypeActive(t: ImportableType): boolean {
     return selectedTypes.size === 0 || selectedTypes.has(t);
 }

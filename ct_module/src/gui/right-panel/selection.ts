@@ -77,6 +77,66 @@ export function onTaskRunningChanged(
     }
 }
 
+// ── Workspace capture / restore ────────────────────────────────────────
+
+export type TabsState = {
+    /** Pinned tabs, in order. The preview tab is excluded — it is a
+     *  single-click glance, not something the user asked to keep. */
+    confirmed: FileSelection[];
+    active: FileSelection | null;
+};
+
+export function getTabsState(): TabsState {
+    const out: FileSelection[] = [];
+    for (let i = 0; i < confirmed.length; i++) {
+        out.push({
+            path: confirmed[i].path,
+            importJsonPath: confirmed[i].importJsonPath,
+        });
+    }
+    return {
+        confirmed: out,
+        // The live tab belongs to a running import, which no longer exists
+        // after a reload, so only a real file selection is worth saving.
+        active:
+            active === null
+                ? null
+                : { path: active.path, importJsonPath: active.importJsonPath },
+    };
+}
+
+/**
+ * Reopen saved tabs. `exists` filters rows whose file is gone, so a project
+ * deleted between sessions doesn't come back as a tab that renders nothing.
+ */
+export function setTabsState(
+    state: TabsState,
+    exists: (path: string) => boolean
+): void {
+    confirmed.length = 0;
+    preview = null;
+    active = null;
+    liveTabActive = false;
+    for (let i = 0; i < state.confirmed.length; i++) {
+        const entry = state.confirmed[i];
+        if (!exists(entry.path)) continue;
+        if (confirmedIndex(entry) >= 0) continue;
+        confirmed.push({ path: entry.path, importJsonPath: entry.importJsonPath });
+    }
+    if (state.active !== null && exists(state.active.path)) {
+        active = {
+            path: state.active.path,
+            importJsonPath: state.active.importJsonPath,
+        };
+        // An active tab that wasn't in the pinned list would otherwise render
+        // as content with no tab to match it.
+        if (confirmedIndex(active) < 0) confirmed.push(active);
+    } else if (confirmed.length > 0) {
+        active = confirmed[0];
+    }
+    markGuiDirty();
+}
+
 export function getTabs(): Tab[] {
     const out: Tab[] = [];
     const live = liveImportPath();

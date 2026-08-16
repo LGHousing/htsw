@@ -192,6 +192,64 @@ export function importableExpansionKey(parentFullPath: string, imp: Importable):
     return `${parentFullPath}::${imp.type}:${importableIdentity(imp)}`;
 }
 
+// ── Workspace capture / restore ────────────────────────────────────────
+// Which rows the user had open. `autoExpandPaths` and the jump flash are
+// deliberately excluded: both are momentary reactions to an action taken in
+// this session, and restoring them would re-fire an effect nobody asked for.
+
+export type ExpansionState = {
+    imports: Record<string, boolean>;
+    includeGroups: Record<string, boolean>;
+    importables: string[];
+    collapsedRoots: string[];
+};
+
+function recordOfMap(map: Map<string, boolean>): Record<string, boolean> {
+    const out: Record<string, boolean> = {};
+    map.forEach((value, key) => {
+        out[key] = value;
+    });
+    return out;
+}
+
+function fillMap(map: Map<string, boolean>, source: Record<string, boolean>): void {
+    map.clear();
+    for (const key in source) {
+        if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+        if (typeof source[key] === "boolean") map.set(key, source[key]);
+    }
+}
+
+function fillSet(set: Set<string>, source: readonly string[]): void {
+    set.clear();
+    for (let i = 0; i < source.length; i++) {
+        if (typeof source[i] === "string") set.add(source[i]);
+    }
+}
+
+export function getExpansionState(): ExpansionState {
+    const importables: string[] = [];
+    const roots: string[] = [];
+    importableExpansion.forEach((key) => importables.push(key));
+    collapsedRoots.forEach((key) => roots.push(key));
+    importables.sort();
+    roots.sort();
+    return {
+        imports: recordOfMap(importExpansion),
+        includeGroups: recordOfMap(includeGroupExpansion),
+        importables,
+        collapsedRoots: roots,
+    };
+}
+
+export function setExpansionState(state: ExpansionState): void {
+    fillMap(importExpansion, state.imports);
+    fillMap(includeGroupExpansion, state.includeGroups);
+    fillSet(importableExpansion, state.importables);
+    fillSet(collapsedRoots, state.collapsedRoots);
+    bumpTreeRevision();
+}
+
 const CHILD_LIST_LABELS: { [k in ImportableChildListName]: string } = {
     actions: "Actions",
     onEnterActions: "Enter actions",

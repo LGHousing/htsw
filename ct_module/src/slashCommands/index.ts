@@ -48,6 +48,7 @@ import { commandCacheReport } from "./cacheReport";
 import { commandQueue } from "./queue";
 import { commandWatch } from "./watch";
 import { commandTrust } from "./trust";
+import { commandWorkspace } from "./workspace";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
@@ -178,6 +179,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "gui",
         summary: "Toggle the in-game HTSW dashboard",
         run: commandGui,
+    },
+    {
+        name: "workspace",
+        summary: "Saved projects, tabs and queue restored on startup",
+        run: commandWorkspace,
+        usage: "workspace [status|reset|on|off]",
     },
     {
         name: "bridge",

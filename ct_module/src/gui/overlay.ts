@@ -86,6 +86,7 @@ import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
 import { isWatchImportRunning, setWatchDetectionLive } from "./watchMode";
+import { noteOverlayVisibility } from "../persistence/workspace";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
@@ -842,6 +843,7 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         setWatchDetectionLive(frameVisible());
+        noteOverlayVisibility(frameVisible());
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file; the parse itself runs off-thread. It stays
         // paused during tasks — except watch imports, which need save

@@ -20,11 +20,13 @@ import {
 } from "../../state/flags";
 import {
     getAutoUpdatePreference,
+    getRestoreWorkspace,
     getShowChatPanel,
     getShowInventoryButtons,
     getSmoothScrolling,
     getUploadDiagnostics,
     getWatchMode,
+    setRestoreWorkspace,
     setShowChatPanel,
     setShowInventoryButtons,
     setSmoothScrolling,
@@ -123,6 +125,12 @@ export function SettingsView(): Element {
                 label: "Watch mode (auto-import tracked files)",
                 isOn: () => getWatchMode(),
                 onToggle: () => setWatchModeEnabled(!getWatchMode()),
+            }),
+            toggleRow({
+                icon: () => Icons.history,
+                label: "Restore workspace on startup",
+                isOn: () => getRestoreWorkspace(),
+                onToggle: () => setRestoreWorkspace(!getRestoreWorkspace()),
             }),
             toggleRow({
                 icon: () => Icons.refreshCw,
