@@ -23,15 +23,42 @@ function isBareKey(key: string): boolean {
     return true;
 }
 
+function hex(code: number, digits: number): string {
+    let text = code.toString(16);
+    while (text.length < digits) text = "0" + text;
+    return text;
+}
+
+/**
+ * Emits only the subset of the 1.21.5 escape set needed to keep every string
+ * exactly representable: the backslash and quote that would end the literal,
+ * the control characters, and unpaired surrogates, which have no UTF-8
+ * encoding and would become U+FFFD once the file was written. Printable
+ * non-ASCII stays literal so files stay readable.
+ */
 function escapeString(value: string): string {
     let out = '"';
     for (let i = 0; i < value.length; i++) {
         const ch = value.charAt(i);
+        const code = value.charCodeAt(i);
+
         if (ch === "\\") out += "\\\\";
         else if (ch === '"') out += '\\"';
+        else if (ch === "\b") out += "\\b";
+        else if (ch === "\f") out += "\\f";
         else if (ch === "\n") out += "\\n";
         else if (ch === "\r") out += "\\r";
         else if (ch === "\t") out += "\\t";
+        else if (code < 0x20 || code === 0x7f) out += "\\x" + hex(code, 2);
+        else if (code >= 0xd800 && code <= 0xdbff) {
+            const next = value.charCodeAt(i + 1);
+            if (next >= 0xdc00 && next <= 0xdfff) {
+                out += ch + value.charAt(i + 1);
+                i++;
+            } else {
+                out += "\\u" + hex(code, 4);
+            }
+        } else if (code >= 0xdc00 && code <= 0xdfff) out += "\\u" + hex(code, 4);
         else out += ch;
     }
     out += '"';

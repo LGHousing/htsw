@@ -35,18 +35,11 @@ export class Lexer {
         if (c === '"' || c === "'") {
             const quote = c;
             let value = "";
-            let escaped = false;
 
             while (this.hasNext()) {
                 const ch = this.next();
-                if (escaped) {
-                    value += decodeEscape(ch);
-                    escaped = false;
-                    continue;
-                }
-
                 if (ch === "\\") {
-                    escaped = true;
+                    value += this.readEscape();
                     continue;
                 }
 
@@ -88,6 +81,46 @@ export class Lexer {
     peek(skip?: number): string {
         return this.src.charAt(this.pos + (skip ?? 0));
     }
+
+    // Decodes the escape whose backslash was just consumed. A malformed or
+    // unknown escape yields its marker character rather than throwing, so the
+    // editor keeps lexing; rejecting it is the checker's job.
+    readEscape(): string {
+        if (!this.hasNext()) return "";
+        const marker = this.next();
+
+        const width = marker === "x" ? 2 : marker === "u" ? 4 : marker === "U" ? 8 : 0;
+        if (width > 0) {
+            let digits = "";
+            for (let i = 0; i < width; i++) {
+                const ch = this.peek(i);
+                if (!/[0-9a-fA-F]/.test(ch)) return marker;
+                digits += ch;
+            }
+            const code = parseInt(digits, 16);
+            if (code > 0x10ffff) return marker;
+            this.pos += width;
+            return String.fromCodePoint(code);
+        }
+
+        if (marker === "N" && this.peek() === "{") {
+            const end = this.src.indexOf("}", this.pos + 1);
+            if (end === -1) return marker;
+            // Resolving a character name needs a Unicode name table, so the
+            // sequence is kept verbatim instead.
+            const text = this.src.slice(this.pos - 1, end + 1);
+            this.pos = end + 1;
+            return "\\" + text;
+        }
+
+        if (marker === "b") return "\b";
+        if (marker === "f") return "\f";
+        if (marker === "n") return "\n";
+        if (marker === "r") return "\r";
+        if (marker === "s") return " ";
+        if (marker === "t") return "\t";
+        return marker;
+    }
 }
 
 function isBareStart(ch: string): boolean {
@@ -96,11 +129,4 @@ function isBareStart(ch: string): boolean {
 
 function isBareChar(ch: string): boolean {
     return /[A-Za-z0-9+\-._]/.test(ch);
-}
-
-function decodeEscape(ch: string): string {
-    if (ch === "n") return "\n";
-    if (ch === "r") return "\r";
-    if (ch === "t") return "\t";
-    return ch;
 }

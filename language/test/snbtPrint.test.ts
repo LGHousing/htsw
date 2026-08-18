@@ -90,6 +90,10 @@ function roundTrip(src: string, options?: { pretty?: boolean }): string {
     return printed;
 }
 
+function printString(value: string): string {
+    return htsw.nbt.printSnbt({ type: "string", value });
+}
+
 describe("SNBT printer", () => {
     it("prints empty compound", () => {
         expect(htsw.nbt.printSnbt({ type: "compound", value: {} })).toBe("{}");
@@ -121,6 +125,53 @@ describe("SNBT printer", () => {
         const printed = htsw.nbt.printSnbt(tag);
         const reparsed = parse(printed);
         expect(reparsed).toEqual(tag);
+    });
+
+    it("uses the short escape forms", () => {
+        expect(printString("a\bb")).toBe('"a\\bb"');
+        expect(printString("a\fb")).toBe('"a\\fb"');
+        expect(printString("a\nb")).toBe('"a\\nb"');
+        expect(printString("a\rb")).toBe('"a\\rb"');
+        expect(printString("a\tb")).toBe('"a\\tb"');
+    });
+
+    it("uses \\xHH for the remaining control characters", () => {
+        expect(printString(`a${String.fromCharCode(0x00)}b`)).toBe('"a\\x00b"');
+        expect(printString(`a${String.fromCharCode(0x1f)}b`)).toBe('"a\\x1fb"');
+        expect(printString(`a${String.fromCharCode(0x7f)}b`)).toBe('"a\\x7fb"');
+    });
+
+    it("escapes unpaired surrogates but leaves real text alone", () => {
+        expect(printString("a\ud83db")).toBe('"a\\ud83db"');
+        expect(printString("a\ude00b")).toBe('"a\\ude00b"');
+        expect(printString("hi \u{1f600}")).toBe('"hi \u{1f600}"');
+        expect(printString("§4§lADMIN")).toBe('"§4§lADMIN"');
+    });
+
+    it("round-trips every control character", () => {
+        for (const code of [...Array(0x20).keys(), 0x7f]) {
+            const value = `x${String.fromCharCode(code)}y`;
+            const tag: Tag = { type: "string", value };
+            expect(parse(htsw.nbt.printSnbt(tag))).toEqual(tag);
+        }
+    });
+
+    it("decodes the escapes the printer never emits", () => {
+        expect(parse('"a\\sb"')).toEqual({ type: "string", value: "a b" });
+        expect(parse('"\\u0041"')).toEqual({ type: "string", value: "A" });
+        expect(parse('"\\U0001F600"')).toEqual({ type: "string", value: "\u{1f600}" });
+    });
+
+    it("keeps malformed escapes literal rather than throwing", () => {
+        expect(parse('"a\\qb"')).toEqual({ type: "string", value: "aqb" });
+        expect(parse('"a\\x0"')).toEqual({ type: "string", value: "ax0" });
+        expect(parse('"a\\u12"')).toEqual({ type: "string", value: "au12" });
+    });
+
+    it("escapes only the backslash and quote in ordinary text", () => {
+        expect(printString("§aLore")).toBe('"§aLore"');
+        expect(printString('a\\b "c" d')).toBe('"a\\\\b \\"c\\" d"');
+        expect(printString("")).toBe('""');
     });
 
     it("appends .0 to integer-valued floats and doubles", () => {
