@@ -109,8 +109,16 @@
             ]
         },
         "string-escape": {
-            "name": "constant.character.escape.snbt",
-            "match": "\\\\."
+            "patterns": [
+                {
+                    "name": "constant.character.escape.snbt",
+                    "match": "\\\\(?:[bfnrst\\\\'\"]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|N\\{[^}]*\\})"
+                },
+                {
+                    "name": "invalid.illegal.escape.snbt",
+                    "match": "\\\\."
+                }
+            ]
         },
         "format-code": {
             "patterns": [
