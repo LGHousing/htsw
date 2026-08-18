@@ -25,6 +25,10 @@ export class SpanTable {
         map.set(key, span);
     }
 
+    tryGetField<T extends object>(node: T, key: keyof T): Span | undefined {
+        return this.fieldSpans.get(node)?.get(key);
+    }
+
     getField<T extends object>(node: T, key: keyof T): Span {
         const span = this.fieldSpans.get(node)?.get(key);
         if (!span) throw Error(`Missing span for field ${String(key)} of reference: ${node}`);
