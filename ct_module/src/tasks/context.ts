@@ -11,6 +11,7 @@ import { waitFor, waitForTimeout, type WaitForPromise } from "./specifics/waitFo
 import { C01PacketChatMessage } from "../utils/packets";
 import { sendPacket } from "../utils/java";
 import { removedFormatting } from "../utils/helpers";
+import { helpers } from "htsw";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 import { createTaskCancelledError } from "./cancellation";
 import {
@@ -213,7 +214,24 @@ export default class TaskContext {
         return packet;
     }
 
+    /**
+     * The vanilla chat box filters out every character
+     * `ChatAllowedCharacters` disallows before a message leaves the client;
+     * building the packet by reflection skips that filter, and the server
+     * answers an unfiltered payload by disconnecting with "Illegal characters
+     * in chat". A kick abandons the rest of the import, so fail this one row
+     * loudly instead.
+     */
     private sendRawChatPacket(message: string): void {
+        const illegal = helpers.findIllegalChatCharacter(message);
+        if (illegal !== null) {
+            throw new Error(
+                `Refusing to send a chat payload containing ` +
+                    `${helpers.describeCharCode(illegal.code)} at index ${illegal.index}: ` +
+                    `Minecraft cannot type it and the server would disconnect you ` +
+                    `with "Illegal characters in chat".`
+            );
+        }
         sendPacket(this.createChatPacket(message));
     }
 
