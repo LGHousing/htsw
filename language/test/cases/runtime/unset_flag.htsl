@@ -1,0 +1,28 @@
+// The trailing unset flag on CHANGE_VAR (default true): any change that
+// leaves the variable at its type-zero removes it instead of storing it.
+var "a" = 5
+var "a" -= 5
+/// @expect "9"
+chat "%var.player/a 9%"
+
+var "b" = 0
+/// @expect "9"
+chat "%var.player/b 9%"
+
+var "c" = 0 false
+/// @expect "0"
+chat "%var.player/c 9%"
+
+var "d" = 5
+var "d" -= 5 false
+/// @expect "0"
+chat "%var.player/d 9%"
+
+// an explicit false flag keeps a computed zero readable for interpolation
+var "e" = 0 false
+var "p" = "%var.player/x"
+var "x0" = 777
+var "k" = "%var.player/p%%var.player/e%%"
+var "k" = %var.player/k%
+/// @expect "777"
+chat "%var.player/k 9%"

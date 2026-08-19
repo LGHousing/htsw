@@ -36,8 +36,18 @@ function makeChangeVar(vars: Vars): ActionBehavior<"CHANGE_VAR"> {
         const rhs: Var<any> = parseValue(rt, action.value);
         const lhs = holder.get(key, rhs.unsetValue());
 
+        // Housing's trailing unset flag (default true): any change that leaves
+        // the variable at its type-zero removes it instead of storing it.
+        const store = (value: Var<any>) => {
+            if (action.unset !== false && value.shouldUnset()) {
+                holder.unset(key);
+            } else {
+                holder.set(key, value);
+            }
+        };
+
         if (action.op === "Set") {
-            holder.set(key, rhs);
+            store(rhs);
             return;
         }
 
@@ -50,6 +60,6 @@ function makeChangeVar(vars: Vars): ActionBehavior<"CHANGE_VAR"> {
             return;
         }
 
-        holder.set(key, lhs.binOp(rhs, action.op));
+        store(lhs.binOp(rhs, action.op));
     };
 }
