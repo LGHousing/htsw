@@ -282,6 +282,44 @@ describe("Main API", () => {
         expect(errors.every((d) => d.message !== "Expected placeholder")).toBe(true);
     });
 
+    it("rejects var values whose typed form exceeds 32 characters", () => {
+        // The in-game value input caps the raw typed text at 32 characters,
+        // placeholder syntax included. A shorthand with a quoted fallback
+        // template used to slip past the check and only fail at import time
+        // ("Strings cannot be longer than 32 characters!").
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    'var "x" -= var k "%var.player/q%%var.player/d%0%L"',
+                    'var "y" = %var.player/someLongName 123456789012%',
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        const errors = result.diagnostics.filter((it) => it.level === "error");
+        expect(errors.filter((d) =>
+            d.message.includes("Value exceeds 32-character limit"),
+        ).length).toBe(2);
+    });
+
+    it("still accepts a 32-character quoted value and short shorthand fallbacks", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    'var "s" = "%var.player/q%%var.player/d% 0%L"',
+                    'var "n" += var k 5',
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
     it("parses the normalized filled form of a placeholder fallback", () => {
         // `var g %var.player/k%` normalizes to `%var.player/g %var.player/k%%`
         // — which is also what the printer emits, so the parser must read the
@@ -327,7 +365,10 @@ describe("Main API", () => {
                     "chat %player.name%",
                     "actionBar %date.unix.ms%",
                     "title %player.name% %date.unix.ms%",
-                    "stat fallback = var missing %date.unix.ms%",
+                    // The typed value must stay within the in-game 32-char cap:
+                    // `var m %date.unix.ms%` becomes the 29-character
+                    // `%var.player/m %date.unix.ms%%`.
+                    "stat fallback = var m %date.unix.ms%",
                     "",
                 ].join("\n"),
             })
