@@ -282,6 +282,44 @@ describe("Main API", () => {
         expect(errors.every((d) => d.message !== "Expected placeholder")).toBe(true);
     });
 
+    it("parses the normalized filled form of a placeholder fallback", () => {
+        // `var g %var.player/k%` normalizes to `%var.player/g %var.player/k%%`
+        // — which is also what the printer emits, so the parser must read the
+        // filled form back (the lexer alone fragments it at the inner `%`s).
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    'var "x" += %var.player/g %var.player/k%%',
+                    'var "y" += %var.player/g %var.player/k%% false',
+                    'var "z" = %var.player/g 5%',
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+        expect(result.value.length).toBe(3);
+        const [x, y, z] = result.value as Array<{ value?: string; unset?: boolean }>;
+        expect(x.value).toBe("%var.player/g %var.player/k%%");
+        expect(y.value).toBe("%var.player/g %var.player/k%%");
+        expect(y.unset).toBe(false);
+        expect(z.value).toBe("%var.player/g 5%");
+    });
+
+    it("filled and shorthand fallback forms parse to the same value", () => {
+        const parse = (line: string) => {
+            const sm = new htsw.SourceMap(
+                new SimpleFileLoader({ "/project/test.htsl": line + "\n" })
+            );
+            const result = htsw.parseActionsResult(sm, "/project/test.htsl");
+            expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+            return (result.value[0] as { value?: string }).value;
+        };
+        expect(parse('var "x" += %var.player/g %var.player/k%%'))
+            .toBe(parse('var "x" += var g %var.player/k%'));
+    });
+
     it("parseActionsResult accepts bare placeholders as string arguments", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

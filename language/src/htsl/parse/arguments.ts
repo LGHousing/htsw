@@ -346,6 +346,37 @@ export function parseNumericValue(p: Parser): Value {
         .addPrimarySpan(p.token.span);
 }
 
+// A bare placeholder value is one balanced `%...%` group, but its fallback may
+// itself be a placeholder: `%var.player/g %var.player/k%%` is the normalized
+// form of the `var g %var.player/k%` shorthand, and it is what the printer
+// emits. The lexer knows nothing of nesting and fragments such a value at the
+// inner `%`s, so rebuild it from the raw source: take the longest balanced
+// group that is followed by whitespace or the end of the line, and advance
+// past every token it covers.
+const BALANCED_PLACEHOLDER = /^%[^%"\n]*(?:(?:%[^%\n]*%|"(?:[^"\\\n]|\\.)*")[^%"\n]*)*%/;
+
+function parseBarePlaceholderValue(p: Parser): Value {
+    const startSpan = p.token.span;
+    const src = p.lexer.src;
+    const from = startSpan.start - p.lexer.posOffset;
+    let lineEnd = src.indexOf("\n", from);
+    if (lineEnd === -1) lineEnd = src.length;
+    const raw = src.slice(from, lineEnd);
+
+    const matched = raw.match(BALANCED_PLACEHOLDER)?.[0];
+    const after = matched !== undefined ? raw.charAt(matched.length) : "";
+    if (matched !== undefined && (after === "" || /\s/.test(after))) {
+        const end = startSpan.start + matched.length;
+        while (p.token.kind !== "eof" && p.token.kind !== "eol" && p.token.span.start < end) {
+            p.next();
+        }
+        return matched;
+    }
+
+    p.eat("placeholder");
+    return `%${(p.prev as PlaceholderKind).value}%`;
+}
+
 export function parseValue(p: Parser): Value {
     if (p.check("str")) {
         const value = p.parseString();
@@ -356,8 +387,8 @@ export function parseValue(p: Parser): Value {
         return `"${value}"`;
     }
 
-    if (p.eat("placeholder")) {
-        return `%${(p.prev as PlaceholderKind).value}%`;
+    if (p.check("placeholder")) {
+        return parseBarePlaceholderValue(p);
     }
 
     return parseNumericValue(p);
