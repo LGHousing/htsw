@@ -332,7 +332,27 @@ export function formatNumber(number: string): string {
     const [whole, decimal = ""] = number.split(".");
 
     const negative = whole.startsWith("-");
-    const digits = negative ? whole.slice(1) : whole;
+    let digits = negative ? whole.slice(1) : whole;
+
+    let rounded = 0;
+    let displayDecimal = "";
+    if (decimal) {
+        rounded = Math.floor((+(decimal + "0000").slice(0, 4) + 5) / 10);
+        if (rounded >= 1000) {
+            // .9995 and up round into the whole part.
+            rounded -= 1000;
+            digits = (BigInt(digits) + 1n).toString();
+        }
+        let roundedDecimal = rounded.toString();
+        while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
+        displayDecimal = roundedDecimal.replace(/0+$/, "");
+
+        // If rounding destroyed all significant digits, fall back to full precision
+        if (displayDecimal === "" && rounded === 0 && !(+decimal >= 999.5)) {
+            displayDecimal = decimal.replace(/0+$/, "");
+        }
+        if (displayDecimal === "") displayDecimal = "0";
+    }
 
     let formattedWhole = "";
     for (let i = digits.length - 1, count = 0; i >= 0; i--, count++) {
@@ -346,16 +366,6 @@ export function formatNumber(number: string): string {
     if (negative) formattedWhole = "-" + formattedWhole;
 
     if (!decimal) return formattedWhole;
-
-    let roundedDecimal = Math.floor((+(decimal + "0000").slice(0, 4) + 5) / 10).toString();
-    while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
-    let displayDecimal = roundedDecimal.replace(/0+$/, "");
-
-    // If rounding destroyed all significant digits, fall back to full precision
-    if (displayDecimal === "") {
-        displayDecimal = decimal.replace(/0+$/, "");
-        if (displayDecimal === "") displayDecimal = "0";
-    }
 
     return formattedWhole + "." + displayDecimal;
 }
