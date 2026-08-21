@@ -241,7 +241,7 @@ function compareNumbers(
 }
 
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
-const EXPLICIT_DOUBLE_REGEX = /^(0|[1-9]\d*)(\.\d+)$/;
+const EXPLICIT_DOUBLE_REGEX = /^-?(0|[1-9]\d*)(\.\d+)$/;
 
 function parseString(runtime: Runtime, value: string): Var<any> {
     const placeholders = value.match(PLACEHOLDER_REGEX);

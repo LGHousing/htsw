@@ -8,3 +8,12 @@ chat "%var.player/x%"
 chat "%var.global/y%"
 /// @expect "15"
 chat "%var.team/z team%"
+// negative doubles survive typed in-string reads (in-game verified: T10)
+var "negd" = -15232.5
+var "negread" = "%var.player/negd 0.0%D"
+/// @expect "-15,232.5"
+chat "%var.player/negread 0%"
+var "negsmall" = -0.25
+var "negread2" = "%var.player/negsmall 0.0%D"
+/// @expect "-0.25"
+chat "%var.player/negread2 0%"
