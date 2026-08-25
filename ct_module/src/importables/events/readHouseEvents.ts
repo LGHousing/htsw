@@ -1,4 +1,4 @@
-import type { Event, ImportableEvent } from "htsw/types";
+import type { Action, Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
 import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
@@ -25,6 +25,10 @@ import { listAllEventNames } from "./listEvents";
 type PendingEventRead = {
     scan: ActionListScan;
 };
+
+export function shouldIncludeEventInExport(actions: readonly Action[]): boolean {
+    return actions.length > 0;
+}
 
 async function scanEvent(
     ctx: TaskContext,
@@ -90,12 +94,15 @@ async function writeEventResult(
     importable: ImportableEvent,
     options: ReadOptions
 ): Promise<void> {
+    const actions = importable.actions;
+    await tryWriteImportableCache(ctx, importable, "exporter");
+    if (!shouldIncludeEventInExport(actions)) return;
+
     const target = htslTargetForEventExport(
         options.importJsonPath,
         name,
         options.newExportTargetImportJson
     );
-    const actions = importable.actions;
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
         ctx.displayMessage(`&7[export] &e${diag.message}`);
@@ -108,8 +115,6 @@ async function writeEventResult(
         event: name,
         actions: target.htslReference,
     });
-
-    await tryWriteImportableCache(ctx, importable, "exporter");
 
     if (options.progress === undefined && options.quiet !== true) {
         ctx.displayMessage(
