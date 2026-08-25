@@ -18,6 +18,7 @@ htsw check import.json
 | Field | Required | Value |
 | --- | --- | --- |
 | `houseUuid` | No | UUID string |
+| `dangerouslyDeleteEverythingNotInThisFile` | No | boolean |
 | `include` | No | array of path ending in `import.json` or `.import.json` |
 | `functions` | No | array of function object |
 | `events` | No | array of event object |
