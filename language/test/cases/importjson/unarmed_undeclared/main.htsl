@@ -1,0 +1,8 @@
+function "Ghost"
+displayMenu "OldShop"
+setTeam "Blue"
+changePlayerGroup "Loser"
+
+if (inRegion "Attic") {
+    chat "inside"
+}
