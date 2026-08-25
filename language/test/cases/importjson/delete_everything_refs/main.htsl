@@ -1,0 +1,8 @@
+function "Helper"
+displayMenu "Shop"
+setTeam "Red"
+changePlayerGroup "Winner"
+
+if (inRegion "Spawn") {
+    chat "inside"
+}
