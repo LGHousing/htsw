@@ -1,19 +1,24 @@
-import {
-    Diagnostic,
-    SourceMap,
-    parseImportablesResult,
-    type ImportablesParseResult,
-} from "htsw";
-
 import { canonicalPath } from "../gui/parsing/parses";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
-import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
+import { applyPrunePlan, formatPruneApplyResult } from "../prune/apply";
+import {
+    grantPruneConsent,
+    hasPruneConsent,
+    revokePruneConsent,
+} from "../prune/consent";
 import { scanHousePrunePlan } from "../prune/plan";
 import { formatPrunePlan } from "../prune/report";
+import {
+    confirmPrune,
+    describePruneRefusal,
+    loadPruneManifest,
+    type PruneManifest,
+} from "../prune/session";
+import { prunePlanIsEmpty } from "../prune/types";
 
 function pruneFailure(reason: string): void {
     ChatLib.chat(`&c[htsw] Prune failed: ${reason}`);
@@ -23,69 +28,30 @@ function errorReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
-    let count = 0;
-    for (const diagnostic of diagnostics) {
-        if (diagnostic.level === "error" || diagnostic.level === "bug") count++;
-    }
-    return count;
-}
-
-export type PruneManifest = {
-    path: string;
-    parsed: ImportablesParseResult;
-};
-
-/**
- * Loads a manifest and refuses every reason a prune must not run from it.
- *
- * The parse-error gate is the important one. A manifest that only half-parsed
- * declares fewer importables than the project actually has, and a prune reads
- * "not declared" as "delete it" — so a single typo would propose wiping the
- * work the typo was in the middle of.
- */
-export function loadPruneManifest(rawPath: string): PruneManifest | null {
+function resolveManifest(rawPath: string): PruneManifest | null {
     const path = canonicalPath(resolveModuleRelativePath(stripSurroundingQuotes(rawPath)));
-    if (!FileLib.exists(path)) {
-        pruneFailure(`file does not exist '${path}'`);
-        return null;
-    }
-
-    let parsed: ImportablesParseResult;
-    try {
-        parsed = parseImportablesResult(new SourceMap(new FileSystemFileLoader()), path);
-    } catch (error) {
-        pruneFailure(errorReason(error));
-        return null;
-    }
-
-    const errorCount = countBlockingDiagnostics(parsed.diagnostics);
-    if (errorCount > 0) {
-        pruneFailure(
-            `manifest has ${errorCount} error${errorCount === 1 ? "" : "s"} — ` +
-                "a partly-parsed manifest would look like it declares nothing"
-        );
-        return null;
-    }
-
-    if (!parsed.importJson.dangerouslyDeleteEverythingNotInThisFile) {
-        pruneFailure(
-            "this manifest does not set `dangerouslyDeleteEverythingNotInThisFile`"
-        );
+    const load = loadPruneManifest(path);
+    if (load.ok) return load.manifest;
+    pruneFailure(describePruneRefusal(load.refusal));
+    if (load.refusal.reason === "notArmed") {
         ChatLib.chat(
             "&7[htsw] Add it next to `houseUuid` to declare this file is the whole house."
         );
-        return null;
     }
-
-    return { path, parsed };
+    return null;
 }
 
 export function commandPrune(args: string[]): void {
+    const apply = args.indexOf("--apply") >= 0;
+    const rescue = args.indexOf("--rescue") >= 0;
+    const forget = args.indexOf("--forget-consent") >= 0;
     const pathArgs = args.filter((arg) => !arg.startsWith("--"));
     if (pathArgs.length === 0) {
         pruneFailure("expected a manifest path");
-        ChatLib.chat("&7[htsw] Usage: /htsw prune <import.json>");
+        ChatLib.chat(
+            "&7[htsw] Usage: /htsw prune <import.json> [--apply] [--rescue] " +
+                "[--forget-consent]"
+        );
         return;
     }
     if (TaskManager.isBusy()) {
@@ -93,7 +59,7 @@ export function commandPrune(args: string[]): void {
         return;
     }
 
-    const manifest = loadPruneManifest(pathArgs.join(" "));
+    const manifest = resolveManifest(pathArgs.join(" "));
     if (manifest === null) return;
 
     void runHousingSyncTask("prune", async (ctx) => {
@@ -102,6 +68,14 @@ export function commandPrune(args: string[]): void {
         if (bound !== null && bound !== housingUuid) {
             pruneFailure(
                 "this manifest is bound to a different house than the one you are in"
+            );
+            return;
+        }
+
+        if (forget) {
+            revokePruneConsent(manifest.path, housingUuid);
+            ChatLib.chat(
+                "&7[htsw] Forgot this project's prune confirmation."
             );
             return;
         }
@@ -121,6 +95,47 @@ export function commandPrune(args: string[]): void {
         for (const line of formatPrunePlan(plan, manifest.path)) {
             ChatLib.chat(line);
         }
+
+        if (!apply) {
+            if (!prunePlanIsEmpty(plan)) {
+                ChatLib.chat(
+                    "&7[htsw] This was a dry run. Re-run with &f--apply&7 to remove them."
+                );
+            }
+            return;
+        }
+        if (plan.targets.length === 0) return;
+
+        // An incomplete scan can only under-delete, but reporting the house as
+        // matching the file afterwards would be wrong. Re-run instead.
+        if (plan.scanFailures.length > 0) {
+            pruneFailure(
+                "couldn't scan part of the house; fix that and re-run"
+            );
+            return;
+        }
+
+        const firstTime = !hasPruneConsent(manifest.path, housingUuid);
+        if (!(await confirmPrune(ctx, plan.targets, plan, manifest.path, firstTime))) {
+            ChatLib.chat("&7[htsw] Prune cancelled — nothing was removed.");
+            return;
+        }
+        if (firstTime && !grantPruneConsent(manifest.path, housingUuid)) {
+            ChatLib.chat(
+                "&c[htsw] Couldn't save your confirmation; it'll ask again."
+            );
+        }
+
+        const result = await applyPrunePlan(ctx, plan.targets, {
+            manifestPath: manifest.path,
+            housingUuid,
+            parsed: manifest.parsed,
+            rescue,
+            onProgress: (done, total, target) => {
+                ChatLib.chat(`&8[htsw]   [${done + 1}/${total}] ${target.identity}`);
+            },
+        });
+        for (const line of formatPruneApplyResult(result)) ChatLib.chat(line);
     }).catch((error: unknown) => {
         pruneFailure(errorReason(error));
     });

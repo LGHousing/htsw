@@ -5,7 +5,7 @@ import { isTaskCancelled } from "../tasks/manager";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { npcLabel } from "../importables/npcs/listNpcs";
 import { parseNpcPosIdentity } from "../importables/identity";
-import { listCachedImportables, readImportableCache, recordHouseScan } from "../importCache/cache";
+import { readImportableCache, recordHouseScan } from "../importCache/cache";
 import {
     houseLockOwnedImportables,
     houseLockOwnedKeys,
@@ -199,32 +199,6 @@ export function vanishedPrunePlan(
         });
     }
     return plan;
-}
-
-/**
- * House objects the cache already knows about that the manifest does not
- * declare. Cheaper than a scan and useful for a preview, but only as complete
- * as the cache — a type never scanned in this house contributes nothing, so it
- * can under-report and must never stand in for a real scan before deleting.
- */
-export function cachedPruneEstimate(
-    declared: readonly Importable[],
-    housingUuid: string
-): Map<PrunableType, number> {
-    const declaredByType = declaredIdentities(declared);
-    const counts = new Map<PrunableType, number>();
-    for (const type of PRUNABLE_TYPES) {
-        const spec = pruneTypeOf(type);
-        const declaredOfType = declaredByType.get(type) ?? new Set<string>();
-        let count = 0;
-        for (const known of listCachedImportables(housingUuid, type)) {
-            if (declaredOfType.has(normalizeIdentity(known.name))) continue;
-            if (isProtectedIdentity(spec, known.name)) continue;
-            count++;
-        }
-        if (count > 0) counts.set(type, count);
-    }
-    return counts;
 }
 
 function errorMessage(error: unknown): string {

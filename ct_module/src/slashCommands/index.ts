@@ -112,7 +112,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "prune",
         summary: "Remove house content an armed manifest does not declare",
         run: commandPrune,
-        usage: "prune <import.json> [--apply]",
+        usage: "prune <import.json> [--apply] [--rescue] [--forget-consent]",
     },
     {
         name: "warnmode",
