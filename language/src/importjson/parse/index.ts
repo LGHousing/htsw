@@ -60,6 +60,12 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
         houseUuid: optionalRawField((field) =>
             parseHouseUuid(field, p.importJson.fileTree === fileNode)
         ),
+        dangerouslyDeleteEverythingNotInThisFile: optionalRawField((field) =>
+            parseDeleteEverythingNotInThisFile(
+                field,
+                p.importJson.fileTree === fileNode
+            )
+        ),
         include: optionalRawField((field) =>
             parseEntryList(field, (entry) => {
                 parseInclude(entry, fileNode);
@@ -95,6 +101,9 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
     });
 
     warnUnused(p);
+    if (p.importJson.fileTree === fileNode) {
+        checkDeleteEverythingIsBound(p);
+    }
     for (const importable of importables) {
         if (importable.sourcePath === undefined) importable.sourcePath = fileNode.path;
     }
@@ -155,6 +164,44 @@ function parseHouseUuid(p: Parser, isEntryFile: boolean): void {
         return;
     }
     p.importJson.houseUuid = uuid.toLowerCase();
+}
+
+// Only the entry file may arm deletion. An included file's key is ignored
+// for the same reason its `houseUuid` is: the project that includes it decides
+// what its own house contains, and a shared library of functions must not be
+// able to make its consumers delete things.
+function parseDeleteEverythingNotInThisFile(p: Parser, isEntryFile: boolean): void {
+    const armed = p.parseBoolean();
+    if (!isEntryFile) {
+        if (armed) {
+            p.gcx.addDiagnostic(
+                Diagnostic.warning(
+                    "`dangerouslyDeleteEverythingNotInThisFile` has no effect in an included file"
+                )
+                    .addPrimarySpan(p.span(), "Only the entry file's key is used")
+            );
+        }
+        return;
+    }
+    p.importJson.dangerouslyDeleteEverythingNotInThisFile = armed;
+    p.importJson.dangerouslyDeleteEverythingNotInThisFileSpan = p.span();
+}
+
+// Deleting "everything not in this file" is only meaningful once the file says
+// which house it is speaking for. Armed without a binding, the claim names no
+// target at all, so refuse it rather than let it sit there looking effective.
+function checkDeleteEverythingIsBound(p: Parser): void {
+    const span = p.importJson.dangerouslyDeleteEverythingNotInThisFileSpan;
+    if (!p.importJson.dangerouslyDeleteEverythingNotInThisFile) return;
+    if (p.importJson.houseUuid !== null) return;
+    if (span === null) return;
+    p.gcx.addDiagnostic(
+        Diagnostic.error(
+            "`dangerouslyDeleteEverythingNotInThisFile` requires `houseUuid`"
+        )
+            .addPrimarySpan(span, "No house is bound")
+    );
+    p.importJson.dangerouslyDeleteEverythingNotInThisFile = false;
 }
 
 function parseInclude(

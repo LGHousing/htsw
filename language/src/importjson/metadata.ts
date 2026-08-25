@@ -1,3 +1,4 @@
+import type { Span } from "../span";
 import type { Importable } from "../types";
 
 export type ImportJsonFileNode = {
@@ -11,6 +12,17 @@ export type ImportJsonFileNode = {
 export class ImportJsonParseMetadata {
     fileTree: ImportJsonFileNode | null = null;
     houseUuid: string | null = null;
+
+    /**
+     * `dangerouslyDeleteEverythingNotInThisFile` from the entry import.json: the
+     * bound house holds nothing this file and its includes declare, so a prune
+     * may delete what the manifest is missing. Only the entry file's key counts,
+     * as with `houseUuid`.
+     */
+    dangerouslyDeleteEverythingNotInThisFile = false;
+
+    /** Span of the key above, for diagnostics that cite it. */
+    dangerouslyDeleteEverythingNotInThisFileSpan: Span | null = null;
 
     private visitedPaths = new Set<string>();
     private declaringPathCache: WeakMap<Importable, string> | null = null;
