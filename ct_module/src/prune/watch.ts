@@ -9,7 +9,8 @@ import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { TaskManager } from "../tasks/manager";
 import { applyPrunePlan, formatPruneApplyResult } from "./apply";
 import { grantPruneConsent, hasPruneConsent } from "./consent";
-import { scanHousePrunePlan, vanishedPrunePlan } from "./plan";
+import { scanHousePrunePlan, vanishedWork } from "./plan";
+import { applyRenames, type PruneRename } from "./rename";
 import { formatPrunePlan, summarizeTargets } from "./report";
 import { confirmPrune } from "./session";
 import {
@@ -107,9 +108,9 @@ function raiseNotice(manifestPath: string, targets: readonly PruneTarget[]): voi
 export function watchPruneOnReparse(trackedSources: ReadonlySet<string>): void {
     if (pruneRunning || TaskManager.isBusy()) return;
     for (const project of armedTrackedProjects(trackedSources)) {
-        const plan = vanishedPrunePlan(project.parsed.value, project.path);
-        if (plan.targets.length === 0) continue;
-        runPrune(project, plan, "vanished");
+        const work = vanishedWork(project.parsed.value, project.path);
+        if (work.renames.length === 0 && work.plan.targets.length === 0) continue;
+        runPrune(project, work.plan, work.renames, "vanished");
         return;
     }
 }
@@ -152,19 +153,62 @@ export function watchPruneSweep(trackedSources: ReadonlySet<string>): void {
 function runPrune(
     project: ArmedProject,
     plan: PrunePlan,
+    renames: readonly PruneRename[],
     origin: "vanished" | "sweep"
 ): void {
     pruneRunning = true;
     void runHousingSyncTask("prune", async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        await prune(ctx, project, plan, plan.targets, housingUuid, origin);
+        // Renames first: they carry the baseline to the new name, so the import
+        // that follows diffs instead of rewriting.
+        const unconfirmed = await runRenames(ctx, project, renames);
+        // An unconfirmed rename leaves the old name in place, so it goes back
+        // to being ordinary undeclared content.
+        const targets = plan.targets.concat(
+            unconfirmed.map((rename) => ({
+                type: rename.type,
+                identity: rename.from,
+                label: rename.from,
+                method: "delete" as const,
+                owned: true,
+            }))
+        );
+        await prune(ctx, project, plan, targets, housingUuid, origin);
     })
         .catch((error: unknown) => {
             ChatLib.chat(`&c[htsw] Prune failed: ${errorMessage(error)}`);
         })
         .then(() => {
             pruneRunning = false;
+            // The queue was built before the renames landed.
+            onPruneFinished?.();
         });
+}
+
+async function runRenames(
+    ctx: Parameters<typeof applyPrunePlan>[0],
+    project: ArmedProject,
+    renames: readonly PruneRename[]
+): Promise<PruneRename[]> {
+    if (renames.length === 0) return [];
+    const outcome = await applyRenames(ctx, project.path, renames);
+    for (const rename of outcome.renamed) {
+        ChatLib.chat(
+            `&7[htsw] Renamed ${rename.type.toLowerCase()} ${rename.from} to ` +
+                `${rename.to} instead of recreating it.`
+        );
+    }
+    return outcome.unconfirmed;
+}
+
+/**
+ * Called after a prune task ends so auto-track can rebuild the queue against the
+ * moved baselines. Injected rather than imported, to avoid a cycle.
+ */
+let onPruneFinished: (() => void) | null = null;
+
+export function setOnPruneFinished(callback: () => void): void {
+    onPruneFinished = callback;
 }
 
 /**

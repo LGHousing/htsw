@@ -39,6 +39,9 @@ const mocks = vi.hoisted(() => ({
     toasts: [] as string[],
     chats: [] as string[],
     lock: [] as { type: string; identity: string }[],
+    renames: [] as { type: string; from: string; to: string }[],
+    renamed: [] as string[],
+    renameFails: false,
     sweepPlan: emptyFakePlan(),
 }));
 
@@ -87,25 +90,39 @@ vi.mock("../src/prune/session", () => ({
         return mocks.confirmAnswer;
     },
 }));
+vi.mock("../src/prune/rename", () => ({
+    applyRenames: async (
+        _ctx: unknown,
+        _path: string,
+        renames: { from: string; to: string }[]
+    ) => {
+        for (const rename of renames) mocks.renamed.push(`${rename.from}->${rename.to}`);
+        if (mocks.renameFails) return { renamed: [], unconfirmed: renames };
+        return { renamed: renames, unconfirmed: [] };
+    },
+}));
 vi.mock("../src/prune/plan", () => ({
-    vanishedPrunePlan: (declared: Importable[]) => {
+    vanishedWork: (declared: Importable[]) => {
         const names = new Set(
             declared.map((importable) =>
                 importable.type === "FUNCTION" ? importable.name : ""
             )
         );
         return {
-            targets: mocks.lock
-                .filter((entry) => !names.has(entry.identity))
-                .map((entry) => ({
-                    type: entry.type,
-                    identity: entry.identity,
-                    label: entry.identity,
-                    method: "delete",
-                    owned: true,
-                })),
-            unsupported: [],
-            scanFailures: [],
+            plan: {
+                targets: mocks.lock
+                    .filter((entry) => !names.has(entry.identity))
+                    .map((entry) => ({
+                        type: entry.type,
+                        identity: entry.identity,
+                        label: entry.identity,
+                        method: "delete",
+                        owned: true,
+                    })),
+                unsupported: [],
+                scanFailures: [],
+            },
+            renames: mocks.renames,
         };
     },
     scanHousePrunePlan: async () => mocks.sweepPlan,
@@ -147,6 +164,9 @@ beforeEach(() => {
     mocks.toasts = [];
     mocks.chats = [];
     mocks.lock = [{ type: "FUNCTION", identity: "Removed" }];
+    mocks.renames = [];
+    mocks.renamed = [];
+    mocks.renameFails = false;
     mocks.sweepPlan = emptyFakePlan();
     vi.stubGlobal("ChatLib", { chat: (line: string) => mocks.chats.push(line) });
 });
@@ -215,6 +235,29 @@ describe("watchPruneOnReparse", () => {
 
         await vi.waitFor(() => expect(mocks.confirmCalls).toBe(1));
         expect(mocks.applied).toEqual([]);
+    });
+});
+
+describe("watchPruneOnReparse renames", () => {
+    it("renames instead of deleting and recreating", async () => {
+        mocks.lock = [];
+        mocks.renames = [{ type: "FUNCTION", from: "Old", to: "New" }];
+
+        watchPruneOnReparse(tracked);
+
+        await vi.waitFor(() => expect(mocks.renamed).toEqual(["Old->New"]));
+        expect(mocks.applied).toEqual([]);
+    });
+
+    // Housing never confirmed it, so the old name is still there
+    it("deletes the old name when the rename is not confirmed", async () => {
+        mocks.lock = [];
+        mocks.renames = [{ type: "FUNCTION", from: "Old", to: "New" }];
+        mocks.renameFails = true;
+
+        watchPruneOnReparse(tracked);
+
+        await vi.waitFor(() => expect(mocks.applied).toEqual(["Old"]));
     });
 });
 
