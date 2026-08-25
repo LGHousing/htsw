@@ -540,6 +540,33 @@ describe("import.json dangerouslyDeleteEverythingNotInThisFile", () => {
         ).toBe(true);
     });
 
+    it("accepts references that the manifest declares", () => {
+        const result = parseImportables(caseDirPath("delete_everything_refs"));
+
+        expect(result.diagnostics.map((d) => `${d.level}: ${d.message}`)).toEqual([]);
+    });
+
+    it("reports every reference the manifest does not declare", () => {
+        const result = parseImportables(caseDirPath("delete_everything_undeclared"));
+        const messages = result.diagnostics.map((diagnostic) => diagnostic.message);
+
+        expect(messages).toContain("Undeclared function 'Ghost'");
+        expect(messages).toContain("Undeclared menu 'OldShop'");
+        expect(messages).toContain("Undeclared team 'Blue'");
+        expect(messages).toContain("Undeclared group 'Loser'");
+        expect(messages).toContain("Undeclared region 'Attic'");
+    });
+
+    it("leaves undeclared references alone when the key is not set", () => {
+        const result = parseImportables(caseDirPath("unarmed_undeclared"));
+
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.startsWith("Undeclared ")
+            )
+        ).toBe(false);
+    });
+
     it("ignores the key in an included file and warns that it does nothing", () => {
         const result = parseImportables(caseDirPath("delete_everything_include"));
 
