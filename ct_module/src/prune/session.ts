@@ -110,7 +110,7 @@ export async function confirmPrune(
         title: firstTime
             ? "Let this file delete everything else in this house?"
             : "Remove undeclared house content?",
-        lines: prunePlanPopoverLines(plan),
+        lines: prunePlanPopoverLines(targets, plan),
         confirmLabel: `Remove ${targets.length}`,
         cancelLabel: "Leave alone",
         danger: true,
