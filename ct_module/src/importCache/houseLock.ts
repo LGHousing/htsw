@@ -240,15 +240,6 @@ export function houseLockOwnedImportables(
     return owned;
 }
 
-/** The same set as `type:identity` keys, for membership tests. */
-export function houseLockOwnedKeys(lock: HouseLock | null): Set<string> {
-    const owned = new Set<string>();
-    for (const entry of houseLockOwnedImportables(lock)) {
-        owned.add(importableKey(entry.type, entry.identity));
-    }
-    return owned;
-}
-
 /**
  * Moves a baseline entry to a new identity, keeping its hashes. A Housing rename
  * changes the name and nothing else, so the old baseline is still true of the

@@ -8,8 +8,8 @@ import { parseNpcPosIdentity } from "../importables/identity";
 import { readImportableCache, recordHouseScan } from "../importCache/cache";
 import {
     houseLockOwnedImportables,
-    houseLockOwnedKeys,
     readHouseLock,
+    type HouseLock,
 } from "../importCache/houseLock";
 import {
     PRUNABLE_TYPES,
@@ -46,7 +46,7 @@ export async function scanHousePrunePlan(
 ): Promise<PrunePlan> {
     const plan = emptyPrunePlan();
     const declared = declaredIdentities(request.declared);
-    const owned = houseLockOwnedKeys(readHouseLock(request.importJsonPath));
+    const owned = ownedKeys(readHouseLock(request.importJsonPath));
     const types = request.types ?? PRUNABLE_TYPES;
 
     for (const type of types) {
@@ -70,7 +70,10 @@ export async function scanHousePrunePlan(
         for (const identity of identities) {
             if (declaredOfType.has(normalizeIdentity(identity))) continue;
             if (isProtectedIdentity(spec, identity)) continue;
-            if (spec.method === "clearActions" && isKnownAlreadyClear(request.housingUuid, type, identity)) {
+            if (
+                spec.method === "clearActions" &&
+                isKnownAlreadyClear(request.housingUuid, type, identity)
+            ) {
                 continue;
             }
             undeclared++;
@@ -79,7 +82,7 @@ export async function scanHousePrunePlan(
                 identity,
                 label: displayLabel(type, identity),
                 method: spec.method,
-                owned: owned.has(importableKey(type, identity)),
+                owned: owned.has(ownershipKey(type, identity)),
             };
             if (spec.method === "report") plan.unsupported.push(target);
             else plan.targets.push(target);
@@ -88,6 +91,23 @@ export async function scanHousePrunePlan(
     }
 
     return plan;
+}
+
+/**
+ * Lock keys normalized the way house names are compared. The lock stores the
+ * manifest's casing and the house list returns Housing's, so comparing them raw
+ * reads htsw's own past work as something it never made.
+ */
+function ownedKeys(lock: HouseLock | null): Set<string> {
+    const keys = new Set<string>();
+    for (const entry of houseLockOwnedImportables(lock)) {
+        keys.add(ownershipKey(entry.type, entry.identity));
+    }
+    return keys;
+}
+
+function ownershipKey(type: Importable["type"], identity: string): string {
+    return importableKey(type, normalizeIdentity(identity));
 }
 
 function declaredIdentities(
