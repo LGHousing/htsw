@@ -1,3 +1,4 @@
+import type { Span } from "../span";
 import type { Importable } from "../types";
 
 export type ImportJsonFileNode = {
@@ -11,6 +12,16 @@ export type ImportJsonFileNode = {
 export class ImportJsonParseMetadata {
     fileTree: ImportJsonFileNode | null = null;
     houseUuid: string | null = null;
+
+    /**
+     * `dangerouslyDeleteEverythingNotInThisFile` from the entry import.json: a
+     * prune may delete anything in the bound house this file and its includes
+     * don't declare. Only the entry file's key counts, as with `houseUuid`.
+     */
+    dangerouslyDeleteEverythingNotInThisFile = false;
+
+    /** Span of the key above, for diagnostics that cite it. */
+    dangerouslyDeleteEverythingNotInThisFileSpan: Span | null = null;
 
     private visitedPaths = new Set<string>();
     private declaringPathCache: WeakMap<Importable, string> | null = null;
