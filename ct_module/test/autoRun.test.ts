@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
     enabled: true,
-    rows: [] as Array<{ key: string; op: string; status: string }>,
+    rows: [] as Array<{
+        key: string;
+        op: string;
+        status: string;
+        path: string;
+        target: { kind: string };
+    }>,
     restored: new Set<string>(),
     running: false,
     starts: [] as Array<{ autoRun?: boolean } | undefined>,
@@ -43,13 +49,32 @@ vi.mock("../src/tasks/activeTask", () => ({
     },
 }));
 vi.mock("../src/utils/filesystem", () => ({ ensureParentDirs: () => {} }));
+vi.mock("../src/tasks/manager", () => ({ TaskManager: { isBusy: () => false } }));
+vi.mock("../src/gui/autoTrackScope", () => ({
+    getActiveAutoTrackSources: () => new Set<string>(),
+}));
+vi.mock("../src/prune/watch", () => ({
+    clearPruneNotice: () => {},
+    getPruneNotice: () => null,
+    isWatchPruneRunning: () => false,
+    watchPruneOnReparse: () => {},
+    watchPruneSweep: () => {},
+}));
 
 describe("queue Auto-run safeguards", () => {
     beforeEach(() => {
         vi.resetModules();
         vi.useFakeTimers();
         state.enabled = true;
-        state.rows = [{ key: "k", op: "import", status: "queued" }];
+        state.rows = [
+            {
+                key: "k",
+                op: "import",
+                status: "queued",
+                path: "a.import.json",
+                target: { kind: "importable" },
+            },
+        ];
         state.restored.clear();
         state.running = false;
         state.starts = [];
