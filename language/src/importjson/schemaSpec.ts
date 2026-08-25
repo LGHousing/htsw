@@ -212,6 +212,7 @@ export type RawCommandImportable = {
 
 export type RawImportJson = {
     houseUuid?: string;
+    dangerouslyDeleteEverythingNotInThisFile?: boolean;
     include?: string[];
     functions?: RawFunctionImportable[];
     events?: RawEventImportable[];
@@ -308,6 +309,14 @@ export const IMPORT_JSON_SCHEMA = object<RawImportJson>({
                 "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
             description:
                 "Housing UUID binding. Only the entry import.json's binding is used.",
+        })
+    ),
+    dangerouslyDeleteEverythingNotInThisFile: optional(
+        boolean({
+            description:
+                "DANGEROUS. Lets htsw delete house content this file and its includes " +
+                "don't declare. Housing has no undo. Requires houseUuid, and only the " +
+                "entry import.json's key is used.",
         })
     ),
     include: optional(array(ref("importJsonPath"))),

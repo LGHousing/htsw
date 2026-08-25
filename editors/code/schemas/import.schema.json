@@ -9,6 +9,10 @@
       "description": "Housing UUID binding. Only the entry import.json's binding is used.",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     },
+    "dangerouslyDeleteEverythingNotInThisFile": {
+      "type": "boolean",
+      "description": "DANGEROUS. Lets htsw delete house content this file and its includes don't declare. Housing has no undo. Requires houseUuid, and only the entry import.json's key is used."
+    },
     "include": {
       "type": "array",
       "items": {

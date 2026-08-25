@@ -511,6 +511,48 @@ describe("import.json houseUuid", () => {
     });
 });
 
+describe("import.json dangerouslyDeleteEverythingNotInThisFile", () => {
+    it("defaults to disarmed", () => {
+        const result = parseImportables(caseFilePath("house_uuid"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFileSpan).toBe(null);
+    });
+
+    it("arms deletion when the entry file declares it alongside houseUuid", () => {
+        const result = parseImportables(caseFilePath("delete_everything"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(true);
+        expect(
+            result.importJson.dangerouslyDeleteEverythingNotInThisFileSpan
+        ).not.toBe(null);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("refuses to arm deletion without a bound house", () => {
+        const result = parseImportables(caseFilePath("delete_everything_unbound"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("requires `houseUuid`")
+            )
+        ).toBe(true);
+    });
+
+    it("ignores the key in an included file and warns that it does nothing", () => {
+        const result = parseImportables(caseDirPath("delete_everything_include"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("has no effect in an included file")
+            )
+        ).toBe(true);
+    });
+});
+
 describe("import.json diagnostics readability", () => {
     it("reports unknown keys", () => {
         const result = parseImportables(caseFilePath("unknown_key"));
