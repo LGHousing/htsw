@@ -158,6 +158,16 @@ describe("scanHousePrunePlan", () => {
         ]);
     });
 
+    // the lock stores the manifest's casing, the house list returns Housing's
+    it("recognises its own past work whatever case the house reports", async () => {
+        mocks.functions = ["IMPORTED"];
+        stubLock([{ type: "FUNCTION", identity: "imported" }]);
+
+        const plan = await scan([], ["FUNCTION"]);
+
+        expect(plan.targets.map((target) => target.owned)).toEqual([true]);
+    });
+
     it("never targets Housing's built-in commands", async () => {
         mocks.commands = ["stuck", "clear", "Custom"];
 
