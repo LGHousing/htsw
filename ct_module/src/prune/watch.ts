@@ -14,6 +14,7 @@ import { applyRenames, type PruneRename } from "./rename";
 import { formatPrunePlan, summarizeTargets } from "./report";
 import { confirmPrune } from "./session";
 import {
+    ownedTargets,
     prunePlanIsEmpty,
     unownedTargets,
     type PrunePlan,
@@ -137,7 +138,7 @@ export function watchPruneSweep(trackedSources: ReadonlySet<string>): void {
         for (const line of formatPrunePlan(plan, project.path)) ChatLib.chat(line);
 
         const unowned = unownedTargets(plan);
-        const owned = plan.targets.filter((target) => target.owned);
+        const owned = ownedTargets(plan);
         if (unowned.length > 0) raiseNotice(project.path, unowned);
         if (owned.length === 0) return;
         await prune(ctx, project, plan, owned, housingUuid, "sweep");

@@ -94,29 +94,28 @@ function appendIdentities(lines: string[], targets: readonly PruneTarget[]): voi
     }
 }
 
-/** Plan lines for a popover, which has its own heading and no chat prefixes. */
-export function prunePlanPopoverLines(plan: PrunePlan): string[] {
+/**
+ * Plan lines for a popover, which has its own heading and no chat prefixes.
+ * Driven by the targets about to be removed rather than the whole plan, since a
+ * sweep confirms only the owned half. The plan still supplies the context lines.
+ */
+export function prunePlanPopoverLines(
+    targets: readonly PruneTarget[],
+    plan: PrunePlan
+): string[] {
     const lines: string[] = [];
-    const owned = ownedTargets(plan);
-    const unowned = unownedTargets(plan);
-    if (owned.length > 0) {
-        lines.push(`Previously imported by this project (${owned.length}):`);
-        for (const target of owned.slice(0, MAX_LISTED_PER_GROUP)) {
-            lines.push(`  ${describeTarget(target)}`);
-        }
-        if (owned.length > MAX_LISTED_PER_GROUP) {
-            lines.push(`  …and ${owned.length - MAX_LISTED_PER_GROUP} more`);
-        }
-    }
-    if (unowned.length > 0) {
-        lines.push(`NOT made by htsw (${unowned.length}) — unrecoverable:`);
-        for (const target of unowned.slice(0, MAX_LISTED_PER_GROUP)) {
-            lines.push(`  ${describeTarget(target)}`);
-        }
-        if (unowned.length > MAX_LISTED_PER_GROUP) {
-            lines.push(`  …and ${unowned.length - MAX_LISTED_PER_GROUP} more`);
-        }
-    }
+    const owned = targets.filter((target) => target.owned);
+    const unowned = targets.filter((target) => !target.owned);
+    appendPopoverGroup(
+        lines,
+        owned,
+        `Imported by this project before (${owned.length}):`
+    );
+    appendPopoverGroup(
+        lines,
+        unowned,
+        `Not made by htsw (${unowned.length}) — can't be undone:`
+    );
     if (plan.unsupported.length > 0) {
         lines.push(`Undeclared but not removable: ${summarizeTargets(plan.unsupported)}`);
     }
@@ -125,4 +124,19 @@ export function prunePlanPopoverLines(plan: PrunePlan): string[] {
     }
     lines.push("Housing has no undo.");
     return lines;
+}
+
+function appendPopoverGroup(
+    lines: string[],
+    targets: readonly PruneTarget[],
+    heading: string
+): void {
+    if (targets.length === 0) return;
+    lines.push(heading);
+    for (const target of targets.slice(0, MAX_LISTED_PER_GROUP)) {
+        lines.push(`  ${describeTarget(target)}`);
+    }
+    if (targets.length > MAX_LISTED_PER_GROUP) {
+        lines.push(`  …and ${targets.length - MAX_LISTED_PER_GROUP} more`);
+    }
 }
