@@ -1,6 +1,6 @@
 import type TaskContext from "./context";
 
-export type ActiveTaskKind = "queue" | "import" | "export" | "diff";
+export type ActiveTaskKind = "queue" | "import" | "export" | "diff" | "prune";
 
 type ActiveTask = {
     kind: ActiveTaskKind;
