@@ -249,28 +249,6 @@ export function houseLockOwnedKeys(lock: HouseLock | null): Set<string> {
     return owned;
 }
 
-/**
- * Drop importables from the baseline after they have left the house. Writes
- * nothing when none of the keys were recorded.
- */
-export function removeHouseLockImportables(
-    importJsonPath: string,
-    removals: readonly { type: Importable["type"]; identity: string }[]
-): boolean {
-    if (removals.length === 0) return true;
-    const lock = readHouseLock(importJsonPath);
-    if (lock === null) return true;
-    let removed = false;
-    for (const removal of removals) {
-        const key = importableKey(removal.type, removal.identity);
-        if (!Object.prototype.hasOwnProperty.call(lock.importables, key)) continue;
-        delete lock.importables[key];
-        removed = true;
-    }
-    if (!removed) return true;
-    return writeHouseLock(houseLockPathForImportJson(importJsonPath), lock);
-}
-
 export function houseLockAcceptsUpdate(
     importJsonPath: string,
     housingUuid: string
@@ -288,6 +266,10 @@ export function houseLockAcceptsUpdate(
     );
 }
 
+/**
+ * Drop importables from the baseline after they have left the house. Writes
+ * nothing when none of the keys were recorded.
+ */
 export function removeHouseLockImportables(
     importJsonPath: string,
     keys: ReadonlyArray<{ type: Importable["type"]; identity: string }>
