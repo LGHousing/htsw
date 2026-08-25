@@ -223,6 +223,54 @@ export function houseLockEntryFor(
     return lock.importables[importableKey(type, identity)] ?? null;
 }
 
+/**
+ * Every importable the lock records for this project. The lock is the
+ * last-import baseline, so this is what a prune may treat as its own work.
+ */
+export function houseLockOwnedImportables(
+    lock: HouseLock | null
+): { type: Importable["type"]; identity: string }[] {
+    const owned: { type: Importable["type"]; identity: string }[] = [];
+    if (lock === null) return owned;
+    for (const key in lock.importables) {
+        if (!Object.prototype.hasOwnProperty.call(lock.importables, key)) continue;
+        const entry = lock.importables[key];
+        owned.push({ type: entry.type, identity: entry.identity });
+    }
+    return owned;
+}
+
+/** The same set as `type:identity` keys, for membership tests. */
+export function houseLockOwnedKeys(lock: HouseLock | null): Set<string> {
+    const owned = new Set<string>();
+    for (const entry of houseLockOwnedImportables(lock)) {
+        owned.add(importableKey(entry.type, entry.identity));
+    }
+    return owned;
+}
+
+/**
+ * Drop importables from the baseline after they have left the house. Writes
+ * nothing when none of the keys were recorded.
+ */
+export function removeHouseLockImportables(
+    importJsonPath: string,
+    removals: readonly { type: Importable["type"]; identity: string }[]
+): boolean {
+    if (removals.length === 0) return true;
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return true;
+    let removed = false;
+    for (const removal of removals) {
+        const key = importableKey(removal.type, removal.identity);
+        if (!Object.prototype.hasOwnProperty.call(lock.importables, key)) continue;
+        delete lock.importables[key];
+        removed = true;
+    }
+    if (!removed) return true;
+    return writeHouseLock(houseLockPathForImportJson(importJsonPath), lock);
+}
+
 export function houseLockAcceptsUpdate(
     importJsonPath: string,
     housingUuid: string
