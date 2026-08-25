@@ -249,6 +249,30 @@ export function houseLockOwnedKeys(lock: HouseLock | null): Set<string> {
     return owned;
 }
 
+/**
+ * Moves a baseline entry to a new identity, keeping its hashes. A Housing rename
+ * changes the name and nothing else, so the old baseline is still true of the
+ * new name and the next import diffs instead of rewriting. Refuses when the
+ * destination is already recorded, which would merge two baselines into one.
+ */
+export function renameHouseLockImportable(
+    importJsonPath: string,
+    type: Importable["type"],
+    from: string,
+    to: string
+): boolean {
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return false;
+    const fromKey = importableKey(type, from);
+    const toKey = importableKey(type, to);
+    if (!Object.prototype.hasOwnProperty.call(lock.importables, fromKey)) return false;
+    if (Object.prototype.hasOwnProperty.call(lock.importables, toKey)) return false;
+    const entry = lock.importables[fromKey];
+    delete lock.importables[fromKey];
+    lock.importables[toKey] = { ...entry, identity: to };
+    return writeHouseLock(houseLockPathForImportJson(importJsonPath), lock);
+}
+
 export function houseLockAcceptsUpdate(
     importJsonPath: string,
     housingUuid: string

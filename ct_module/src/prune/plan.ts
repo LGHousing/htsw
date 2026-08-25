@@ -18,6 +18,7 @@ import {
     pruneTypeOf,
     type PrunableType,
 } from "./registry";
+import { detectRenames, type PruneRename } from "./rename";
 import { emptyPrunePlan, type PrunePlan, type PruneTarget } from "./types";
 
 export type PruneScanRequest = {
@@ -159,46 +160,82 @@ function recordScanIntoCache(
 }
 
 /**
- * The plan a save can produce without touching Housing at all.
+ * What one save changed, decided entirely from the lock — no house scan and no
+ * command cooldown. Everything it finds is owned by definition: the lock only
+ * records what a previous import of this project created.
  *
- * Watch mode reparses on every save, so an importable that the manifest used to
- * declare and no longer does is visible in memory the instant it disappears —
- * no house scan, no command cooldown, no waiting. Ownership is not in question
- * here: the lock recorded the importable because a previous import of this same
- * project created it.
+ * Renames fall out of the same comparison. One name gone and one arrived, for a
+ * type Housing can rename, is usually a rename; a wrong guess falls back to
+ * remove-and-recreate.
  */
-export function vanishedPrunePlan(
+export function vanishedWork(
     declared: readonly Importable[],
     importJsonPath: string
-): PrunePlan {
+): { plan: PrunePlan; renames: PruneRename[] } {
     const plan = emptyPrunePlan();
     const lock = readHouseLock(importJsonPath);
-    if (lock === null) return plan;
-    const declaredKeys = new Set<string>();
-    for (const importable of declared) {
-        declaredKeys.add(
-            importableKey(importable.type, normalizeIdentity(importableIdentity(importable)))
-        );
-    }
+    if (lock === null) return { plan, renames: [] };
+
+    const declaredByType = declaredIdentities(declared);
+    const lockedByType = new Map<PrunableType, Set<string>>();
+    const vanishedByType = new Map<PrunableType, string[]>();
 
     for (const entry of houseLockOwnedImportables(lock)) {
         const type = entry.type;
         if (!isPrunableType(type)) continue;
         const spec = pruneTypeOf(type);
         if (spec.method === "report") continue;
+        let locked = lockedByType.get(type);
+        if (locked === undefined) {
+            locked = new Set<string>();
+            lockedByType.set(type, locked);
+        }
+        locked.add(normalizeIdentity(entry.identity));
         if (isProtectedIdentity(spec, entry.identity)) continue;
-        if (declaredKeys.has(importableKey(type, normalizeIdentity(entry.identity)))) {
+        if ((declaredByType.get(type) ?? new Set()).has(normalizeIdentity(entry.identity))) {
             continue;
         }
-        plan.targets.push({
-            type,
-            identity: entry.identity,
-            label: displayLabel(type, entry.identity),
-            method: spec.method,
-            owned: true,
-        });
+        const vanished = vanishedByType.get(type);
+        if (vanished === undefined) vanishedByType.set(type, [entry.identity]);
+        else vanished.push(entry.identity);
     }
-    return plan;
+
+    // Declared but never imported — either brand new, or a renamed old entry.
+    const appearedByType = new Map<PrunableType, string[]>();
+    for (const importable of declared) {
+        const type = importable.type;
+        if (!isPrunableType(type)) continue;
+        if (!lockedByType.has(type)) continue;
+        const identity = importableIdentity(importable);
+        if ((lockedByType.get(type) ?? new Set()).has(normalizeIdentity(identity))) {
+            continue;
+        }
+        const appeared = appearedByType.get(type);
+        if (appeared === undefined) appearedByType.set(type, [identity]);
+        else appeared.push(identity);
+    }
+
+    const renames = detectRenames(vanishedByType, appearedByType);
+    const renamedFrom = new Set(
+        renames.map((rename) => importableKey(rename.type, normalizeIdentity(rename.from)))
+    );
+
+    for (const [type, identities] of vanishedByType) {
+        const spec = pruneTypeOf(type);
+        for (const identity of identities) {
+            if (renamedFrom.has(importableKey(type, normalizeIdentity(identity)))) {
+                continue;
+            }
+            plan.targets.push({
+                type,
+                identity,
+                label: displayLabel(type, identity),
+                method: spec.method,
+                owned: true,
+            });
+        }
+    }
+    return { plan, renames };
 }
 
 function errorMessage(error: unknown): string {

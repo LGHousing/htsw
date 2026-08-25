@@ -18,6 +18,7 @@ import { expandImportDependencies } from "../importables/import/dependencyExpans
 import { importableIdentity } from "../importables/identity";
 import { showToast } from "./toast";
 import { autoRunRefresh } from "./autoRun";
+import { setOnPruneFinished } from "../prune/watch";
 
 type ModifiedQueueOptions = {
     blockingCacheRead?: boolean;
@@ -173,3 +174,9 @@ export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm")
 }
 
 onImportableCacheWarm(autoTrackRefresh);
+
+// A prune can rename an importable, moving its baseline so what the queue holds
+// as "never imported" becomes a cheap diff. Rebuilding here picks that up and
+// schedules the import the prune task's busy window pushed past. Registered from
+// this side to avoid an import cycle with watch mode.
+setOnPruneFinished(() => autoTrackRefresh("cacheWarm"));

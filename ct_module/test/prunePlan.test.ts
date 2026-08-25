@@ -51,7 +51,7 @@ vi.mock("../src/importCache/cache", () => ({
     },
 }));
 
-import { scanHousePrunePlan, vanishedPrunePlan } from "../src/prune/plan";
+import { scanHousePrunePlan, vanishedWork } from "../src/prune/plan";
 import type TaskContext from "../src/tasks/context";
 import type { PrunableType } from "../src/prune/registry";
 
@@ -230,9 +230,9 @@ describe("scanHousePrunePlan", () => {
     });
 });
 
-describe("vanishedPrunePlan", () => {
+describe("vanishedWork", () => {
     it("is empty when the project has no lock", () => {
-        expect(vanishedPrunePlan([fn("Main")], importJsonPath).targets).toEqual([]);
+        expect(vanishedWork([fn("Main")], importJsonPath).plan.targets).toEqual([]);
     });
 
     it("targets a locked importable the manifest stopped declaring", () => {
@@ -241,7 +241,7 @@ describe("vanishedPrunePlan", () => {
             { type: "FUNCTION", identity: "Removed" },
         ]);
 
-        const plan = vanishedPrunePlan([fn("Main")], importJsonPath);
+        const { plan } = vanishedWork([fn("Main")], importJsonPath);
 
         expect(plan.targets.map((target) => target.identity)).toEqual(["Removed"]);
         expect(plan.targets[0].owned).toBe(true);
@@ -250,12 +250,73 @@ describe("vanishedPrunePlan", () => {
     it("ignores locked entries of types a prune cannot act on", () => {
         stubLock([{ type: "ITEM", identity: "Token" }]);
 
-        expect(vanishedPrunePlan([], importJsonPath).targets).toEqual([]);
+        expect(vanishedWork([], importJsonPath).plan.targets).toEqual([]);
     });
 
     it("does not report NPCs, which it cannot remove", () => {
         stubLock([{ type: "NPC", identity: "1,2,3" }]);
 
-        expect(vanishedPrunePlan([], importJsonPath).targets).toEqual([]);
+        expect(vanishedWork([], importJsonPath).plan.targets).toEqual([]);
+    });
+
+    it("reads one name out and one name in as a rename", () => {
+        stubLock([{ type: "FUNCTION", identity: "OldName" }]);
+
+        const { plan, renames } = vanishedWork([fn("NewName")], importJsonPath);
+
+        expect(renames).toEqual([
+            { type: "FUNCTION", from: "OldName", to: "NewName" },
+        ]);
+        // the old name is the rename's source, not a deletion
+        expect(plan.targets).toEqual([]);
+    });
+
+    it("will not guess a rename when two of a type changed at once", () => {
+        stubLock([
+            { type: "FUNCTION", identity: "OldA" },
+            { type: "FUNCTION", identity: "OldB" },
+        ]);
+
+        const { plan, renames } = vanishedWork(
+            [fn("NewA"), fn("NewB")],
+            importJsonPath
+        );
+
+        expect(renames).toEqual([]);
+        expect(plan.targets.map((target) => target.identity).sort()).toEqual([
+            "OldA",
+            "OldB",
+        ]);
+    });
+
+    it("does not rename types Housing cannot confirm renaming", () => {
+        stubLock([{ type: "MENU", identity: "OldMenu" }]);
+
+        const { plan, renames } = vanishedWork(
+            [{ type: "MENU", name: "NewMenu", slots: [] }],
+            importJsonPath
+        );
+
+        expect(renames).toEqual([]);
+        expect(plan.targets.map((target) => target.identity)).toEqual(["OldMenu"]);
+    });
+
+    // Housing's rename confirmation splits on " to "
+    it("refuses a rename whose names would make the confirmation ambiguous", () => {
+        stubLock([{ type: "FUNCTION", identity: "Go to Spawn" }]);
+
+        const { plan, renames } = vanishedWork([fn("Spawn")], importJsonPath);
+
+        expect(renames).toEqual([]);
+        expect(plan.targets.map((target) => target.identity)).toEqual(["Go to Spawn"]);
+    });
+
+    it("still deletes a vanished name when nothing new appeared", () => {
+        stubLock([{ type: "FUNCTION", identity: "OldName" }]);
+
+        const { plan, renames } = vanishedWork([], importJsonPath);
+
+        expect(renames).toEqual([]);
+        expect(plan.targets.map((target) => target.identity)).toEqual(["OldName"]);
     });
 });
