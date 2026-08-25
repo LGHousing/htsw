@@ -1,0 +1,5 @@
+{
+  "houseUuid": "5e9c8f33-1234-4abc-9def-0123456789ab",
+  "dangerouslyDeleteEverythingNotInThisFile": true,
+  "functions": [{ "name": "Main", "actions": "main.htsl" }]
+}

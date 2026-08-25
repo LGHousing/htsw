@@ -1,0 +1,17 @@
+{
+  "houseUuid": "5e9c8f33-1234-4abc-9def-0123456789ab",
+  "dangerouslyDeleteEverythingNotInThisFile": true,
+  "functions": [
+    { "name": "Main", "actions": "main.htsl" },
+    { "name": "Helper", "actions": "helper.htsl" }
+  ],
+  "menus": [{ "name": "Shop", "slots": [] }],
+  "regions": [
+    {
+      "name": "Spawn",
+      "bounds": { "from": { "x": 0, "y": 0, "z": 0 }, "to": { "x": 1, "y": 1, "z": 1 } }
+    }
+  ],
+  "teams": [{ "name": "Red" }],
+  "groups": [{ "name": "Winner" }]
+}
