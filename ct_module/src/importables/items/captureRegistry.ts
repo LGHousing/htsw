@@ -1,3 +1,4 @@
+import * as htsw from "htsw";
 import type { ImportableItem } from "htsw/types";
 
 import { canonicalSlug } from "../../project/paths";
@@ -10,7 +11,11 @@ import {
     canonicalLiveItemTagKey,
     normalizeItemSnbtForExport,
 } from "../../housingSync/items/itemNbt";
-import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
+import {
+    canonicalLiveItemTag,
+    tagChild,
+    type TagLike,
+} from "../../housingSync/items/itemTag";
 import {
     itemInteractDataMatches,
     type InteractDataExpectation,
@@ -181,6 +186,22 @@ export class ItemCaptureRegistry {
         return name;
     }
 
+    registerBlockReference(snbt: string, displayNameHint: string): string {
+        const normalizedSnbt = normalizeItemSnbtForExport(snbt);
+        const exactKey =
+            this.identity === "shell"
+                ? canonicalItemShellSnbtKey(normalizedSnbt)
+                : canonicalLiveItemSnbtKey(normalizedSnbt);
+        if (this.exactNamesByKey[exactKey]?.[0] !== undefined) {
+            return this.register(normalizedSnbt, displayNameHint);
+        }
+
+        return (
+            defaultVanillaItemId(normalizedSnbt) ??
+            this.register(normalizedSnbt, displayNameHint)
+        );
+    }
+
     needsWrite(name: string): boolean {
         return this.entriesByName[name]?.seeded === false;
     }
@@ -264,6 +285,21 @@ export class ItemCaptureRegistry {
         const position = names.indexOf(name);
         if (position >= 0) names.splice(position, 1);
         if (names.length === 0) delete index[key];
+    }
+}
+
+function defaultVanillaItemId(snbt: string): string | null {
+    try {
+        const tag = canonicalLiveItemTag(htsw.nbt.parseSnbtText(snbt));
+        if (tag.type !== "compound") return null;
+        const value = tag.value as Partial<Record<string, TagLike>>;
+        if (Object.keys(value).length !== 1) return null;
+        const id = value.id;
+        if (id?.type !== "string") return null;
+        const itemId = String(id.value);
+        return itemId.indexOf("minecraft:") === 0 ? itemId : null;
+    } catch (_error) {
+        return null;
     }
 }
 

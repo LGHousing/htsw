@@ -4,6 +4,7 @@ import TaskContext from "../../../tasks/context";
 import type { CanonicalizeItemName } from "../../items/itemReferences";
 import { canonicalizeItemFields } from "../../items/canonicalizeFields";
 import {
+    captureBlockReferenceFromOpenEditorField,
     captureItemFromOpenEditorField,
     observeItemFromOpenEditorField,
     type ItemCaptureSink,
@@ -309,12 +310,20 @@ async function captureConditionItemFields(
             const value = (entry.condition as Record<string, unknown>)[field.prop];
             const displayName = typeof value === "string" ? value : "";
             if (registry !== undefined) {
-                const captured = await captureItemFromOpenEditorField(
-                    ctx,
-                    field.label,
-                    registry,
-                    displayName
-                );
+                const captured =
+                    entry.condition.type === "BLOCK_TYPE"
+                        ? await captureBlockReferenceFromOpenEditorField(
+                              ctx,
+                              field.label,
+                              registry,
+                              displayName
+                          )
+                        : await captureItemFromOpenEditorField(
+                              ctx,
+                              field.label,
+                              registry,
+                              displayName
+                          );
                 if (captured !== null) {
                     (entry.condition as Record<string, unknown>)[field.prop] = captured;
                 } else if (captureRequired) {

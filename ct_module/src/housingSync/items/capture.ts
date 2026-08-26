@@ -20,6 +20,7 @@ const FULL_INVENTORY_CAPTURE_SLOT = 0;
 
 export interface ItemCaptureSink {
     register(snbt: string, displayNameHint: string): string;
+    registerBlockReference(snbt: string, displayNameHint: string): string;
 }
 
 type CapturedEditorItem = {
@@ -30,11 +31,22 @@ type CapturedEditorItem = {
 export async function captureItemFromOpenEditorField(
     ctx: TaskContext,
     fieldName: string,
-    captures: ItemCaptureSink,
+    captures: Pick<ItemCaptureSink, "register">,
     displayNameHint: string
 ): Promise<string | null> {
     return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) =>
         captures.register(captured.recapturedSnbt, displayNameHint)
+    );
+}
+
+export async function captureBlockReferenceFromOpenEditorField(
+    ctx: TaskContext,
+    fieldName: string,
+    captures: Pick<ItemCaptureSink, "registerBlockReference">,
+    displayNameHint: string
+): Promise<string | null> {
+    return withCapturedEditorItem(ctx, fieldName, displayNameHint, (captured) =>
+        captures.registerBlockReference(captured.recapturedSnbt, displayNameHint)
     );
 }
 
