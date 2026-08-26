@@ -938,7 +938,7 @@ When selected, Custom Coordinates requires a secondary text prompt with your
  desired coordinates.
 
 This text supports a three (position, `x y z`) or five (position + rotation,
- `x y z pitch yaw`) component location.
+ `x y z yaw pitch`) component location.
 
 Components can be literal values (`1 2 3`), placeholders
  (`%var.player/a% %var.player/b% %var.player/c%`) or a mix of both.
