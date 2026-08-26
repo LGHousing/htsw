@@ -115,6 +115,19 @@ export class Parser {
         return this.node.value as number;
     }
 
+    parseInteger(): number {
+        const value = this.parseNumber();
+
+        if (!Number.isInteger(value)) {
+            this.gcx.addDiagnostic(
+                Diagnostic.error("Expected a whole number")
+                    .addPrimarySpan(this.span())
+            );
+        }
+
+        return value;
+    }
+
     parseBoundedNumber(min: number, max: number): number {
         const value = this.parseNumber();
 

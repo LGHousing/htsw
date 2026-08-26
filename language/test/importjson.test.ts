@@ -603,6 +603,17 @@ describe("import.json diagnostics readability", () => {
         ).toBe(true);
     });
 
+    it("reports fractional coordinates", () => {
+        const result = parseImportables(caseFilePath("fractional_pos"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.filter((diagnostic) =>
+                diagnostic.message.includes("Expected a whole number")
+            ).length
+        ).toBe(2);
+    });
+
     it("reports item references that do not match top-level item names", () => {
         const result = parseImportables(caseFilePath("unknown_item_reference"));
 

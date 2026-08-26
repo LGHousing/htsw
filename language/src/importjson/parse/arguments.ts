@@ -131,9 +131,9 @@ export function parseTag(p: Parser): string {
 export function parsePos(p: Parser): Pos {
     const pos = {} as Pos;
     parseRawFields<RawPos>(p, {
-        x: requiredRawField((field) => field.setField(pos, "x", (p) => p.parseNumber())),
-        y: requiredRawField((field) => field.setField(pos, "y", (p) => p.parseNumber())),
-        z: requiredRawField((field) => field.setField(pos, "z", (p) => p.parseNumber())),
+        x: requiredRawField((field) => field.setField(pos, "x", (p) => p.parseInteger())),
+        y: requiredRawField((field) => field.setField(pos, "y", (p) => p.parseInteger())),
+        z: requiredRawField((field) => field.setField(pos, "z", (p) => p.parseInteger())),
     });
     warnUnused(p);
     return pos;

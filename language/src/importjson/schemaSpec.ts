@@ -345,9 +345,9 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
         actions: required(ref("htslPath")),
     }),
     pos: object<RawPos>({
-        x: required(number()),
-        y: required(number()),
-        z: required(number()),
+        x: required(integer()),
+        y: required(integer()),
+        z: required(integer()),
     }),
     bounds: object<RawBounds>({
         from: required(ref("pos")),

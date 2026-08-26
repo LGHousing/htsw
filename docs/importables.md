@@ -169,13 +169,13 @@ Nested fields marked required are required whenever their containing object is p
 | `name` | Yes | string |
 | `bounds` | Yes | bounds object |
 | `bounds.from` | Yes | position object |
-| `bounds.from.x` | Yes | number |
-| `bounds.from.y` | Yes | number |
-| `bounds.from.z` | Yes | number |
+| `bounds.from.x` | Yes | integer |
+| `bounds.from.y` | Yes | integer |
+| `bounds.from.z` | Yes | integer |
 | `bounds.to` | Yes | position object |
-| `bounds.to.x` | Yes | number |
-| `bounds.to.y` | Yes | number |
-| `bounds.to.z` | Yes | number |
+| `bounds.to.x` | Yes | integer |
+| `bounds.to.y` | Yes | integer |
+| `bounds.to.z` | Yes | integer |
 | `onEnterActions` | No | path ending in `.htsl` |
 | `onExitActions` | No | path ending in `.htsl` |
 
@@ -327,9 +327,9 @@ Nested fields marked required are required whenever their containing object is p
 | --- | --- | --- |
 | `name` | Yes | string |
 | `pos` | Yes | position object |
-| `pos.x` | Yes | number |
-| `pos.y` | Yes | number |
-| `pos.z` | Yes | number |
+| `pos.x` | Yes | integer |
+| `pos.y` | Yes | integer |
+| `pos.z` | Yes | integer |
 | `leftClickActions` | No | path ending in `.htsl` |
 | `rightClickActions` | No | path ending in `.htsl` |
 | `leftClickRedirect` | No | boolean |

@@ -195,13 +195,13 @@
       "additionalProperties": false,
       "properties": {
         "x": {
-          "type": "number"
+          "type": "integer"
         },
         "y": {
-          "type": "number"
+          "type": "integer"
         },
         "z": {
-          "type": "number"
+          "type": "integer"
         }
       },
       "required": [
