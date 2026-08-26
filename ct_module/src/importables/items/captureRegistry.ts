@@ -130,7 +130,7 @@ export class ItemCaptureRegistry {
                     itemInteractDataMatches(normalizedSnbt, expected)
                 );
             });
-            if (expectationMatches.length === 1) {
+            if (expectationMatches.length > 0) {
                 const matched = this.entriesByName[expectationMatches[0]] as RegistryItem;
                 matched.exactKey = exactKey;
                 this.addName(this.exactNamesByKey, exactKey, matched.name);
