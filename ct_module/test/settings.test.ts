@@ -51,3 +51,50 @@ describe("diagnostic upload setting", () => {
         });
     });
 });
+
+describe("unmatched functions first setting", () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.unstubAllGlobals();
+    });
+
+    test("defaults to off when the setting has not been persisted", async () => {
+        vi.stubGlobal("FileLib", {
+            exists: () => false,
+            read: () => null,
+            write: () => undefined,
+        });
+        const { getUnmatchedFunctionsFirst } = await import("../src/settings");
+
+        expect(getUnmatchedFunctionsFirst()).toBe(false);
+    });
+
+    test("honors an explicit on value", async () => {
+        vi.stubGlobal("FileLib", {
+            exists: () => true,
+            read: () => JSON.stringify({ unmatchedFunctionsFirst: true }),
+            write: () => undefined,
+        });
+        const { getUnmatchedFunctionsFirst } = await import("../src/settings");
+
+        expect(getUnmatchedFunctionsFirst()).toBe(true);
+    });
+
+    test("persists changes through the settings document", async () => {
+        let written = "";
+        vi.stubGlobal("FileLib", {
+            exists: () => false,
+            read: () => null,
+            write: (_path: string, value: string) => {
+                written = value;
+            },
+        });
+        const { getUnmatchedFunctionsFirst, setUnmatchedFunctionsFirst } =
+            await import("../src/settings");
+
+        setUnmatchedFunctionsFirst(true);
+
+        expect(getUnmatchedFunctionsFirst()).toBe(true);
+        expect(JSON.parse(written)).toMatchObject({ unmatchedFunctionsFirst: true });
+    });
+});

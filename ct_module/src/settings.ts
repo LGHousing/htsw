@@ -75,6 +75,11 @@ const smoothScrolling = defineValue(SETTINGS, {
     fallback: true,
     parse: asBoolean,
 });
+const unmatchedFunctionsFirst = defineValue(SETTINGS, {
+    key: "unmatchedFunctionsFirst",
+    fallback: false,
+    parse: asBoolean,
+});
 const watchMode = defineValue(SETTINGS, {
     key: "watchMode",
     fallback: false,
@@ -129,6 +134,13 @@ export function getSmoothScrolling(): boolean {
 }
 export function setSmoothScrolling(value: boolean): void {
     smoothScrolling.set(value);
+}
+
+export function getUnmatchedFunctionsFirst(): boolean {
+    return unmatchedFunctionsFirst.get();
+}
+export function setUnmatchedFunctionsFirst(value: boolean): void {
+    unmatchedFunctionsFirst.set(value);
 }
 
 export function getWatchMode(): boolean {

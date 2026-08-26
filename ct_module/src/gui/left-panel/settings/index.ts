@@ -24,12 +24,14 @@ import {
     getShowChatPanel,
     getShowInventoryButtons,
     getSmoothScrolling,
+    getUnmatchedFunctionsFirst,
     getUploadDiagnostics,
     getWatchMode,
     setRestoreWorkspace,
     setShowChatPanel,
     setShowInventoryButtons,
     setSmoothScrolling,
+    setUnmatchedFunctionsFirst,
     setUploadDiagnostics,
 } from "../../../settings";
 import { commandUpdate } from "../../../autoUpdate";
@@ -105,6 +107,12 @@ export function SettingsView(): Element {
                 label: "Smooth scrolling",
                 isOn: () => getSmoothScrolling(),
                 onToggle: () => setSmoothScrolling(!getSmoothScrolling()),
+            }),
+            toggleRow({
+                icon: () => Icons.listStart,
+                label: "Unmatched functions first",
+                isOn: () => getUnmatchedFunctionsFirst(),
+                onToggle: () => setUnmatchedFunctionsFirst(!getUnmatchedFunctionsFirst()),
             }),
             toggleRow({
                 icon: () => (areTaskSoundsMuted() ? Icons.volumeOff : Icons.volume2),

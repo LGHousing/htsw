@@ -65,6 +65,7 @@ import { TAB_GAP, tabLabelsFit } from "../tabs";
 import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
 import { markGuiDirty } from "../../lib/dirty";
+import { getUnmatchedFunctionsFirst } from "../../../settings";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
@@ -87,6 +88,7 @@ function toggleHouseStatus(key: LinkStatusKey): void {
 
 type HouseSortId = "alphabetical" | "status";
 type HouseSortDir = "ASC" | "DESC";
+type HouseSort = { id: HouseSortId; direction: HouseSortDir };
 const HOUSE_SORT_FIELDS: { id: HouseSortId; label: string }[] = [
     { id: "alphabetical", label: "Alphabetically" },
     { id: "status", label: "By import/export status" },
@@ -100,11 +102,11 @@ const STATUS_SORT_ORDER: LinkStatusKey[] = [
     "oneSided",
     "unknown",
 ];
-const DEFAULT_HOUSE_SORT: { id: HouseSortId; direction: HouseSortDir } = {
+const DEFAULT_HOUSE_SORT: HouseSort = {
     id: "alphabetical",
     direction: "ASC",
 };
-let houseSort: { id: HouseSortId; direction: HouseSortDir } = {
+let houseSort: HouseSort = {
     id: "alphabetical",
     direction: "ASC",
 };
@@ -124,21 +126,27 @@ function selectHouseSort(id: HouseSortId): void {
     }
 }
 
-function compareHouseRows(
+export function compareHouseRows(
     a: { item: HouseImportable; state: HouseLinkState },
-    b: { item: HouseImportable; state: HouseLinkState }
+    b: { item: HouseImportable; state: HouseLinkState },
+    unmatchedFunctionsFirst = false,
+    sort: HouseSort = houseSort
 ): number {
+    if (unmatchedFunctionsFirst && a.state !== b.state) {
+        if (a.state === "house-only") return -1;
+        if (b.state === "house-only") return 1;
+    }
     const an = (a.item.label ?? a.item.name).toLowerCase();
     const bn = (b.item.label ?? b.item.name).toLowerCase();
     const alpha = an < bn ? -1 : an > bn ? 1 : 0;
     let c = alpha;
-    if (houseSort.id === "status") {
+    if (sort.id === "status") {
         c =
             STATUS_SORT_ORDER.indexOf(HOUSE_LINK_VISUAL[a.state].key) -
             STATUS_SORT_ORDER.indexOf(HOUSE_LINK_VISUAL[b.state].key);
         if (c === 0) c = alpha;
     }
-    return houseSort.direction === "ASC" ? c : -c;
+    return sort.direction === "ASC" ? c : -c;
 }
 
 function activeType(): HouseContentType {
@@ -899,7 +907,9 @@ export function typeBrowserSection(
                     }
                     shown.push({ item, state });
                 }
-                shown.sort(compareHouseRows);
+                const unmatchedFunctionsFirst =
+                    t.type === "FUNCTION" && getUnmatchedFunctionsFirst();
+                shown.sort((a, b) => compareHouseRows(a, b, unmatchedFunctionsFirst));
                 if (shown.length === 0) {
                     const noun = t.label.toLowerCase();
                     const message =
