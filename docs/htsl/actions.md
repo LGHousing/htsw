@@ -21,7 +21,9 @@
 - [Give Experience Levels](#give-experience-levels)
 - [Send to Lobby](#send-to-lobby)
 - [Change Variable](#change-variable)
+- [Exit](#exit)
 - [Teleport Player](#teleport-player)
+- [Cancel Event](#cancel-event)
 - [Fail Parkour](#fail-parkour)
 - [Play Sound](#play-sound)
 - [Set Compass Target](#set-compass-target)
@@ -35,6 +37,8 @@
 - [Pause Execution](#pause-execution)
 - [Set Player Team](#set-player-team)
 - [Display Menu](#display-menu)
+- [Close Menu](#close-menu)
+- [Use/Remove Held Item](#useremove-held-item)
 - [Drop Item](#drop-item)
 - [Change Velocity](#change-velocity)
 - [Launch to Target](#launch-to-target)
@@ -227,7 +231,8 @@ Modifies the player's maximum health.
 #### HTSL
 
 ```htsl
-maxHealth = 5
+// maxHealth <Mode> <Max Health> [Heal On Change]
+maxHealth = 5 true
 ```
 
 ---
@@ -276,7 +281,7 @@ Gives the player an item.
 #### HTSL
 
 ```htsl
-// giveItem [Item] [Allow Multiple] [Inventory Slot] [Replace Existing Item]
+// giveItem <Item> [Allow Multiple] [Inventory Slot] [Replace Existing Item]
 giveItem "Item Name" true First_Available_Slot false
 ```
 
@@ -491,13 +496,15 @@ Changes a variable.
 #### HTSL
 
 Declare a Change Variable action starting with a keyword, `var`,
- `globalvar`, or `teamvar`, followed by the name of the variable.
+ `globalvar`, or `teamvar`, followed by the name of the variable. The aliases
+ `stat`, `globalstat`, and `teamstat` are also supported, respectively.
 
 Use the `var` keyword to declare a Change Variable action with the player
  holder.
 
 ```htsl
-var x = 5
+// var|stat <Variable> <Operation> <Value> [Automatic Unset]
+stat x = 5 true
 ```
 
 Change Variable Actions with the global and team holders can be declared
@@ -505,10 +512,27 @@ Change Variable Actions with the global and team holders can be declared
 
 ```htsl
 // global variable x
-globalvar x = 5
+// globalvar|globalstat <Variable> <Operation> <Value> [Automatic Unset]
+globalstat x = 5 true
 
 // team variable x for team Red
-teamvar x Red = 5
+// teamvar|teamstat <Variable> <Team> <Operation> <Value> [Automatic Unset]
+teamstat x Red = 5 true
+```
+
+---
+
+### Exit
+
+Stops the current action sequence.
+
+> This action can only be used inside a [Conditional](#conditional) or
+ [Random Action](#random-action).
+
+#### HTSL
+
+```htsl
+exit
 ```
 
 ---
@@ -534,6 +558,22 @@ To enable Prevent Teleport Inside Blocks:
 
 ```htsl
 tp Custom_Coordinates "0 0 0" true
+```
+
+---
+
+### Cancel Event
+
+Cancels the event that is currently running.
+
+> This action can only be used in the Player Death, Fish Caught, Player Damage,
+ Player Drop Item, Player Pick Up Item, Player Change Held Item, Player Toggle
+ Sneak, and Player Toggle Flight events.
+
+#### HTSL
+
+```htsl
+cancelEvent
 ```
 
 ---
@@ -777,6 +817,34 @@ Displays a menu to the player.
 
 ```htsl
 displayMenu "My Menu"
+```
+
+---
+
+### Close Menu
+
+Closes the player's open menu.
+
+> This action can only be used inside menu slot actions.
+
+#### HTSL
+
+```htsl
+closeMenu
+```
+
+---
+
+### Use/Remove Held Item
+
+Uses or removes the player's held item.
+
+> This action can only be used inside item actions.
+
+#### HTSL
+
+```htsl
+consumeItem
 ```
 
 ---
