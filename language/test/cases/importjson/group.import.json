@@ -2,7 +2,7 @@
     "groups": [
         {
             "name": "builda",
-            "tag": "BUILDER",
+            "tag": "--",
             "tagShownInChat": true,
             "color": "Aqua",
             "priority": 5,

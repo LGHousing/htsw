@@ -375,7 +375,7 @@ aborts that NPC before any changes are applied.
 | Field | Required | Value |
 | --- | --- | --- |
 | `name` | Yes | string |
-| `tag` | No | string matching `^[A-Za-z0-9 ]*$` |
+| `tag` | No | string matching `^[A-Za-z0-9 -]*$` |
 | `color` | No | one of 14 accepted strings |
 | `friendlyFire` | No | boolean |
 
@@ -412,7 +412,7 @@ otherwise leave the corresponding setting unchanged.
 | Field | Required | Value |
 | --- | --- | --- |
 | `name` | Yes | string |
-| `tag` | No | string matching `^[A-Za-z0-9 ]*$` |
+| `tag` | No | string matching `^[A-Za-z0-9 -]*$` |
 | `tagShownInChat` | No | boolean |
 | `color` | No | one of 14 accepted strings |
 | `priority` | No | integer from 0 to 20 |

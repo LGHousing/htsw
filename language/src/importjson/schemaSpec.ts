@@ -397,7 +397,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     color: string({ enum: COLORS }),
     teamImportable: object<RawTeamImportable>({
         name: required(string()),
-        tag: optional(string({ pattern: "^[A-Za-z0-9 ]*$" })),
+        tag: optional(string({ pattern: "^[A-Za-z0-9 -]*$" })),
         color: optional(ref("color")),
         friendlyFire: optional(boolean()),
     }),
@@ -406,7 +406,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     defaultGameMode: string({ enum: DEFAULT_GAME_MODES }),
     groupImportable: object<RawGroupImportable>({
         name: required(string()),
-        tag: optional(string({ pattern: "^[A-Za-z0-9 ]*$" })),
+        tag: optional(string({ pattern: "^[A-Za-z0-9 -]*$" })),
         tagShownInChat: optional(boolean()),
         color: optional(ref("color")),
         priority: optional(integer({ minimum: 0, maximum: 20 })),
