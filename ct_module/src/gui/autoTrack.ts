@@ -222,7 +222,8 @@ export function autoTrackRefresh(
         changed,
         newlyQueuedChanged,
         detectedWorkKeys,
-        tracked
+        tracked,
+        reconciliationComplete
     );
 }
 

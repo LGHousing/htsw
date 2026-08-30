@@ -69,6 +69,7 @@ let debounceRevision = 0;
 let watchImportRunning = false;
 let lastSuccessfulRunKeys: string[] | null = null;
 let awaitingSuccessRefresh = false;
+let latestDetectedWorkKeys: string[] = [];
 
 function importableKey(item: ImportQueueItem): string | null {
     if (item.kind !== "importable") return null;
@@ -155,19 +156,20 @@ function disableForLoop(keys: readonly string[]): void {
 // broken state every few seconds and spam the abort diagnostics.
 let blockedUntilNextParse = false;
 
-function runWatchImport(): void {
+function runWatchImport(detectedWorkKeys: readonly string[]): void {
     if (!getWatchMode()) return;
     if (blockedUntilNextParse) return;
     if (TaskManager.isBusy() || isImportPreparationRunning()) return;
-    const trackedItems = trackedImportQueue(getActiveAutoTrackSources());
-    if (trackedItems.length === 0) return;
-    const runItems = getQueue().filter(isImportQueueItem);
+    const detected = new Set(detectedWorkKeys);
+    const runItems = trackedImportQueue(getActiveAutoTrackSources()).filter((item) => {
+        const key = importableKey(item);
+        return key !== null && detected.has(key);
+    });
+    if (runItems.length === 0) return;
     const runKeys = sortedUnique(
-        runItems
-            .map(importableKey)
-            .filter((key): key is string => key !== null)
+        runItems.map(importableKey).filter((key): key is string => key !== null)
     );
-    const started = startImportIfIdle(undefined, {
+    const started = startImportIfIdle(runItems, {
         silentBusy: true,
         onStarted: () => {
             watchImportRunning = true;
@@ -199,11 +201,15 @@ export function watchModeRefresh(
     changed: number,
     newlyQueuedChanged: number,
     detectedWorkKeys: readonly string[],
-    trackedSources: ReadonlySet<string>
+    trackedSources: ReadonlySet<string>,
+    reconciliationComplete: boolean
 ): void {
+    const detected = sortedUnique(detectedWorkKeys);
+    latestDetectedWorkKeys = reconciliationComplete
+        ? detected
+        : sortedUnique(latestDetectedWorkKeys.concat(detected));
     if (!getWatchMode()) return;
     if (trigger === "reparse") blockedUntilNextParse = false;
-    const detected = sortedUnique(detectedWorkKeys);
     if (awaitingSuccessRefresh) {
         awaitingSuccessRefresh = false;
         if (
@@ -229,8 +235,9 @@ export function watchModeRefresh(
     }
     clearDebounce();
     const revision = debounceRevision;
+    const scheduledWorkKeys = latestDetectedWorkKeys;
     setTimeout(() => {
-        if (revision === debounceRevision) runWatchImport();
+        if (revision === debounceRevision) runWatchImport(scheduledWorkKeys);
     }, 2000);
 }
 
@@ -262,5 +269,5 @@ export function setWatchModeEnabled(enabled: boolean): void {
             "&e[htsw] Every tracked project is bound to a different house — nothing will auto-import until you're standing in one of them."
         );
     }
-    watchModeRefresh("cacheWarm", 0, 0, [], tracked);
+    watchModeRefresh("cacheWarm", 0, 0, latestDetectedWorkKeys, tracked, true);
 }
