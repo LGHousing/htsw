@@ -235,8 +235,9 @@ export function watchModeRefresh(
     }
     clearDebounce();
     const revision = debounceRevision;
+    const scheduledWorkKeys = latestDetectedWorkKeys;
     setTimeout(() => {
-        if (revision === debounceRevision) runWatchImport(detected);
+        if (revision === debounceRevision) runWatchImport(scheduledWorkKeys);
     }, 2000);
 }
 

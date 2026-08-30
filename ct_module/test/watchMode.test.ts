@@ -194,4 +194,16 @@ describe("watch import debounce scope", () => {
         expect(startImportIfIdle).toHaveBeenCalledTimes(1);
         expect(startedRows()).toEqual([changed]);
     });
+
+    test("runs retained work after an incomplete refresh while enabled", () => {
+        const changed = queueItem(PROJECT_A, "A");
+        queue(changed);
+
+        refresh([changed]);
+        refresh([], false);
+        vi.advanceTimersByTime(2000);
+
+        expect(startImportIfIdle).toHaveBeenCalledTimes(1);
+        expect(startedRows()).toEqual([changed]);
+    });
 });
