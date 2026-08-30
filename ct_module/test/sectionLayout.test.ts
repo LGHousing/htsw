@@ -322,15 +322,21 @@ describe("preferred new-export target routing", () => {
         expect(target.importJsonPath).toBe("/project/functions/import.json");
     });
 
-    test("choosing the base file routes new exports there even with section folders", () => {
-        const fs = memoryFs({
-            [ROOT]: JSON.stringify({ include: ["functions/import.json"] }),
-            "/project/functions/import.json": "{}",
-        });
+    test("a saved base target does not suppress a lazy section folder", () => {
+        const fs = memoryFs({ [ROOT]: "{}\n" });
 
-        const target = htslTargetForFunctionExport(fs, ROOT, "Duel", ROOT);
-        expect(target.importJsonPath).toBe(ROOT);
-        expect(target.htslPath).toBe("/project/Duel.htsl");
+        const target = htslTargetForFunctionExport(
+            fs,
+            ROOT,
+            "Duel",
+            ROOT,
+            ensureSectionFolderImportJson
+        );
+        expect(target.importJsonPath).toBe("/project/functions/import.json");
+        expect(target.htslPath).toBe("/project/functions/Duel.htsl");
+        expect(JSON.parse(fs.readFile(ROOT))).toEqual({
+            include: ["functions/import.json"],
+        });
     });
 
     test("honors a relative sticky target against an absolute-path fs (ctProjectFs form)", () => {

@@ -34,9 +34,10 @@ function fsCanonicalKey(fs: ProjectFs, path: string): string {
 }
 
 // The sticky "new exports land here" file chosen for a destination, but only
-// honored when the entry's include tree actually reaches it — a stale choice
-// pointing at a no-longer-included file must not write a file the parse can't
-// see. Returns the tree's own path form so callers resolve against it directly.
+// honored when it is a reachable non-root file. The entry file is already the
+// fallback, so treating it as an override would suppress section-folder
+// routing. Returns the tree's own path form so callers resolve against it
+// directly.
 function reachablePreferredTarget(
     fs: ProjectFs,
     entryImportJsonPath: string,
@@ -46,6 +47,7 @@ function reachablePreferredTarget(
         return null;
     }
     const preferredKey = fsCanonicalKey(fs, preferredNewTargetImportJson);
+    if (preferredKey === fsCanonicalKey(fs, entryImportJsonPath)) return null;
     let matched: string | null = null;
     walkImportJsonTree(fs, entryImportJsonPath, (filePath) => {
         if (fsCanonicalKey(fs, filePath) === preferredKey) {
