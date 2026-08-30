@@ -201,10 +201,13 @@ export function watchModeRefresh(
     changed: number,
     newlyQueuedChanged: number,
     detectedWorkKeys: readonly string[],
-    trackedSources: ReadonlySet<string>
+    trackedSources: ReadonlySet<string>,
+    reconciliationComplete: boolean
 ): void {
     const detected = sortedUnique(detectedWorkKeys);
-    latestDetectedWorkKeys = detected;
+    latestDetectedWorkKeys = reconciliationComplete
+        ? detected
+        : sortedUnique(latestDetectedWorkKeys.concat(detected));
     if (!getWatchMode()) return;
     if (trigger === "reparse") blockedUntilNextParse = false;
     if (awaitingSuccessRefresh) {
@@ -265,5 +268,5 @@ export function setWatchModeEnabled(enabled: boolean): void {
             "&e[htsw] Every tracked project is bound to a different house — nothing will auto-import until you're standing in one of them."
         );
     }
-    watchModeRefresh("cacheWarm", 0, 0, latestDetectedWorkKeys, tracked);
+    watchModeRefresh("cacheWarm", 0, 0, latestDetectedWorkKeys, tracked, true);
 }

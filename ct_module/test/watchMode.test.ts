@@ -65,13 +65,17 @@ function queue(...items: readonly ImportQueueItem[]): void {
     for (const item of items) addToQueue(item);
 }
 
-function refresh(detected: readonly ImportQueueItem[]): void {
+function refresh(
+    detected: readonly ImportQueueItem[],
+    reconciliationComplete = true
+): void {
     watchModeRefresh(
         "reparse",
         detected.length,
         detected.length,
         detected.map(workKey),
-        fixture.activeSources
+        fixture.activeSources,
+        reconciliationComplete
     );
 }
 
@@ -170,6 +174,20 @@ describe("watch import debounce scope", () => {
         fixture.watchEnabled = false;
 
         refresh([changed]);
+        setWatchModeEnabled(true);
+        vi.advanceTimersByTime(2000);
+
+        expect(startImportIfIdle).toHaveBeenCalledTimes(1);
+        expect(startedRows()).toEqual([changed]);
+    });
+
+    test("retains detected keys through an incomplete refresh", () => {
+        const changed = queueItem(PROJECT_A, "A");
+        queue(changed);
+        fixture.watchEnabled = false;
+
+        refresh([changed]);
+        refresh([], false);
         setWatchModeEnabled(true);
         vi.advanceTimersByTime(2000);
 
