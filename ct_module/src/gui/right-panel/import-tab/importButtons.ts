@@ -12,6 +12,7 @@ import { getQueueLength } from "./queue";
 import { isImportPreparationRunning, startImport } from "./taskController";
 import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
 import { appendRawHtslFile } from "../../../rawHtslImport";
+import { startOpenActionListExport } from "../../export/openActionListExport";
 
 export function importControl(): Element {
     const importDisabled = (): boolean =>
@@ -53,6 +54,18 @@ export function importControl(): Element {
                 },
                 onClick: () =>
                     openFileBrowserWithHtslSelection(undefined, appendRawHtslFile),
+            }),
+            Button({
+                icon: Icons.download,
+                text: "Export HTSL",
+                disabled: () => TaskManager.isBusy() || isImportPreparationRunning(),
+                tooltip:
+                    "Exports the open Housing action list to a standalone .htsl file.",
+                style: {
+                    width: { kind: "px", value: 116 },
+                    height: { kind: "grow" },
+                },
+                onClick: () => startOpenActionListExport(),
             }),
         ],
     });
