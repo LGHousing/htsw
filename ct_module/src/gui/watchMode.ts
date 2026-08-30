@@ -155,19 +155,20 @@ function disableForLoop(keys: readonly string[]): void {
 // broken state every few seconds and spam the abort diagnostics.
 let blockedUntilNextParse = false;
 
-function runWatchImport(): void {
+function runWatchImport(detectedWorkKeys: readonly string[]): void {
     if (!getWatchMode()) return;
     if (blockedUntilNextParse) return;
     if (TaskManager.isBusy() || isImportPreparationRunning()) return;
-    const trackedItems = trackedImportQueue(getActiveAutoTrackSources());
-    if (trackedItems.length === 0) return;
-    const runItems = getQueue().filter(isImportQueueItem);
+    const detected = new Set(detectedWorkKeys);
+    const runItems = trackedImportQueue(getActiveAutoTrackSources()).filter((item) => {
+        const key = importableKey(item);
+        return key !== null && detected.has(key);
+    });
+    if (runItems.length === 0) return;
     const runKeys = sortedUnique(
-        runItems
-            .map(importableKey)
-            .filter((key): key is string => key !== null)
+        runItems.map(importableKey).filter((key): key is string => key !== null)
     );
-    const started = startImportIfIdle(undefined, {
+    const started = startImportIfIdle(runItems, {
         silentBusy: true,
         onStarted: () => {
             watchImportRunning = true;
@@ -230,7 +231,7 @@ export function watchModeRefresh(
     clearDebounce();
     const revision = debounceRevision;
     setTimeout(() => {
-        if (revision === debounceRevision) runWatchImport();
+        if (revision === debounceRevision) runWatchImport(detected);
     }, 2000);
 }
 
