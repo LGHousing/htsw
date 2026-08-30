@@ -3,14 +3,17 @@ import type { ImportQueueItem } from "../src/gui/right-panel/import-tab/queue";
 
 const fixture = vi.hoisted(() => ({
     activeSources: new Set<string>(),
+    watchEnabled: true,
 }));
 const startImportIfIdle = vi.hoisted(() =>
     vi.fn((_rows: readonly ImportQueueItem[], _options: unknown) => true)
 );
 
 vi.mock("../src/settings", () => ({
-    getWatchMode: () => true,
-    setWatchMode: () => {},
+    getWatchMode: () => fixture.watchEnabled,
+    setWatchMode: (enabled: boolean) => {
+        fixture.watchEnabled = enabled;
+    },
 }));
 vi.mock("../src/gui/right-panel/import-tab/taskController", () => ({
     isImportPreparationRunning: () => false,
@@ -28,7 +31,7 @@ vi.mock("../src/gui/toast", () => ({
 }));
 vi.mock("../src/gui/badge", () => ({ registerBadge: () => {} }));
 
-import { watchModeRefresh } from "../src/gui/watchMode";
+import { setWatchModeEnabled, watchModeRefresh } from "../src/gui/watchMode";
 import {
     addToQueue,
     clearQueue,
@@ -81,6 +84,7 @@ beforeEach(() => {
     startImportIfIdle.mockClear();
     clearQueue();
     fixture.activeSources = new Set([PROJECT_A]);
+    fixture.watchEnabled = true;
 });
 
 afterEach(() => {
@@ -157,5 +161,19 @@ describe("watch import debounce scope", () => {
 
         expect(startImportIfIdle).toHaveBeenCalledTimes(1);
         expect(startedRows()).toEqual([latest]);
+    });
+
+    test("uses the latest detected keys when watch mode is enabled", () => {
+        const changed = queueItem(PROJECT_A, "A");
+        const manual = queueItem(PROJECT_A, "B");
+        queue(changed, manual);
+        fixture.watchEnabled = false;
+
+        refresh([changed]);
+        setWatchModeEnabled(true);
+        vi.advanceTimersByTime(2000);
+
+        expect(startImportIfIdle).toHaveBeenCalledTimes(1);
+        expect(startedRows()).toEqual([changed]);
     });
 });

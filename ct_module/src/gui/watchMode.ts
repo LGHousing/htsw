@@ -69,6 +69,7 @@ let debounceRevision = 0;
 let watchImportRunning = false;
 let lastSuccessfulRunKeys: string[] | null = null;
 let awaitingSuccessRefresh = false;
+let latestDetectedWorkKeys: string[] = [];
 
 function importableKey(item: ImportQueueItem): string | null {
     if (item.kind !== "importable") return null;
@@ -202,9 +203,10 @@ export function watchModeRefresh(
     detectedWorkKeys: readonly string[],
     trackedSources: ReadonlySet<string>
 ): void {
+    const detected = sortedUnique(detectedWorkKeys);
+    latestDetectedWorkKeys = detected;
     if (!getWatchMode()) return;
     if (trigger === "reparse") blockedUntilNextParse = false;
-    const detected = sortedUnique(detectedWorkKeys);
     if (awaitingSuccessRefresh) {
         awaitingSuccessRefresh = false;
         if (
@@ -263,5 +265,5 @@ export function setWatchModeEnabled(enabled: boolean): void {
             "&e[htsw] Every tracked project is bound to a different house — nothing will auto-import until you're standing in one of them."
         );
     }
-    watchModeRefresh("cacheWarm", 0, 0, [], tracked);
+    watchModeRefresh("cacheWarm", 0, 0, latestDetectedWorkKeys, tracked);
 }
