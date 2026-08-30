@@ -437,7 +437,7 @@ describe("import.json basic passing behavior", () => {
         const team = result.value[0];
         assertImportable(team, "TEAM");
         expect(team.name).toBe("team tet");
-        expect(team.tag).toBe("TET");
+        expect(team.tag).toBe("T-ET");
         expect(team.color).toBe("Red");
         expect(team.friendlyFire).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(false);
@@ -450,7 +450,7 @@ describe("import.json basic passing behavior", () => {
         const group = result.value[0];
         assertImportable(group, "GROUP");
         expect(group.name).toBe("builda");
-        expect(group.tag).toBe("BUILDER");
+        expect(group.tag).toBe("--");
         expect(group.tagShownInChat).toBe(true);
         expect(group.color).toBe("Aqua");
         expect(group.priority).toBe(5);

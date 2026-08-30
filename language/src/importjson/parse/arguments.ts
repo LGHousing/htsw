@@ -113,14 +113,14 @@ function parseMinecraftItemId(p: Parser): string {
     return value;
 }
 
-const TAG_RE = /^[a-z0-9 ]*$/i;
+const TAG_RE = /^[a-z0-9 -]*$/i;
 
 export function parseTag(p: Parser): string {
     const tag = p.parseString();
 
     if (!TAG_RE.test(tag)) {
         p.gcx.addDiagnostic(
-            Diagnostic.error("Tags can only contain numbers, letters, and spaces")
+            Diagnostic.error("Tags can only contain numbers, letters, spaces, and hyphens")
                 .addPrimarySpan(p.span())
         );
     }

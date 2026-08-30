@@ -2,7 +2,7 @@
     "teams": [
         {
             "name": "team tet",
-            "tag": "TET",
+            "tag": "T-ET",
             "color": "Red",
             "friendlyFire": true
         }

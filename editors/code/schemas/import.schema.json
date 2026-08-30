@@ -496,7 +496,7 @@
         },
         "tag": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9 ]*$"
+          "pattern": "^[A-Za-z0-9 -]*$"
         },
         "color": {
           "$ref": "#/definitions/color"
@@ -709,7 +709,7 @@
         },
         "tag": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9 ]*$"
+          "pattern": "^[A-Za-z0-9 -]*$"
         },
         "tagShownInChat": {
           "type": "boolean"
