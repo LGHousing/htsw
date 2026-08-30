@@ -33,7 +33,6 @@ import { requestImportableCacheWarm } from "../../cache-status/cacheWarm";
 import {
     hasChildList,
     importableDeclaringPath,
-    importableFilePaths,
     importableSourcePath,
     importableChildListPath,
     type ImportableChildListName,
@@ -41,7 +40,8 @@ import {
 import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
-    removeImportableEntry,
+    planDeleteImportableEntry,
+    removeImportableEntryForDelete,
     removeIncludeFromImportJson,
 } from "../../../project/importJsonMutations";
 import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
@@ -399,62 +399,48 @@ function importablePreviewPath(parent: ResultImport, imp: Importable): string {
     return importableSourceFilePath(parent, imp);
 }
 
-// Files this importable owns: its primary source (htsl/snbt), child list htsl
-// files, and menu slot .snbt/.htsl files — minus the import.json itself and
-// anything another importable in the same project also references (shared
-// files survive the delete).
-function ownedFilesOf(parent: ResultImport, imp: Importable): string[] {
-    const mine = new Set<string>();
-    for (const p of importableFilePaths(imp)) {
-        if (p !== parent.fullPath) mine.add(p);
-    }
-    if (mine.size === 0) return [];
-    const shared = new Set<string>();
-    for (let i = 0; i < parent.importables.length; i++) {
-        const other = parent.importables[i];
-        if (other === imp) continue;
-        for (const p of importableFilePaths(other)) {
-            if (mine.has(p)) shared.add(p);
-        }
-    }
-    const out: string[] = [];
-    for (const p of mine) {
-        if (!shared.has(p)) out.push(p);
-    }
-    return out;
-}
-
 function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
     const identity = importableIdentity(imp);
-    const files = ownedFilesOf(parent, imp);
+    const section = SECTION_BY_TYPE[imp.type];
+    if (section === undefined) return;
+    const plan = planDeleteImportableEntry(parent.fullPath, section, identity);
+    if (!plan.ok) {
+        ChatLib.chat(`&c[htsw] ${plan.message}`);
+        return;
+    }
+    const files = plan.ownedFiles;
     const lines = [`Removes the ${imp.type} entry from import.json.`];
     for (let i = 0; i < Math.min(files.length, 4); i++) {
         lines.push(`Deletes ${shortPath(files[i])}`);
     }
     if (files.length > 4) lines.push(`…and ${files.length - 4} more files`);
+    lines.push("Deletes nested import.json files only if they become empty.");
     openConfirmPopover({
         title: `Delete "${identity}" from the project?`,
         lines,
         confirmLabel: "Delete",
         danger: true,
         onConfirm: () => {
-            const section = SECTION_BY_TYPE[imp.type];
-            if (
-                section === undefined ||
-                !removeImportableEntry(parent.fullPath, section, identity)
-            ) {
-                ChatLib.chat(
-                    `&c[htsw] Couldn't remove '${identity}' from ${shortPath(parent.fullPath)}`
-                );
+            const result = removeImportableEntryForDelete(
+                parent.fullPath,
+                section,
+                identity
+            );
+            if (!result.ok) {
+                ChatLib.chat(`&c[htsw] ${result.message}`);
                 return;
             }
-            for (let i = 0; i < files.length; i++) {
+            for (let i = 0; i < result.ownedFiles.length; i++) {
+                const filePath = result.ownedFiles[i];
                 try {
-                    FileLib.delete(files[i]);
+                    FileLib.delete(filePath);
                 } catch (_e) {
-                    ChatLib.chat(`&e[htsw] Couldn't delete ${shortPath(files[i])}`);
+                    ChatLib.chat(`&e[htsw] Couldn't delete ${shortPath(filePath)}`);
                 }
-                closeTab(files[i]);
+                closeTab(filePath);
+            }
+            for (let i = 0; i < result.prunedImportJsonFiles.length; i++) {
+                closeTab(result.prunedImportJsonFiles[i]);
             }
             removeFromQueueKey(
                 queueItemKey(makeImportableQueueItem(imp, parent.fullPath))

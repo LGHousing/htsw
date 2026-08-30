@@ -1,17 +1,25 @@
 import {
     moveImportableEntry as moveImportableEntryWithFs,
-    removeImportableEntry as removeImportableEntryWithFs,
+    planDeleteImportableEntry as planDeleteImportableEntryWithFs,
+    removeImportableEntryForDelete as removeImportableEntryForDeleteWithFs,
     renameImportableEntry as renameImportableEntryWithFs,
     setHouseUuidKey as setHouseUuidKeyWithFs,
     updateImportableField as updateImportableFieldWithFs,
     upsertImportableEntry as upsertImportableEntryWithFs,
     removeIncludeFromImportJson as removeIncludeFromImportJsonWithFs,
     type MoveImportableResult,
+    type DeleteImportablePlan,
+    type DeleteImportableResult,
     type Section,
 } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
-export type { MoveImportableResult, Section };
+export type {
+    DeleteImportablePlan,
+    DeleteImportableResult,
+    MoveImportableResult,
+    Section,
+};
 
 export function upsertImportableEntry(
     importJsonPath: string,
@@ -44,13 +52,25 @@ export function updateImportableField(
         value
     );
 }
-
-export function removeImportableEntry(
+export function planDeleteImportableEntry(
     entryJsonPath: string,
     section: Section,
     identity: string
-): boolean {
-    return removeImportableEntryWithFs(ctProjectFs, entryJsonPath, section, identity);
+): DeleteImportablePlan {
+    return planDeleteImportableEntryWithFs(ctProjectFs, entryJsonPath, section, identity);
+}
+
+export function removeImportableEntryForDelete(
+    entryJsonPath: string,
+    section: Section,
+    identity: string
+): DeleteImportableResult {
+    return removeImportableEntryForDeleteWithFs(
+        ctProjectFs,
+        entryJsonPath,
+        section,
+        identity
+    );
 }
 
 export function removeIncludeFromImportJson(

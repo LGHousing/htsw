@@ -467,7 +467,8 @@ async function deleteImportable(
             `This will remove the entry from ${vscode.workspace.asRelativePath(plan.importJsonPath, false)}.` +
             (ownedRelative.length > 0
                 ? `\n\nFiles to delete:\n${ownedRelative.map((filePath) => `- ${filePath}`).join("\n")}`
-                : "\n\nNo files will be deleted.");
+                : "\n\nNo owned source files will be deleted.") +
+            "\n\nA nested import.json is removed only if it becomes empty.";
         const buttons = ownedRelative.length > 0 ? [deleteFilesLabel, removeEntryLabel] : [removeEntryLabel];
         const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
         if (!choice) return;
