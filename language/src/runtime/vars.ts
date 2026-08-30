@@ -341,7 +341,16 @@ export function formatNumber(number: string): string {
         if (rounded >= 1000) {
             // .9995 and up round into the whole part.
             rounded -= 1000;
-            digits = (BigInt(digits) + 1n).toString();
+            let carryIndex = digits.length - 1;
+            while (carryIndex >= 0 && digits[carryIndex] === "9") carryIndex--;
+            if (carryIndex < 0) {
+                digits = "1" + "0".repeat(digits.length);
+            } else {
+                digits =
+                    digits.slice(0, carryIndex) +
+                    (Number(digits[carryIndex]) + 1) +
+                    digits.slice(carryIndex + 1);
+            }
         }
         let roundedDecimal = rounded.toString();
         while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
