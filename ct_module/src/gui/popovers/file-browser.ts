@@ -29,7 +29,7 @@ import {
 import { getHousingUuid, setImportJsonPath } from "../state";
 import { addRecent } from "../persistence/recents";
 import { normalizePathSeparators } from "htsw-editor-common/project";
-import { normalizeHtswPath } from "../lib/pathDisplay";
+import { basename, normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
@@ -58,12 +58,21 @@ let filter = "";
 // a stale selection from a previous folder cannot be activated.
 let selectedFilePath: string | null = null;
 let selectedFileName: string | null = null;
+let saveNameDraft = "actions.htsl";
 
 type BrowserMode =
     | { kind: "importJson"; onSelect: ((path: string) => void) | null }
-    | { kind: "htsl"; onSelect: (path: string) => void };
+    | { kind: "htsl"; onSelect: (path: string) => void }
+    | {
+          kind: "htslDestination";
+          onSelect: (path: string, replaceExisting: boolean) => void;
+      };
 
 let browserMode: BrowserMode = { kind: "importJson", onSelect: null };
+
+function isHtslMode(): boolean {
+    return browserMode.kind === "htsl" || browserMode.kind === "htslDestination";
+}
 
 const appendHtslDir = defineRootDoc<string | null>({
     file: "append-htsl-directory.json",
@@ -102,7 +111,7 @@ function setCwd(next: string): void {
     pathDraft = cwd;
     selectedFilePath = null;
     selectedFileName = null;
-    if (browserMode.kind === "htsl") rememberAppendHtslDir(cwd);
+    if (isHtslMode()) rememberAppendHtslDir(cwd);
     else preselectImportJson();
 }
 
@@ -237,12 +246,17 @@ function isSelectableFileName(fileName: string): boolean {
 }
 
 function selectionDescription(): string {
-    return browserMode.kind === "importJson" ? "an import.json" : "an HTSL file";
+    return browserMode.kind === "importJson"
+        ? "an import.json"
+        : browserMode.kind === "htslDestination"
+          ? "an HTSL destination"
+          : "an HTSL file";
 }
 
 function selectFile(entry: Entry): void {
     selectedFilePath = entry.fullPath;
     selectedFileName = entry.name;
+    if (browserMode.kind === "htslDestination") saveNameDraft = entry.name;
 }
 
 function navigateInto(entry: Entry): void {
@@ -254,6 +268,10 @@ function navigateInto(entry: Entry): void {
 }
 
 function activateFile(path: string): void {
+    if (browserMode.kind === "htslDestination") {
+        selectHtslDestination(path);
+        return;
+    }
     if (browserMode.kind === "htsl") {
         const slash = normalizeHtswPath(path).lastIndexOf("/");
         if (slash > 0) rememberAppendHtslDir(path.substring(0, slash));
@@ -277,6 +295,32 @@ function activateFile(path: string): void {
         ChatLib.chat(`&a[htsw] Loaded ${path}`);
         return;
     }
+}
+
+function finishHtslDestination(path: string, replaceExisting: boolean): void {
+    if (browserMode.kind !== "htslDestination") return;
+    const onSelect = browserMode.onSelect;
+    const slash = normalizeHtswPath(path).lastIndexOf("/");
+    if (slash > 0) rememberAppendHtslDir(path.substring(0, slash));
+    closeAllPopovers();
+    onSelect(path, replaceExisting);
+}
+
+function selectHtslDestination(path: string): void {
+    if (!path.toLowerCase().endsWith(".htsl")) {
+        ChatLib.chat("&c[htsw] Export destinations must end in .htsl.");
+        return;
+    }
+    if (!pathExists(path)) {
+        finishHtslDestination(path, false);
+        return;
+    }
+    openConfirmPopover({
+        title: `Replace ${basename(path)}?`,
+        lines: ["The existing file will be replaced after the Housing read succeeds."],
+        confirmLabel: "Replace",
+        onConfirm: () => finishHtslDestination(path, true),
+    });
 }
 
 /**
@@ -336,6 +380,16 @@ function commitPathDraft(): void {
         }
         ChatLib.chat(`&c[htsw] Cannot open ${fname}`);
         return;
+    }
+    if (
+        browserMode.kind === "htslDestination" &&
+        isSelectableFileName(basename(normalized))
+    ) {
+        const parent = p.getParent();
+        if (parent !== null && Files.exists(parent) && Files.isDirectory(parent)) {
+            selectHtslDestination(normalized);
+            return;
+        }
     }
     const fallback = resolveExistingDir(normalized);
     navigateTo(fallback);
@@ -592,9 +646,19 @@ function header(): Element {
         style: { gap: 4, height: { kind: "px", value: 18 }, align: "center" },
         children: [
             Text({
-                text: browserMode.kind === "importJson" ? "Browser" : "Append HTSL",
+                text:
+                    browserMode.kind === "importJson"
+                        ? "Browser"
+                        : browserMode.kind === "htslDestination"
+                          ? "Export HTSL"
+                          : "Append HTSL",
                 color: ACCENT_WARN,
-                style: { width: { kind: "px", value: browserMode.kind === "importJson" ? 60 : 90 } },
+                style: {
+                    width: {
+                        kind: "px",
+                        value: browserMode.kind === "importJson" ? 60 : 90,
+                    },
+                },
             }),
             Button({
                 tooltip: "Back",
@@ -708,6 +772,34 @@ function listBody(): Element {
 }
 
 function selectionButton(): Element {
+    if (browserMode.kind === "htslDestination") {
+        return Row({
+            style: { gap: 6, height: { kind: "px", value: 20 }, align: "center" },
+            children: [
+                Text({ text: "Save as", color: COLOR_TEXT_DIM }),
+                Input({
+                    id: "file-browser-save-name",
+                    value: () => saveNameDraft,
+                    onChange: (value) => {
+                        saveNameDraft = value;
+                    },
+                    onSubmit: () => activateSaveName(),
+                    placeholder: "actions.htsl",
+                    style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                }),
+                Button({
+                    text: "Choose destination",
+                    style: {
+                        width: { kind: "px", value: 130 },
+                        height: { kind: "grow" },
+                        background: COLOR_BUTTON_PRIMARY,
+                        hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                    },
+                    onClick: () => activateSaveName(),
+                }),
+            ],
+        });
+    }
     return Row({
         style: { gap: 6, height: { kind: "px", value: 20 } },
         children: [
@@ -736,6 +828,22 @@ function selectionButton(): Element {
             }),
         ],
     });
+}
+
+function activateSaveName(): void {
+    const raw = saveNameDraft.trim();
+    if (raw.length === 0) {
+        ChatLib.chat("&c[htsw] Enter an HTSL file name.");
+        return;
+    }
+    if (raw.indexOf("/") >= 0 || raw.indexOf("\\") >= 0) {
+        ChatLib.chat(
+            "&c[htsw] Enter a file name here, or paste a full path in the path bar."
+        );
+        return;
+    }
+    const fileName = raw.toLowerCase().endsWith(".htsl") ? raw : `${raw}.htsl`;
+    selectHtslDestination(`${cwd}/${fileName}`);
 }
 
 function divider(): Element {
@@ -778,6 +886,17 @@ export function openFileBrowserWithHtslSelection(
     onSelect: (path: string) => void
 ): void {
     browserMode = { kind: "htsl", onSelect };
+    openConfiguredFileBrowser(
+        initialDir ?? readRememberedAppendHtslDir() ?? boundProjectPath() ?? PROJECTS_ROOT
+    );
+}
+
+export function openFileBrowserWithHtslDestination(
+    initialDir: string | undefined,
+    onSelect: (path: string, replaceExisting: boolean) => void
+): void {
+    browserMode = { kind: "htslDestination", onSelect };
+    saveNameDraft = "actions.htsl";
     openConfiguredFileBrowser(
         initialDir ?? readRememberedAppendHtslDir() ?? boundProjectPath() ?? PROJECTS_ROOT
     );

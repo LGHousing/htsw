@@ -27,9 +27,15 @@ export function ensureParentDirs(path: string): void {
 // can publish each other's half-written temp.
 let tempWriteCounter = 0;
 
-export function atomicWriteText(path: string, content: string): boolean {
+export function atomicWriteText(
+    path: string,
+    content: string,
+    options: { replaceExisting?: boolean } = {}
+): boolean {
     const tempPath = `${path}.${Date.now().toString(36)}-${++tempWriteCounter}.tmp`;
-    if (writeTempThenMove(path, tempPath, content)) return true;
+    const replaceExisting = options.replaceExisting !== false;
+    if (writeTempThenMove(path, tempPath, content, replaceExisting)) return true;
+    if (!replaceExisting) return false;
     try {
         FileLib.write(path, content, true);
         const written = FileLib.read(path) as RuntimeString | null | undefined;
@@ -39,7 +45,12 @@ export function atomicWriteText(path: string, content: string): boolean {
     }
 }
 
-function writeTempThenMove(path: string, tempPath: string, content: string): boolean {
+function writeTempThenMove(
+    path: string,
+    tempPath: string,
+    content: string,
+    replaceExisting: boolean
+): boolean {
     try {
         ensureParentDirs(path);
         FileLib.write(tempPath, content, true);
@@ -48,17 +59,30 @@ function writeTempThenMove(path: string, tempPath: string, content: string): boo
         const StandardCopyOption = javaType("java.nio.file.StandardCopyOption");
         const temp = Paths.get(runtimeString(tempPath));
         const target = Paths.get(runtimeString(path));
-        if (tryFilesystemMove(() => {
-            Files.move(
-                temp,
-                target,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING
-            );
-        })) return true;
-        if (tryFilesystemMove(() => {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-        })) return true;
+        if (replaceExisting) {
+            if (
+                tryFilesystemMove(() => {
+                    Files.move(
+                        temp,
+                        target,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                    );
+                })
+            )
+                return true;
+            if (
+                tryFilesystemMove(() => {
+                    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+                })
+            )
+                return true;
+        } else if (
+            tryFilesystemMove(() => {
+                Files.move(temp, target);
+            })
+        )
+            return true;
         // Both moves failed; the unique-named temp would otherwise pile up.
         try {
             Files.deleteIfExists(temp);
