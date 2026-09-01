@@ -9,7 +9,7 @@
         "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
         "check:metadata": "node --experimental-strip-types ./scripts/syncMetadataVersion.ts --check",
         "typecheck": "tsc --noEmit",
-        "lint": "eslint --cache --cache-location .eslintcache \"src/**/*.ts\" \"scripts/**/*.ts\" \"test/**/*.ts\"",
+        "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\" \"test/**/*.ts\"",
         "knip": "knip",
         "test": "npm run typecheck && vitest run",
         "build": "npm run check:metadata && npm run generate:icons && npm run typecheck && vite build --mode production && npm run build:java",
