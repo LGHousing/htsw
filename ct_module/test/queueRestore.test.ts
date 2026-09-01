@@ -6,22 +6,23 @@ import {
     clearQueue,
     getQueue,
     isRestoredQueueItem,
+    makeImportableQueueRow,
     queueItemKey,
     reconcileAutoTrackedQueue,
     removeFromQueue,
     restoreQueueItems,
-    type ImportQueueItem,
+    type QueueRow,
 } from "../src/gui/right-panel/import-tab/queue";
 
-function functionItem(sourcePath: string, identity: string): ImportQueueItem {
-    return {
-        operation: "import",
-        kind: "importable",
-        sourcePath,
+function functionItem(path: string, identity: string): QueueRow {
+    return makeImportableQueueRow({
+        op: "import",
+        house: null,
+        path,
         type: "FUNCTION",
         identity,
         label: identity,
-    };
+    });
 }
 
 const SOURCE = "C:/projects/root/import.json";
@@ -43,8 +44,8 @@ describe("queue workspace capture", () => {
     });
 });
 
-describe("restored queue rows and watch mode", () => {
-    it("marks restored rows so watch mode cannot act on them", () => {
+describe("restored queue rows and Auto-run", () => {
+    it("marks restored rows so Auto-run cannot act on them", () => {
         const item = functionItem(SOURCE, "Restored");
         restoreQueueItems([item]);
 
@@ -57,7 +58,7 @@ describe("restored queue rows and watch mode", () => {
         restoreQueueItems([item]);
         expect(isRestoredQueueItem(queueItemKey(item))).toBe(true);
 
-        // Auto-Track reporting the same work is the evidence watch mode was
+        // Auto-Track reporting the same work is the evidence Auto-run was
         // waiting for; the row becomes eligible without being re-added.
         reconcileAutoTrackedQueue([functionItem(SOURCE, "Restored")]);
 
