@@ -234,12 +234,14 @@ describe("persistence store", () => {
         files.set(`${SETTINGS_DIR}/r.json`, JSON.stringify(["a", "b"]));
         dateNow.mockReturnValue(now + 1000);
 
-        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
+        // Reading the revision alone must trigger the expired re-read: a
+        // cache key is often the only thing polling a doc.
         expect(value.revision()).toBe(1);
+        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
 
         dateNow.mockReturnValue(now + 2000);
-        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
         expect(value.revision()).toBe(1);
+        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
         vi.restoreAllMocks();
     });
 });
