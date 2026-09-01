@@ -73,7 +73,7 @@ import {
     addToQueue,
     clearQueue,
     getQueue,
-    makeImportableQueueItem,
+    makeImportableQueueRow,
 } from "../src/gui/right-panel/import-tab/queue";
 
 beforeEach(() => {
@@ -96,7 +96,15 @@ describe("Auto-Track queue reconciliation", () => {
 
     test("leaves a manually queued current function alone", () => {
         fixture.status = "current";
-        addToQueue(makeImportableQueueItem(fixture.importable, SOURCE_PATH));
+        addToQueue(
+            makeImportableQueueRow({
+                op: "import",
+                house: "house-uuid",
+                path: SOURCE_PATH,
+                type: "FUNCTION",
+                identity: fixture.importable.name,
+            })
+        );
 
         autoTrackRefresh("reparse");
 

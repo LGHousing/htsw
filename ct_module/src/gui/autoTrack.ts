@@ -11,7 +11,7 @@ import {
     makeImportableQueueRow,
     queueItemKey,
     reconcileAutoTrackedQueue,
-    type ImportQueueItem,
+    type QueueRow,
 } from "./right-panel/import-tab/queue";
 import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
@@ -24,7 +24,7 @@ type ModifiedQueueOptions = {
 };
 
 type PlannedQueueItem = {
-    item: ImportQueueItem;
+    item: QueueRow;
     changed: boolean;
     required: boolean;
     workKey: string;
@@ -101,7 +101,7 @@ function planModifiedImportables(
             identity: importableIdentity(importable),
             label: importable.type === "EVENT" ? importable.event : importable.name,
             origin: "autotrack",
-        }) as ImportQueueItem;
+        });
         items.push({
             item,
             changed: modifiedKeys.has(identityKey),
@@ -150,7 +150,7 @@ export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm")
     });
     if (seenTracked.size !== tracked.size) reconciliationComplete = false;
 
-    const desiredItems: ImportQueueItem[] = [];
+    const desiredItems: QueueRow[] = [];
     for (const plan of plans) {
         for (const planned of plan.items) desiredItems.push(planned.item);
     }

@@ -46,7 +46,7 @@ import {
     getQueuedItemKey,
     queueItemKey,
     queueItemsForPath,
-    type QueueItem,
+    type QueueRow,
 } from "./import-tab/queue";
 import {
     getActiveTaskListLabel,
@@ -119,8 +119,8 @@ function liveTabMenu(): MenuAction[] {
     return [{ label: "Close tab", onClick: () => closeLiveTab() }];
 }
 
-function itemPath(item: QueueItem): string {
-    return item.operation === "import" ? item.sourcePath : item.destinationPath;
+function itemPath(item: QueueRow): string {
+    return item.path;
 }
 
 function queuedCountForTab(tab: Extract<Tab, { kind: "file" }>): number {

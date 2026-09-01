@@ -51,30 +51,11 @@ export type QueueAddResult =
           message: string;
       };
 export type QueueRowBadge = { op: "import" | "export"; tooltip: string };
-
-/** Temporary aliases for phase-2 consumers. */
-type ImportableQueueItem = QueueRow & {
-    target: Extract<QueueTarget, { kind: "importable" }>;
-    operation: QueueOp;
-    kind: "importable";
-    sourcePath: string;
-    destinationPath: string;
-    housingUuid: string | null;
-    identity: string;
-    type: Importable["type"];
-    label: string;
+export type QueueHouseGroup = {
+    house: string | null;
+    current: boolean;
+    rows: QueueRow[];
 };
-type BulkQueueItem = QueueRow & {
-    target: Extract<QueueTarget, { kind: "bulk" }>;
-    operation: QueueOp;
-    kind: "importJson";
-    sourcePath: string;
-    destinationPath: string;
-    housingUuid: string | null;
-    label: string;
-};
-export type QueueItem = ImportableQueueItem | BulkQueueItem;
-export type ImportQueueItem = QueueItem & { op: "import"; operation: "import" };
 
 function canonicalScope(scope: BulkScope): BulkScope {
     return scope.kind === "file"
@@ -97,33 +78,7 @@ export function queueRowKey(
     return `${row.op}|${row.house ?? ""}|${canonicalPath(row.path)}|${targetKey(row.target)}`;
 }
 
-function withCompatibilityFields(row: QueueRow): QueueItem {
-    const common = {
-        ...row,
-        operation: row.op,
-        sourcePath: row.path,
-        destinationPath: row.path,
-        housingUuid: row.house,
-    };
-    if (row.target.kind === "importable") {
-        return {
-            ...common,
-            target: row.target,
-            kind: "importable",
-            identity: row.target.identity,
-            type: row.target.type,
-            label: row.target.label,
-        };
-    }
-    return {
-        ...common,
-        target: row.target,
-        kind: "importJson",
-        label: row.target.label,
-    };
-}
-
-function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueItem {
+function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueRow {
     const target: QueueTarget =
         input.target.kind === "bulk"
             ? { ...input.target, scope: canonicalScope(input.target.scope) }
@@ -136,11 +91,14 @@ function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueItem {
         target,
         origin: input.origin,
         status: input.status,
-        error: input.status === "failed" ? input.error : null,
+        error:
+            input.status === "failed" || input.status === "cancelled"
+                ? input.error
+                : null,
         parentKey: input.parentKey,
     };
     row.key = queueRowKey(row);
-    return withCompatibilityFields(row);
+    return row;
 }
 
 export function makeImportableQueueRow(args: {
@@ -152,7 +110,7 @@ export function makeImportableQueueRow(args: {
     label?: string;
     origin?: QueueOrigin;
     parentKey?: string | null;
-}): QueueItem {
+}): QueueRow {
     return normalizeQueueRow({
         op: args.op,
         house: args.house,
@@ -179,7 +137,7 @@ export function makeBulkQueueRow(args: {
     label: string;
     origin?: QueueOrigin;
     parentKey?: string | null;
-}): QueueItem {
+}): QueueRow {
     return normalizeQueueRow({
         op: args.op,
         house: args.house,
@@ -197,11 +155,10 @@ export function makeBulkQueueRow(args: {
     });
 }
 
-let items: QueueItem[] = [];
-const byKey = new Map<string, QueueItem>();
+let items: QueueRow[] = [];
+const byKey = new Map<string, QueueRow>();
 const autoTrackedKeys = new Set<string>();
 const restoredKeys = new Set<string>();
-let sessionKeys: Set<string> | null = null;
 
 function queueChanged(): void {
     markGuiDirty();
@@ -217,7 +174,7 @@ function sameWorkWithoutOp(left: QueueRow, right: QueueRow): boolean {
         targetKey(left.target) === targetKey(right.target)
     );
 }
-function findCoveringWrite(row: QueueRow): QueueItem | null {
+function findCoveringWrite(row: QueueRow): QueueRow | null {
     if (row.op !== "read") return null;
     for (let i = 0; i < items.length; i++) {
         const existing = items[i];
@@ -230,7 +187,7 @@ function findCoveringWrite(row: QueueRow): QueueItem | null {
     }
     return null;
 }
-function findOtherDirection(row: QueueRow): QueueItem | null {
+function findOtherDirection(row: QueueRow): QueueRow | null {
     if (row.op !== "import" && row.op !== "export") return null;
     const other = row.op === "import" ? "export" : "import";
     for (let i = 0; i < items.length; i++) {
@@ -276,10 +233,10 @@ export function addToQueue(input: QueueRowInput | QueueRow): QueueAddResult {
 }
 export const addQueueRow = addToQueue;
 
-export function getQueue(): readonly QueueItem[] {
+export function getQueue(): readonly QueueRow[] {
     return items;
 }
-export function getQueueRow(key: string): QueueItem | null {
+export function getQueueRow(key: string): QueueRow | null {
     return byKey.get(key) ?? null;
 }
 export function getQueueLength(): number {
@@ -307,11 +264,11 @@ export function setQueueRowStatus(
 ): boolean {
     const current = byKey.get(key);
     if (current === undefined) return false;
-    const next = withCompatibilityFields({
+    const next: QueueRow = {
         ...current,
         status,
         error: status === "failed" || status === "cancelled" ? error : null,
-    });
+    };
     items = items.map((row) => (row.key === key ? next : row));
     byKey.set(key, next);
     queueChanged();
@@ -334,7 +291,6 @@ function removeRows(keys: ReadonlySet<string>): boolean {
         byKey.delete(key);
         autoTrackedKeys.delete(key);
         restoredKeys.delete(key);
-        sessionKeys?.delete(key);
     }
     return true;
 }
@@ -388,7 +344,7 @@ export function expandBulkQueueRow(
     if (parent.target.kind !== "bulk") return [];
     const existingChildren = items.filter((row) => row.parentKey === parentKey);
     if (existingChildren.length > 0) return existingChildren;
-    const inserted: QueueItem[] = [];
+    const inserted: QueueRow[] = [];
     const seen = new Set<string>();
     for (let i = 0; i < children.length; i++) {
         const child = normalizeQueueRow({ ...children[i], parentKey });
@@ -400,11 +356,11 @@ export function expandBulkQueueRow(
         completeQueueRows([parentKey]);
         return [];
     }
-    const runningParent = withCompatibilityFields({
+    const runningParent: QueueRow = {
         ...parent,
         status: "running",
         error: null,
-    });
+    };
     items = items
         .slice(0, parentIndex)
         .concat([runningParent], inserted, items.slice(parentIndex + 1));
@@ -418,7 +374,7 @@ export function insertQueueRowsAfter(
 ): QueueRow[] {
     let insertAt = items.findIndex((row) => row.key === afterKey);
     if (insertAt < 0) insertAt = items.length - 1;
-    const inserted: QueueItem[] = [];
+    const inserted: QueueRow[] = [];
     for (let i = 0; i < rows.length; i++) {
         const result = addToQueue(rows[i]);
         if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection") {
@@ -443,7 +399,7 @@ export function insertQueueRowsBefore(
 ): QueueRow[] {
     let insertAt = items.findIndex((row) => row.key === beforeKey);
     if (insertAt < 0) insertAt = items.length;
-    const inserted: QueueItem[] = [];
+    const inserted: QueueRow[] = [];
     for (let i = 0; i < rows.length; i++) {
         const row = normalizeQueueRow(rows[i]);
         if (byKey.has(row.key)) continue;
@@ -466,19 +422,17 @@ export function isBulkQueueRowExpanded(key: string): boolean {
     return false;
 }
 export function clearQueue(): void {
-    if (items.length === 0 && sessionKeys === null) return;
+    if (items.length === 0) return;
     items = [];
     byKey.clear();
     autoTrackedKeys.clear();
     restoredKeys.clear();
-    sessionKeys = null;
     queueChanged();
 }
 
 export function isRestoredQueueRow(key: string): boolean {
     return restoredKeys.has(key);
 }
-export const isRestoredQueueItem = isRestoredQueueRow;
 export function markQueueRowRedetected(key: string): void {
     if (restoredKeys.delete(key)) queueChanged();
 }
@@ -529,8 +483,7 @@ export function reconcileAutoTrackedQueue(
             const row = byKey.get(key);
             if (
                 !desiredKeys.has(key) &&
-                row?.status !== "running" &&
-                !sessionKeys?.has(key)
+                row?.status !== "running"
             ) {
                 stale.add(key);
             }
@@ -553,44 +506,65 @@ export function reconcileAutoTrackedQueue(
     return added;
 }
 
-// Temporary session/display compatibility until the phase-2 UI migration.
-export function beginQueueSession(keys?: readonly string[]): void {
-    sessionKeys = new Set(keys ?? items.map((row) => row.key));
-    queueChanged();
-}
-export function endQueueSession(removeSessionItems: boolean): void {
-    if (sessionKeys === null) return;
-    const keys = sessionKeys;
-    sessionKeys = null;
-    if (removeSessionItems) removeRows(keys);
-    rebuildLookup();
-    queueChanged();
-}
-export function isQueueSessionItem(key: string): boolean {
-    return sessionKeys?.has(key) ?? false;
-}
-export function queueDisplayGroups(): {
-    active: QueueItem[];
-    pending: QueueItem[];
-    showDivider: boolean;
-} {
-    if (sessionKeys === null)
-        return { active: items.slice(), pending: [], showDivider: false };
-    const active: QueueItem[] = [];
-    const pending: QueueItem[] = [];
-    for (let i = 0; i < items.length; i++) {
-        (sessionKeys.has(items[i].key) ? active : pending).push(items[i]);
+export function groupQueueRowsByHouse(
+    rows: readonly QueueRow[],
+    currentHouse: string | null
+): QueueHouseGroup[] {
+    const current: QueueHouseGroup = { house: currentHouse, current: true, rows: [] };
+    const other: QueueHouseGroup[] = [];
+    const byHouse = new Map<string, QueueHouseGroup>();
+    for (const row of rows) {
+        if (row.house === null || row.house === currentHouse) {
+            current.rows.push(row);
+            continue;
+        }
+        let group = byHouse.get(row.house);
+        if (group === undefined) {
+            group = { house: row.house, current: false, rows: [] };
+            byHouse.set(row.house, group);
+            other.push(group);
+        }
+        group.rows.push(row);
     }
-    return { active, pending, showDivider: pending.length > 0 };
+    return (current.rows.length > 0 ? [current] : []).concat(other);
 }
+
+function bulkParentKeys(rows: readonly QueueRow[]): Set<string> {
+    const parents = new Set<string>();
+    for (const row of rows) {
+        if (row.parentKey !== null) parents.add(row.parentKey);
+    }
+    return parents;
+}
+
+export function queueWorkRowCount(rows: readonly QueueRow[]): number {
+    const expandedParents = bulkParentKeys(rows);
+    let count = 0;
+    for (const row of rows) {
+        if (row.target.kind === "bulk" && expandedParents.has(row.key)) continue;
+        count++;
+    }
+    return count;
+}
+
+export function runnableQueueRowCount(
+    rows: readonly QueueRow[],
+    currentHouse: string | null
+): number {
+    let count = 0;
+    for (const row of rows) {
+        if (
+            row.status === "queued" &&
+            (row.house === null || row.house === currentHouse)
+        ) {
+            count++;
+        }
+    }
+    return count;
+}
+
 export function queueItemKey(item: QueueRow): string {
     return item.key || queueRowKey(item);
-}
-export function queueItemProgressPath(item: QueueRow): string | null {
-    return item.path;
-}
-export function isImportQueueItem(item: QueueRow): item is ImportQueueItem {
-    return item.op === "import";
 }
 export function getQueuedItemKey(item: QueueRow): string | null {
     const key = queueRowKey(item);
@@ -598,15 +572,6 @@ export function getQueuedItemKey(item: QueueRow): string | null {
 }
 export function isQueueItemQueued(item: QueueRow): boolean {
     return getQueuedItemKey(item) !== null;
-}
-export function addSessionQueueItem(item: QueueRow): void {
-    const result = addToQueue({ ...item, origin: "dependency" });
-    const row =
-        result.kind === "absorbed" || result.kind === "duplicate"
-            ? result.existing
-            : result.row;
-    sessionKeys?.add(row.key);
-    queueChanged();
 }
 export function removeFromQueueKey(key: string): void {
     removeQueueRow(key);
@@ -627,18 +592,18 @@ export function toggleQueue(item: QueueRow): boolean {
 export function queueItemsForPath(
     filePath: string,
     importJsonPath?: string | null
-): QueueItem[] {
+): QueueRow[] {
     return findImportableQueueItems(canonicalPath(filePath), importJsonPath);
 }
 let queueItemsCacheRev = -1;
-const queueItemsCache = new Map<string, QueueItem[]>();
+const queueItemsCache = new Map<string, QueueRow[]>();
 export function queueItemsCacheSize(): number {
     return queueItemsCache.size;
 }
 function findImportableQueueItems(
     target: string,
     importJsonPath?: string | null
-): QueueItem[] {
+): QueueRow[] {
     const rev = getParseCacheRevision();
     if (rev !== queueItemsCacheRev) {
         queueItemsCache.clear();
@@ -648,18 +613,21 @@ function findImportableQueueItems(
     const cacheKey = `${scope}\n${target}`;
     const cached = queueItemsCache.get(cacheKey);
     if (cached !== undefined) return cached;
-    const out: QueueItem[] = [];
+    const out: QueueRow[] = [];
     const visit = (entry: CachedParse): void => {
         if (entry.parsed === null) return;
         for (const imp of entry.parsed.value) {
             if (!importableFilePaths(imp).some((path) => canonicalPath(path) === target))
                 continue;
             out.push(
-                makeImportableQueueItem(
-                    imp,
-                    entry.canonicalPath,
-                    entry.parsed.importJson.houseUuid
-                )
+                makeImportableQueueRow({
+                    op: "import",
+                    house: entry.parsed.importJson.houseUuid,
+                    path: entry.canonicalPath,
+                    type: imp.type,
+                    identity: importableIdentity(imp),
+                    label: importableLabel(imp),
+                })
             );
         }
     };
@@ -673,18 +641,4 @@ function findImportableQueueItems(
 }
 function importableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
-}
-export function makeImportableQueueItem(
-    imp: Importable,
-    declaringImportJson: string,
-    house: string | null = null
-): ImportQueueItem {
-    return makeImportableQueueRow({
-        op: "import",
-        house,
-        path: declaringImportJson,
-        type: imp.type,
-        identity: importableIdentity(imp),
-        label: importableLabel(imp),
-    }) as ImportQueueItem;
 }

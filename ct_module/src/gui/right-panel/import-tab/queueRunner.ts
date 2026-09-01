@@ -34,9 +34,7 @@ import { holdAutoRunUntilReparse } from "../../autoRun";
 import { showToast } from "../../toast";
 import { runImportQueueSession } from "./taskController";
 import {
-    beginQueueSession,
     completeQueueRows,
-    endQueueSession,
     expandBulkQueueRow,
     getQueue,
     isBulkQueueRowExpanded,
@@ -129,6 +127,9 @@ export function isQueueRunning(): boolean {
 }
 export function isQueuePaused(): boolean {
     return state === "paused";
+}
+export function isQueueCancellationPending(): boolean {
+    return state === "running" && pauseRequested;
 }
 
 function isRunnable(row: QueueRow, house: string, autoRun: boolean): boolean {
@@ -257,7 +258,6 @@ export async function drainQueue(
         }
 
         for (const row of session) setQueueRowStatus(row.key, "running");
-        beginQueueSession(session.map((row) => row.key));
         let result: QueueSessionResult;
         try {
             result =
@@ -279,8 +279,6 @@ export async function drainQueue(
                 return "idle";
             }
             continue;
-        } finally {
-            endQueueSession(false);
         }
 
         if (result.cancelled === true) {

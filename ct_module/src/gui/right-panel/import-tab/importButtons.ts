@@ -12,7 +12,8 @@ import {
     COLOR_TOGGLE_ON_HOVER,
 } from "../../lib/theme";
 import { TaskManager } from "../../../tasks/manager";
-import { getQueueLength } from "./queue";
+import { getQueue, runnableQueueRowCount } from "./queue";
+import { getHousingUuid } from "../../state";
 import { cancelQueue, queueRunState, resumeQueue, startQueue } from "./queueRunner";
 import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
 import { appendRawHtslFile } from "../../../rawHtslImport";
@@ -20,15 +21,16 @@ import { getAutoRun } from "../../../settings";
 import { setAutoRunEnabled } from "../../autoRun";
 
 export function queueControl(): Element {
+    const runnable = (): number => runnableQueueRowCount(getQueue(), getHousingUuid());
     const runDisabled = (): boolean =>
-        queueRunState() === "idle" && (TaskManager.isBusy() || getQueueLength() === 0);
+        queueRunState() === "idle" && (TaskManager.isBusy() || runnable() === 0);
     const runTooltip = (): string => {
         const state = queueRunState();
         if (state === "running") return "Pause after cancelling the current session.";
         if (state === "paused") return "Resume queued Housing work.";
         if (TaskManager.isBusy()) return "Another task is already running.";
-        if (getQueueLength() === 0) return "No Housing work is queued.";
-        return "Run queued Housing work.";
+        if (runnable() === 0) return "Nothing is queued for this house.";
+        return "Run queued Housing work for this house.";
     };
 
     return Row({
@@ -37,7 +39,7 @@ export function queueControl(): Element {
             Button({
                 icon: () => (queueRunState() === "running" ? Icons.square : Icons.play),
                 text: () => {
-                    const n = getQueueLength();
+                    const n = runnable();
                     const state = queueRunState();
                     if (state === "running") return "Cancel";
                     if (state === "paused") return `Resume (${n})`;
