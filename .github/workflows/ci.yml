@@ -77,7 +77,7 @@ jobs:
             language/package-lock.json
             editors/common/package-lock.json
             ct_module/package-lock.json
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
