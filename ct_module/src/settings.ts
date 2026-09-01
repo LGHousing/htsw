@@ -31,13 +31,21 @@ const SETTINGS = defineDoc({
         // `muteImportSounds` split into a mute toggle and a completion-chime
         // toggle. Only fold when the newer keys are absent, so a user who has
         // since set them explicitly keeps their choice.
-        if (!Object.prototype.hasOwnProperty.call(data, "muteImportSounds")) return;
-        const legacyMuted = data.muteImportSounds === true;
-        if (data.muteTaskSounds === undefined) data.muteTaskSounds = legacyMuted;
-        if (data.playImportCompletionSound === undefined) {
-            data.playImportCompletionSound = !legacyMuted;
+        if (Object.prototype.hasOwnProperty.call(data, "muteImportSounds")) {
+            const legacyMuted = data.muteImportSounds === true;
+            if (data.muteTaskSounds === undefined) data.muteTaskSounds = legacyMuted;
+            if (data.playImportCompletionSound === undefined) {
+                data.playImportCompletionSound = !legacyMuted;
+            }
+            delete data.muteImportSounds;
         }
-        delete data.muteImportSounds;
+
+        // Watch mode became queue-wide Auto-run. Preserve the old toggle once,
+        // but never let it override an explicit value written by a newer build.
+        if (data.autoRun === undefined && typeof data.watchMode === "boolean") {
+            data.autoRun = data.watchMode;
+        }
+        delete data.watchMode;
     },
 });
 
@@ -80,8 +88,8 @@ const unmatchedFunctionsFirst = defineValue(SETTINGS, {
     fallback: false,
     parse: asBoolean,
 });
-const watchMode = defineValue(SETTINGS, {
-    key: "watchMode",
+const autoRun = defineValue(SETTINGS, {
+    key: "autoRun",
     fallback: false,
     parse: asBoolean,
 });
@@ -143,11 +151,20 @@ export function setUnmatchedFunctionsFirst(value: boolean): void {
     unmatchedFunctionsFirst.set(value);
 }
 
+export function getAutoRun(): boolean {
+    return autoRun.get();
+}
+export function setAutoRun(value: boolean): void {
+    autoRun.set(value);
+}
+
+// Kept only while the queue-wide Auto-run consumers land in the next commit.
+// Remove these aliases once no source file imports the old names.
 export function getWatchMode(): boolean {
-    return watchMode.get();
+    return getAutoRun();
 }
 export function setWatchMode(value: boolean): void {
-    watchMode.set(value);
+    setAutoRun(value);
 }
 
 /** Whether the projects list, tabs and queue come back after a reload. */

@@ -98,3 +98,32 @@ describe("unmatched functions first setting", () => {
         expect(JSON.parse(written)).toMatchObject({ unmatchedFunctionsFirst: true });
     });
 });
+
+describe("auto-run setting migration", () => {
+    beforeEach(() => {
+        vi.resetModules();
+        vi.unstubAllGlobals();
+    });
+
+    test("inherits the legacy watch-mode toggle", async () => {
+        vi.stubGlobal("FileLib", {
+            exists: () => true,
+            read: () => JSON.stringify({ watchMode: true }),
+            write: () => undefined,
+        });
+        const { getAutoRun } = await import("../src/settings");
+
+        expect(getAutoRun()).toBe(true);
+    });
+
+    test("prefers an explicit auto-run value over the legacy key", async () => {
+        vi.stubGlobal("FileLib", {
+            exists: () => true,
+            read: () => JSON.stringify({ watchMode: true, autoRun: false }),
+            write: () => undefined,
+        });
+        const { getAutoRun } = await import("../src/settings");
+
+        expect(getAutoRun()).toBe(false);
+    });
+});
