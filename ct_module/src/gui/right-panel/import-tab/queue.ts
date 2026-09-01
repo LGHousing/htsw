@@ -2,441 +2,608 @@
 
 import type { Importable } from "htsw/types";
 
+import type { HouseReadableType } from "../../../importables/export/readers";
+import { importableIdentity } from "../../../importables/identity";
+import { markGuiDirty } from "../../lib/dirty";
+import { importableFilePaths } from "../../parsing/importablePaths";
 import {
     canonicalPath,
     forEachCachedParse,
     getParseCacheRevision,
     type CachedParse,
 } from "../../parsing/parses";
-import { importableFilePaths } from "../../parsing/importablePaths";
-import { importableIdentity } from "../../../importables/identity";
-import { markGuiDirty } from "../../lib/dirty";
 
-/**
- * Right-panel run queue. Import entries are real work selected by the user;
- * export/read entries are queue rows for work selected from the Houses tab.
- * The item shape keeps those meanings separate so callers can't reuse an
- * import `sourcePath` as an export destination by accident.
- */
-
-export type ImportQueueItem =
+export type QueueOp = "import" | "export" | "read";
+export type QueueStatus = "queued" | "running" | "failed" | "cancelled";
+export type QueueOrigin = "user" | "autotrack" | "dependency" | "expansion";
+export type BulkScope =
+    { kind: "houseType"; type: HouseReadableType } | { kind: "file"; path: string };
+export type BulkFilter = "all" | "modified" | "new" | "changed";
+export type QueueTarget =
     | {
-          operation: "import";
           kind: "importable";
-          /**
-           * Canonical absolute path of the top-level import.json the import
-           * session runs from (the parse-cache entry) — NOT the nested
-           * import.json that declares the importable. Where it lives in the
-           * include tree is derived from the parse at use time
-           * (`findImportableHome` in the include-tree helpers), so it stays correct
-           * if the importable is moved while queued.
-           */
-          sourcePath: string;
-          identity: string;
           type: Importable["type"];
-          /** Display label (importable name / event constant). */
+          identity: string;
           label: string;
       }
-    | {
-          operation: "import";
-          kind: "importJson";
-          /** Canonical absolute path of the import.json itself. */
-          sourcePath: string;
-          /** Display label (typically the import.json's basename). */
-          label: string;
-      };
+    | { kind: "bulk"; scope: BulkScope; filter: BulkFilter; label: string };
 
-export type ExportQueueItem = {
-    operation: "export" | "read";
+export type QueueRow = {
+    key: string;
+    op: QueueOp;
+    house: string | null;
+    path: string;
+    target: QueueTarget;
+    origin: QueueOrigin;
+    status: QueueStatus;
+    error: string | null;
+    parentKey: string | null;
+};
+export type QueueRowInput = Omit<QueueRow, "key"> & { key?: string };
+export type QueueAddResult =
+    | { kind: "added"; row: QueueRow; message: string }
+    | { kind: "duplicate"; row: QueueRow; existing: QueueRow; message: string }
+    | { kind: "absorbed"; row: QueueRow; existing: QueueRow; message: string }
+    | {
+          kind: "alsoQueuedOtherDirection";
+          row: QueueRow;
+          existing: QueueRow;
+          message: string;
+      };
+export type QueueRowBadge = { op: "import" | "export"; tooltip: string };
+
+/** Temporary aliases for phase-2 consumers. */
+type ImportableQueueItem = QueueRow & {
+    target: Extract<QueueTarget, { kind: "importable" }>;
+    operation: QueueOp;
     kind: "importable";
-    /** Destination import.json for export, or the active project path for reads. */
+    sourcePath: string;
     destinationPath: string;
-    /** House being read/exported from. Null when not known by the caller. */
     housingUuid: string | null;
     identity: string;
     type: Importable["type"];
     label: string;
 };
+type BulkQueueItem = QueueRow & {
+    target: Extract<QueueTarget, { kind: "bulk" }>;
+    operation: QueueOp;
+    kind: "importJson";
+    sourcePath: string;
+    destinationPath: string;
+    housingUuid: string | null;
+    label: string;
+};
+export type QueueItem = ImportableQueueItem | BulkQueueItem;
+export type ImportQueueItem = QueueItem & { op: "import"; operation: "import" };
+export type ExportQueueItem = ImportableQueueItem & {
+    op: "export" | "read";
+    operation: "export" | "read";
+};
 
-export type QueueItem = ImportQueueItem | ExportQueueItem;
+function canonicalScope(scope: BulkScope): BulkScope {
+    return scope.kind === "file"
+        ? { kind: "file", path: canonicalPath(scope.path) }
+        : scope;
+}
 
-/** Stable identity string for a queue item. Used for set membership / removal. */
-const queueItemKeys = new WeakMap<QueueItem, string>();
+function targetKey(target: QueueTarget): string {
+    if (target.kind === "importable") return `${target.type}:${target.identity}`;
+    const scope =
+        target.scope.kind === "houseType"
+            ? `houseType:${target.scope.type}`
+            : `file:${canonicalPath(target.scope.path)}`;
+    return `${scope}:${target.filter}`;
+}
 
-export function queueItemKey(item: QueueItem): string {
-    const cached = queueItemKeys.get(item);
-    if (cached !== undefined) return cached;
-    let key: string;
-    if (item.operation === "import" && item.kind === "importable") {
-        key = `imp:${item.sourcePath}|${item.type}:${item.identity}`;
-    } else if (item.kind === "importJson") {
-        key = `json:${item.sourcePath}`;
-    } else {
-        key = `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;
+export function queueRowKey(
+    row: Pick<QueueRow, "op" | "house" | "path" | "target">
+): string {
+    return `${row.op}|${row.house ?? ""}|${canonicalPath(row.path)}|${targetKey(row.target)}`;
+}
+
+function withCompatibilityFields(row: QueueRow): QueueItem {
+    const common = {
+        ...row,
+        operation: row.op,
+        sourcePath: row.path,
+        destinationPath: row.path,
+        housingUuid: row.house,
+    };
+    if (row.target.kind === "importable") {
+        return {
+            ...common,
+            target: row.target,
+            kind: "importable",
+            identity: row.target.identity,
+            type: row.target.type,
+            label: row.target.label,
+        };
     }
-    queueItemKeys.set(item, key);
-    return key;
+    return {
+        ...common,
+        target: row.target,
+        kind: "importJson",
+        label: row.target.label,
+    };
 }
 
-export function queueItemProgressPath(item: QueueItem): string | null {
-    if (item.operation === "import") return item.sourcePath;
-    return item.destinationPath;
+function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueItem {
+    const target: QueueTarget =
+        input.target.kind === "bulk"
+            ? { ...input.target, scope: canonicalScope(input.target.scope) }
+            : { ...input.target };
+    const row: QueueRow = {
+        key: "",
+        op: input.op,
+        house: input.house,
+        path: canonicalPath(input.path),
+        target,
+        origin: input.origin,
+        status: input.status,
+        error: input.status === "failed" ? input.error : null,
+        parentKey: input.parentKey,
+    };
+    row.key = queueRowKey(row);
+    return withCompatibilityFields(row);
 }
 
-export function isImportQueueItem(item: QueueItem): item is ImportQueueItem {
-    return item.operation === "import";
+export function makeImportableQueueRow(args: {
+    op: QueueOp;
+    house: string | null;
+    path: string;
+    type: Importable["type"];
+    identity: string;
+    label?: string;
+    origin?: QueueOrigin;
+    parentKey?: string | null;
+}): QueueItem {
+    return normalizeQueueRow({
+        op: args.op,
+        house: args.house,
+        path: args.path,
+        target: {
+            kind: "importable",
+            type: args.type,
+            identity: args.identity,
+            label: args.label ?? args.identity,
+        },
+        origin: args.origin ?? "user",
+        status: "queued",
+        error: null,
+        parentKey: args.parentKey ?? null,
+    });
+}
+
+export function makeBulkQueueRow(args: {
+    op: QueueOp;
+    house: string | null;
+    path: string;
+    scope: BulkScope;
+    filter: BulkFilter;
+    label: string;
+    origin?: QueueOrigin;
+    parentKey?: string | null;
+}): QueueItem {
+    return normalizeQueueRow({
+        op: args.op,
+        house: args.house,
+        path: args.path,
+        target: {
+            kind: "bulk",
+            scope: args.scope,
+            filter: args.filter,
+            label: args.label,
+        },
+        origin: args.origin ?? "user",
+        status: "queued",
+        error: null,
+        parentKey: args.parentKey ?? null,
+    });
 }
 
 let items: QueueItem[] = [];
-let itemsRevision = 0;
-let lookupRevision = -1;
-const byKey = new Map<string, number>();
-const byImportWork = new Map<string, number>();
+const byKey = new Map<string, QueueItem>();
 const autoTrackedKeys = new Set<string>();
-
-/**
- * Keys of the queue items that belong to the currently-running import
- * session (snapshotted when the import started). Null when no import is
- * running. Items added to the queue *after* an import starts are not in
- * this set — they're "pending" and survive the post-success clear, which
- * only removes session items. The display draws a divider between the two
- * groups, and session items can't be removed mid-run.
- */
-let sessionKeys: Set<string> | null = null;
-
-/**
- * Keys of rows brought back from a saved workspace that Auto-Track has not
- * independently re-detected yet.
- *
- * Watch mode fires whenever tracked work sits in the queue. Before the queue
- * persisted, an empty queue after a reload was what kept it from importing
- * unprompted; restoring rows removes that accident, so restored rows are
- * explicitly not watch-eligible. A row leaves this set the moment Auto-Track
- * reports it as genuinely changed, which is the same evidence watch mode
- * would have waited for anyway.
- */
 const restoredKeys = new Set<string>();
-
-export function isRestoredQueueItem(key: string): boolean {
-    return restoredKeys.has(key);
-}
-
-export function getQueue(): readonly QueueItem[] {
-    return items;
-}
+let sessionKeys: Set<string> | null = null;
 
 function queueChanged(): void {
     markGuiDirty();
 }
-
-export function beginQueueSession(): void {
-    sessionKeys = new Set<string>();
+function rebuildLookup(): void {
+    byKey.clear();
+    for (let i = 0; i < items.length; i++) byKey.set(items[i].key, items[i]);
+}
+function sameWorkWithoutOp(left: QueueRow, right: QueueRow): boolean {
+    return (
+        left.house === right.house &&
+        left.path === right.path &&
+        targetKey(left.target) === targetKey(right.target)
+    );
+}
+function findCoveringWrite(row: QueueRow): QueueItem | null {
+    if (row.op !== "read") return null;
     for (let i = 0; i < items.length; i++) {
-        sessionKeys.add(queueItemKey(items[i]));
+        const existing = items[i];
+        if (
+            (existing.op === "export" || existing.op === "import") &&
+            sameWorkWithoutOp(existing, row)
+        ) {
+            return existing;
+        }
     }
-    markGuiDirty();
+    return null;
 }
-
-/**
- * End the active queue session. When `removeSessionItems` is true (a fully
- * successful run) the session items are dropped from the queue, leaving
- * only pending adds. When false (cancel / failure) the items stay so the
- * user can retry; only the session marking is cleared.
- */
-export function endQueueSession(removeSessionItems: boolean): void {
-    const hadSession = sessionKeys !== null;
-    const beforeLen = items.length;
-    if (sessionKeys !== null && removeSessionItems) {
-        const keys = sessionKeys;
-        items = items.filter((i) => {
-            const key = queueItemKey(i);
-            if (!keys.has(key)) return true;
-            autoTrackedKeys.delete(key);
-            restoredKeys.delete(key);
-            return false;
-        });
-        itemsRevision++;
+function findOtherDirection(row: QueueRow): QueueItem | null {
+    if (row.op !== "import" && row.op !== "export") return null;
+    const other = row.op === "import" ? "export" : "import";
+    for (let i = 0; i < items.length; i++) {
+        const existing = items[i];
+        if (existing.op === other && sameWorkWithoutOp(existing, row)) return existing;
     }
-    sessionKeys = null;
-    if (hadSession || items.length !== beforeLen) queueChanged();
+    return null;
 }
 
-export function isQueueSessionItem(key: string): boolean {
-    return sessionKeys !== null && sessionKeys.has(key);
+export function addToQueue(input: QueueRowInput | QueueRow): QueueAddResult {
+    const row = normalizeQueueRow(input);
+    const duplicate = byKey.get(row.key);
+    if (duplicate !== undefined) {
+        return {
+            kind: "duplicate",
+            row,
+            existing: duplicate,
+            message: `${row.target.label} is already queued`,
+        };
+    }
+    const covering = findCoveringWrite(row);
+    if (covering !== null) {
+        return {
+            kind: "absorbed",
+            row,
+            existing: covering,
+            message: `${row.target.label} is already queued for ${covering.op}`,
+        };
+    }
+    const otherDirection = findOtherDirection(row);
+    items = items.concat([row]);
+    byKey.set(row.key, row);
+    queueChanged();
+    if (otherDirection !== null) {
+        return {
+            kind: "alsoQueuedOtherDirection",
+            row,
+            existing: otherDirection,
+            message: `${row.target.label} is also queued for ${otherDirection.op}`,
+        };
+    }
+    return { kind: "added", row, message: `${row.target.label} queued` };
 }
+export const addQueueRow = addToQueue;
 
+export function getQueue(): readonly QueueItem[] {
+    return items;
+}
+export function getQueueRow(key: string): QueueItem | null {
+    return byKey.get(key) ?? null;
+}
 export function getQueueLength(): number {
     return items.length;
 }
-
-function importWorkKey(item: QueueItem): string | null {
-    return item.operation === "import" && item.kind === "importable"
-        ? `${item.type}:${item.identity}`
-        : null;
+export function queueRowsAlsoQueuedOtherDirection(key: string): boolean {
+    const row = byKey.get(key);
+    return row !== undefined && findOtherDirection(row) !== null;
+}
+export function getQueueRowBadge(rowOrKey: QueueRow | string): QueueRowBadge | null {
+    const row = typeof rowOrKey === "string" ? (byKey.get(rowOrKey) ?? null) : rowOrKey;
+    if (row === null) return null;
+    const other = findOtherDirection(row);
+    if (other === null) return null;
+    return {
+        op: other.op as "import" | "export",
+        tooltip: `also queued for ${other.op}`,
+    };
 }
 
-function rebuildQueueLookups(): void {
-    byKey.clear();
-    byImportWork.clear();
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const key = queueItemKey(item);
-        if (!byKey.has(key)) byKey.set(key, i);
-        const workKey = importWorkKey(item);
-        if (workKey !== null && !byImportWork.has(workKey)) byImportWork.set(workKey, i);
-    }
-    lookupRevision = itemsRevision;
-}
-
-function queuedItemIndex(item: QueueItem): number {
-    if (lookupRevision !== itemsRevision) rebuildQueueLookups();
-    const keyIndex = byKey.get(queueItemKey(item));
-    const workKey = importWorkKey(item);
-    const workIndex = workKey === null ? undefined : byImportWork.get(workKey);
-    if (keyIndex === undefined) return workIndex === undefined ? -1 : workIndex;
-    return workIndex === undefined ? keyIndex : Math.min(keyIndex, workIndex);
-}
-
-export function getQueuedItemKey(item: QueueItem): string | null {
-    const index = queuedItemIndex(item);
-    return index < 0 ? null : queueItemKey(items[index]);
-}
-
-export function isQueueItemQueued(item: QueueItem): boolean {
-    return queuedItemIndex(item) >= 0;
-}
-
-export function addToQueue(item: QueueItem): boolean {
-    if (isQueueItemQueued(item)) return false;
-    items = items.concat([item]);
-    itemsRevision++;
+export function setQueueRowStatus(
+    key: string,
+    status: QueueStatus,
+    error: string | null = null
+): boolean {
+    const current = byKey.get(key);
+    if (current === undefined) return false;
+    const next = withCompatibilityFields({
+        ...current,
+        status,
+        error: status === "failed" ? error : null,
+    });
+    items = items.map((row) => (row.key === key ? next : row));
+    byKey.set(key, next);
     queueChanged();
     return true;
 }
-
-/**
- * Sync Auto-Track's part of the queue with its latest detected work. When
- * detection is incomplete, callers can keep stale rows until a later refresh
- * confirms whether they are still needed. Manually queued rows are never
- * claimed or removed, and active-session rows stay until the task releases them.
- */
-export function reconcileAutoTrackedQueue(
-    desiredItems: readonly ImportQueueItem[],
-    removeStale = true
-): ReadonlySet<string> {
-    const desiredKeys = new Set<string>();
-    for (const item of desiredItems) desiredKeys.add(queueItemKey(item));
-
-    const beforeLen = items.length;
-    if (removeStale) {
-        items = items.filter((item) => {
-            const key = queueItemKey(item);
-            if (!autoTrackedKeys.has(key) || desiredKeys.has(key)) return true;
-            if (sessionKeys !== null && sessionKeys.has(key)) return true;
-            autoTrackedKeys.delete(key);
-            return false;
-        });
+export function retryQueueRow(key: string): boolean {
+    const row = byKey.get(key);
+    if (row === undefined || (row.status !== "failed" && row.status !== "cancelled")) {
+        return false;
     }
-    if (items.length !== beforeLen) {
-        itemsRevision++;
-        queueChanged();
-    }
-
-    const addedKeys = new Set<string>();
-    for (const item of desiredItems) {
-        const key = queueItemKey(item);
-        // Auto-Track has independently confirmed this row is real work, which
-        // is exactly the evidence a restored row was waiting for. Hand it over
-        // to Auto-Track's ownership so watch mode may act on it.
-        if (restoredKeys.has(key)) {
-            restoredKeys.delete(key);
-            autoTrackedKeys.add(key);
-        }
-        if (!addToQueue(item)) continue;
-        autoTrackedKeys.add(key);
-        addedKeys.add(key);
-    }
-    return addedKeys;
+    return setQueueRowStatus(key, "queued");
 }
 
-// ── Workspace capture / restore ────────────────────────────────────────
-
-/**
- * The queue rows worth saving: everything the user put there by hand.
- * Auto-tracked rows are omitted because `reconcileAutoTrackedQueue`
- * regenerates them from disk state on the next pass — saving them would
- * reintroduce rows that are stale by definition.
- */
-export function captureQueueItems(): QueueItem[] {
-    const out: QueueItem[] = [];
+function removeRows(keys: ReadonlySet<string>): boolean {
+    if (keys.size === 0) return false;
+    const before = items.length;
+    items = items.filter((row) => !keys.has(row.key));
+    if (items.length === before) return false;
+    for (const key of keys) {
+        byKey.delete(key);
+        autoTrackedKeys.delete(key);
+        restoredKeys.delete(key);
+        sessionKeys?.delete(key);
+    }
+    return true;
+}
+function removeEmptyParents(): void {
+    for (;;) {
+        const parentsWithChildren = new Set<string>();
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].parentKey !== null)
+                parentsWithChildren.add(items[i].parentKey as string);
+        }
+        const emptyParents = new Set<string>();
+        for (let i = 0; i < items.length; i++) {
+            const row = items[i];
+            if (
+                row.target.kind === "bulk" &&
+                row.status === "running" &&
+                !parentsWithChildren.has(row.key)
+            ) {
+                emptyParents.add(row.key);
+            }
+        }
+        if (!removeRows(emptyParents)) return;
+    }
+}
+export function removeQueueRow(key: string): boolean {
+    const removed = removeRows(new Set([key]));
+    if (!removed) return false;
+    removeEmptyParents();
+    rebuildLookup();
+    queueChanged();
+    return true;
+}
+export function dismissQueueRow(key: string): boolean {
+    const row = byKey.get(key);
+    if (row === undefined || row.status === "running") return false;
+    return removeQueueRow(key);
+}
+export function completeQueueRows(keys: readonly string[]): void {
+    if (!removeRows(new Set(keys))) return;
+    removeEmptyParents();
+    rebuildLookup();
+    queueChanged();
+}
+export function expandBulkQueueRow(
+    parentKey: string,
+    children: readonly QueueRowInput[]
+): QueueRow[] {
+    const parentIndex = items.findIndex((row) => row.key === parentKey);
+    if (parentIndex < 0) return [];
+    const parent = items[parentIndex];
+    if (parent.target.kind !== "bulk") return [];
+    const existingChildren = items.filter((row) => row.parentKey === parentKey);
+    if (existingChildren.length > 0) return existingChildren;
+    const inserted: QueueItem[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < children.length; i++) {
+        const child = normalizeQueueRow({ ...children[i], parentKey });
+        if (byKey.has(child.key) || seen.has(child.key)) continue;
+        seen.add(child.key);
+        inserted.push(child);
+    }
+    if (inserted.length === 0) {
+        completeQueueRows([parentKey]);
+        return [];
+    }
+    const runningParent = withCompatibilityFields({
+        ...parent,
+        status: "running",
+        error: null,
+    });
+    items = items
+        .slice(0, parentIndex)
+        .concat([runningParent], inserted, items.slice(parentIndex + 1));
+    rebuildLookup();
+    queueChanged();
+    return inserted;
+}
+export function isBulkQueueRowExpanded(key: string): boolean {
+    const parent = byKey.get(key);
+    if (parent?.target.kind !== "bulk") return false;
     for (let i = 0; i < items.length; i++) {
-        if (autoTrackedKeys.has(queueItemKey(items[i]))) continue;
-        out.push(items[i]);
+        if (items[i].parentKey === key) return true;
+    }
+    return false;
+}
+export function clearQueue(): void {
+    if (items.length === 0 && sessionKeys === null) return;
+    items = [];
+    byKey.clear();
+    autoTrackedKeys.clear();
+    restoredKeys.clear();
+    sessionKeys = null;
+    queueChanged();
+}
+
+export function isRestoredQueueRow(key: string): boolean {
+    return restoredKeys.has(key);
+}
+export const isRestoredQueueItem = isRestoredQueueRow;
+export function markQueueRowRedetected(key: string): void {
+    if (restoredKeys.delete(key)) queueChanged();
+}
+export function captureQueueItems(): QueueRow[] {
+    const out: QueueRow[] = [];
+    for (let i = 0; i < items.length; i++) {
+        const row = items[i];
+        if (autoTrackedKeys.has(row.key)) continue;
+        out.push({
+            key: row.key,
+            op: row.op,
+            house: row.house,
+            path: row.path,
+            target: row.target,
+            origin: row.origin,
+            status: row.status,
+            error: row.error,
+            parentKey: row.parentKey,
+        });
     }
     return out;
 }
-
-/**
- * Restore saved rows. They join the queue as ordinary pending work — never as
- * session items, because the import session they may have belonged to died
- * with the reload.
- */
-export function restoreQueueItems(saved: readonly QueueItem[]): void {
+export function restoreQueueItems(saved: readonly QueueRowInput[]): void {
     for (let i = 0; i < saved.length; i++) {
-        if (!addToQueue(saved[i])) continue;
-        restoredKeys.add(queueItemKey(saved[i]));
+        const input = saved[i];
+        const restored = normalizeQueueRow({
+            ...input,
+            status: input.status === "running" ? "queued" : input.status,
+            error: input.status === "failed" ? input.error : null,
+        });
+        const result = addToQueue(restored);
+        if (result.kind === "added" || result.kind === "alsoQueuedOtherDirection") {
+            restoredKeys.add(result.row.key);
+        }
     }
 }
-
-/**
- * Add an item mid-run as part of the active session. The importer widens
- * its work set after the session snapshot (click-action item dependencies),
- * so a plain addToQueue would land the row in the "pending" group below the
- * divider — session-marking it keeps the visible queue matching what the
- * run is actually doing.
- */
-export function addSessionQueueItem(item: QueueItem): void {
-    addToQueue(item);
-    const key = getQueuedItemKey(item);
-    if (sessionKeys !== null && key !== null && !sessionKeys.has(key)) {
-        sessionKeys.add(key);
-        markGuiDirty();
+export function reconcileAutoTrackedQueue(
+    desiredItems: readonly QueueRow[],
+    removeStale = true
+): ReadonlySet<string> {
+    const desired = desiredItems.map((row) =>
+        normalizeQueueRow({ ...row, origin: "autotrack" })
+    );
+    const desiredKeys = new Set(desired.map((row) => row.key));
+    if (removeStale) {
+        const stale = new Set<string>();
+        for (const key of autoTrackedKeys) {
+            const row = byKey.get(key);
+            if (
+                !desiredKeys.has(key) &&
+                row?.status !== "running" &&
+                !sessionKeys?.has(key)
+            ) {
+                stale.add(key);
+            }
+        }
+        if (removeRows(stale)) {
+            rebuildLookup();
+            queueChanged();
+        }
     }
+    const added = new Set<string>();
+    for (let i = 0; i < desired.length; i++) {
+        const row = desired[i];
+        if (restoredKeys.delete(row.key)) autoTrackedKeys.add(row.key);
+        const result = addToQueue(row);
+        if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection")
+            continue;
+        autoTrackedKeys.add(result.row.key);
+        added.add(result.row.key);
+    }
+    return added;
 }
 
-export function removeFromQueueKey(key: string): void {
-    const beforeLen = items.length;
-    items = items.filter((i) => queueItemKey(i) !== key);
-    itemsRevision++;
-    if (items.length !== beforeLen) {
-        autoTrackedKeys.delete(key);
-        restoredKeys.delete(key);
-        queueChanged();
-    }
-}
-
-export function removeFromQueue(item: QueueItem): void {
-    const index = queuedItemIndex(item);
-    if (index < 0) return;
-    const key = queueItemKey(items[index]);
-    autoTrackedKeys.delete(key);
-    restoredKeys.delete(key);
-    items = items.slice(0, index).concat(items.slice(index + 1));
-    itemsRevision++;
+// Temporary session/display compatibility until the phase-2 UI migration.
+export function beginQueueSession(keys?: readonly string[]): void {
+    sessionKeys = new Set(keys ?? items.map((row) => row.key));
     queueChanged();
 }
-
-/** Toggle membership. Returns the *new* state (true = now in the queue). */
-export function toggleQueue(item: QueueItem): boolean {
-    if (isQueueItemQueued(item)) {
-        removeFromQueue(item);
-        return false;
-    }
-    return addToQueue(item);
-}
-
-export function clearQueue(): void {
-    if (items.length === 0 && sessionKeys === null) {
-        autoTrackedKeys.clear();
-        restoredKeys.clear();
-        return;
-    }
-    items = [];
-    itemsRevision++;
+export function endQueueSession(removeSessionItems: boolean): void {
+    if (sessionKeys === null) return;
+    const keys = sessionKeys;
     sessionKeys = null;
-    autoTrackedKeys.clear();
-    restoredKeys.clear();
+    if (removeSessionItems) removeRows(keys);
+    rebuildLookup();
     queueChanged();
 }
-
-/**
- * Split the queue into the active-session group and the pending group for
- * display, each sorted into execution order. When no import is running
- * every item is "active" and `showDivider` is false. During a run, items
- * added after the start fall into `pending`, and the divider shows only
- * when there's something pending to separate.
- */
+export function isQueueSessionItem(key: string): boolean {
+    return sessionKeys?.has(key) ?? false;
+}
 export function queueDisplayGroups(): {
     active: QueueItem[];
     pending: QueueItem[];
     showDivider: boolean;
 } {
-    if (sessionKeys === null) {
-        return { active: sortedQueueForDisplay(items), pending: [], showDivider: false };
-    }
-    const keys = sessionKeys;
+    if (sessionKeys === null)
+        return { active: items.slice(), pending: [], showDivider: false };
     const active: QueueItem[] = [];
     const pending: QueueItem[] = [];
-    for (const item of items) {
-        if (keys.has(queueItemKey(item))) active.push(item);
-        else pending.push(item);
+    for (let i = 0; i < items.length; i++) {
+        (sessionKeys.has(items[i].key) ? active : pending).push(items[i]);
     }
-    return {
-        active: sortedQueueForDisplay(active),
-        pending: sortedQueueForDisplay(pending),
-        showDivider: pending.length > 0,
-    };
+    return { active, pending, showDivider: pending.length > 0 };
 }
-
-/**
- * Returns the queue items sorted to match execution order: ITEMs first
- * (because action lists reference items by name and need them to exist
- * first), then the rest in queue insertion order. importJson group rows
- * are kept in insertion order alongside the non-ITEM importables. Use
- * this for display so the user sees the same order things will run in.
- */
-function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
-    const itemImportables: QueueItem[] = [];
-    const rest: QueueItem[] = [];
-    for (const item of queue) {
-        if (item.operation === "import" && item.kind === "importable" && item.type === "ITEM") {
-            itemImportables.push(item);
-        } else {
-            rest.push(item);
-        }
+export function queueItemKey(item: QueueRow): string {
+    return item.key || queueRowKey(item);
+}
+export function queueItemProgressPath(item: QueueRow): string | null {
+    return item.path;
+}
+export function isImportQueueItem(item: QueueRow): item is ImportQueueItem {
+    return item.op === "import";
+}
+export function getQueuedItemKey(item: QueueRow): string | null {
+    const key = queueRowKey(item);
+    return byKey.has(key) ? key : null;
+}
+export function isQueueItemQueued(item: QueueRow): boolean {
+    return getQueuedItemKey(item) !== null;
+}
+export function addSessionQueueItem(item: QueueRow): void {
+    const result = addToQueue({ ...item, origin: "dependency" });
+    const row =
+        result.kind === "absorbed" || result.kind === "duplicate"
+            ? result.existing
+            : result.row;
+    sessionKeys?.add(row.key);
+    queueChanged();
+}
+export function removeFromQueueKey(key: string): void {
+    removeQueueRow(key);
+}
+export function removeFromQueue(item: QueueRow): void {
+    removeQueueRow(queueRowKey(item));
+}
+export function toggleQueue(item: QueueRow): boolean {
+    const key = queueRowKey(item);
+    if (byKey.has(key)) {
+        removeQueueRow(key);
+        return false;
     }
-    return itemImportables.concat(rest);
+    const result = addToQueue(item);
+    return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
 }
 
-// ── Path-based helpers ─────────────────────────────────────────────────
-
-/**
- * Build queue items for importables whose source file matches `filePath`.
- * import.json files are deliberately not returned as a single bulk item; UI
- * rows that want "everything under this import.json" add those importables
- * individually so queue rows stay concrete.
- */
-export function queueItemsForPath(filePath: string, importJsonPath?: string | null): QueueItem[] {
-    const target = canonicalPath(filePath);
-    return findImportableQueueItems(target, importJsonPath);
+export function queueItemsForPath(
+    filePath: string,
+    importJsonPath?: string | null
+): QueueItem[] {
+    return findImportableQueueItems(canonicalPath(filePath), importJsonPath);
 }
-
-// Per-(target, parse-cache revision) memo. The scan touches every importable
-// in every cached parse; the tab strip calls it per file tab per frame (via
-// `queuedCountForTab`). Membership in the queue is applied by the caller, so
-// this result depends only on the parse cache and is safe to reuse until it
-// changes.
 let queueItemsCacheRev = -1;
 const queueItemsCache = new Map<string, QueueItem[]>();
-
 export function queueItemsCacheSize(): number {
     return queueItemsCache.size;
 }
-
-/**
- * Locate every importable across every cached parse whose source file
- * matches `target` (canonical). Returns one queue item per match.
- */
-function findImportableQueueItems(target: string, importJsonPath?: string | null): QueueItem[] {
+function findImportableQueueItems(
+    target: string,
+    importJsonPath?: string | null
+): QueueItem[] {
     const rev = getParseCacheRevision();
     if (rev !== queueItemsCacheRev) {
         queueItemsCache.clear();
         queueItemsCacheRev = rev;
     }
-    const scope =
-        importJsonPath === null || importJsonPath === undefined || importJsonPath === ""
-            ? ""
-            : canonicalPath(importJsonPath);
+    const scope = importJsonPath ? canonicalPath(importJsonPath) : "";
     const cacheKey = `${scope}\n${target}`;
     const cached = queueItemsCache.get(cacheKey);
     if (cached !== undefined) return cached;
@@ -444,62 +611,35 @@ function findImportableQueueItems(target: string, importJsonPath?: string | null
     const visit = (entry: CachedParse): void => {
         if (entry.parsed === null) return;
         for (const imp of entry.parsed.value) {
-            const paths = importableFilePaths(imp);
-            let matches = false;
-            for (let i = 0; i < paths.length; i++) {
-                if (canonicalPath(paths[i]) === target) {
-                    matches = true;
-                    break;
-                }
-            }
-            if (!matches) continue;
-            out.push({
-                operation: "import",
-                kind: "importable",
-                sourcePath: entry.canonicalPath,
-                identity: importableIdentity(imp),
-                type: imp.type,
-                label: importableLabel(imp),
-            });
+            if (!importableFilePaths(imp).some((path) => canonicalPath(path) === target))
+                continue;
+            out.push(makeImportableQueueItem(imp, entry.canonicalPath));
         }
     };
-    if (scope !== "") {
-        let found = false;
+    if (scope === "") forEachCachedParse(visit);
+    else
         forEachCachedParse((entry) => {
-            if (found || entry.canonicalPath !== scope) return;
-            found = true;
-            visit(entry);
+            if (entry.canonicalPath === scope) visit(entry);
         });
-    } else {
-        forEachCachedParse(visit);
-    }
     queueItemsCache.set(cacheKey, out);
     return out;
 }
-
 function importableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
-
-/**
- * Convenience: the item that corresponds to a specific `Importable`
- * object pulled from a known parse. Used by Projects row right-clicks
- * which already have the importable in hand and don't need to scan.
- */
 export function makeImportableQueueItem(
     imp: Importable,
     declaringImportJson: string
 ): ImportQueueItem {
-    return {
-        operation: "import",
-        kind: "importable",
-        sourcePath: canonicalPath(declaringImportJson),
-        identity: importableIdentity(imp),
+    return makeImportableQueueRow({
+        op: "import",
+        house: null,
+        path: declaringImportJson,
         type: imp.type,
+        identity: importableIdentity(imp),
         label: importableLabel(imp),
-    };
+    }) as ImportQueueItem;
 }
-
 export function makeExportQueueItem(
     operation: "export" | "read",
     type: Importable["type"],
@@ -508,13 +648,12 @@ export function makeExportQueueItem(
     housingUuid: string | null,
     label: string = identity
 ): ExportQueueItem {
-    return {
-        operation,
-        kind: "importable",
-        destinationPath: canonicalPath(destinationPath),
-        housingUuid,
-        identity,
+    return makeImportableQueueRow({
+        op: operation,
+        house: housingUuid,
+        path: destinationPath,
         type,
+        identity,
         label,
-    };
+    }) as ExportQueueItem;
 }
