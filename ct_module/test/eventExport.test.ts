@@ -1,17 +1,65 @@
 import { describe, expect, it } from "vitest";
+import type { ProjectFs } from "htsw-editor-common/project";
 
-import { shouldIncludeEventInExport } from "../src/importables/events/readHouseEvents";
+import { removeEmptyEventExport } from "../src/importables/events/readHouseEvents";
+
+function memoryFs(
+    files: Record<string, string>
+): ProjectFs & { store: Map<string, string> } {
+    const store = new Map(Object.entries(files));
+    const normalize = (path: string): string => path.replace(/\\/g, "/");
+    return {
+        store,
+        exists: (path) => store.has(normalize(path)),
+        readFile: (path) => {
+            const value = store.get(normalize(path));
+            if (value === undefined) throw new Error(`Missing file: ${path}`);
+            return value;
+        },
+        writeFile: (path, text) => store.set(normalize(path), text),
+        ensureDir: () => undefined,
+        parentDir: (path) => normalize(path).replace(/\/[^/]+$/, "") || "/",
+        resolvePath: (baseDir, ref) => normalize(`${baseDir}/${ref}`),
+        pathKey: normalize,
+        deleteFile: (path) => {
+            store.delete(normalize(path));
+        },
+    };
+}
+
+const IMPORT_JSON = "/project/import.json";
 
 describe("event exports", () => {
-    it("excludes events with no actions", () => {
-        expect(shouldIncludeEventInExport([])).toBe(false);
+    it("removes an earlier export when the live event becomes empty", () => {
+        const fs = memoryFs({
+            [IMPORT_JSON]: JSON.stringify({
+                events: [{ event: "Player Join", actions: "join.htsl" }],
+            }),
+            "/project/join.htsl": "sendMessage old",
+        });
+
+        removeEmptyEventExport(fs, IMPORT_JSON, "Player Join");
+
+        expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({});
+        expect(fs.exists("/project/join.htsl")).toBe(false);
     });
 
-    it("includes events with actions", () => {
-        expect(
-            shouldIncludeEventInExport([
-                { type: "MESSAGE", message: '"hello"' },
-            ])
-        ).toBe(true);
+    it("preserves an action file shared with another event", () => {
+        const fs = memoryFs({
+            [IMPORT_JSON]: JSON.stringify({
+                events: [
+                    { event: "Player Join", actions: "shared.htsl" },
+                    { event: "Player Quit", actions: "shared.htsl" },
+                ],
+            }),
+            "/project/shared.htsl": "sendMessage shared",
+        });
+
+        removeEmptyEventExport(fs, IMPORT_JSON, "Player Join");
+
+        expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({
+            events: [{ event: "Player Quit", actions: "shared.htsl" }],
+        });
+        expect(fs.exists("/project/shared.htsl")).toBe(true);
     });
 });
