@@ -679,7 +679,7 @@ export async function runImportQueueSession(
         housingUuid,
     });
     let cancelled = false;
-    let reviewRequest: ConflictReviewRequest | null = null;
+    const reviewState: { request: ConflictReviewRequest | null } = { request: null };
     try {
         await runImportSession(ctx, {
             importables: batch.importables,
@@ -693,7 +693,7 @@ export async function runImportQueueSession(
                 decide: async (conflicts) => {
                     const decision = await confirmImportConflicts(ctx, conflicts);
                     if (decision === "review") {
-                        reviewRequest = {
+                        reviewState.request = {
                             batch,
                             conflicts,
                             retainedKeys: [],
@@ -706,8 +706,8 @@ export async function runImportQueueSession(
                     return decision;
                 },
                 onReviewPrepared: (retainedKeys) => {
-                    if (reviewRequest !== null) {
-                        reviewRequest.retainedKeys = retainedKeys;
+                    if (reviewState.request !== null) {
+                        reviewState.request.retainedKeys = retainedKeys;
                     }
                 },
             },
@@ -773,11 +773,11 @@ export async function runImportQueueSession(
     }
     finishTaskProgress(failed[0]?.error ?? null);
     autoTrackRefresh();
-    if (reviewRequest !== null) {
+    if (reviewState.request !== null) {
         const sessionKeys = Array.from(
             new Set(Array.from(queueRowsByProgressKey.values()).map((row) => row.key))
         );
-        const completionHook = prepareConflictReview(reviewRequest, importRows);
+        const completionHook = prepareConflictReview(reviewState.request, importRows);
         return {
             completedKeys: [],
             failed: [],
