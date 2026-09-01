@@ -7,10 +7,7 @@ import {
     readProjectItemsForExport,
     type ProjectExportDestination,
 } from "./projectDestination";
-import {
-    HOUSE_EXPORT_TYPES,
-    type HouseExportTypeName,
-} from "./exportTypes";
+import { HOUSE_EXPORT_TYPES, type HouseExportTypeName } from "./exportTypes";
 import {
     functionExportReferencesExist,
     readFunctionNamesFromImportJson,
@@ -19,6 +16,7 @@ import {
 import { HOUSE_READERS } from "./readers";
 import type { ReadFn, ReadResult } from "./reader";
 import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
+import type { QueueRow } from "../../gui/right-panel/import-tab/queue";
 
 export type ExportBatchType = HouseExportTypeName | "NPC";
 export type NamedExportType = Exclude<HouseExportTypeName, "EVENT">;
@@ -48,6 +46,8 @@ export type ExportSessionBatch = {
     skipExisting?: boolean;
     newExportTargetImportJson?: string;
     onNamesListed?: (names: readonly string[]) => void;
+    queueRows?: readonly QueueRow[];
+    onQueueRowFinished?: (key: string, error?: string) => void;
 };
 
 export function notYetExportedFunctionNames(
@@ -114,7 +114,16 @@ export async function runExportSession(
                 entries: batch.npcEntries,
                 skipExisting: batch.skipExisting,
                 newExportTargetImportJson: batch.newExportTargetImportJson,
-                progress: createExportProgressSink("NPC", project.importJsonPath),
+                progress: createExportProgressSink(
+                    "NPC",
+                    project.importJsonPath,
+                    "export",
+                    undefined,
+                    {
+                        queueRows: batch.queueRows,
+                        onFinished: batch.onQueueRowFinished,
+                    }
+                ),
                 output: { kind: "project" },
                 onItemFailure,
             });
@@ -143,7 +152,12 @@ export async function runExportSession(
             progress: createExportProgressSink(
                 batch.type,
                 target.importJsonPath,
-                destination.kind === "cache" ? "read" : undefined
+                destination.kind === "cache" ? "read" : undefined,
+                undefined,
+                {
+                    queueRows: batch.queueRows,
+                    onFinished: batch.onQueueRowFinished,
+                }
             ),
             output:
                 destination.kind === "cache"
@@ -166,23 +180,19 @@ export async function exportBatch(
     destination: ProjectExportDestination,
     request: ExportBatchRequest
 ): Promise<ReadResult> {
-    return runExportSession(
-        ctx,
-        { kind: "project", project: destination },
-        [
-            request.type === "NPC"
-                ? {
-                      type: "NPC",
-                      npcEntries: request.entries,
-                      skipExisting: request.skipExisting,
-                  }
-                : {
-                      type: request.type,
-                      names: request.names,
-                      skipExisting: request.skipExisting,
-                  },
-        ]
-    );
+    return runExportSession(ctx, { kind: "project", project: destination }, [
+        request.type === "NPC"
+            ? {
+                  type: "NPC",
+                  npcEntries: request.entries,
+                  skipExisting: request.skipExisting,
+              }
+            : {
+                  type: request.type,
+                  names: request.names,
+                  skipExisting: request.skipExisting,
+              },
+    ]);
 }
 
 export async function exportExisting(

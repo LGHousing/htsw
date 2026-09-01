@@ -416,6 +416,31 @@ export function expandBulkQueueRow(
     queueChanged();
     return inserted;
 }
+export function insertQueueRowsAfter(
+    afterKey: string,
+    rows: readonly QueueRowInput[]
+): QueueRow[] {
+    let insertAt = items.findIndex((row) => row.key === afterKey);
+    if (insertAt < 0) insertAt = items.length - 1;
+    const inserted: QueueItem[] = [];
+    for (let i = 0; i < rows.length; i++) {
+        const result = addToQueue(rows[i]);
+        if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection") {
+            continue;
+        }
+        const added = byKey.get(result.row.key);
+        if (added === undefined) continue;
+        const appendedIndex = items.findIndex((row) => row.key === added.key);
+        if (appendedIndex >= 0) items.splice(appendedIndex, 1);
+        items.splice(++insertAt, 0, added);
+        inserted.push(added);
+    }
+    if (inserted.length > 0) {
+        rebuildLookup();
+        queueChanged();
+    }
+    return inserted;
+}
 export function isBulkQueueRowExpanded(key: string): boolean {
     const parent = byKey.get(key);
     if (parent?.target.kind !== "bulk") return false;

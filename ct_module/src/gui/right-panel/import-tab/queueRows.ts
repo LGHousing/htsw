@@ -24,10 +24,7 @@ import {
 } from "../../lib/theme";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 
-import {
-    getHousingUuid,
-    isCurrentHouseTrusted,
-} from "../../state";
+import { getHousingUuid, isCurrentHouseTrusted } from "../../state";
 import {
     getQueueItemRunState,
     isCurrentQueueItem,
@@ -38,15 +35,12 @@ import { buildCacheStatusRow } from "../../../importCache/status";
 import { getImportCacheWriteRevision } from "../../../importCache/cache";
 import {
     isQueueSessionItem,
+    makeImportableQueueRow,
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import {
-    canonicalPath,
-    getParseCacheRevision,
-    requestParse,
-} from "../../parsing/parses";
+import { canonicalPath, getParseCacheRevision, requestParse } from "../../parsing/parses";
 import { orderImportablesForSession } from "../../../importables/import/session";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
@@ -140,7 +134,9 @@ function declaringFolder(item: QueueItem): string | null {
     if (item.operation !== "import" || item.kind !== "importable") return null;
     const index = queueSourceIndex(item.sourcePath);
     if (index === null) return null;
-    return index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null;
+    return (
+        index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null
+    );
 }
 
 function declaringFolderElement(item: QueueItem): Element | false {
@@ -321,14 +317,18 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
         index.parsedImportables,
         index.parsedImportables
     );
-    index.importJsonChildren = ordered.map((imp) => ({
-        operation: "import",
-        kind: "importable",
-        sourcePath: item.sourcePath,
-        identity: importableIdentity(imp),
-        type: imp.type,
-        label: queueImportableLabel(imp),
-    }));
+    index.importJsonChildren = ordered.map((imp) =>
+        makeImportableQueueRow({
+            op: "import",
+            house: item.house,
+            path: item.path,
+            identity: importableIdentity(imp),
+            type: imp.type,
+            label: queueImportableLabel(imp),
+            origin: "expansion",
+            parentKey: item.key,
+        })
+    );
     return index.importJsonChildren;
 }
 
