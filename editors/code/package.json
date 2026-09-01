@@ -32,11 +32,11 @@
     },
     "devDependencies": {
         "@types/node": "^26.1.2",
-        "@types/vscode": "^1.97",
+        "@types/vscode": "^1.134",
         "@vscode/vsce": "^3.6",
         "knip": "^6.31.0",
         "typescript": "^7.0",
-        "vite": "^8.2.0"
+        "vite": "^8.2.2"
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
