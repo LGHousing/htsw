@@ -26,7 +26,7 @@ import {
     getSmoothScrolling,
     getUnmatchedFunctionsFirst,
     getUploadDiagnostics,
-    getWatchMode,
+    getAutoRun,
     setRestoreWorkspace,
     setShowChatPanel,
     setShowInventoryButtons,
@@ -35,7 +35,7 @@ import {
     setUploadDiagnostics,
 } from "../../../settings";
 import { commandUpdate } from "../../../autoUpdate";
-import { setWatchModeEnabled } from "../../watchMode";
+import { setAutoRunEnabled } from "../../autoRun";
 
 type ToggleRow = {
     icon: () => IconName;
@@ -130,9 +130,9 @@ export function SettingsView(): Element {
             }),
             toggleRow({
                 icon: () => Icons.eye,
-                label: "Watch mode (auto-import tracked files)",
-                isOn: () => getWatchMode(),
-                onToggle: () => setWatchModeEnabled(!getWatchMode()),
+                label: "Auto-run queued Housing work",
+                isOn: () => getAutoRun(),
+                onToggle: () => setAutoRunEnabled(!getAutoRun()),
             }),
             toggleRow({
                 icon: () => Icons.history,

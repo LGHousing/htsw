@@ -3,20 +3,13 @@
 import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import {
-    isAnyAutoTrackEnabled,
-    getHousingUuid,
-    isCurrentHouseTrusted,
-} from "./state";
+import { isAnyAutoTrackEnabled, getHousingUuid, isCurrentHouseTrusted } from "./state";
 import { getActiveAutoTrackSources } from "./autoTrackScope";
 import { canonicalPath, forEachCachedParse } from "./parsing/parses";
-import {
-    cachedStatusForImportable,
-    statusForImportableBlocking,
-} from "./cache-status";
+import { cachedStatusForImportable, statusForImportableBlocking } from "./cache-status";
 import {
     addToQueue,
-    makeImportableQueueItem,
+    makeImportableQueueRow,
     queueItemKey,
     reconcileAutoTrackedQueue,
     type ImportQueueItem,
@@ -25,7 +18,7 @@ import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
 import { importableIdentity } from "../importables/identity";
 import { showToast } from "./toast";
-import { watchModeRefresh } from "./watchMode";
+import { autoRunRefresh } from "./autoRun";
 
 type ModifiedQueueResult = {
     changed: number;
@@ -62,10 +55,7 @@ function importableStatus(
         : cachedStatusForImportable(imp);
 }
 
-export function needsModifiedQueue(
-    imp: Importable,
-    blockingCacheRead = false
-): boolean {
+export function needsModifiedQueue(imp: Importable, blockingCacheRead = false): boolean {
     // "unknown" means no cache entry exists — a never-imported importable.
     // New importables must queue too, or auto-track never picks up newly
     // created functions/menus. (A cache that merely isn't loaded yet
@@ -112,11 +102,20 @@ function planModifiedImportables(
     const items: PlannedQueueItem[] = [];
     for (const importable of work) {
         const identityKey = `${importable.type}:${importableIdentity(importable)}`;
+        const item = makeImportableQueueRow({
+            op: "import",
+            house: parsed.importJson.houseUuid,
+            path: canonicalSourcePath,
+            type: importable.type,
+            identity: importableIdentity(importable),
+            label: importable.type === "EVENT" ? importable.event : importable.name,
+            origin: "autotrack",
+        }) as ImportQueueItem;
         items.push({
-            item: makeImportableQueueItem(importable, canonicalSourcePath),
+            item,
             changed: modifiedKeys.has(identityKey),
             required: requiredKeys.has(identityKey),
-            workKey: `${canonicalSourcePath}|${identityKey}`,
+            workKey: item.key,
         });
     }
     return {
@@ -129,7 +128,10 @@ function planModifiedImportables(
 
 function enqueueModifiedPlan(
     plan: ModifiedQueuePlan,
-    add: (item: ImportQueueItem) => boolean = addToQueue
+    add: (item: ImportQueueItem) => boolean = (item) => {
+        const result = addToQueue(item);
+        return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
+    }
 ): ModifiedQueueResult {
     let newlyQueuedRequired = 0;
     let newlyQueuedChanged = 0;
@@ -162,9 +164,7 @@ export function queueModifiedImportables(
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
 
-export function autoTrackRefresh(
-    trigger: AutoTrackRefreshTrigger = "cacheWarm"
-): void {
+export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm"): void {
     if (!isAnyAutoTrackEnabled()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
@@ -199,10 +199,7 @@ export function autoTrackRefresh(
     for (const plan of plans) {
         for (const planned of plan.items) desiredItems.push(planned.item);
     }
-    const autoAddedKeys = reconcileAutoTrackedQueue(
-        desiredItems,
-        reconciliationComplete
-    );
+    const autoAddedKeys = reconcileAutoTrackedQueue(desiredItems, reconciliationComplete);
     for (const plan of plans) {
         for (const planned of plan.items) {
             if (!autoAddedKeys.has(queueItemKey(planned.item))) continue;
@@ -217,13 +214,7 @@ export function autoTrackRefresh(
             8000
         );
     }
-    watchModeRefresh(
-        trigger,
-        changed,
-        newlyQueuedChanged,
-        detectedWorkKeys,
-        tracked
-    );
+    autoRunRefresh(trigger, changed, newlyQueuedChanged, detectedWorkKeys, tracked);
 }
 
 onImportableCacheWarm(autoTrackRefresh);

@@ -75,17 +75,14 @@ import {
 } from "./lib/hoverCards";
 import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { detectHousingUuid } from "../importCache/housingId";
-import {
-    getHousingPresence,
-    resetHousingPresence,
-} from "../importCache/housingPresence";
+import { getHousingPresence, resetHousingPresence } from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
-import { isWatchImportRunning, setWatchDetectionLive } from "./watchMode";
+import { isAutoRunQueueRunning, setAutoRunDetectionLive } from "./autoRun";
 import { noteOverlayVisibility } from "../persistence/workspace";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
@@ -163,7 +160,8 @@ function inventoryToolbarBounds(): Rect {
 }
 
 function inventoryToolbarVisible(): boolean {
-    if (!enabled || !getShowInventoryButtons() || getHousingPresence() !== "in") return false;
+    if (!enabled || !getShowInventoryButtons() || getHousingPresence() !== "in")
+        return false;
     return (
         getOpenContainerBounds() !== null &&
         getContainerBounds() === null &&
@@ -272,7 +270,8 @@ function routeWheel(mx: number, my: number, delta: number, apply: boolean): bool
     const trees = laidOutTrees();
     for (let i = 0; i < trees.length; i++) {
         const t = trees[i];
-        const laid = t.laid ?? layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
+        const laid =
+            t.laid ?? layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
         for (let j = 0; j < laid.length; j++) {
             const el = laid[j].element;
             if (el.kind !== "scroll") continue;
@@ -415,7 +414,8 @@ function paintImportShade(rawX: number, rawY: number, frame: Panel): void {
 // import actually runs.
 let placeholderScreen: unknown = null;
 function getPlaceholderScreen(): unknown {
-    if (placeholderScreen === null) placeholderScreen = new JavaAdapter(GuiScreenClass, {});
+    if (placeholderScreen === null)
+        placeholderScreen = new JavaAdapter(GuiScreenClass, {});
     return placeholderScreen;
 }
 
@@ -500,14 +500,14 @@ export function initHtswGui(): void {
     register(
         RenderGameOverlayEventPost,
         (event: ForgeEvent & { type: HtswForgeElementType }) => {
-        if (!RenderGameOverlayElementType.ALL.equals(event.type)) return;
-        sampleProgressTraceTick();
-        const screen = getMinecraft().field_71462_r;
-        if (screen !== null) return;
-        paintImportShade(0, 0, frame);
-        sampleImportCodeViewTrace();
-        renderBadges();
-        renderToast();
+            if (!RenderGameOverlayElementType.ALL.equals(event.type)) return;
+            sampleProgressTraceTick();
+            const screen = getMinecraft().field_71462_r;
+            if (screen !== null) return;
+            paintImportShade(0, 0, frame);
+            sampleImportCodeViewTrace();
+            renderBadges();
+            renderToast();
         }
     );
     register("postGuiRender", (mouseX: number, mouseY: number) => {
@@ -539,25 +539,28 @@ export function initHtswGui(): void {
     register(
         "renderChat",
         (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
-        if (inImportGap()) cancel(event);
+            if (inImportGap()) cancel(event);
         }
     );
     register("renderScoreboard", (event: CancellableEvent) => {
         if (inImportGap()) cancel(event);
     });
-    register("renderTitle", (_title: string, _subtitle: string, event: CancellableEvent) => {
-        if (inImportGap()) cancel(event);
-    });
+    register(
+        "renderTitle",
+        (_title: string, _subtitle: string, event: CancellableEvent) => {
+            if (inImportGap()) cancel(event);
+        }
+    );
     register(
         "renderPlayerList",
         (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
-        if (inImportGap()) cancel(event);
+            if (inImportGap()) cancel(event);
         }
     );
     register(
         "renderBossHealth",
         (event: ForgeRenderGameOverlayEvent & CancellableEventHelper) => {
-        if (inImportGap()) cancel(event);
+            if (inImportGap()) cancel(event);
         }
     );
 
@@ -629,19 +632,22 @@ export function initHtswGui(): void {
     // are also suppressed during the import. Master volume itself is
     // untouched, so audio resumes the moment the import ends or the
     // toggle is turned off.
-    register("soundPlay", (
-        _position: Vector3f,
-        _name: string,
-        _vol: number,
-        _pitch: number,
-        _category: MCSoundCategory,
-        event: ForgePlaySoundEvent
-    ) => {
-        if (!enabled) return;
-        if (!isTaskRunning()) return;
-        if (!areTaskSoundsMuted()) return;
-        cancel(event);
-    });
+    register(
+        "soundPlay",
+        (
+            _position: Vector3f,
+            _name: string,
+            _vol: number,
+            _pitch: number,
+            _category: MCSoundCategory,
+            event: ForgePlaySoundEvent
+        ) => {
+            if (!enabled) return;
+            if (!isTaskRunning()) return;
+            if (!areTaskSoundsMuted()) return;
+            cancel(event);
+        }
+    );
 
     // Mouse wheel, three cooperating paths over the SAME routing decision
     // (`routeWheel`):
@@ -777,7 +783,8 @@ export function initHtswGui(): void {
             // read-only text selection when it owns one, but only while the
             // HTSW overlay is showing so we don't swallow Ctrl+C on other screens.
             if (frameVisible() && hasActiveSelection()) {
-                const ctrlDown = KeyboardClass.isKeyDown(29) || KeyboardClass.isKeyDown(157);
+                const ctrlDown =
+                    KeyboardClass.isKeyDown(29) || KeyboardClass.isKeyDown(157);
                 if (ctrlDown && keyCode === 46) {
                     copyActiveSelection();
                     cancel(event);
@@ -842,13 +849,13 @@ export function initHtswGui(): void {
     register("tick", () => {
         tickAllFields();
         applyFocus(getFocusedInput());
-        setWatchDetectionLive(frameVisible());
+        setAutoRunDetectionLive(frameVisible());
         noteOverlayVisibility(frameVisible());
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file; the parse itself runs off-thread. It stays
-        // paused during tasks — except watch imports, which need save
+        // paused during tasks — except Auto-run, which needs save
         // detection live so a mid-run save can cancel the stale run.
-        if (frameVisible() && (!isTaskRunning() || isWatchImportRunning())) {
+        if (frameVisible() && (!isTaskRunning() || isAutoRunQueueRunning())) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Projects tree, queue rows) so a cold parse never blocks render.
@@ -921,7 +928,6 @@ export function initHtswGui(): void {
         drawDeferredTooltip();
         endHtswOverlayDraw();
     }).setPriority(OnTrigger.Priority.LOWEST);
-
 }
 
 function findInput(id: string): Extract<Element, { kind: "input" }> | null {

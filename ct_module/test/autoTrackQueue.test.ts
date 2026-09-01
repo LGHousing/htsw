@@ -32,12 +32,18 @@ vi.mock("../src/gui/parsing/parses", () => ({
     forEachCachedParse: (
         visit: (entry: {
             canonicalPath: string;
-            parsed: { value: (typeof fixture.importable)[] };
+            parsed: {
+                value: (typeof fixture.importable)[];
+                importJson: { houseUuid: string };
+            };
         }) => void
     ) => {
         visit({
             canonicalPath: SOURCE_PATH,
-            parsed: { value: [fixture.importable] },
+            parsed: {
+                value: [fixture.importable],
+                importJson: { houseUuid: "house-uuid" },
+            },
         });
     },
     getParseCacheRevision: () => 0,
@@ -60,7 +66,7 @@ vi.mock("../src/importables/import/dependencyExpansion", () => ({
 }));
 
 vi.mock("../src/gui/toast", () => ({ showToast: () => {} }));
-vi.mock("../src/gui/watchMode", () => ({ watchModeRefresh: () => {} }));
+vi.mock("../src/gui/autoRun", () => ({ autoRunRefresh: () => {} }));
 
 import { autoTrackRefresh } from "../src/gui/autoTrack";
 import {

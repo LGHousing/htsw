@@ -33,8 +33,11 @@ import {
     setLagProbeEnabled,
 } from "../perf/lagProbe";
 import { commandTest } from "../inGameTests/command";
-import { startImport } from "../gui/right-panel/import-tab/taskController";
-import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
+import {
+    canonicalPath,
+    getParsePerfStats,
+    parseImportJsonCurrentBlocking,
+} from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
@@ -53,6 +56,8 @@ import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
 import { appendRawHtslFile } from "../rawHtslImport";
+import { addQueueRow, makeBulkQueueRow } from "../gui/right-panel/import-tab/queue";
+import { startQueue } from "../gui/right-panel/import-tab/queueRunner";
 import {
     getImportCodeViewTraceStatus,
     isImportCodeViewTraceEnabled,
@@ -458,9 +463,7 @@ function commandBridge(args: string[]): void {
         if (point === null) return;
         const delta = Number(args[3]);
         if (!isFinite(delta) || delta === 0) {
-            bridgeFailed(
-                "Usage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]"
-            );
+            bridgeFailed("Usage: /htsw bridge scroll <x> <y> <delta> [framebuffer|gui]");
             return;
         }
         if (!scrollHtswOverlay(point.x, point.y, delta / 120)) {
@@ -779,19 +782,24 @@ function commandImport(args: string[]) {
         return;
     }
 
-    // Route through the same path the GUI's Import button uses so a chat
-    // import gets the live-preview animation, trust mode, sounds, and
-    // progress UI. buildBatches parses the file on demand via the parse
-    // cache and gates on diagnostics, so no separate parse pass is needed.
     const canon = canonicalPath(importPath);
-    startImport([
-        {
-            operation: "import",
-            kind: "importJson",
-            sourcePath: canon,
-            label: compactFileLabel(canon),
-        },
-    ]);
+    const parsed = parseImportJsonCurrentBlocking(canon);
+    const result = addQueueRow(
+        makeBulkQueueRow({
+            op: "import",
+            house: parsed.parsed?.importJson.houseUuid ?? null,
+            path: canon,
+            scope: { kind: "file", path: canon },
+            filter: "all",
+            label: `Import ${compactFileLabel(canon)}`,
+        })
+    );
+    if (result.kind === "duplicate" || result.kind === "absorbed") {
+        ChatLib.chat(`&e[htsw] ${result.message}`);
+        return;
+    }
+    ChatLib.chat(`&a[htsw] Queued IMPORT_JSON ${compactFileLabel(canon)}`);
+    startQueue();
 }
 
 function isRawImportToken(token: string | undefined): boolean {

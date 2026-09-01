@@ -44,7 +44,7 @@ import {
     queueImportJsonChildRow,
     queueRow,
 } from "./import-tab/queueRows";
-import { importControl } from "./import-tab/importButtons";
+import { queueControl } from "./import-tab/importButtons";
 import {
     failedTaskFooterPanel,
     finishedTaskFooterPanel,
@@ -99,9 +99,7 @@ function queueSummary(): Element {
                 background: () =>
                     queueFollowRequested ? COLOR_ROW_SELECTED : COLOR_BUTTON,
                 hoverBackground: () =>
-                    queueFollowRequested
-                        ? COLOR_ROW_SELECTED_HOVER
-                        : COLOR_BUTTON_HOVER,
+                    queueFollowRequested ? COLOR_ROW_SELECTED_HOVER : COLOR_BUTTON_HOVER,
             },
             onClick: (_rect, info) => {
                 if (info.button !== 0) return;
@@ -321,10 +319,7 @@ function virtualQueueRows(): Child[] {
             );
             const last = Math.max(
                 first,
-                Math.min(
-                    children.length,
-                    Math.floor((maxY - blockTop) / stride) + 1
-                )
+                Math.min(children.length, Math.floor((maxY - blockTop) / stride) + 1)
             );
             for (let j = first; j < last; j++) {
                 const top = blockTop + j * stride;
@@ -405,7 +400,7 @@ export function viewFooter(): Element {
             } else if (isLiveTabActive() && getFinishedTaskSummary() !== null) {
                 children.push(finishedTaskFooterPanel());
             }
-            children.push(importControl());
+            children.push(queueControl());
             return children;
         },
     });

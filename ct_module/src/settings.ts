@@ -158,15 +158,6 @@ export function setAutoRun(value: boolean): void {
     autoRun.set(value);
 }
 
-// Kept only while the queue-wide Auto-run consumers land in the next commit.
-// Remove these aliases once no source file imports the old names.
-export function getWatchMode(): boolean {
-    return getAutoRun();
-}
-export function setWatchMode(value: boolean): void {
-    setAutoRun(value);
-}
-
 /** Whether the projects list, tabs and queue come back after a reload. */
 export function getRestoreWorkspace(): boolean {
     return restoreWorkspace.get();
