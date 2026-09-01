@@ -29,16 +29,16 @@ type PendingEventRead = {
 };
 
 function withDeletesInside(fs: ProjectFs, root: string): ProjectFs {
-    const deleteFile = fs.deleteFile;
-    if (deleteFile === undefined) return fs;
-    const rootKey = fs.pathKey(root);
+    if (fs.deleteFile === undefined) return fs;
+    const canonicalKey = (path: string): string => fs.pathKey(fs.realPath?.(path) ?? path);
+    const rootKey = canonicalKey(root);
     const rootPrefix = rootKey.endsWith("/") ? rootKey : `${rootKey}/`;
     return {
         ...fs,
         deleteFile: (path) => {
-            const pathKey = fs.pathKey(path);
+            const pathKey = canonicalKey(path);
             if (pathKey !== rootKey && !pathKey.startsWith(rootPrefix)) return;
-            deleteFile(path);
+            fs.deleteFile?.(path);
         },
     };
 }

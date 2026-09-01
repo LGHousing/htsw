@@ -71,6 +71,15 @@ export const ctProjectFs: ProjectFs = {
         return CASE_INSENSITIVE_PATHS ? normalized.toLowerCase() : normalized;
     },
 
+    realPath(path: string): string {
+        const Paths = javaType("java.nio.file.Paths");
+        try {
+            return String(Paths.get(normalizePath(path)).toRealPath().toString());
+        } catch {
+            return normalizePath(path);
+        }
+    },
+
     deleteFile(path: string): void {
         FileLib.delete(normalizePath(path));
     },

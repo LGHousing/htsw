@@ -4,7 +4,8 @@ import type { ProjectFs } from "htsw-editor-common/project";
 import { removeEmptyEventExport } from "../src/importables/events/readHouseEvents";
 
 function memoryFs(
-    files: Record<string, string>
+    files: Record<string, string>,
+    links: Record<string, string> = {}
 ): ProjectFs & { store: Map<string, string> } {
     const store = new Map(Object.entries(files));
     const normalize = (path: string): string => {
@@ -30,6 +31,19 @@ function memoryFs(
         parentDir: (path) => normalize(path).replace(/\/[^/]+$/, "") || "/",
         resolvePath: (baseDir, ref) => normalize(`${baseDir}/${ref}`),
         pathKey: normalize,
+        realPath: (path) => {
+            const normalized = normalize(path);
+            const entries = Object.entries(links);
+            for (let i = 0; i < entries.length; i++) {
+                const key = normalize(entries[i][0]);
+                const target = normalize(entries[i][1]);
+                if (normalized === key) return target;
+                if (normalized.startsWith(`${key}/`)) {
+                    return `${target}${normalized.substring(key.length)}`;
+                }
+            }
+            return normalized;
+        },
         deleteFile: (path) => {
             store.delete(normalize(path));
         },
@@ -100,5 +114,22 @@ describe("event exports", () => {
         expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({ include: [] });
         expect(fs.exists("/outside/import.json")).toBe(true);
         expect(fs.exists("/outside/join.htsl")).toBe(true);
+    });
+
+    it("preserves a file reached through a symlink out of the project", () => {
+        const fs = memoryFs(
+            {
+                [IMPORT_JSON]: JSON.stringify({
+                    events: [{ event: "Player Join", actions: "linked/leak.htsl" }],
+                }),
+                "/project/linked/leak.htsl": "sendMessage linked",
+            },
+            { "/project/linked": "/outside/linked" }
+        );
+
+        removeEmptyEventExport(fs, IMPORT_JSON, "Player Join");
+
+        expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({});
+        expect(fs.exists("/project/linked/leak.htsl")).toBe(true);
     });
 });
