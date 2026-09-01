@@ -658,7 +658,7 @@ function reExportImportableAction(
 ): MenuAction | null {
     if (imp.type === "ITEM") return null;
     return {
-        label: "Re-export from house",
+        label: "Queue export",
         icon: Icons.refreshCw,
         disabled: () => getHousingUuid() === null,
         onClick: () => {
@@ -790,7 +790,7 @@ function runProjectDeepRead(
 function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
     if (HOUSE_READERS[imp.type] === null) return null;
     return {
-        label: "Read from house",
+        label: "Queue read",
         icon: Icons.scanEye,
         disabled: () => getHousingUuid() === null,
         onClick: () => {
@@ -834,7 +834,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     const deepRead = readImportableAction(parent, imp);
     const actions: MenuAction[] = [
         {
-            label: isQueueItemQueued(item) ? "Remove from queue" : "Queue for import",
+            label: isQueueItemQueued(item) ? "Remove from queue" : "Queue import",
             icon: Icons.listPlus,
             onClick: () => {
                 if (toggleQueue(item)) autoRunQueueChanged();
@@ -1402,14 +1402,14 @@ export function resultRow(
                       queueModifiedSubtree(r, r.fullPath, filteredImportables)
                   ),
                   {
-                      label: `Re-export from house (${exportCount})`,
+                      label: `Queue export from house (${exportCount})`,
                       icon: Icons.refreshCw,
                       disabled: () => getHousingUuid() === null,
                       onClick: () =>
                           confirmProjectReExport(r, r.fullPath, filteredImportables),
                   },
                   {
-                      label: `Read from house (${deepReadableCount(filteredImportables)})`,
+                      label: `Queue read from house (${deepReadableCount(filteredImportables)})`,
                       icon: Icons.scanEye,
                       disabled: () => getHousingUuid() === null,
                       onClick: () =>
@@ -1560,14 +1560,14 @@ export function includeGroupRow(
                 queueModifiedSubtree(parent, fullPath, declaredImportables)
             ),
             {
-                label: `Re-export from house (${count})`,
+                label: `Queue export from house (${count})`,
                 icon: Icons.refreshCw,
                 disabled: () => getHousingUuid() === null,
                 onClick: () =>
                     confirmProjectReExport(parent, fullPath, declaredImportables),
             },
             {
-                label: `Read from house (${deepReadableCount(declaredImportables)})`,
+                label: `Queue read from house (${deepReadableCount(declaredImportables)})`,
                 icon: Icons.scanEye,
                 disabled: () => getHousingUuid() === null,
                 onClick: () => runProjectDeepRead(parent, fullPath, declaredImportables),
