@@ -1,5 +1,9 @@
 import type { Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
+import {
+    removeImportableEntryForDelete,
+    type ProjectFs,
+} from "htsw-editor-common/project";
 
 import { type ActionListScan, scanActionList } from "../../housingSync/actions/readList";
 import { completeActionListScan } from "../../housingSync/actions/hydration/run";
@@ -9,15 +13,13 @@ import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
+import { ctProjectFs } from "../../project/projectFs";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     eventExportReferencesExist,
     htslTargetForEventExport,
 } from "../../project/paths";
-import {
-    defineHouseExporter,
-    type ExportReadState,
-} from "../export/exporter";
+import { defineHouseExporter, type ExportReadState } from "../export/exporter";
 import type { ReadOptions } from "../export/reader";
 import { openEventEditor } from "./housing";
 import { listAllEventNames } from "./listEvents";
@@ -25,6 +27,18 @@ import { listAllEventNames } from "./listEvents";
 type PendingEventRead = {
     scan: ActionListScan;
 };
+
+export function removeEmptyEventExport(
+    fs: ProjectFs,
+    importJsonPath: string,
+    name: string
+): void {
+    const result = removeImportableEntryForDelete(fs, importJsonPath, "events", name);
+    if (!result.ok || fs.deleteFile === undefined) return;
+    for (let i = 0; i < result.ownedFiles.length; i++) {
+        fs.deleteFile(result.ownedFiles[i]);
+    }
+}
 
 async function scanEvent(
     ctx: TaskContext,
@@ -90,12 +104,18 @@ async function writeEventResult(
     importable: ImportableEvent,
     options: ReadOptions
 ): Promise<void> {
+    const actions = importable.actions;
+    if (actions.length === 0) {
+        removeEmptyEventExport(ctProjectFs, options.importJsonPath, name);
+        await tryWriteImportableCache(ctx, importable, "exporter");
+        return;
+    }
+
     const target = htslTargetForEventExport(
         options.importJsonPath,
         name,
         options.newExportTargetImportJson
     );
-    const actions = importable.actions;
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
         ctx.displayMessage(`&7[export] &e${diag.message}`);
@@ -108,7 +128,6 @@ async function writeEventResult(
         event: name,
         actions: target.htslReference,
     });
-
     await tryWriteImportableCache(ctx, importable, "exporter");
 
     if (options.progress === undefined && options.quiet !== true) {
