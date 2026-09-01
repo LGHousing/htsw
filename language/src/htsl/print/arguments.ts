@@ -35,9 +35,14 @@ export function printOption(option: string | undefined | null): string {
  *   - `3.14...`        — bare double
  *   - `"%foo%L"`       — quoted-and-cast placeholder for long/double promotion
  *
- * Each form re-parses to the same Value, so emitting verbatim is safe.
+ * Values read from Housing may contain GUI grouping commas. Canonicalize those
+ * numeric displays so the emitted source remains a bare numeric literal; all
+ * other self-describing forms are emitted verbatim.
  */
 export function printValue(value: Value): string {
+    if (/^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(value)) {
+        return value.replace(/,/g, "");
+    }
     return value;
 }
 
