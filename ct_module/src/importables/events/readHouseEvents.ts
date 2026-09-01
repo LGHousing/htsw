@@ -28,20 +28,31 @@ type PendingEventRead = {
     scan: ActionListScan;
 };
 
+function withDeletesInside(fs: ProjectFs, root: string): ProjectFs {
+    const deleteFile = fs.deleteFile;
+    if (deleteFile === undefined) return fs;
+    const rootKey = fs.pathKey(root);
+    const rootPrefix = rootKey.endsWith("/") ? rootKey : `${rootKey}/`;
+    return {
+        ...fs,
+        deleteFile: (path) => {
+            const pathKey = fs.pathKey(path);
+            if (pathKey !== rootKey && !pathKey.startsWith(rootPrefix)) return;
+            deleteFile(path);
+        },
+    };
+}
+
 export function removeEmptyEventExport(
     fs: ProjectFs,
     importJsonPath: string,
     name: string
 ): void {
-    const result = removeImportableEntryForDelete(fs, importJsonPath, "events", name);
-    if (!result.ok || fs.deleteFile === undefined) return;
-    const rootKey = fs.pathKey(fs.parentDir(importJsonPath));
-    const rootPrefix = rootKey.endsWith("/") ? rootKey : `${rootKey}/`;
+    const guarded = withDeletesInside(fs, fs.parentDir(importJsonPath));
+    const result = removeImportableEntryForDelete(guarded, importJsonPath, "events", name);
+    if (!result.ok || guarded.deleteFile === undefined) return;
     for (let i = 0; i < result.ownedFiles.length; i++) {
-        const file = result.ownedFiles[i];
-        const fileKey = fs.pathKey(file);
-        if (fileKey !== rootKey && !fileKey.startsWith(rootPrefix)) continue;
-        fs.deleteFile(file);
+        guarded.deleteFile(result.ownedFiles[i]);
     }
 }
 

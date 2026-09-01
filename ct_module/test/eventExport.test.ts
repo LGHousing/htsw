@@ -85,4 +85,20 @@ describe("event exports", () => {
         expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({});
         expect(fs.exists("/outside/leak.htsl")).toBe(true);
     });
+
+    it("preserves an included import file outside the project", () => {
+        const fs = memoryFs({
+            [IMPORT_JSON]: JSON.stringify({ include: ["../outside/import.json"] }),
+            "/outside/import.json": JSON.stringify({
+                events: [{ event: "Player Join", actions: "join.htsl" }],
+            }),
+            "/outside/join.htsl": "sendMessage outside",
+        });
+
+        removeEmptyEventExport(fs, IMPORT_JSON, "Player Join");
+
+        expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({ include: [] });
+        expect(fs.exists("/outside/import.json")).toBe(true);
+        expect(fs.exists("/outside/join.htsl")).toBe(true);
+    });
 });
