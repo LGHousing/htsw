@@ -7,6 +7,7 @@ import {
     addToQueue,
     clearQueue,
     getQueue,
+    insertQueueRowsBefore,
     makeBulkQueueRow,
     makeImportableQueueRow,
     retryQueueRow,
@@ -257,6 +258,53 @@ describe("operation queue drain", () => {
             status: "queued",
             error: null,
         });
+    });
+
+    it("continues into conflict-review reads and fires their one-shot hook", async () => {
+        const importing = row("conflicted");
+        enqueue(importing);
+        const calls: string[] = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                runImport: async () => {
+                    const reads = insertQueueRowsBefore(importing.key, [
+                        makeImportableQueueRow({
+                            op: "read",
+                            house: importing.house,
+                            path: importing.path,
+                            type: "FUNCTION",
+                            identity: "conflicted",
+                            origin: "dependency",
+                        }),
+                    ]);
+                    return {
+                        completedKeys: [],
+                        failed: [],
+                        cancelledKeys: [importing.key],
+                        completionHooks: [
+                            {
+                                keys: reads.map((read) => read.key),
+                                callback: () => calls.push("review-opened"),
+                            },
+                        ],
+                    };
+                },
+                runExport: async (_ctx, rows) => {
+                    calls.push(`read:${rows.map((r) => r.target.label).join(",")}`);
+                    return complete(rows);
+                },
+            })
+        );
+
+        expect(calls).toEqual(["read:conflicted", "review-opened"]);
+        expect(getQueue()).toHaveLength(1);
+        expect(getQueue()[0]).toMatchObject({
+            key: importing.key,
+            status: "cancelled",
+            error: "Cancelled for conflict review",
+        });
+        expect(retryQueueRow(importing.key)).toBe(true);
     });
 });
 

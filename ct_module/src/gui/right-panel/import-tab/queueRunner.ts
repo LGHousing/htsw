@@ -57,7 +57,31 @@ export type QueueSessionResult = {
     failed: QueueSessionFailure[];
     cancelled?: boolean;
     parseError?: boolean;
+    cancelledKeys?: string[];
+    completionHooks?: Array<{ keys: string[]; callback: () => void }>;
 };
+
+type CompletionHook = { remaining: Set<string>; callback: () => void };
+const completionHooks: CompletionHook[] = [];
+
+export function onQueueRowsCompleted(
+    keys: readonly string[],
+    callback: () => void
+): void {
+    const hook = { remaining: new Set(keys), callback };
+    if (hook.remaining.size === 0) callback();
+    else completionHooks.push(hook);
+}
+
+function fireQueueRowsCompleted(keys: ReadonlySet<string>): void {
+    for (let i = completionHooks.length - 1; i >= 0; i--) {
+        const hook = completionHooks[i];
+        for (const key of keys) hook.remaining.delete(key);
+        if (hook.remaining.size > 0) continue;
+        completionHooks.splice(i, 1);
+        hook.callback();
+    }
+}
 
 export type QueueRunnerDependencies = {
     currentHouse(ctx: TaskContext): Promise<string>;
@@ -177,11 +201,19 @@ function applySessionResult(
     const completed = new Set(result.completedKeys);
     const failed = new Map(result.failed.map((failure) => [failure.key, failure.error]));
     for (const [key, error] of failed) setQueueRowStatus(key, "failed", error);
+    const cancelled = new Set(result.cancelledKeys ?? []);
+    for (const key of cancelled) {
+        setQueueRowStatus(key, "cancelled", "Cancelled for conflict review");
+    }
     for (const row of rows) {
-        if (!failed.has(row.key) && !completed.has(row.key)) {
+        if (!failed.has(row.key) && !completed.has(row.key) && !cancelled.has(row.key)) {
             setQueueRowStatus(row.key, "queued");
         }
     }
+    for (const hook of result.completionHooks ?? []) {
+        onQueueRowsCompleted(hook.keys, hook.callback);
+    }
+    fireQueueRowsCompleted(completed);
     if (completed.size > 0) {
         scheduleDone(() => completeQueueRows(Array.from(completed)));
     }

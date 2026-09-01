@@ -11,6 +11,7 @@ import {
     startTaskProgress,
 } from "./taskProgress";
 import {
+    insertQueueRowsBefore,
     insertQueueRowsAfter,
     makeImportableQueueRow,
     setQueueRowStatus,
@@ -25,7 +26,8 @@ import {
     type ImportConflictDecision,
 } from "../../../importables/import/session";
 import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
-import { importableIdentity } from "../../../importables/identity";
+import { importableIdentity, importableKey } from "../../../importables/identity";
+import { HOUSE_READERS } from "../../../importables/export/readers";
 import { isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
@@ -69,6 +71,7 @@ import { openAnswerableConflictPrompt } from "../../popovers/conflictPrompt";
 import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
+import { previewSelect } from "../selection";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -407,6 +410,71 @@ function importablesByKey(parsed: ImportablesParseResult): Map<string, Importabl
     return byKey;
 }
 
+type ConflictReviewRequest = {
+    batch: ImportBatch;
+    conflicts: readonly ImportConflict[];
+    retainedKeys: readonly string[];
+};
+
+function conflictedImportables(request: ConflictReviewRequest): Importable[] {
+    const byKey = importablesByKey(request.batch.parsed);
+    const resolved: Importable[] = [];
+    const seen = new Set<string>();
+    for (const conflict of request.conflicts) {
+        const key = importableKey(conflict.type, conflict.identity);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const importable = byKey.get(key);
+        if (importable !== undefined) resolved.push(importable);
+    }
+    return resolved;
+}
+
+function prepareConflictReview(
+    request: ConflictReviewRequest,
+    importRows: readonly QueueRow[]
+): NonNullable<QueueSessionResult["completionHooks"]>[number] {
+    const importables = conflictedImportables(request);
+    const retained = new Set(request.retainedKeys);
+    const remaining = importables.filter(
+        (importable) =>
+            !retained.has(
+                importableKey(importable.type, importableIdentity(importable))
+            ) && HOUSE_READERS[importable.type] !== null
+    );
+    const firstSourcePath =
+        importables.length > 0 ? importableSourcePath(importables[0]) : undefined;
+    const openReview = (message: string): void => {
+        if (firstSourcePath !== undefined) {
+            previewSelect(firstSourcePath, request.batch.sourcePath);
+        }
+        ChatLib.chat(message);
+    };
+    const readRows = insertQueueRowsBefore(
+        importRows[0].key,
+        remaining.map((importable) =>
+            makeImportableQueueRow({
+                op: "read",
+                house: importRows[0].house,
+                path: request.batch.sourcePath,
+                type: importable.type,
+                identity: importableIdentity(importable),
+                label: importable.type === "EVENT" ? importable.event : importable.name,
+                origin: "dependency",
+            })
+        )
+    );
+    return {
+        keys: readRows.map((row) => row.key),
+        callback: () =>
+            openReview(
+                readRows.length === 0
+                    ? "&7[htsw] Kept the changed lists from this import — the View tab shows what changed in Housing."
+                    : "&7[htsw] Kept the available changes and read the remaining lists — the View tab shows what changed in Housing."
+            ),
+    };
+}
+
 /**
  * Group queued items by their declaring import.json so we can hand each
  * batch to a single `runImportSession` call (which assumes one
@@ -611,7 +679,7 @@ export async function runImportQueueSession(
         housingUuid,
     });
     let cancelled = false;
-    const review = { requested: false };
+    let reviewRequest: ConflictReviewRequest | null = null;
     try {
         await runImportSession(ctx, {
             importables: batch.importables,
@@ -624,12 +692,23 @@ export async function runImportQueueSession(
                 kind: "prompt",
                 decide: async (conflicts) => {
                     const decision = await confirmImportConflicts(ctx, conflicts);
-                    if (decision === "review") review.requested = true;
+                    if (decision === "review") {
+                        reviewRequest = {
+                            batch,
+                            conflicts,
+                            retainedKeys: [],
+                        };
+                    }
                     if (decision !== "proceed") {
                         cancelled = true;
                         ChatLib.chat("[htsw] Import cancelled by user · 0 imported");
                     }
                     return decision;
+                },
+                onReviewPrepared: (retainedKeys) => {
+                    if (reviewRequest !== null) {
+                        reviewRequest.retainedKeys = retainedKeys;
+                    }
                 },
             },
             onImportableAutoAdded: (importable) => {
@@ -694,13 +773,17 @@ export async function runImportQueueSession(
     }
     finishTaskProgress(failed[0]?.error ?? null);
     autoTrackRefresh();
-    if (review.requested) {
-        // A review requires another Housing read task. Leave the request visible
-        // in chat; starting it while the unified queue owns TaskManager would
-        // violate the one-consumer rule.
-        ChatLib.chat(
-            "&7[htsw] Conflict review is available after the operation queue stops."
+    if (reviewRequest !== null) {
+        const sessionKeys = Array.from(
+            new Set(Array.from(queueRowsByProgressKey.values()).map((row) => row.key))
         );
+        const completionHook = prepareConflictReview(reviewRequest, importRows);
+        return {
+            completedKeys: [],
+            failed: [],
+            cancelledKeys: sessionKeys,
+            completionHooks: [completionHook],
+        };
     }
     return { completedKeys, failed, cancelled };
 }

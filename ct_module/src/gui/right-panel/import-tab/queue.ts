@@ -310,7 +310,7 @@ export function setQueueRowStatus(
     const next = withCompatibilityFields({
         ...current,
         status,
-        error: status === "failed" ? error : null,
+        error: status === "failed" || status === "cancelled" ? error : null,
     });
     items = items.map((row) => (row.key === key ? next : row));
     byKey.set(key, next);
@@ -430,6 +430,26 @@ export function insertQueueRowsAfter(
         if (appendedIndex >= 0) items.splice(appendedIndex, 1);
         items.splice(++insertAt, 0, added);
         inserted.push(added);
+    }
+    if (inserted.length > 0) {
+        rebuildLookup();
+        queueChanged();
+    }
+    return inserted;
+}
+export function insertQueueRowsBefore(
+    beforeKey: string,
+    rows: readonly QueueRowInput[]
+): QueueRow[] {
+    let insertAt = items.findIndex((row) => row.key === beforeKey);
+    if (insertAt < 0) insertAt = items.length;
+    const inserted: QueueItem[] = [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = normalizeQueueRow(rows[i]);
+        if (byKey.has(row.key)) continue;
+        items.splice(insertAt++, 0, row);
+        byKey.set(row.key, row);
+        inserted.push(row);
     }
     if (inserted.length > 0) {
         rebuildLookup();
