@@ -28,6 +28,7 @@ import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import { gmcOnImportStart, waitForCreativeMode } from "../../../housingSync/sideEffects";
 import { parseImportJsonCurrent } from "../../parsing/parses";
 import { setHousingUuid } from "../../state";
+import { getNewExportTarget } from "../../state/newExportTarget";
 import { isHouseTrusted } from "../../state/trust";
 import { holdAutoRunUntilReparse } from "../../autoRun";
 import { showToast } from "../../toast";
@@ -307,6 +308,8 @@ export function matchesBulkCacheState(
     trusted: boolean
 ): boolean {
     if (filter === "modified") return state !== "current";
+    // An untrusted house cannot establish a reliable cache baseline, so its
+    // `modified` state is not enough to claim the live and local sides differ.
     if (filter === "changed") return trusted && state === "modified";
     return true;
 }
@@ -391,14 +394,11 @@ async function expandBulkDefault(
                 label: listed.labels?.get(identity) ?? identity,
             }));
         } else if (row.op === "import") {
-            selected = selectedImportables(values, row, house, live).map(
-                (importable) => ({
-                    type: importable.type,
-                    identity: importableIdentity(importable),
-                    label:
-                        importable.type === "EVENT" ? importable.event : importable.name,
-                })
-            );
+            selected = selectedImportables(values, row, house).map((importable) => ({
+                type: importable.type,
+                identity: importableIdentity(importable),
+                label: importable.type === "EVENT" ? importable.event : importable.name,
+            }));
         } else if (row.target.filter === "changed") {
             selected = selectedImportables(values, row, house, live).map(
                 (importable) => ({
@@ -464,7 +464,8 @@ export async function runQueuedExportSession(
     ctx: TaskContext,
     rows: readonly QueueRow[],
     currentHouse: string,
-    runSession: typeof runExportSession = runExportSession
+    runSession: typeof runExportSession = runExportSession,
+    newExportTarget: () => string | null = getNewExportTarget
 ): Promise<QueueSessionResult> {
     const first = rows[0];
     const batches = new Map<Importable["type"], QueueRow[]>();
@@ -496,6 +497,8 @@ export async function runQueuedExportSession(
                     : batchRows.map((row) =>
                           row.target.kind === "importable" ? row.target.identity : ""
                       ),
+            newExportTargetImportJson:
+                first.op === "export" ? (newExportTarget() ?? undefined) : undefined,
             queueRows: batchRows,
             onQueueRowFinished: (key: string, error?: string) => {
                 if (error === undefined) completedKeys.push(key);

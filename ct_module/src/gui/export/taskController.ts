@@ -2,7 +2,8 @@
 
 import type { Importable } from "htsw/types";
 
-import { getHousingUuid, getNewExportTarget } from "../state";
+import { getHousingUuid } from "../state";
+import { getAutoRun } from "../../settings";
 import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
 import { showToast } from "../toast";
@@ -47,7 +48,7 @@ export function startExport(
         ChatLib.chat("&7Choose another project from Houses → Export project.");
         return;
     }
-    const importJsonPath = getNewExportTarget() ?? destination.path;
+    const importJsonPath = destination.path;
     if (names !== undefined && names.length === 0) {
         showToast("Nothing selected to export", 0xffe5bc4b);
         return;
@@ -82,7 +83,10 @@ export function startExport(
                         path: importJsonPath,
                         type: spec.type,
                         identity,
-                        label: labels?.get(identity) ?? identity,
+                        label:
+                            spec.type === "ITEM"
+                                ? "Held item (at run time)"
+                                : (labels?.get(identity) ?? identity),
                     })
                 )
             );
@@ -98,7 +102,9 @@ export function startExport(
         return;
     }
     showToast(
-        `Queued ${added} export${added === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+        spec.type === "ITEM" && !getAutoRun()
+            ? `Queued Held item (at run time) → ${shortPath(importJsonPath)}`
+            : `Queued ${added} export${added === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
         0xff5c9ded,
         6000
     );

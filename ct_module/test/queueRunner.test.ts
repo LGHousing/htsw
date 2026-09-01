@@ -312,6 +312,28 @@ describe("queued held-item export", () => {
     });
 });
 
+describe("queued export destination", () => {
+    it("reads the new-export target when the session starts", async () => {
+        const queued = row("exported", "export", "/project/import.json");
+        let target: string | undefined;
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            target = batches[0].newExportTargetImportJson;
+            return { total: 1, succeeded: 1, failed: 0 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(
+            ctx,
+            [queued],
+            "house-a",
+            fakeSession,
+            () => "/project/functions/new.import.json"
+        );
+
+        expect(queued.path).toBe("/project/import.json");
+        expect(target).toBe("/project/functions/new.import.json");
+    });
+});
+
 describe("queued export progress", () => {
     it("uses the stable QueueRow key through reducer and completion", () => {
         const queued = row("exported", "export", "/exports/import.json");

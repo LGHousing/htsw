@@ -80,9 +80,9 @@ export function commandExport(args: string[]): void {
                 path: target.path,
                 type: "ITEM",
                 identity: "held item",
-                label: "Held item",
+                label: "Held item (at run time)",
             }),
-            "held-item export"
+            "Held item (at run time) export"
         );
         return;
     }

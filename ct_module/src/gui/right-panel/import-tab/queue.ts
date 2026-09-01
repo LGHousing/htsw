@@ -634,7 +634,13 @@ function findImportableQueueItems(
         for (const imp of entry.parsed.value) {
             if (!importableFilePaths(imp).some((path) => canonicalPath(path) === target))
                 continue;
-            out.push(makeImportableQueueItem(imp, entry.canonicalPath));
+            out.push(
+                makeImportableQueueItem(
+                    imp,
+                    entry.canonicalPath,
+                    entry.parsed.importJson.houseUuid
+                )
+            );
         }
     };
     if (scope === "") forEachCachedParse(visit);
@@ -650,11 +656,12 @@ function importableLabel(imp: Importable): string {
 }
 export function makeImportableQueueItem(
     imp: Importable,
-    declaringImportJson: string
+    declaringImportJson: string,
+    house: string | null = null
 ): ImportQueueItem {
     return makeImportableQueueRow({
         op: "import",
-        house: null,
+        house,
         path: declaringImportJson,
         type: imp.type,
         identity: importableIdentity(imp),
