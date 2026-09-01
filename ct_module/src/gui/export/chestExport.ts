@@ -4,7 +4,6 @@ import {
     exportCapturedChest,
     type CapturedChest,
 } from "../../importables/menus/exportChest";
-import { runHousingSyncTask } from "../../housingSync/taskRunner";
 import { parentDirOf } from "../../project/paths";
 import { TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
@@ -32,8 +31,10 @@ function runChestExport(
 ): void {
     const rootDir = parentDirOf(importJsonPath);
     const newExportTargetImportJson = getNewExportTarget() ?? undefined;
-    runHousingSyncTask("export", (ctx) =>
-        exportCapturedChest(ctx, captured, {
+    void exportCapturedChest(
+        { displayMessage: (message) => ChatLib.chat(message) },
+        captured,
+        {
             ...projectExportDestinationFromParsedImportJson(
                 { rootDir, importJsonPath },
                 getParseAt(importJsonPath)?.parsed
@@ -41,10 +42,9 @@ function runChestExport(
             name,
             newExportTargetImportJson,
             showProgressMessages: false,
-        })
+        }
     )
         .then((result) => {
-            if (result === undefined) return;
             markParseStale(importJsonPath);
             showToast(
                 `Exported chest '${name}' (${result.populatedSlots} slots, ${result.newItemsWritten} new items) → ${shortPath(importJsonPath)}`,

@@ -5,7 +5,6 @@ import type { Importable } from "htsw/types";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { getParseAt } from "../../../parsing/parses";
-import type { ReadFn } from "../../../../importables/export/reader";
 import { startDeepRead } from "../../../knowledge/deepRead";
 
 // Builds a `deepRead(onlyNames?)` for one content type: the export driver in
@@ -14,7 +13,6 @@ import { startDeepRead } from "../../../knowledge/deepRead";
 export function makeDeepRead(
     type: Importable["type"],
     label: string,
-    read: ReadFn,
     isScanning: () => boolean
 ): (onlyNames?: string[]) => void {
     return (onlyNames?: string[]): void => {
@@ -26,7 +24,7 @@ export function makeDeepRead(
             showToast("No import.json loaded — pick a destination first", 0xffe85c5c);
             return;
         }
-        startDeepRead([{ type, label, read, names: onlyNames }], {
+        startDeepRead([{ type, label, names: onlyNames }], {
             housingUuid: uuid,
             importJsonPath,
             parsed: getParseAt(importJsonPath)?.parsed,

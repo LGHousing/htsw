@@ -4,20 +4,18 @@ import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { showToast } from "../toast";
-import { runHousingSyncTask } from "../../housingSync/taskRunner";
-import { recordHouseScan } from "../../importCache/cache";
-import { projectItemsFromParsedImportJson } from "../../importables/export/projectDestination";
-import type { ReadFn } from "../../importables/export/reader";
-import { runExportSession } from "../../importables/export/session";
-import { isTaskCancelled, TaskManager } from "../../tasks/manager";
-import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
-
-let readInFlight = false;
+import type { HouseReadableType } from "../../importables/export/readers";
+import {
+    addQueueRow,
+    makeBulkQueueRow,
+    makeImportableQueueRow,
+    type QueueAddResult,
+} from "../right-panel/import-tab/queue";
+import { autoRunQueueChanged } from "../autoRun";
 
 export type DeepReadSpec = {
     type: Importable["type"];
     label: string;
-    read: ReadFn;
     names?: readonly string[];
 };
 
@@ -31,64 +29,61 @@ export function startDeepRead(
         onSuccess?: () => void;
     }
 ): void {
-    if (specs.length === 0 || readInFlight || TaskManager.isBusy()) return;
+    if (specs.length === 0) return;
 
     const summaryLabel =
         options.summaryLabel ?? (specs.length === 1 ? specs[0].label : "importable");
-    readInFlight = true;
-    runHousingSyncTask("export", async (ctx) => {
-        try {
-            return await runExportSession(
-                ctx,
-                {
-                    kind: "cache",
-                    housingUuid: options.housingUuid,
-                    importJsonPath: options.importJsonPath,
-                    projectItems: projectItemsFromParsedImportJson(options.parsed),
-                },
-                specs.map((spec) => ({
-                    type: spec.type,
-                    reader: spec.read,
-                    names: spec.names,
-                    onNamesListed: (names: readonly string[]) =>
-                        recordHouseScan(options.housingUuid, spec.type, names.slice()),
-                }))
+    const results: QueueAddResult[] = [];
+    for (const spec of specs) {
+        if (spec.names === undefined) {
+            results.push(
+                addQueueRow(
+                    makeBulkQueueRow({
+                        op: "read",
+                        house: options.housingUuid,
+                        path: options.importJsonPath,
+                        scope: {
+                            kind: "houseType",
+                            type: spec.type as HouseReadableType,
+                        },
+                        filter: "all",
+                        label: `Read all ${spec.label}s`,
+                    })
+                )
             );
-        } finally {
-            readInFlight = false;
+            continue;
         }
-    })
-        .then((result) => {
-            if (result === undefined) return;
-            if (result.failed > 0) {
-                showToast(
-                    `Read ${result.succeeded} of ${result.total} ${summaryLabel}${result.total === 1 ? "" : "s"} (${result.failed} failed)`,
-                    0xffe85c5c,
-                    8000
-                );
-                return;
-            }
-            showToast(
-                `Read ${result.succeeded} ${summaryLabel}${result.succeeded === 1 ? "" : "s"}`,
-                0xff5cb85c
+        for (const identity of spec.names) {
+            results.push(
+                addQueueRow(
+                    makeImportableQueueRow({
+                        op: "read",
+                        house: options.housingUuid,
+                        path: options.importJsonPath,
+                        type: spec.type,
+                        identity,
+                        label: identity,
+                    })
+                )
             );
-            options.onSuccess?.();
-        })
-        .catch((err: unknown) => {
-            if (!isTaskCancelled(err)) {
-                writeTaskFailureLog(
-                    {
-                        phase: "deep-read",
-                        sourcePath: options.importJsonPath,
-                        housingUuid: options.housingUuid,
-                        ...(specs.length === 1
-                            ? { importableType: specs[0].type }
-                            : {}),
-                    },
-                    err
-                );
-            }
-            showToast(`${summaryLabel} read failed: ${String(err)}`, 0xffe85c5c, 8000);
-            ChatLib.chat(`&c[htsw] ${summaryLabel} read failed: ${String(err)}`);
-        });
+        }
+    }
+
+    let added = 0;
+    for (const result of results) {
+        if (result.kind === "added" || result.kind === "alsoQueuedOtherDirection") {
+            added++;
+        }
+    }
+    if (added === 0) {
+        showToast(results[0]?.message ?? "That read is already queued", 0xffe5bc4b);
+        return;
+    }
+    showToast(
+        `Queued ${added} ${summaryLabel} read${added === 1 ? "" : "s"}`,
+        0xff5c9ded,
+        6000
+    );
+    options.onSuccess?.();
+    autoRunQueueChanged();
 }

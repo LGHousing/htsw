@@ -33,7 +33,6 @@ import {
     isCommandScanInFlight,
     scanHouseCommands,
 } from "./sources/commandsSource";
-import { houseExportTypeOf } from "../../../importables/export/exportTypes";
 import {
     getHouseTeams,
     houseTeamsScanned,
@@ -52,7 +51,6 @@ import {
     isNpcScanInFlight,
     scanHouseNpcs,
 } from "./sources/npcsSource";
-import { readNpcs } from "../../../importables/npcs/readHouseNpcs";
 import { type HouseReadableType } from "../../../importables/export/readers";
 import { startExport, type ExportSpec } from "../../export/taskController";
 import { makeDeepRead } from "./sources/deepRead";
@@ -64,19 +62,6 @@ import { openEventEditor } from "../../../importables/events/housing";
 import { openManageTeam } from "../../../importables/teams/listTeams";
 import { openEditGroup } from "../../../importables/groups/listGroups";
 import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";
-import { exportHeldItem } from "../../../importables/items/export";
-
-// House readers come from the shared export registry, so this browser and the
-// /export slash command can never disagree on which types export or how. A GUI
-// export row for a type missing from the registry throws on load rather than
-// silently drifting out of the slash command.
-const readFunctions = houseExportTypeOf("FUNCTION").read;
-const readEvents = houseExportTypeOf("EVENT").read;
-const readMenus = houseExportTypeOf("MENU").read;
-const readRegions = houseExportTypeOf("REGION").read;
-const readCommands = houseExportTypeOf("COMMAND").read;
-const readTeams = houseExportTypeOf("TEAM").read;
-const readGroups = houseExportTypeOf("GROUP").read;
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.
@@ -148,12 +133,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseFunctionsScanned,
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
-        deepRead: makeDeepRead(
-            "FUNCTION",
-            "function",
-            readFunctions,
-            isFunctionScanInFlight
-        ),
+        deepRead: makeDeepRead("FUNCTION", "function", isFunctionScanInFlight),
         rowActions: [
             {
                 label: "Run",
@@ -168,7 +148,7 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`function delete ${name}`),
-        export: exportHook({ type: "FUNCTION", label: "function", read: readFunctions }),
+        export: exportHook({ type: "FUNCTION", label: "function" }),
     },
     MENU: {
         type: "MENU",
@@ -178,7 +158,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseMenusScanned,
         scan: scanHouseMenus,
         scanInFlight: isMenuScanInFlight,
-        deepRead: makeDeepRead("MENU", "menu", readMenus, isMenuScanInFlight),
+        deepRead: makeDeepRead("MENU", "menu", isMenuScanInFlight),
         rowActions: [
             {
                 label: "View",
@@ -192,7 +172,7 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "MENU", label: "menu", read: readMenus }),
+        export: exportHook({ type: "MENU", label: "menu" }),
     },
     REGION: {
         type: "REGION",
@@ -202,7 +182,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseRegionsScanned,
         scan: scanHouseRegions,
         scanInFlight: isRegionScanInFlight,
-        deepRead: makeDeepRead("REGION", "region", readRegions, isRegionScanInFlight),
+        deepRead: makeDeepRead("REGION", "region", isRegionScanInFlight),
         rowActions: [
             {
                 label: "Edit",
@@ -212,7 +192,7 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`region delete ${name}`),
-        export: exportHook({ type: "REGION", label: "region", read: readRegions }),
+        export: exportHook({ type: "REGION", label: "region" }),
     },
     COMMAND: {
         type: "COMMAND",
@@ -222,7 +202,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseCommandsScanned,
         scan: scanHouseCommands,
         scanInFlight: isCommandScanInFlight,
-        deepRead: makeDeepRead("COMMAND", "command", readCommands, isCommandScanInFlight),
+        deepRead: makeDeepRead("COMMAND", "command", isCommandScanInFlight),
         rowActions: [
             { label: "Run", icon: Icons.play, run: (name) => ChatLib.command(name) },
             {
@@ -239,7 +219,7 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`command delete ${name}`),
-        export: exportHook({ type: "COMMAND", label: "command", read: readCommands }),
+        export: exportHook({ type: "COMMAND", label: "command" }),
     },
     EVENT: {
         // Housing has no per-event edit command, so Edit walks the /eventactions
@@ -252,7 +232,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
         scanNames: false,
-        deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
+        deepRead: makeDeepRead("EVENT", "event", isEventScanInFlight),
         rowActions: [
             {
                 label: "Edit",
@@ -262,7 +242,7 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
+        export: exportHook({ type: "EVENT", label: "event" }),
     },
     TEAM: {
         type: "TEAM",
@@ -272,7 +252,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseTeamsScanned,
         scan: scanHouseTeams,
         scanInFlight: isTeamScanInFlight,
-        deepRead: makeDeepRead("TEAM", "team", readTeams, isTeamScanInFlight),
+        deepRead: makeDeepRead("TEAM", "team", isTeamScanInFlight),
         rowActions: [
             {
                 label: "Edit",
@@ -283,7 +263,7 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`team delete ${name}`),
-        export: exportHook({ type: "TEAM", label: "team", read: readTeams }),
+        export: exportHook({ type: "TEAM", label: "team" }),
     },
     GROUP: {
         // Groups have no slash command; Edit walks Housing Menu -> Permissions
@@ -296,7 +276,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseGroupsScanned,
         scan: scanHouseGroups,
         scanInFlight: isGroupScanInFlight,
-        deepRead: makeDeepRead("GROUP", "group", readGroups, isGroupScanInFlight),
+        deepRead: makeDeepRead("GROUP", "group", isGroupScanInFlight),
         rowActions: [
             {
                 label: "Edit",
@@ -306,14 +286,14 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "GROUP", label: "group", read: readGroups }),
+        export: exportHook({ type: "GROUP", label: "group" }),
     },
     NPC: {
         // NPCs are identified by position, not name, and have no per-NPC slash
         // command: Edit walks the /hmenu -> Systems -> NPCs browser to the NPC's
         // editor, Teleport right-clicks its slot. Export and deep read run
-        // through `readNpcs`, position-keying the selected rows onto
-        // `exportAllNpcs`.
+        // through the queue runner, position-keying selected rows for the NPC
+        // export session.
         type: "NPC",
         label: "NPCs",
         icon: Icons.user,
@@ -321,7 +301,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseNpcsScanned,
         scan: scanHouseNpcs,
         scanInFlight: isNpcScanInFlight,
-        deepRead: makeDeepRead("NPC", "npc", readNpcs, isNpcScanInFlight),
+        deepRead: makeDeepRead("NPC", "npc", isNpcScanInFlight),
         rowActions: [
             {
                 label: "Edit",
@@ -341,7 +321,7 @@ const HOUSE_CONTENT_BY_TYPE: {
                     ),
             },
         ],
-        export: exportHook({ type: "NPC", label: "npc", read: readNpcs }),
+        export: exportHook({ type: "NPC", label: "npc" }),
     },
 };
 
@@ -360,8 +340,7 @@ HOUSE_CONTENT_TYPES.push({
     scanNames: false,
     standaloneAction: {
         label: "Export held item",
-        run: () =>
-            startExport({ type: "ITEM", label: "held item", read: exportHeldItem }),
+        run: () => startExport({ type: "ITEM", label: "held item" }),
     },
 });
 

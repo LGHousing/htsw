@@ -1,16 +1,17 @@
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { houseExportTypeByToken } from "../importables/export/exportTypes";
-import type {
-    ExportBatchType,
-    NamedExportType,
-} from "./exportBatch";
+import type { ExportBatchType, NamedExportType } from "../importables/export/session";
 
 export function tokenizeQuoted(args: readonly string[]): string[] {
     const out: string[] = [];
     let i = 0;
     while (i < args.length) {
         const arg = args[i];
-        if (arg.length >= 2 && arg.charAt(0) === '"' && arg.charAt(arg.length - 1) === '"') {
+        if (
+            arg.length >= 2 &&
+            arg.charAt(0) === '"' &&
+            arg.charAt(arg.length - 1) === '"'
+        ) {
             out.push(arg.substring(1, arg.length - 1));
             i++;
             continue;
@@ -48,7 +49,10 @@ export function parseIntegerToken(token: string | undefined, label: string): num
     return Number(token);
 }
 
-export function pathArgument(tokens: readonly string[], start: number): string | undefined {
+export function pathArgument(
+    tokens: readonly string[],
+    start: number
+): string | undefined {
     const parts = tokens.slice(start);
     const raw = parts.length > 0 ? parts.join(" ") : "";
     return raw.length > 0 ? stripSurroundingQuotes(raw) : undefined;
@@ -61,7 +65,9 @@ export function exportTypeFromToken(token: string | undefined): ExportBatchType 
     return null;
 }
 
-export function namedExportTypeFromToken(token: string | undefined): NamedExportType | null {
+export function namedExportTypeFromToken(
+    token: string | undefined
+): NamedExportType | null {
     const spec = houseExportTypeByToken(token);
     if (spec !== null && spec.named) return spec.type as NamedExportType;
     return null;

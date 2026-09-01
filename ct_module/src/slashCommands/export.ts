@@ -1,10 +1,3 @@
-import { cancelActiveTask } from "../tasks/activeTask";
-import { listAllFunctionNames } from "../importables/functions/listFunctions";
-import {
-    exportBatch,
-    exportExisting,
-    notYetExportedFunctionNames,
-} from "./exportBatch";
 import {
     exportTypeFromToken,
     isTypeToken,
@@ -14,13 +7,51 @@ import {
     tokenizeQuoted,
 } from "./exportArgs";
 import { printExportHelp } from "./exportHelp";
-import { runExportWithDestination } from "./exportTask";
-import { exportHeldItem } from "../importables/items/export";
-import { createExportProgressSink } from "../gui/export/progressSink";
+import { captureOpenChest, exportCapturedChest } from "../importables/menus/exportChest";
+import { getHousingUuid } from "../gui/state";
+import { queuedExportDestination } from "./exportDestination";
 import {
-    captureOpenChest,
-    exportCapturedChest,
-} from "../importables/menus/exportChest";
+    addQueueRow,
+    makeBulkQueueRow,
+    makeImportableQueueRow,
+    type QueueAddResult,
+    type QueueRow,
+} from "../gui/right-panel/import-tab/queue";
+import { autoRunQueueChanged } from "../gui/autoRun";
+import { parseImportJsonCurrentBlocking } from "../gui/parsing/parses";
+import { importableIdentity } from "../importables/identity";
+import { pauseQueue } from "../gui/right-panel/import-tab/queueRunner";
+import { readProjectExportDestination } from "../importables/export/projectDestination";
+import { parentDirOf } from "../project/paths";
+
+function rowAdded(result: QueueAddResult): boolean {
+    return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
+}
+
+function queueExportRow(row: QueueRow, label: string): void {
+    const result = addQueueRow(row);
+    if (!rowAdded(result)) {
+        ChatLib.chat(`&e[htsw] ${result.message}`);
+        return;
+    }
+    ChatLib.chat(`&a[htsw] Queued ${label}`);
+    autoRunQueueChanged();
+}
+
+function exportTarget(explicitPath: string | undefined): {
+    house: string;
+    path: string;
+} | null {
+    const house = getHousingUuid();
+    if (house === null) {
+        ChatLib.chat("&c[htsw] Enter a Housing house first.");
+        return null;
+    }
+    return {
+        house,
+        path: queuedExportDestination(explicitPath, house).importJsonPath,
+    };
+}
 
 export function commandExport(args: string[]): void {
     if (args.length === 0) {
@@ -31,8 +62,8 @@ export function commandExport(args: string[]): void {
     const tokens = tokenizeQuoted(args);
 
     if (tokens[0] === "stop" || tokens[0] === "cancel") {
-        if (cancelActiveTask()) {
-            ChatLib.chat("&c[htsw] cancelling running task...");
+        if (pauseQueue() !== null) {
+            ChatLib.chat("&c[htsw] cancelling running queue session...");
         } else {
             ChatLib.chat("&7[htsw] No import/export task is running.");
         }
@@ -40,59 +71,91 @@ export function commandExport(args: string[]): void {
     }
 
     if (tokens[0] === "item") {
-        runExportWithDestination(pathArgument(tokens, 1), async (ctx, destination) => {
-            await exportHeldItem(ctx, {
-                importJsonPath: destination.importJsonPath,
-                rootDir: destination.rootDir,
-                projectItems: destination.projectItems,
-                progress: createExportProgressSink("ITEM", destination.importJsonPath),
-                output: { kind: "project" },
-            });
-        });
+        const target = exportTarget(pathArgument(tokens, 1));
+        if (target === null) return;
+        queueExportRow(
+            makeImportableQueueRow({
+                op: "export",
+                house: target.house,
+                path: target.path,
+                type: "ITEM",
+                identity: "held item",
+                label: "Held item",
+            }),
+            "held-item export"
+        );
         return;
     }
 
-    if ((tokens[0] === "resume" || tokens[0] === "remaining") && isTypeToken(tokens[1], "function")) {
-        runExportWithDestination(pathArgument(tokens, 2), async (ctx, destination) => {
-            const { importJsonPath } = destination;
-            const liveNames = await listAllFunctionNames(ctx);
-            const remaining = notYetExportedFunctionNames(importJsonPath, liveNames);
-
-            if (liveNames.length === 0) {
-                ctx.displayMessage("&7No functions to export.");
-                return;
-            }
-            if (remaining.names.length === 0) {
-                ctx.displayMessage(
-                    `&aNothing to resume: ${remaining.skipped} function${remaining.skipped === 1 ? "" : "s"} already exported.`
-                );
-                ctx.displayMessage(`&7  -> ${importJsonPath}`);
-                return;
-            }
-
-            ctx.displayMessage(
-                `&aResuming function export: ${remaining.names.length} remaining, ${remaining.skipped} already exported${remaining.missingTargets > 0 ? `, ${remaining.missingTargets} missing target file${remaining.missingTargets === 1 ? "" : "s"} repaired` : ""}.`
-            );
-            await exportBatch(ctx, destination, {
-                type: "FUNCTION",
-                names: remaining.names,
-            });
-        });
+    if (
+        (tokens[0] === "resume" || tokens[0] === "remaining") &&
+        isTypeToken(tokens[1], "function")
+    ) {
+        const target = exportTarget(pathArgument(tokens, 2));
+        if (target === null) return;
+        queueExportRow(
+            makeBulkQueueRow({
+                op: "export",
+                house: target.house,
+                path: target.path,
+                scope: { kind: "houseType", type: "FUNCTION" },
+                filter: "new",
+                label: "Export new functions",
+            }),
+            "remaining function export"
+        );
         return;
     }
 
     if (tokens[0] === "all") {
         const type = exportTypeFromToken(tokens[1]);
         if (type !== null) {
-            runExportWithDestination(pathArgument(tokens, 2), async (ctx, destination) => {
-                await exportBatch(ctx, destination, { type, skipExisting: true });
-            });
+            const target = exportTarget(pathArgument(tokens, 2));
+            if (target === null) return;
+            queueExportRow(
+                makeBulkQueueRow({
+                    op: "export",
+                    house: target.house,
+                    path: target.path,
+                    scope: { kind: "houseType", type },
+                    filter: "new",
+                    label: `Export new ${type.toLowerCase()}s`,
+                }),
+                `${type} export`
+            );
             return;
         }
     }
 
     if (tokens[0] === "existing") {
-        runExportWithDestination(pathArgument(tokens, 1), exportExisting);
+        const target = exportTarget(pathArgument(tokens, 1));
+        if (target === null) return;
+        const parsed = parseImportJsonCurrentBlocking(target.path);
+        if (parsed.parsed === null) {
+            ChatLib.chat(
+                `&c[htsw] Could not parse ${target.path}: ${parsed.error ?? "parse failed"}`
+            );
+            return;
+        }
+        let added = 0;
+        for (const imp of parsed.parsed.value) {
+            if (imp.type === "ITEM") continue;
+            const result = addQueueRow(
+                makeImportableQueueRow({
+                    op: "export",
+                    house: target.house,
+                    path: target.path,
+                    type: imp.type,
+                    identity: importableIdentity(imp),
+                    label: imp.type === "EVENT" ? imp.event : imp.name,
+                })
+            );
+            if (rowAdded(result)) added++;
+        }
+        ChatLib.chat(
+            `&a[htsw] Queued ${added} declared importable export${added === 1 ? "" : "s"}`
+        );
+        if (added > 0) autoRunQueueChanged();
         return;
     }
 
@@ -111,13 +174,21 @@ export function commandExport(args: string[]): void {
         const name = tokens[1];
         if (!name) {
             ChatLib.chat("&cUsage: /export chest <name> [path]");
-            ChatLib.chat(
-                '&7  Quote multi-word names: /export chest "My Menu" my/path/'
-            );
+            ChatLib.chat('&7  Quote multi-word names: /export chest "My Menu" my/path/');
             return;
         }
-        runExportWithDestination(pathArgument(tokens, 2), async (ctx, destination) => {
-            await exportCapturedChest(ctx, captured, { name, ...destination });
+        const target = exportTarget(pathArgument(tokens, 2));
+        if (target === null) return;
+        const destination = readProjectExportDestination({
+            rootDir: parentDirOf(target.path),
+            importJsonPath: target.path,
+        });
+        void exportCapturedChest(
+            { displayMessage: (message) => ChatLib.chat(message) },
+            captured,
+            { name, ...destination }
+        ).catch((error: unknown) => {
+            ChatLib.chat(`&c[htsw] Chest export failed: ${String(error)}`);
         });
         return;
     }
@@ -127,15 +198,24 @@ export function commandExport(args: string[]): void {
         const name = tokens[1];
         if (!name) {
             ChatLib.chat(`&cUsage: /export ${tokens[0]} <name> [path]`);
-            ChatLib.chat(`&7  Quote multi-word names: /export ${tokens[0]} "My ${tokens[0]}" my/path/`);
+            ChatLib.chat(
+                `&7  Quote multi-word names: /export ${tokens[0]} "My ${tokens[0]}" my/path/`
+            );
             return;
         }
-        runExportWithDestination(pathArgument(tokens, 2), async (ctx, destination) => {
-            await exportBatch(ctx, destination, {
+        const target = exportTarget(pathArgument(tokens, 2));
+        if (target === null) return;
+        queueExportRow(
+            makeImportableQueueRow({
+                op: "export",
+                house: target.house,
+                path: target.path,
                 type: namedType,
-                names: [name],
-            });
-        });
+                identity: name,
+                label: name,
+            }),
+            `${namedType} ${name}`
+        );
         return;
     }
 
@@ -143,7 +223,9 @@ export function commandExport(args: string[]): void {
         const name = tokens[1];
         if (!name || tokens.length < 5) {
             ChatLib.chat("&cUsage: /export npc <name> <x> <y> <z> [path]");
-            ChatLib.chat('&7  Quote names with spaces/colors: /export npc "&aShop Keeper" 2 16 70 my/path/');
+            ChatLib.chat(
+                '&7  Quote names with spaces/colors: /export npc "&aShop Keeper" 2 16 70 my/path/'
+            );
             return;
         }
 
@@ -160,12 +242,19 @@ export function commandExport(args: string[]): void {
             return;
         }
 
-        runExportWithDestination(pathArgument(tokens, 5), async (ctx, destination) => {
-            await exportBatch(ctx, destination, {
+        const target = exportTarget(pathArgument(tokens, 5));
+        if (target === null) return;
+        queueExportRow(
+            makeImportableQueueRow({
+                op: "export",
+                house: target.house,
+                path: target.path,
                 type: "NPC",
-                entries: [{ name, pos: { x, y, z } }],
-            });
-        });
+                identity: `${x},${y},${z}`,
+                label: name,
+            }),
+            `NPC ${name}`
+        );
         return;
     }
 

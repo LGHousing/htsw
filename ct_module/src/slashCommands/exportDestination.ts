@@ -5,10 +5,7 @@ import {
     type ProjectExportTarget,
 } from "../importables/export/projectDestination";
 import { getCurrentHousingUuid } from "../importCache";
-import {
-    defaultExportRoot,
-    resolveModuleRelativePath,
-} from "../project/paths";
+import { defaultExportRoot, resolveModuleRelativePath } from "../project/paths";
 
 export type ExportDestination = ProjectExportDestination;
 type ExportDestinationPath = ProjectExportTarget;
@@ -36,16 +33,31 @@ function dirname(path: string): string {
 
 function endsWithIgnoreCase(value: string, suffix: string): boolean {
     if (value.length < suffix.length) return false;
-    return value.substring(value.length - suffix.length).toLowerCase() === suffix.toLowerCase();
+    return (
+        value.substring(value.length - suffix.length).toLowerCase() ===
+        suffix.toLowerCase()
+    );
 }
 
-function exportDestination(explicitPath: string | undefined): ExportDestinationPath | null {
+export function exportDestination(
+    explicitPath: string | undefined
+): ExportDestinationPath | null {
     if (explicitPath === undefined) return null;
     const path = resolveModuleRelativePath(trimTrailingSlashes(explicitPath));
     if (endsWithIgnoreCase(path, ".json")) {
         return { rootDir: dirname(path), importJsonPath: normalizeSlashes(path) };
     }
     const rootDir = normalizeSlashes(path);
+    return { rootDir, importJsonPath: `${rootDir}/import.json` };
+}
+
+export function queuedExportDestination(
+    explicitPath: string | undefined,
+    housingUuid: string
+): ExportDestinationPath {
+    const explicitDestination = exportDestination(explicitPath);
+    if (explicitDestination !== null) return explicitDestination;
+    const rootDir = defaultExportRoot(housingUuid);
     return { rootDir, importJsonPath: `${rootDir}/import.json` };
 }
 

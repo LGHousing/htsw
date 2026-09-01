@@ -4,7 +4,6 @@ import { portableItemSnbt, snbtFromItem } from "../../housingSync/items/itemNbt"
 import { ItemCaptureRegistry } from "../items/captureRegistry";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { importJsonTargetForSectionEntry, parentDirOf } from "../../project/paths";
-import type TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
 
@@ -32,6 +31,10 @@ export type ChestExportCounts = {
     populatedSlots: number;
     newItemsWritten: number;
     matchedExisting: number;
+};
+
+export type ExportMessageSink = {
+    displayMessage(message: string): void;
 };
 
 type RegisteredChestSlot = {
@@ -87,7 +90,7 @@ export function captureOpenChest(): CapturedChest | null {
 }
 
 export async function exportCapturedChest(
-    ctx: TaskContext,
+    sink: ExportMessageSink,
     captured: CapturedChest,
     options: ChestExportOptions
 ): Promise<ChestExportCounts> {
@@ -131,13 +134,13 @@ export async function exportCapturedChest(
     const itemCounts = registry.counts();
     const hints = registry.takeHints();
     for (let i = 0; i < hints.length; i++) {
-        ctx.displayMessage(`&e[export] ${hints[i]}`);
+        sink.displayMessage(`&e[export] ${hints[i]}`);
     }
     if (options.showProgressMessages !== false) {
-        ctx.displayMessage(
+        sink.displayMessage(
             `&aExported menu '${options.name}' (${captured.slots.length} slot${captured.slots.length === 1 ? "" : "s"}, items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)`
         );
-        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+        sink.displayMessage(`&7  -> ${importJsonPath}`);
     }
 
     return {
