@@ -33,7 +33,9 @@ import { holdAutoRunUntilReparse } from "../../autoRun";
 import { showToast } from "../../toast";
 import { runImportQueueSession } from "./taskController";
 import {
+    beginQueueSession,
     completeQueueRows,
+    endQueueSession,
     expandBulkQueueRow,
     getQueue,
     isBulkQueueRowExpanded,
@@ -202,12 +204,13 @@ export async function drainQueue(
 
         const session = queueSessionFromHead(head, currentHouse, options);
         if (session.length === 0) return "idle";
-        for (const row of session) setQueueRowStatus(row.key, "running");
         if (head.op === "import" && !preparedImport) {
             await dependencies.beforeFirstImport(ctx);
             preparedImport = true;
         }
 
+        for (const row of session) setQueueRowStatus(row.key, "running");
+        beginQueueSession(session.map((row) => row.key));
         let result: QueueSessionResult;
         try {
             result =
@@ -229,6 +232,8 @@ export async function drainQueue(
                 return "idle";
             }
             continue;
+        } finally {
+            endQueueSession(false);
         }
 
         if (result.cancelled === true) {
