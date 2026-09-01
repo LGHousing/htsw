@@ -8,7 +8,14 @@ import { recompile } from "./recompile";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
 import { getMinecraft, javaType } from "../utils/java";
-import { clickHtswOverlay, scrollHtswOverlay, toggleHtswGui } from "../gui/overlay";
+import {
+    clickHtswOverlay,
+    getHtswGuiState,
+    scrollHtswOverlay,
+    setHtswGuiEnabled,
+    toggleHtswGui,
+} from "../gui/overlay";
+import { resolveHtswGuiCommand } from "./gui";
 import { resetTimingStats } from "../housingSync/progress/timing";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/projects/tree";
@@ -177,8 +184,10 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "gui",
-        summary: "Toggle the in-game HTSW dashboard",
+        summary:
+            "Show, hide or query the in-game HTSW dashboard (draws over open Housing menus)",
         run: commandGui,
+        usage: "gui [on|off|status]",
     },
     {
         name: "workspace",
@@ -429,9 +438,12 @@ function commandCodeViewTrace(args: string[]): void {
     }
 }
 
-function commandGui(): void {
-    const nowEnabled = toggleHtswGui();
-    ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+function commandGui(args: string[]): void {
+    const request = resolveHtswGuiCommand(getHtswGuiState(), args);
+    if (request.action === "toggle") toggleHtswGui();
+    if (request.action === "enable") setHtswGuiEnabled(true);
+    if (request.action === "disable") setHtswGuiEnabled(false);
+    ChatLib.chat(resolveHtswGuiCommand(getHtswGuiState(), args).message);
 }
 
 function commandBridge(args: string[]): void {

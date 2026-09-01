@@ -128,6 +128,8 @@ onParseCacheEntryChanged((entry) => {
 
 let enabled = true;
 let initialized = false;
+let lastWrittenGuiEnabled: boolean | null = null;
+let lastWrittenGuiVisible: boolean | null = null;
 
 const ZERO_RECT: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -153,6 +155,37 @@ function frameVisible(): boolean {
     if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return isTaskRunning() && getImportCachedBounds() !== null;
+}
+
+export type HtswGuiState = {
+    enabled: boolean;
+    visible: boolean;
+};
+
+export function getHtswGuiState(): HtswGuiState {
+    return { enabled, visible: frameVisible() };
+}
+
+function syncHtswGuiProperties(state: HtswGuiState = getHtswGuiState()): void {
+    if (
+        lastWrittenGuiEnabled === state.enabled &&
+        lastWrittenGuiVisible === state.visible
+    ) {
+        return;
+    }
+    try {
+        const System = javaType("java.lang.System");
+        if (lastWrittenGuiEnabled !== state.enabled) {
+            System.setProperty("htsw.gui.enabled", state.enabled ? "true" : "false");
+            lastWrittenGuiEnabled = state.enabled;
+        }
+        if (lastWrittenGuiVisible !== state.visible) {
+            System.setProperty("htsw.gui.visible", state.visible ? "true" : "false");
+            lastWrittenGuiVisible = state.visible;
+        }
+    } catch (_error) {
+        // External state reporting must never interfere with overlay rendering.
+    }
 }
 
 function inventoryToolbarBounds(): Rect {
@@ -426,6 +459,7 @@ function isPlaceholderScreen(s: unknown): boolean {
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
+    syncHtswGuiProperties();
 
     // Drive the lib's wheel easing from the user's "Smooth scrolling" setting.
     setScrollEasingProvider(getSmoothScrolling);
@@ -702,11 +736,13 @@ export function initHtswGui(): void {
     // frame (Panel's render trigger is Priority.LOW). Moving any of it after
     // the paint costs one frame of input latency.
     register("guiRender", (mouseX: number, mouseY: number) => {
+        const visible = frameVisible();
+        syncHtswGuiProperties({ enabled, visible });
         pollWheel();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
-        if (frameVisible() && getShowChatPanel() && refreshChatLines()) markGuiDirty();
+        if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
         // Rebuild every frame while the thumb is dragged so scrolled content
         // tracks at the refresh rate.
         if (dragging) markGuiDirty();
@@ -840,15 +876,17 @@ export function initHtswGui(): void {
     // popovers + focus whenever the underlying inventory GUI is no longer open, so they don't
     // linger across opens/closes.
     register("tick", () => {
+        const visible = frameVisible();
+        syncHtswGuiProperties({ enabled, visible });
         tickAllFields();
         applyFocus(getFocusedInput());
-        setWatchDetectionLive(frameVisible());
-        noteOverlayVisibility(frameVisible());
+        setWatchDetectionLive(visible);
+        noteOverlayVisibility(visible);
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file; the parse itself runs off-thread. It stays
         // paused during tasks — except watch imports, which need save
         // detection live so a mid-run save can cancel the stale run.
-        if (frameVisible() && (!isTaskRunning() || isWatchImportRunning())) {
+        if (visible && (!isTaskRunning() || isWatchImportRunning())) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Projects tree, queue rows) so a cold parse never blocks render.
@@ -859,7 +897,7 @@ export function initHtswGui(): void {
         }
         // First-open consent comes before the walkthrough so two onboarding
         // popovers never compete for the same screen.
-        if (frameVisible() && !isTaskRunning()) {
+        if (visible && !isTaskRunning()) {
             if (!maybeOpenDiagnosticsConsent()) maybeAutoStartTour();
         }
         // If the import ended while our placeholder is still up (Hypixel
@@ -959,5 +997,12 @@ function walkForInput(
 
 export function toggleHtswGui(): boolean {
     enabled = !enabled;
+    syncHtswGuiProperties();
+    return enabled;
+}
+
+export function setHtswGuiEnabled(nextEnabled: boolean): boolean {
+    enabled = nextEnabled;
+    syncHtswGuiProperties();
     return enabled;
 }
