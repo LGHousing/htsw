@@ -82,6 +82,20 @@ export type QueueRunnerDependencies = {
 
 let state: QueueRunState = "idle";
 let pauseRequested = false;
+const runEndedListeners: Array<(state: QueueRunState) => void> = [];
+
+export function onQueueRunEnded(listener: (state: QueueRunState) => void): () => void {
+    runEndedListeners.push(listener);
+    return () => {
+        const index = runEndedListeners.indexOf(listener);
+        if (index >= 0) runEndedListeners.splice(index, 1);
+    };
+}
+
+function notifyQueueRunEnded(): void {
+    const listeners = runEndedListeners.slice();
+    for (let i = 0; i < listeners.length; i++) listeners[i](state);
+}
 
 export function queueRunState(): QueueRunState {
     return state;
@@ -274,6 +288,7 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
         })
         .finally(() => {
             pauseRequested = false;
+            notifyQueueRunEnded();
         });
     return true;
 }

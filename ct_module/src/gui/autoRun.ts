@@ -9,7 +9,11 @@ import {
     isRestoredQueueRow,
     type QueueRow,
 } from "./right-panel/import-tab/queue";
-import { isQueueRunning, startQueue } from "./right-panel/import-tab/queueRunner";
+import {
+    isQueueRunning,
+    onQueueRunEnded,
+    startQueue,
+} from "./right-panel/import-tab/queueRunner";
 import { dismissToast, showToast } from "./toast";
 import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
@@ -23,6 +27,13 @@ let startedByAutoRun = false;
 let blockedUntilNextParse = false;
 let lastSuccessfulImportKeys: string[] | null = null;
 let awaitingSuccessRefresh = false;
+let runEndedListenerInstalled = false;
+
+function ensureRunEndedListener(): void {
+    if (runEndedListenerInstalled) return;
+    runEndedListenerInstalled = true;
+    onQueueRunEnded(() => autoRunQueueChanged());
+}
 
 // Reparse (and therefore save detection) only ticks while the HTSW overlay is
 // visible. Keep the old warning, but describe the queue-wide behavior now.
@@ -138,6 +149,7 @@ function runAutoQueue(): void {
 /** Debounce Auto-run after any producer changes the queue. */
 export function autoRunQueueChanged(): void {
     if (!getAutoRun()) return;
+    ensureRunEndedListener();
     clearDebounce();
     const revision = debounceRevision;
     setTimeout(() => {
@@ -219,8 +231,17 @@ export function autoRunRefresh(
         startedByAutoRun &&
         (changed > 0 || newlyQueuedChanged > 0)
     ) {
-        cancelActiveTask();
-        return;
+        const changedKeys = new Set(detectedWorkKeys);
+        const runningChanged = getQueue().some(
+            (row) =>
+                row.op === "import" &&
+                row.status === "running" &&
+                changedKeys.has(row.key)
+        );
+        if (runningChanged) {
+            cancelActiveTask();
+            return;
+        }
     }
     autoRunQueueChanged();
 }

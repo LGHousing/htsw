@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
     starts: [] as Array<{ autoRun?: boolean } | undefined>,
     cancelled: 0,
     writes: [] as string[],
+    runEnded: null as null | ((state: "idle" | "running" | "paused") => void),
 }));
 
 vi.mock("../src/settings", () => ({
@@ -27,6 +28,10 @@ vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
         state.starts.push(options);
         state.running = true;
         return true;
+    },
+    onQueueRunEnded: (listener: (runState: "idle" | "running" | "paused") => void) => {
+        state.runEnded = listener;
+        return () => {};
     },
 }));
 vi.mock("../src/gui/badge", () => ({ registerBadge: () => {} }));
@@ -50,6 +55,7 @@ describe("queue Auto-run safeguards", () => {
         state.starts = [];
         state.cancelled = 0;
         state.writes = [];
+        state.runEnded = null;
         vi.stubGlobal("Server", { getIP: () => "mc.hypixel.net" });
         vi.stubGlobal("ChatLib", { chat: () => {} });
         vi.stubGlobal("FileLib", {
@@ -99,21 +105,46 @@ describe("queue Auto-run safeguards", () => {
     });
 
     test("a reparse that changes running work cancels its session", async () => {
-        const { autoRunQueueChanged, autoRunRefresh } = await import(
-            "../src/gui/autoRun"
-        );
+        const { autoRunQueueChanged, autoRunRefresh } =
+            await import("../src/gui/autoRun");
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
+        state.rows[0].status = "running";
 
         autoRunRefresh("reparse", 1, 1, ["k"], new Set());
 
         expect(state.cancelled).toBe(1);
     });
 
+    test("does not cancel for a changed importable outside the running session", async () => {
+        const { autoRunQueueChanged, autoRunRefresh } =
+            await import("../src/gui/autoRun");
+        autoRunQueueChanged();
+        await vi.advanceTimersByTimeAsync(2000);
+        state.rows[0].status = "running";
+
+        autoRunRefresh("reparse", 1, 1, ["another-key"], new Set());
+
+        expect(state.cancelled).toBe(0);
+    });
+
+    test("debounces another run after the queue runner settles", async () => {
+        const { autoRunQueueChanged } = await import("../src/gui/autoRun");
+        autoRunQueueChanged();
+        await vi.advanceTimersByTimeAsync(2000);
+        expect(state.starts).toHaveLength(1);
+
+        state.running = false;
+        state.rows[0].status = "queued";
+        state.runEnded?.("paused");
+        await vi.advanceTimersByTimeAsync(2000);
+
+        expect(state.starts).toHaveLength(2);
+    });
+
     test("disables Auto-run when completed imports immediately reappear", async () => {
-        const { autoRunQueueChanged, autoRunRefresh } = await import(
-            "../src/gui/autoRun"
-        );
+        const { autoRunQueueChanged, autoRunRefresh } =
+            await import("../src/gui/autoRun");
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
         state.running = false;
