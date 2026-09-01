@@ -160,6 +160,10 @@ export function commandExport(args: string[]): void {
     }
 
     if (tokens[0] === "chest") {
+        // Explicit queue deviation: the QueueRow target union has nowhere to
+        // persist CapturedChest. Running this later as MENU/name would export a
+        // different live Housing menu, so preserve the captured snapshot with
+        // an immediate local write until the queue supports such a payload.
         const captured = captureOpenChest();
         if (captured === null) {
             ChatLib.chat(

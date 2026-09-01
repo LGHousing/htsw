@@ -29,6 +29,11 @@ function runChestExport(
     name: string,
     importJsonPath: string
 ): void {
+    // Explicit phase-1 queue deviation: QueueTarget can identify only a live
+    // importable or bulk scope; it cannot carry the captured open-container
+    // snapshot this export must write. Re-reading MENU/name later would target
+    // a Housing menu, not this chest. Keep the snapshot write immediate until
+    // the queue model gains a persisted captured-chest target/executor.
     const rootDir = parentDirOf(importJsonPath);
     const newExportTargetImportJson = getNewExportTarget() ?? undefined;
     void exportCapturedChest(
