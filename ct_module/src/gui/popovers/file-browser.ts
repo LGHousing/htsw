@@ -63,7 +63,10 @@ let saveNameDraft = "actions.htsl";
 type BrowserMode =
     | { kind: "importJson"; onSelect: ((path: string) => void) | null }
     | { kind: "htsl"; onSelect: (path: string) => void }
-    | { kind: "htslDestination"; onSelect: (path: string) => void };
+    | {
+          kind: "htslDestination";
+          onSelect: (path: string, replaceExisting: boolean) => void;
+      };
 
 let browserMode: BrowserMode = { kind: "importJson", onSelect: null };
 
@@ -294,13 +297,13 @@ function activateFile(path: string): void {
     }
 }
 
-function finishHtslDestination(path: string): void {
+function finishHtslDestination(path: string, replaceExisting: boolean): void {
     if (browserMode.kind !== "htslDestination") return;
     const onSelect = browserMode.onSelect;
     const slash = normalizeHtswPath(path).lastIndexOf("/");
     if (slash > 0) rememberAppendHtslDir(path.substring(0, slash));
     closeAllPopovers();
-    onSelect(path);
+    onSelect(path, replaceExisting);
 }
 
 function selectHtslDestination(path: string): void {
@@ -309,14 +312,14 @@ function selectHtslDestination(path: string): void {
         return;
     }
     if (!pathExists(path)) {
-        finishHtslDestination(path);
+        finishHtslDestination(path, false);
         return;
     }
     openConfirmPopover({
         title: `Replace ${basename(path)}?`,
         lines: ["The existing file will be replaced after the Housing read succeeds."],
         confirmLabel: "Replace",
-        onConfirm: () => finishHtslDestination(path),
+        onConfirm: () => finishHtslDestination(path, true),
     });
 }
 
@@ -890,7 +893,7 @@ export function openFileBrowserWithHtslSelection(
 
 export function openFileBrowserWithHtslDestination(
     initialDir: string | undefined,
-    onSelect: (path: string) => void
+    onSelect: (path: string, replaceExisting: boolean) => void
 ): void {
     browserMode = { kind: "htslDestination", onSelect };
     saveNameDraft = "actions.htsl";

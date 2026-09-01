@@ -34,6 +34,21 @@ export function canonicalLiveItemSnbtKey(snbt: string): string {
     return canonicalSnbtKey(snbt, true);
 }
 
+export function defaultVanillaItemId(snbt: string): string | null {
+    try {
+        const tag = canonicalLiveItemTag(htsw.nbt.parseSnbtText(snbt));
+        if (tag.type !== "compound") return null;
+        const value = tag.value as Partial<Record<string, TagLike>>;
+        if (Object.keys(value).length !== 1) return null;
+        const id = value.id;
+        if (id?.type !== "string") return null;
+        const itemId = String(id.value);
+        return itemId.indexOf("minecraft:") === 0 ? itemId : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
 function canonicalSnbtKey(snbt: string, live: boolean): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);

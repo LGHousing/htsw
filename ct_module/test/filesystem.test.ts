@@ -94,4 +94,21 @@ describe("atomicWriteText", () => {
 
         expect(atomicWriteText("cache/state.json", "contents")).toBe(false);
     });
+
+    it("does not replace a destination that appeared before the move", () => {
+        const move = vi.fn(() => { throw new Error("destination exists"); });
+        const write = vi.fn();
+        stubFilesystem(move, write);
+
+        expect(
+            atomicWriteText("exports/actions.htsl", "contents", {
+                replaceExisting: false,
+            })
+        ).toBe(false);
+        expect(move).toHaveBeenCalledWith(
+            expect.stringMatching(/^exports\/actions\.htsl\..+\.tmp$/),
+            "exports/actions.htsl"
+        );
+        expect(write).toHaveBeenCalledTimes(1);
+    });
 });
