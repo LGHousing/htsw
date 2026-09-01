@@ -8,7 +8,6 @@ import { getActiveAutoTrackSources } from "./autoTrackScope";
 import { canonicalPath, forEachCachedParse } from "./parsing/parses";
 import { cachedStatusForImportable, statusForImportableBlocking } from "./cache-status";
 import {
-    addToQueue,
     makeImportableQueueRow,
     queueItemKey,
     reconcileAutoTrackedQueue,
@@ -19,14 +18,6 @@ import { expandImportDependencies } from "../importables/import/dependencyExpans
 import { importableIdentity } from "../importables/identity";
 import { showToast } from "./toast";
 import { autoRunRefresh } from "./autoRun";
-
-type ModifiedQueueResult = {
-    changed: number;
-    required: number;
-    newlyQueuedChanged: number;
-    newlyQueuedRequired: number;
-    workKeys: string[];
-};
 
 type ModifiedQueueOptions = {
     blockingCacheRead?: boolean;
@@ -124,42 +115,6 @@ function planModifiedImportables(
         complete,
         items,
     };
-}
-
-function enqueueModifiedPlan(
-    plan: ModifiedQueuePlan,
-    add: (item: ImportQueueItem) => boolean = (item) => {
-        const result = addToQueue(item);
-        return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
-    }
-): ModifiedQueueResult {
-    let newlyQueuedRequired = 0;
-    let newlyQueuedChanged = 0;
-    const workKeys: string[] = [];
-    for (const planned of plan.items) {
-        workKeys.push(planned.workKey);
-        if (!add(planned.item)) continue;
-        if (planned.changed) newlyQueuedChanged++;
-        if (planned.required) newlyQueuedRequired++;
-    }
-    return {
-        changed: plan.changed,
-        required: plan.required,
-        newlyQueuedChanged,
-        newlyQueuedRequired,
-        workKeys,
-    };
-}
-
-export function queueModifiedImportables(
-    sourcePath: string,
-    parsed: ImportablesParseResult,
-    importables: readonly Importable[] = parsed.value,
-    options: ModifiedQueueOptions = {}
-): ModifiedQueueResult {
-    return enqueueModifiedPlan(
-        planModifiedImportables(sourcePath, parsed, importables, options)
-    );
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";

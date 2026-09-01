@@ -48,24 +48,6 @@ export function traceMenuWait(
     taskTrace.write({ kind: "menuWait", stage, ...details });
 }
 
-export function traceRecord(category: string, details: Record<string, unknown>): void {
-    recordRuntimeDebug(category, details);
-    if (!taskTrace.isEnabled()) return;
-    taskTrace.write({ kind: category, ...details });
-}
-
-export function traceError(
-    category: string,
-    error: unknown,
-    details?: Record<string, unknown>
-): void {
-    const message = error instanceof Error ? error.message : String(error);
-    const record = { ...(details ?? {}), error: message };
-    recordRuntimeDebug(category, record);
-    if (!taskTrace.isEnabled()) return;
-    taskTrace.write({ kind: "failure", category, ...record });
-}
-
 export function traceSyncEvent(event: SyncEvent): void {
     recordRuntimeDebug("syncEvent", {
         event: event.kind,

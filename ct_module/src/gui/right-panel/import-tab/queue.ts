@@ -75,10 +75,6 @@ type BulkQueueItem = QueueRow & {
 };
 export type QueueItem = ImportableQueueItem | BulkQueueItem;
 export type ImportQueueItem = QueueItem & { op: "import"; operation: "import" };
-export type ExportQueueItem = ImportableQueueItem & {
-    op: "export" | "read";
-    operation: "export" | "read";
-};
 
 function canonicalScope(scope: BulkScope): BulkScope {
     return scope.kind === "file"
@@ -664,21 +660,4 @@ export function makeImportableQueueItem(
         identity: importableIdentity(imp),
         label: importableLabel(imp),
     }) as ImportQueueItem;
-}
-export function makeExportQueueItem(
-    operation: "export" | "read",
-    type: Importable["type"],
-    identity: string,
-    destinationPath: string,
-    housingUuid: string | null,
-    label: string = identity
-): ExportQueueItem {
-    return makeImportableQueueRow({
-        op: operation,
-        house: housingUuid,
-        path: destinationPath,
-        type,
-        identity,
-        label,
-    }) as ExportQueueItem;
 }

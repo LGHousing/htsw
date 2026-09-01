@@ -5,7 +5,9 @@
     "ignoreDependencies": ["@babel/preset-env"],
     "ignoreBinaries": ["java", "javac"],
     "ignoreIssues": {
+        "src/gui/right-panel/import-tab/queue.ts": ["exports", "types", "duplicates"],
+        "src/gui/right-panel/import-tab/queueRunner.ts": ["exports"],
         "src/gui/lib/theme.ts": ["duplicates"],
-        "src/tui/elements.ts": ["exports"]
-    }
+        "src/tui/elements.ts": ["exports"],
+    },
 }

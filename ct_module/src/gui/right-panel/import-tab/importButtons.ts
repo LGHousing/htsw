@@ -13,7 +13,7 @@ import {
 } from "../../lib/theme";
 import { TaskManager } from "../../../tasks/manager";
 import { getQueueLength } from "./queue";
-import { pauseQueue, queueRunState, resumeQueue, startQueue } from "./queueRunner";
+import { cancelQueue, queueRunState, resumeQueue, startQueue } from "./queueRunner";
 import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
 import { appendRawHtslFile } from "../../../rawHtslImport";
 import { getAutoRun } from "../../../settings";
@@ -53,7 +53,7 @@ export function queueControl(): Element {
                 },
                 onClick: () => {
                     const state = queueRunState();
-                    if (state === "running") pauseQueue();
+                    if (state === "running") cancelQueue();
                     else if (state === "paused") resumeQueue();
                     else startQueue();
                 },

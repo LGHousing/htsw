@@ -48,7 +48,7 @@ import {
 
 export type QueueRunState = "idle" | "running" | "paused";
 export type QueueStartOptions = { autoRun?: boolean };
-export type QueueSessionFailure = { key: string; error: string };
+type QueueSessionFailure = { key: string; error: string };
 export type QueueSessionResult = {
     completedKeys: string[];
     failed: QueueSessionFailure[];
@@ -83,7 +83,6 @@ let pauseRequested = false;
 export function queueRunState(): QueueRunState {
     return state;
 }
-export const getQueueRunState = queueRunState;
 export function isQueueRunning(): boolean {
     return state === "running";
 }
@@ -284,7 +283,9 @@ export function pauseQueue(): "requested" | "forced" | null {
     pauseRequested = true;
     return cancelActiveTask();
 }
-export const cancelQueue = pauseQueue;
+export function cancelQueue(): "requested" | "forced" | null {
+    return pauseQueue();
+}
 
 type ListedNames = { names: string[]; labels?: Map<string, string> };
 

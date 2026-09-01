@@ -1,13 +1,6 @@
-import type TaskContext from "../tasks/context";
-import {
-    readProjectExportDestination,
-    type ProjectExportDestination,
-    type ProjectExportTarget,
-} from "../importables/export/projectDestination";
-import { getCurrentHousingUuid } from "../importCache";
+import type { ProjectExportTarget } from "../importables/export/projectDestination";
 import { defaultExportRoot, resolveModuleRelativePath } from "../project/paths";
 
-export type ExportDestination = ProjectExportDestination;
 type ExportDestinationPath = ProjectExportTarget;
 
 function trimTrailingSlashes(path: string): string {
@@ -39,7 +32,7 @@ function endsWithIgnoreCase(value: string, suffix: string): boolean {
     );
 }
 
-export function exportDestination(
+function exportDestination(
     explicitPath: string | undefined
 ): ExportDestinationPath | null {
     if (explicitPath === undefined) return null;
@@ -59,19 +52,4 @@ export function queuedExportDestination(
     if (explicitDestination !== null) return explicitDestination;
     const rootDir = defaultExportRoot(housingUuid);
     return { rootDir, importJsonPath: `${rootDir}/import.json` };
-}
-
-export async function resolveExportDestination(
-    ctx: TaskContext,
-    explicitPath: string | undefined
-): Promise<ExportDestination> {
-    const explicitDestination = exportDestination(explicitPath);
-    if (explicitDestination !== null)
-        return readProjectExportDestination(explicitDestination);
-    const uuid = await getCurrentHousingUuid(ctx);
-    const rootDir = defaultExportRoot(uuid);
-    return readProjectExportDestination({
-        rootDir,
-        importJsonPath: `${rootDir}/import.json`,
-    });
 }
