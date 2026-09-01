@@ -52,8 +52,6 @@ import {
     scanHouseNpcs,
 } from "./sources/npcsSource";
 import { type HouseReadableType } from "../../../importables/export/readers";
-import { startExport, type ExportSpec } from "../../export/taskController";
-import { makeDeepRead } from "./sources/deepRead";
 import type TaskContext from "../../../tasks/context";
 import { TaskManager } from "../../../tasks/manager";
 import { showToast } from "../../toast";
@@ -62,6 +60,7 @@ import { openEventEditor } from "../../../importables/events/housing";
 import { openManageTeam } from "../../../importables/teams/listTeams";
 import { openEditGroup } from "../../../importables/groups/listGroups";
 import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";
+import { startExport } from "../../export/taskController";
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.
@@ -74,10 +73,9 @@ export type HouseContentType = {
     scan: () => void;
     scanInFlight: () => boolean;
     scanNames?: boolean;
-    // Deep read: pull importables' full content from the house into the cache
-    // as verified knowledge (slow; explicit) — the export driver in read-only
-    // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
-    deepRead?: (onlyNames?: string[]) => void;
+    // Singular display label used by the Houses queue controls. Present only
+    // for types supported by the shared house reader.
+    queueLabel?: string;
     rowActions?: {
         label: string;
         icon: IconName;
@@ -85,24 +83,10 @@ export type HouseContentType = {
         opensEditor?: boolean;
     }[];
     remove?: (name: string) => void;
-    // Present only for types that can be written into the loaded import.json.
-    // Export reads the live housing menu, so the view still gates it on standing
-    // in the house. A type without this hook is browse-only.
-    export?: {
-        selected: (
-            names: string[],
-            onDone: () => void,
-            labels?: ReadonlyMap<string, string>
-        ) => void;
-    };
     standaloneAction?: { label: string; run: () => void };
 };
 
-function exportHook(spec: ExportSpec): HouseContentType["export"] {
-    return {
-        selected: (names, onDone, labels) => startExport(spec, names, onDone, labels),
-    };
-}
+type HouseReadableContentType = HouseContentType & { queueLabel: string };
 
 function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>): void {
     if (TaskManager.isBusy()) {
@@ -123,7 +107,7 @@ function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>):
 // field to its key. HOUSE_CONTENT_TYPES below is the ordered array the view
 // consumes; Object.keys preserves this insertion order.
 const HOUSE_CONTENT_BY_TYPE: {
-    [K in HouseReadableType]: HouseContentType & { type: K };
+    [K in HouseReadableType]: HouseReadableContentType & { type: K };
 } = {
     FUNCTION: {
         type: "FUNCTION",
@@ -133,7 +117,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseFunctionsScanned,
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
-        deepRead: makeDeepRead("FUNCTION", "function", isFunctionScanInFlight),
+        queueLabel: "function",
         rowActions: [
             {
                 label: "Run",
@@ -148,7 +132,6 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`function delete ${name}`),
-        export: exportHook({ type: "FUNCTION", label: "function" }),
     },
     MENU: {
         type: "MENU",
@@ -158,7 +141,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseMenusScanned,
         scan: scanHouseMenus,
         scanInFlight: isMenuScanInFlight,
-        deepRead: makeDeepRead("MENU", "menu", isMenuScanInFlight),
+        queueLabel: "menu",
         rowActions: [
             {
                 label: "View",
@@ -172,7 +155,6 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "MENU", label: "menu" }),
     },
     REGION: {
         type: "REGION",
@@ -182,7 +164,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseRegionsScanned,
         scan: scanHouseRegions,
         scanInFlight: isRegionScanInFlight,
-        deepRead: makeDeepRead("REGION", "region", isRegionScanInFlight),
+        queueLabel: "region",
         rowActions: [
             {
                 label: "Edit",
@@ -192,7 +174,6 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`region delete ${name}`),
-        export: exportHook({ type: "REGION", label: "region" }),
     },
     COMMAND: {
         type: "COMMAND",
@@ -202,7 +183,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseCommandsScanned,
         scan: scanHouseCommands,
         scanInFlight: isCommandScanInFlight,
-        deepRead: makeDeepRead("COMMAND", "command", isCommandScanInFlight),
+        queueLabel: "command",
         rowActions: [
             { label: "Run", icon: Icons.play, run: (name) => ChatLib.command(name) },
             {
@@ -219,7 +200,6 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`command delete ${name}`),
-        export: exportHook({ type: "COMMAND", label: "command" }),
     },
     EVENT: {
         // Housing has no per-event edit command, so Edit walks the /eventactions
@@ -232,7 +212,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
         scanNames: false,
-        deepRead: makeDeepRead("EVENT", "event", isEventScanInFlight),
+        queueLabel: "event",
         rowActions: [
             {
                 label: "Edit",
@@ -242,7 +222,6 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "EVENT", label: "event" }),
     },
     TEAM: {
         type: "TEAM",
@@ -252,7 +231,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseTeamsScanned,
         scan: scanHouseTeams,
         scanInFlight: isTeamScanInFlight,
-        deepRead: makeDeepRead("TEAM", "team", isTeamScanInFlight),
+        queueLabel: "team",
         rowActions: [
             {
                 label: "Edit",
@@ -263,7 +242,6 @@ const HOUSE_CONTENT_BY_TYPE: {
             },
         ],
         remove: (name) => ChatLib.command(`team delete ${name}`),
-        export: exportHook({ type: "TEAM", label: "team" }),
     },
     GROUP: {
         // Groups have no slash command; Edit walks Housing Menu -> Permissions
@@ -276,7 +254,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseGroupsScanned,
         scan: scanHouseGroups,
         scanInFlight: isGroupScanInFlight,
-        deepRead: makeDeepRead("GROUP", "group", isGroupScanInFlight),
+        queueLabel: "group",
         rowActions: [
             {
                 label: "Edit",
@@ -286,7 +264,6 @@ const HOUSE_CONTENT_BY_TYPE: {
                 opensEditor: true,
             },
         ],
-        export: exportHook({ type: "GROUP", label: "group" }),
     },
     NPC: {
         // NPCs are identified by position, not name, and have no per-NPC slash
@@ -301,7 +278,7 @@ const HOUSE_CONTENT_BY_TYPE: {
         scanned: houseNpcsScanned,
         scan: scanHouseNpcs,
         scanInFlight: isNpcScanInFlight,
-        deepRead: makeDeepRead("NPC", "npc", isNpcScanInFlight),
+        queueLabel: "npc",
         rowActions: [
             {
                 label: "Edit",
@@ -321,7 +298,6 @@ const HOUSE_CONTENT_BY_TYPE: {
                     ),
             },
         ],
-        export: exportHook({ type: "NPC", label: "npc" }),
     },
 };
 

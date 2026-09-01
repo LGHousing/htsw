@@ -43,8 +43,14 @@ export function toggleExportSelection(item: ExportSelectionItem): boolean {
     return true;
 }
 
-export function clearExportSelection(): void {
-    if (items.length === 0) return;
-    items = [];
+export function clearExportSelection(): void;
+export function clearExportSelection(uuid: string, type: Importable["type"]): void;
+export function clearExportSelection(uuid?: string, type?: Importable["type"]): void {
+    const next =
+        uuid === undefined || type === undefined
+            ? []
+            : items.filter((item) => item.uuid !== uuid || item.type !== type);
+    if (next.length === items.length) return;
+    items = next;
     markGuiDirty();
 }
