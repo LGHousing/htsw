@@ -70,6 +70,7 @@ import {
 import type { Importable } from "htsw/types";
 import { importableLinkStatusContextKey } from "../../cache-status";
 import { getAliasRevision } from "../../../importCache/aliases";
+import { getAutoTrackRevision } from "../../state";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -574,7 +575,8 @@ function formatFullDir(fullPath: string): string {
 // content() never runs. Descriptors only encode STRUCTURE (per-frame state
 // like dots/checkboxes lives inside content(), which still runs per visible
 // row per frame), so reuse is safe. Interactions bump the revision for an
-// instant rebuild; parse changes carry their own revision.
+// instant rebuild; parse changes carry their own revision. The status
+// fingerprint covers every external persisted input the build bakes structurally.
 let cachedTreeRows: TreeRow[] | null = null;
 let cachedTreeRevision = -1;
 let cachedParseRevision = -1;
@@ -585,7 +587,7 @@ let cachedRowEnds: number[] = [];
 let cachedTreeHeight = 0;
 
 function treeStatusFingerprint(): string {
-    return importableLinkStatusContextKey();
+    return importableLinkStatusContextKey() + "|" + String(getAutoTrackRevision());
 }
 
 let lastBuildMs = 0;

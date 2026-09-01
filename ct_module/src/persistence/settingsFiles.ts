@@ -68,8 +68,19 @@ export function readSettingsFile(
 }
 
 export type JsonSettingsRead =
-    | { ok: true; found: false }
-    | { ok: true; found: true; value: unknown }
+    | {
+          ok: true;
+          found: false;
+          /** Raw file text used to detect changes between reads. */
+          raw: string | null;
+      }
+    | {
+          ok: true;
+          found: true;
+          /** Raw file text used to detect changes between reads. */
+          raw: string;
+          value: unknown;
+      }
     | { ok: false };
 
 export function readJsonSettingsFile(
@@ -78,8 +89,10 @@ export function readJsonSettingsFile(
 ): JsonSettingsRead {
     try {
         const raw = readSettingsFile(fileName, extraLegacy);
-        if (raw === null || raw.trim() === "") return { ok: true, found: false };
-        return { ok: true, found: true, value: JSON.parse(raw) as unknown };
+        if (raw === null || raw.trim() === "") {
+            return { ok: true, found: false, raw };
+        }
+        return { ok: true, found: true, raw, value: JSON.parse(raw) as unknown };
     } catch (_e) {
         return { ok: false };
     }

@@ -100,6 +100,30 @@ describe("persistence store", () => {
         expect(flag.get()).toBe(true);
     });
 
+    it("increments revision only after a successful set", async () => {
+        const { defineDoc, defineValue, asBoolean } = await import(
+            "../src/persistence/store"
+        );
+        const doc = defineDoc({ file: "t.json" });
+        const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
+
+        expect(flag.revision()).toBe(0);
+        expect(flag.set(false)).toBe(true);
+        expect(flag.revision()).toBe(1);
+
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files.has(path),
+            read: (path: string) => files.get(path) ?? null,
+            write: () => {
+                throw new Error("read-only");
+            },
+            delete: (path: string) => files.delete(path),
+        });
+
+        expect(flag.set(true)).toBe(false);
+        expect(flag.revision()).toBe(1);
+    });
+
     it("migrates a document from a legacy path and removes the old copy", async () => {
         const legacy = "./config/ChatTriggers/modules/HTSW/gui-t.json";
         files.set(legacy, JSON.stringify({ on: false }));
@@ -186,6 +210,37 @@ describe("persistence store", () => {
         const now = Date.now();
         vi.spyOn(Date, "now").mockReturnValue(now + 1000);
 
+        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
+        vi.restoreAllMocks();
+    });
+
+    it("increments revision only when a TTL re-read finds changed contents", async () => {
+        files.set(`${SETTINGS_DIR}/r.json`, JSON.stringify(["a"]));
+        const { defineRootDoc, asStringSetValue } = await import(
+            "../src/persistence/store"
+        );
+        const value = defineRootDoc<Set<string>>({
+            file: "r.json",
+            ttlMs: 1,
+            fallback: new Set<string>(),
+            parse: asStringSetValue,
+        });
+
+        expect(Array.from(value.get())).toEqual(["a"]);
+        expect(value.revision()).toBe(0);
+
+        const now = Date.now();
+        const dateNow = vi.spyOn(Date, "now");
+        files.set(`${SETTINGS_DIR}/r.json`, JSON.stringify(["a", "b"]));
+        dateNow.mockReturnValue(now + 1000);
+
+        // Reading the revision alone must trigger the expired re-read: a
+        // cache key is often the only thing polling a doc.
+        expect(value.revision()).toBe(1);
+        expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
+
+        dateNow.mockReturnValue(now + 2000);
+        expect(value.revision()).toBe(1);
         expect(Array.from(value.get()).sort()).toEqual(["a", "b"]);
         vi.restoreAllMocks();
     });

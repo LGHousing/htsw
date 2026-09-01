@@ -43,20 +43,12 @@ const aliases = defineRootDoc<Map<string, string>>({
     serialize: serializeStringMap,
 });
 
-let revision = 0;
-
 /**
- * Bumped whenever a stored alias changes. GUI trees that bake a house's
+ * Changes whenever a stored alias changes. GUI trees that bake a house's
  * display name into a cached row have no other way to notice the rename.
  */
 export function getAliasRevision(): number {
-    return revision;
-}
-
-function writeAliases(next: Map<string, string>): boolean {
-    if (!aliases.set(next)) return false;
-    revision++;
-    return true;
+    return aliases.revision();
 }
 
 export function getAlias(uuid: string): string | null {
@@ -70,7 +62,7 @@ export function setAlias(uuid: string, alias: string): boolean {
     const next = new Map<string, string>(current);
     if (trimmed.length === 0) next.delete(uuid);
     else next.set(uuid, trimmed);
-    return writeAliases(next);
+    return aliases.set(next);
 }
 
 export function clearAlias(uuid: string): boolean {
@@ -78,7 +70,7 @@ export function clearAlias(uuid: string): boolean {
     if (!current.has(uuid)) return true;
     const next = new Map<string, string>(current);
     next.delete(uuid);
-    return writeAliases(next);
+    return aliases.set(next);
 }
 
 export function listAliases(): Partial<Record<string, string>> {
