@@ -35,8 +35,13 @@ export function removeEmptyEventExport(
 ): void {
     const result = removeImportableEntryForDelete(fs, importJsonPath, "events", name);
     if (!result.ok || fs.deleteFile === undefined) return;
+    const rootKey = fs.pathKey(fs.parentDir(importJsonPath));
+    const rootPrefix = rootKey.endsWith("/") ? rootKey : `${rootKey}/`;
     for (let i = 0; i < result.ownedFiles.length; i++) {
-        fs.deleteFile(result.ownedFiles[i]);
+        const file = result.ownedFiles[i];
+        const fileKey = fs.pathKey(file);
+        if (fileKey !== rootKey && !fileKey.startsWith(rootPrefix)) continue;
+        fs.deleteFile(file);
     }
 }
 

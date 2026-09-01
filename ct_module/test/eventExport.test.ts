@@ -7,7 +7,16 @@ function memoryFs(
     files: Record<string, string>
 ): ProjectFs & { store: Map<string, string> } {
     const store = new Map(Object.entries(files));
-    const normalize = (path: string): string => path.replace(/\\/g, "/");
+    const normalize = (path: string): string => {
+        const parts = path.replace(/\\/g, "/").split("/");
+        const normalized: string[] = [];
+        for (let i = 0; i < parts.length; i++) {
+            if (parts[i] === "" || parts[i] === ".") continue;
+            if (parts[i] === "..") normalized.pop();
+            else normalized.push(parts[i]);
+        }
+        return `/${normalized.join("/")}`;
+    };
     return {
         store,
         exists: (path) => store.has(normalize(path)),
@@ -61,5 +70,19 @@ describe("event exports", () => {
             events: [{ event: "Player Quit", actions: "shared.htsl" }],
         });
         expect(fs.exists("/project/shared.htsl")).toBe(true);
+    });
+
+    it("preserves an owned action file outside the project", () => {
+        const fs = memoryFs({
+            [IMPORT_JSON]: JSON.stringify({
+                events: [{ event: "Player Join", actions: "../outside/leak.htsl" }],
+            }),
+            "/outside/leak.htsl": "sendMessage outside",
+        });
+
+        removeEmptyEventExport(fs, IMPORT_JSON, "Player Join");
+
+        expect(JSON.parse(fs.readFile(IMPORT_JSON))).toEqual({});
+        expect(fs.exists("/outside/leak.htsl")).toBe(true);
     });
 });
