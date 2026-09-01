@@ -54,6 +54,14 @@ describe("auto-track persistence", () => {
         expect(JSON.parse(files.get(AUTO_TRACK_FILE) ?? "null")).toEqual([]);
     });
 
+    test("changes revision after toggling a tracked path", async () => {
+        const state = await import("../src/gui/state/autoTrack");
+        const revision = state.getAutoTrackRevision();
+
+        expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBe(true);
+        expect(state.getAutoTrackRevision()).toBe(revision + 1);
+    });
+
     test("does not replace a malformed settings file", async () => {
         files.set(AUTO_TRACK_FILE, "not json");
         const state = await import("../src/gui/state/autoTrack");

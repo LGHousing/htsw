@@ -26,6 +26,10 @@ export function isAutoTrackSource(sourcePath: string): boolean {
     return autoTrackSources.get().has(canonicalPath(sourcePath));
 }
 
+export function getAutoTrackRevision(): number {
+    return autoTrackSources.revision();
+}
+
 export function toggleAutoTrackSource(sourcePath: string): boolean | null {
     if (!autoTrackSources.healthy()) return null;
     const canon = canonicalPath(sourcePath);
