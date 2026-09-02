@@ -113,7 +113,8 @@ describe("operation queue drain", () => {
             { op: "export", filter: "all", path: "/all/import.json" },
             { op: "import", filter: "modified", path: "/modified/import.json" },
             { op: "export", filter: "new", path: "/new/import.json" },
-            { op: "read", filter: "changed", path: "/changed/import.json" },
+            { op: "export", filter: "changed", path: "/changed/import.json" },
+            { op: "read", filter: "unread", path: "/unread/import.json" },
         ];
         for (const spec of specs) {
             enqueue(
@@ -156,12 +157,13 @@ describe("operation queue drain", () => {
         });
 
         await drainQueue(ctx, deps);
-        expect(expanded).toEqual(["all", "modified", "new", "changed"]);
+        expect(expanded).toEqual(["all", "modified", "new", "changed", "unread"]);
         expect(ran).toEqual([
             "fresh-all",
             "fresh-modified",
             "fresh-new",
             "fresh-changed",
+            "fresh-unread",
         ]);
     });
 
@@ -314,7 +316,9 @@ describe("bulk filter semantics", () => {
         expect(bulkFilterAllowed("import", "modified")).toBe(true);
         expect(bulkFilterAllowed("export", "new")).toBe(true);
         expect(bulkFilterAllowed("export", "changed")).toBe(true);
-        expect(bulkFilterAllowed("read", "changed")).toBe(true);
+        expect(bulkFilterAllowed("read", "unread")).toBe(true);
+        expect(bulkFilterAllowed("read", "changed")).toBe(false);
+        expect(bulkFilterAllowed("export", "unread")).toBe(false);
         expect(bulkFilterAllowed("export", "modified")).toBe(false);
         expect(bulkFilterAllowed("read", "new")).toBe(false);
         expect(bulkFilterAllowed("import", "changed")).toBe(false);
@@ -327,6 +331,9 @@ describe("bulk filter semantics", () => {
         expect(matchesBulkCacheState("changed", "modified", true)).toBe(true);
         expect(matchesBulkCacheState("changed", "modified", false)).toBe(false);
         expect(matchesBulkCacheState("changed", "unknown", true)).toBe(false);
+        expect(matchesBulkCacheState("unread", "unknown", true)).toBe(true);
+        expect(matchesBulkCacheState("unread", "current", true)).toBe(false);
+        expect(matchesBulkCacheState("unread", "current", false)).toBe(true);
     });
 
     it("computes new from fresh names minus reparsed declarations", () => {

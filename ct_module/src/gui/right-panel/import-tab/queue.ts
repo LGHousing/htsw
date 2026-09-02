@@ -18,7 +18,7 @@ export type QueueStatus = "queued" | "running" | "failed" | "cancelled";
 export type QueueOrigin = "user" | "autotrack" | "dependency" | "expansion";
 export type BulkScope =
     { kind: "houseType"; type: HouseReadableType } | { kind: "file"; path: string };
-export type BulkFilter = "all" | "modified" | "new" | "changed";
+export type BulkFilter = "all" | "modified" | "new" | "changed" | "unread";
 export type QueueTarget =
     | {
           kind: "importable";

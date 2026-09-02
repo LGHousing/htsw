@@ -74,7 +74,7 @@ export function enqueueHouseBulk(args: {
     house: string;
     path: string;
     type: HouseReadableType;
-    filter: Extract<BulkFilter, "all" | "new" | "changed">;
+    filter: Extract<BulkFilter, "all" | "new" | "changed" | "unread">;
     label: string;
 }): void {
     const row = makeBulkQueueRow({

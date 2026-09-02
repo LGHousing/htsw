@@ -344,7 +344,8 @@ export function bulkFilterAllowed(op: QueueOp, filter: BulkFilter): boolean {
     if (filter === "all") return true;
     if (filter === "modified") return op === "import";
     if (filter === "new") return op === "export";
-    return op === "export" || op === "read";
+    if (filter === "unread") return op === "read";
+    return op === "export";
 }
 
 export function matchesBulkCacheState(
@@ -356,6 +357,8 @@ export function matchesBulkCacheState(
     // An untrusted house cannot establish a reliable cache baseline, so its
     // `modified` state is not enough to claim the live and local sides differ.
     if (filter === "changed") return trusted && state === "modified";
+    // Untrusted knowledge is no knowledge: reading re-establishes it.
+    if (filter === "unread") return !trusted || state === "unknown";
     return true;
 }
 
@@ -444,7 +447,7 @@ async function expandBulkDefault(
                 identity: importableIdentity(importable),
                 label: importable.type === "EVENT" ? importable.event : importable.name,
             }));
-        } else if (row.target.filter === "changed") {
+        } else if (row.target.filter === "changed" || row.target.filter === "unread") {
             selected = selectedImportables(values, row, house, live).map(
                 (importable) => ({
                     type: importable.type,

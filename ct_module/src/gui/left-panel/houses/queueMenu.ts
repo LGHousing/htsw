@@ -2,13 +2,14 @@
 export type HouseQueueCounts = {
     all: number | null;
     changed: number;
+    unread: number;
     shown: number;
     new: number;
 };
 
 export type HouseQueueMenuActionId =
     | "read-all"
-    | "read-changed"
+    | "read-unread"
     | "read-shown"
     | "export-all"
     | "export-new"
@@ -47,7 +48,7 @@ export function buildHouseQueueMenu(
     const noun = pluralLabel.toLowerCase();
     return [
         action("read-all", `Read all ${noun}`, counts.all, destinationReady),
-        action("read-changed", "Read changed", counts.changed, destinationReady),
+        action("read-unread", "Read unread", counts.unread, destinationReady),
         action("read-shown", "Read shown", counts.shown, destinationReady),
         { kind: "separator" },
         action("export-all", `Export all ${noun}`, counts.all, destinationReady),

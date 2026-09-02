@@ -26,7 +26,6 @@ import {
     getActiveTaskLabel,
     getFinishedTaskFailure,
     getFinishedTaskSummary,
-    getSessionVerb,
     getTaskProgress,
     isCurrentQueueRow,
 } from "./import-tab/taskProgress";
@@ -44,7 +43,13 @@ import {
 import { isTaskRunning } from "../../tasks/runningState";
 import { getHousingUuid } from "../state";
 import { houseDisplayName } from "../../importCache/aliases";
-import { isQueueBulkExpanded, queueBulkChildren, queueRow } from "./import-tab/queueRows";
+import {
+    isQueueBulkExpanded,
+    isQueueRowCompact,
+    queueBulkChildren,
+    queueRow,
+    queueRowCanExpand,
+} from "./import-tab/queueRows";
 import { queueControl } from "./import-tab/importButtons";
 import {
     failedTaskFooterPanel,
@@ -215,6 +220,8 @@ function virtualQueueRows(): Child[] {
     const state = getScrollState(QUEUE_SCROLL_ID);
     const viewportH = state.viewportRect.h > 0 ? state.viewportRect.h : QUEUE_SCROLL_H;
     const groups = groupQueueRowsByHouse(getQueue(), getHousingUuid());
+    const compact = isQueueRowCompact(state.viewportRect.w);
+    const gutter = groups.some((group) => group.rows.some(queueRowCanExpand));
     const followOn = advanceQueueFollow();
     const following = followOn && getActiveTaskLabel() !== null;
     let activeTop = -1;
@@ -308,7 +315,7 @@ function virtualQueueRows(): Child[] {
         const rows = topLevelRows(group.rows);
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            append(SIZE_ROW_H, () => queueRow(row, { dimmed }));
+            append(SIZE_ROW_H, () => queueRow(row, { dimmed, compact, gutter }));
             const children = expandedChildren(row);
             if (children.length === 0) continue;
             if (rowCount > 0) contentH += QUEUE_ROW_GAP;
@@ -328,7 +335,9 @@ function virtualQueueRows(): Child[] {
             for (let j = first; j < last; j++) {
                 const top = blockTop + j * stride;
                 if (firstVisibleY < 0) firstVisibleY = top;
-                visible.push(queueRow(children[j], { child: true, dimmed }));
+                visible.push(
+                    queueRow(children[j], { child: true, dimmed, compact, gutter })
+                );
                 lastVisibleBottom = top + SIZE_ROW_H;
             }
             contentH =
@@ -390,7 +399,9 @@ function otherHouseNote(): Element | null {
     for (let g = 0; g < groups.length; g++) {
         const group = groups[g];
         if (group.current || group.house === null) continue;
-        parts.push(`${queueWorkRowCount(group.rows)} more in ${houseDisplayName(group.house)}`);
+        parts.push(
+            `${queueWorkRowCount(group.rows)} more in ${houseDisplayName(group.house)}`
+        );
     }
     if (parts.length === 0) return null;
     return Text({
@@ -414,13 +425,8 @@ export function viewFooter(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" } },
         children: () => {
-            const taskListIsInView =
-                getTaskProgress() !== null && getSessionVerb() !== "import";
-            const children: Child[] = [divider()];
-            if (!taskListIsInView) {
-                children.push(queueSummary());
-                if (isQueueExpanded()) children.push(queueScroll());
-            }
+            const children: Child[] = [divider(), queueSummary()];
+            if (isQueueExpanded()) children.push(queueScroll());
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             else if (isLiveTabActive() && getFinishedTaskFailure() !== null) {
                 children.push(failedTaskFooterPanel());

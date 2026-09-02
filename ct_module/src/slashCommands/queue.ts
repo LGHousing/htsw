@@ -67,7 +67,7 @@ function printQueueUsage(): void {
     ChatLib.chat("&7[htsw] /htsw queue add <import.json path> <TYPE> <identity...>");
     ChatLib.chat("&7[htsw] /htsw queue modified <import.json path>");
     ChatLib.chat("&7[htsw] /htsw queue export <TYPE> <all|new|changed|identity...>");
-    ChatLib.chat("&7[htsw] /htsw queue read <TYPE> <all|changed|identity...>");
+    ChatLib.chat("&7[htsw] /htsw queue read <TYPE> <all|unread|identity...>");
     ChatLib.chat("&7[htsw] /htsw queue list");
     ChatLib.chat("&7[htsw] /htsw queue remove <index>");
     ChatLib.chat("&7[htsw] /htsw queue retry <index>");
@@ -206,7 +206,7 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
     const selector = stripSurroundingQuotes(args.slice(1).join(" "));
     if (type === null || selector.length === 0) {
         ChatLib.chat(
-            `&c[htsw] Usage: /htsw queue ${op} <TYPE> <${op === "export" ? "all|new|changed|" : "all|changed|"}identity...>`
+            `&c[htsw] Usage: /htsw queue ${op} <TYPE> <${op === "export" ? "all|new|changed|" : "all|unread|"}identity...>`
         );
         return;
     }
@@ -232,12 +232,16 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         );
         return;
     }
-    if (filter === "new" && op === "read") {
-        ChatLib.chat("&c[htsw] Read supports all, changed, or an identity.");
+    if ((filter === "new" || filter === "changed") && op === "read") {
+        ChatLib.chat("&c[htsw] Read supports all, unread, or an identity.");
+        return;
+    }
+    if (filter === "unread" && op === "export") {
+        ChatLib.chat("&c[htsw] Export supports all, new, changed, or an identity.");
         return;
     }
     const result =
-        filter === "all" || filter === "new" || filter === "changed"
+        filter === "all" || filter === "new" || filter === "changed" || filter === "unread"
             ? addUserRow(
                   makeBulkQueueRow({
                       op,

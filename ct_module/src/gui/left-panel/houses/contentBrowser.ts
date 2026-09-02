@@ -744,7 +744,7 @@ function queueBulk(
     uuid: string,
     path: string,
     op: "read" | "export",
-    filter: "all" | "new" | "changed",
+    filter: "all" | "new" | "changed" | "unread",
     label: string
 ): void {
     enqueueHouseBulk({ op, house: uuid, path, type: t.type, filter, label });
@@ -768,8 +768,8 @@ function runQueueMenuAction(
         case "read-all":
             queueBulk(t, uuid, path, "read", "all", `Read all ${noun}`);
             return;
-        case "read-changed":
-            queueBulk(t, uuid, path, "read", "changed", `Read changed ${noun}`);
+        case "read-unread":
+            queueBulk(t, uuid, path, "read", "unread", `Read unread ${noun}`);
             return;
         case "read-shown":
             queueConcrete(t, uuid, path, items, shownNames, "read", false);
@@ -872,6 +872,9 @@ function queueActionBar(
     const counts: HouseQueueCounts = {
         all: t.scanned(uuid) ? allRows.length : null,
         changed: allRows.filter((row) => row.state === "differs-from-knowledge").length,
+        unread: allRows.filter(
+            (row) => row.state === "unread" || row.state === "exists-in-house"
+        ).length,
         shown: shownRows.length,
         new: allRows.filter((row) => row.state === "house-only").length,
     };
@@ -982,13 +985,18 @@ function queueActionBar(
         }
         barChildren.push(
             Button({
+                // Centered like Scan beside it; the chevron rides along as a
+                // small trailing hint rather than being pushed to the edge.
                 children: [
-                    Text({
-                        text: "Queue all…",
-                        truncate: true,
-                        style: { width: { kind: "grow" } },
+                    Icon({ name: Icons.listPlus }),
+                    Text({ text: "Queue all", truncate: true }),
+                    Icon({
+                        name: Icons.chevronDown,
+                        style: {
+                            width: { kind: "px", value: 10 },
+                            height: { kind: "px", value: 10 },
+                        },
                     }),
-                    Icon({ name: Icons.chevronDown }),
                 ],
                 style: {
                     width: { kind: "grow" },

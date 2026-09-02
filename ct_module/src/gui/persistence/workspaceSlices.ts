@@ -253,7 +253,13 @@ function isQueueStatus(raw: unknown): raw is QueueStatus {
     );
 }
 function isBulkFilter(raw: unknown): raw is BulkFilter {
-    return raw === "all" || raw === "modified" || raw === "new" || raw === "changed";
+    return (
+        raw === "all" ||
+        raw === "modified" ||
+        raw === "new" ||
+        raw === "changed" ||
+        raw === "unread"
+    );
 }
 
 const parseQueue: ValueParser<QueueRow[]> = asEntryArray<QueueRow>((entry) => {

@@ -142,15 +142,15 @@ describe("queue slash commands", () => {
         });
     });
 
-    test("queues a changed read bulk row", () => {
-        commandQueue(["read", "FUNCTION", "changed"]);
+    test("queues an unread read bulk row", () => {
+        commandQueue(["read", "FUNCTION", "unread"]);
 
         expect(state.rows[0]).toMatchObject({
             op: "read",
             target: {
                 kind: "bulk",
                 scope: { kind: "houseType", type: "FUNCTION" },
-                filter: "changed",
+                filter: "unread",
             },
         });
     });

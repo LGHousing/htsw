@@ -12,7 +12,7 @@ describe("Houses queue menu", () => {
         expect(
             buildHouseQueueMenu(
                 "Functions",
-                { all: 27, changed: 3, shown: 12, new: 0 },
+                { all: 27, changed: 3, unread: 5, shown: 12, new: 0 },
                 true
             )
         ).toEqual([
@@ -24,8 +24,8 @@ describe("Houses queue menu", () => {
             },
             {
                 kind: "action",
-                id: "read-changed",
-                label: "Read changed (3)",
+                id: "read-unread",
+                label: "Read unread (5)",
                 disabled: false,
             },
             {
@@ -72,7 +72,7 @@ describe("Houses queue menu", () => {
     it("keeps the all actions enabled with ? before the first scan", () => {
         const entries = buildHouseQueueMenu(
             "Functions",
-            { all: null, changed: 0, shown: 0, new: 0 },
+            { all: null, changed: 0, unread: 0, shown: 0, new: 0 },
             true
         );
         const byId = new Map(
@@ -87,13 +87,13 @@ describe("Houses queue menu", () => {
             disabled: false,
         });
         expect(byId.get("export-all")?.disabled).toBe(false);
-        expect(byId.get("read-changed")?.disabled).toBe(true);
+        expect(byId.get("read-unread")?.disabled).toBe(true);
     });
 
     it("disables every queue action without a destination", () => {
         const entries = buildHouseQueueMenu(
             "NPCs",
-            { all: 2, changed: 1, shown: 2, new: 1 },
+            { all: 2, changed: 1, unread: 1, shown: 2, new: 1 },
             false
         );
         expect(
