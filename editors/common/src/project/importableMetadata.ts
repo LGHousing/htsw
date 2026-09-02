@@ -17,6 +17,15 @@ export function importableMetadataEntries(
     if (importable.type === "FUNCTION") {
         const entries: ImportableMetadataEntry[] = [
             {
+                key: "description",
+                label: "Description",
+                value:
+                    importable.description === undefined || importable.description === ""
+                        ? "none"
+                        : importable.description,
+                jsonPath: ["description"],
+            },
+            {
                 key: "repeatTicks",
                 label: "Repeat",
                 value:
@@ -100,6 +109,10 @@ export function importableMetadataComparisonValue(
     key: string
 ): unknown {
     switch (key) {
+        case "description":
+            return importable.type === "FUNCTION"
+                ? normalizedFunctionDescription(importable.description)
+                : undefined;
         case "repeatTicks":
             return importable.type === "FUNCTION" ? importable.repeatTicks : undefined;
         case "icon":
@@ -131,6 +144,15 @@ export function importableMetadataComparisonValue(
         default:
             return undefined;
     }
+}
+
+// Housing appends a period to descriptions that end without punctuation, so
+// "Updates the loop" in the file reads back as "Updates the loop." from the
+// house. Drop one trailing period on both sides so that round-trip is not
+// flagged as a diff (the importer treats the pair as equal too).
+function normalizedFunctionDescription(description: string | undefined): unknown {
+    if (description === undefined || description === "") return null;
+    return description.endsWith(".") ? description.slice(0, -1) : description;
 }
 
 function normalizedFunctionIcon(

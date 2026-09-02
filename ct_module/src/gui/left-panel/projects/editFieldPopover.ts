@@ -186,7 +186,10 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
     let value: unknown;
     let field: string | string[] = fieldKey;
 
-    if (fieldKey === "repeatTicks") {
+    if (fieldKey === "description") {
+        const trimmed = editingValue.trim();
+        value = trimmed === "" ? undefined : trimmed;
+    } else if (fieldKey === "repeatTicks") {
         const trimmed = editingValue.trim();
         if (trimmed === "" || trimmed === "off" || trimmed === "0") {
             value = undefined;
@@ -530,7 +533,9 @@ export function openEditImportableFieldPopover(
         editingFor = id;
 
         if (imp.type === "FUNCTION") {
-            if (fieldKey === "repeatTicks") {
+            if (fieldKey === "description") {
+                editingValue = imp.description ?? "";
+            } else if (fieldKey === "repeatTicks") {
                 editingValue = imp.repeatTicks !== undefined ? String(imp.repeatTicks) : "";
             } else if (fieldKey === "icon") {
                 editingValue = imp.icon !== undefined ? imp.icon.item : "";
@@ -587,6 +592,9 @@ export function openEditImportableFieldPopover(
     } else if (fieldKey === "boundsTo") {
         content = coordinateContent(jsonPath, imp, fieldKey, "Bounds to");
         width = 260;
+    } else if (fieldKey === "description") {
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Description", "shown in the function list");
+        width = 280;
     } else if (fieldKey === "repeatTicks") {
         content = singleFieldContent(jsonPath, imp, fieldKey, "Repeat ticks", "4-18000 (0 = off)");
     } else if (fieldKey === "iconCount") {
