@@ -369,3 +369,23 @@ describe("scalarFieldDiffers — scalar field comparison", () => {
         }
     });
 });
+
+describe("action comparison — note lore wrapping", () => {
+    // Housing word-wraps long notes across lore lines and the reader joins
+    // them with "\n". Notes are typed through single-line chat input, so the
+    // wrapped read-back must compare equal to the one-line source note.
+    test("wrapped read-back note equals the single-line source note", () => {
+        const observed = {
+            type: "EXIT",
+            note: "everything here only runs on the\nhitter",
+        } as unknown as Action;
+        const desired = { type: "EXIT", note: "everything here only runs on the hitter" } as Action;
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
+
+    test("different note words still differ", () => {
+        const observed = { type: "EXIT", note: "runs on the\nhitter" } as Action;
+        const desired = { type: "EXIT", note: "runs on the receiver" } as Action;
+        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    });
+});

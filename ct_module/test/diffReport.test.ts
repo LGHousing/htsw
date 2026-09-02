@@ -255,11 +255,30 @@ describe("diff report", () => {
         ]);
     });
 
+    it("treats a lore-wrapped live note as equal to the one-line source note", () => {
+        // Housing word-wraps long notes across lore lines and the reader joins
+        // them with "\n"; notes are typed through single-line chat, so the
+        // wrapped read-back is the same note.
+        const note = "everything here only runs on the hitter";
+        const source = func("Debug", [message("same", { note })]);
+        const report = evaluate(
+            [source],
+            liveMap(
+                func("Debug", [
+                    message("same", { note: "everything here only runs on the\nhitter" }),
+                ])
+            ),
+            lockFor("Debug", [message("same", { note })])
+        );
+
+        expect(report).toMatchObject({ clean: 1, conflicts: [], pending: [] });
+    });
+
     it("keeps multiline note conflicts actionable in the details file", () => {
         const source = func("Debug", [message("same", { note: "a\nb" })]);
         const report = evaluate(
             [source],
-            liveMap(func("Debug", [message("same", { note: "a b" })])),
+            liveMap(func("Debug", [message("same", { note: "a c" })])),
             lockFor("Debug", [message("same", { note: "baseline" })])
         );
 
@@ -270,8 +289,8 @@ describe("diff report", () => {
         );
 
         expect(details).toContain("action 1 (message) · note");
-        expect(details).toContain('-  "a\\nb"');
-        expect(details).toContain('+  "a b"');
+        expect(details).toContain('-  "a b"');
+        expect(details).toContain('+  "a c"');
     });
 
     it("omits default-equivalent fields from canonical details", () => {

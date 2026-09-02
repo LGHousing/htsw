@@ -319,11 +319,15 @@ export function shallowActionListHasActions(slot: ItemSlot): boolean {
     return true;
 }
 
+// Notes are entered through single-line chat input, so a note can never hold a
+// real line break. Any newline in a read-back note is Housing word-wrapping the
+// lore; join the wrapped lines with a space so both sides compare alike.
 export function normalizeNoteText(note: string): string {
     return note
         .split("\n")
         .map((line) => normalizeLoreValueFormatting(line).trim())
-        .join("\n")
+        .filter((line) => line.length > 0)
+        .join(" ")
         .trim();
 }
 
