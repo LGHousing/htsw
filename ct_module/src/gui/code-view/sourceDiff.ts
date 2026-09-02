@@ -71,6 +71,7 @@ import {
 import { visitItemReferences } from "../../importables/items/dependencies";
 import type { ItemReferenceUse } from "../../importables/items/dependencies";
 import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
+import { notesEqual } from "../../housingSync/actions/comparison";
 
 export type ChangedItemRef = { itemName: string; openPath: string | undefined };
 export type ChangedItemSpan = ChangedItemRef & {
@@ -478,15 +479,20 @@ function walk(
             // child lines below, so judge the head by its conditions alone.
             // Otherwise adding/editing an action inside would light the head and
             // make it look like the conditions changed.
-            state = conditionsMatchCache(
-                action.conditions,
-                lists[`${cacheKey}[${j}].conditions`]
-            )
-                ? "match"
-                : "edit";
+            // The note is head text too: the cache hash includes it, so a
+            // note-only edit must light the head here or the tree reports
+            // "modified" while this view shows nothing.
+            state =
+                conditionsMatchCache(
+                    action.conditions,
+                    lists[`${cacheKey}[${j}].conditions`]
+                ) && notesEqual(action.note, cachedAction?.note)
+                    ? "match"
+                    : "edit";
         } else if (action.type === "RANDOM") {
-            // `random {` has no head fields; child-list changes show on child lines.
-            state = "match";
+            // `random {` has no head fields beyond its note; child-list
+            // changes show on child lines.
+            state = notesEqual(action.note, cachedAction?.note) ? "match" : "edit";
         } else {
             state =
                 slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";

@@ -252,7 +252,7 @@ describe("cache entry hashes", () => {
     test("uses stored list hashes from a current cache entry", () => {
         const entry = {
             schemaVersion: 2,
-            version: 1,
+            version: 2,
             writtenAt: "2026-07-30T00:00:00.000Z",
             writer: "importer",
             importable,
