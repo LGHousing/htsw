@@ -46,6 +46,9 @@ function hydrating(): SyncEvent {
 
 describe("isTaskTotalEtaReady", () => {
     test("a read session shows its total once the session locks it", () => {
+        const beforeFirstItem = emit([started()[0]]);
+        expect(isTaskTotalEtaReady(beforeFirstItem.progress, false)).toBe(false);
+
         const unlocked = emit([...started(), hydrating()]);
         expect(isTaskTotalEtaReady(unlocked.progress, false)).toBe(false);
 
