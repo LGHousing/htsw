@@ -135,8 +135,10 @@ export function isTaskTotalEtaReady(
     progress: TaskProgress,
     appliesChanges: boolean
 ): boolean {
+    // The active-null shortcut in isTaskTotalLocked is not enough here: before
+    // the first item starts the session total is still the placeholder.
+    if (!appliesChanges) return progress.totalsLocked;
     if (!isTaskTotalLocked(progress)) return false;
-    if (!appliesChanges) return true;
     const phase = progress.active?.phase;
     return phase === "applying" || phase === "done";
 }
