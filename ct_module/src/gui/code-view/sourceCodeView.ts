@@ -3,7 +3,7 @@
 import * as htsw from "htsw";
 
 import { CodeView } from "./codeView";
-import { ROW_BG_BY_STATE } from "./diffPalette";
+import { COLOR_BY_STATE, ROW_BG_BY_STATE } from "./diffPalette";
 import {
     ensureSourceDiff,
     getSourceDiffRevision,
@@ -87,29 +87,58 @@ function sourceDiffDecorator(
             if (overlay === undefined) return {};
             const before = overlay.ghostsBeforeLine.get(line.lineNum);
             const extraLinesBefore = before === undefined ? undefined : ghostRows(before);
-            if (line.actionPath?.kind !== "action") return { extraLinesBefore };
+            const spans = overlay.changedItemSpans.get(line.lineNum);
+            const tokenMarks = spans === undefined
+                ? undefined
+                : spans.map((span) => ({
+                      startColumn: span.startColumn,
+                      endColumn: span.endColumn,
+                      underlineColor: COLOR_BY_STATE.edit,
+                      linkTarget: span.openPath,
+                  }));
+            if (line.actionPath?.kind !== "action") {
+                return { extraLinesBefore, tokenMarks };
+            }
             const actionPathKeyValue = ActionPath.key(line.actionPath);
             const state = overlay.states.get(actionPathKeyValue);
-            if (state === undefined) return { extraLinesBefore };
-            const itemHint = !overlay.changedItems.has(actionPathKeyValue)
+            const changedItems = overlay.changedItems.get(actionPathKeyValue);
+            const isHead = line.id === `htsl:${actionPathKeyValue}`;
+            const showItemHint = changedItems !== undefined &&
+                (isHead || tokenMarks !== undefined);
+            const itemHint = !showItemHint
                 ? {}
-                : { hoverLines: () => ["&eReferenced item changed"] };
+                : {
+                      hoverLines: () => {
+                          const names = changedItems
+                              .map((item) => item.itemName)
+                              .join("&e, &f");
+                          const lines = [`&eReferenced item changed: &f${names}`];
+                          if (changedItems.some((item) => item.openPath !== undefined)) {
+                              lines.push("&7Click the name to open it");
+                          }
+                          return lines;
+                      },
+                  };
+            if (state === undefined) {
+                return { extraLinesBefore, tokenMarks, ...itemHint };
+            }
             if (state === "edit") {
                 if (overlay.itemOnlyChanges.has(actionPathKeyValue)) {
-                    if (line.id !== `htsl:${actionPathKeyValue}`) {
-                        return { extraLinesBefore };
+                    if (!isHead) {
+                        return { extraLinesBefore, tokenMarks, ...itemHint };
                     }
-                    return { state: "edit", extraLinesBefore, ...itemHint };
+                    return { state: "edit", extraLinesBefore, tokenMarks, ...itemHint };
                 }
-                if (line.id !== `htsl:${actionPathKeyValue}`) return { extraLinesBefore };
+                if (!isHead) return { extraLinesBefore, tokenMarks, ...itemHint };
                 return {
                     state: "add",
                     background: ROW_BG_BY_STATE.edit,
                     extraLinesBefore,
+                    tokenMarks,
                     ...itemHint,
                 };
             }
-            return { state, extraLinesBefore };
+            return { state, extraLinesBefore, tokenMarks, ...itemHint };
         },
         focusedLineId(): string | null {
             return null;

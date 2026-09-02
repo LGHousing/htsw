@@ -26,7 +26,7 @@
  * vocabulary) and `livePreview.ts` (written from import event handlers).
  */
 
-import type { ImportablesParseResult } from "htsw";
+import type { ImportablesParseResult, SourceFile, SpanTable } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -54,7 +54,10 @@ import {
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importCache/actionLists";
-import { actionLineRange as parsedActionLineRange, parseHtslFile } from "./htslParse";
+import {
+    actionLineRange as parsedActionLineRange,
+    parseHtslFile,
+} from "./htslParse";
 import {
     ActionListPath,
     ActionPath,
@@ -66,6 +69,14 @@ import {
     type ItemDependencySnapshot,
 } from "../../importables/items/dependencyIndex";
 import { visitItemReferences } from "../../importables/items/dependencies";
+import type { ItemReferenceUse } from "../../importables/items/dependencies";
+import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
+
+export type ChangedItemRef = { itemName: string; openPath: string | undefined };
+export type ChangedItemSpan = ChangedItemRef & {
+    startColumn: number;
+    endColumn: number;
+};
 
 export type SourceDiffGhost = {
     id: string;
@@ -79,7 +90,8 @@ export type SourceDiffGhost = {
 
 export type SourceDiffEntry = {
     states: Map<ActionPathKey, DiffState>;
-    changedItems: Set<ActionPathKey>;
+    changedItems: Map<ActionPathKey, ChangedItemRef[]>;
+    changedItemSpans: Map<number, ChangedItemSpan[]>;
     itemOnlyChanges: Set<ActionPathKey>;
     ghostsBeforeLine: Map<number, SourceDiffGhost[]>;
     ghostsAtEnd: SourceDiffGhost[];
@@ -211,7 +223,8 @@ function computeFor(
     const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = {
         states: new Map(),
-        changedItems: new Set(),
+        changedItems: new Map(),
+        changedItemSpans: new Map(),
         itemOnlyChanges: new Set(),
         ghostsBeforeLine: new Map(),
         ghostsAtEnd: [],
@@ -234,8 +247,11 @@ function computeFor(
 function changedItemsByAction(
     importable: Importable,
     cached: ItemDependencySnapshot | undefined
-): WeakSet<Action> {
-    const result = new WeakSet<Action>();
+): WeakMap<Action, { use: ItemReferenceUse; openPath: string | undefined }[]> {
+    const result = new WeakMap<
+        Action,
+        { use: ItemReferenceUse; openPath: string | undefined }[]
+    >();
     const dependencies = itemDependencyIndexFor(importable);
     if (dependencies === undefined) return result;
     const invalidations = dependencies.invalidationsFor(importable, cached);
@@ -243,7 +259,10 @@ function changedItemsByAction(
         if (!invalidations.isFieldInvalidated(use.owner, use.property)) return;
         if (use.actionAncestors.length === 0) return;
         const action = use.actionAncestors[use.actionAncestors.length - 1];
-        result.add(action);
+        const changed = { use, openPath: dependencies.sourcePathOf(use) };
+        const existing = result.get(action);
+        if (existing === undefined) result.set(action, [changed]);
+        else existing.push(changed);
     });
     return result;
 }
@@ -348,6 +367,80 @@ export function findFileTarget(
     return found;
 }
 
+type LocatedItemSpan = { line: number; startColumn: number; endColumn: number };
+
+export function changedItemSpanFor(
+    sourceFile: { file: SourceFile | null; spans: SpanTable | null },
+    owner: Action | Condition,
+    property: string
+): LocatedItemSpan | null {
+    if (sourceFile.file === null || sourceFile.spans === null) return null;
+    const span = sourceFile.spans.tryGetField(owner, property as keyof typeof owner);
+    if (span === undefined) return null;
+    const start = sourceFile.file.getPosition(span.start);
+    const end = sourceFile.file.getPosition(span.end);
+    return {
+        line: start.line,
+        startColumn: Math.max(0, start.column - 1),
+        endColumn: end.line === start.line
+            ? Math.max(0, end.column - 1)
+            : sourceFile.file.getLine(start.line).replace(/\r$/, "").length,
+    };
+}
+
+export function changedItemSpanFallback(
+    sourceFile: { file: SourceFile | null },
+    range: { start: number; end: number },
+    itemName: string,
+    claimed: ReadonlySet<string> = new Set()
+): LocatedItemSpan | null {
+    if (sourceFile.file === null || itemName.length === 0) return null;
+    const identifier = /[A-Za-z0-9_/.]/;
+    for (let line = range.start; line <= range.end; line++) {
+        const text = sourceFile.file.getLine(line).replace(/\r$/, "");
+        let from = 0;
+        while (from <= text.length - itemName.length) {
+            const startColumn = text.indexOf(itemName, from);
+            if (startColumn < 0) break;
+            const endColumn = startColumn + itemName.length;
+            const before = startColumn === 0 ? "" : text.charAt(startColumn - 1);
+            const after = endColumn === text.length ? "" : text.charAt(endColumn);
+            const key = `${line}:${startColumn}:${endColumn}`;
+            if (!identifier.test(before) && !identifier.test(after) && !claimed.has(key)) {
+                return { line, startColumn, endColumn };
+            }
+            from = startColumn + 1;
+        }
+    }
+    return null;
+}
+
+type ActionMappingFields = Record<string, { prop: string; kind: string } | undefined>;
+
+function relocateItemOwner(
+    projectAction: Action,
+    guiAction: Action,
+    use: ItemReferenceUse
+): Action | Condition | null {
+    if (use.owner === projectAction) return guiAction;
+    if (projectAction.type !== guiAction.type) return null;
+    const mapping = ACTION_MAPPINGS[projectAction.type] as unknown as {
+        loreFields: ActionMappingFields;
+    };
+    for (const label in mapping.loreFields) {
+        const field = mapping.loreFields[label];
+        if (field === undefined || field.kind !== "conditionList") continue;
+        const projectList = (projectAction as unknown as Record<string, unknown>)[field.prop];
+        const guiList = (guiAction as unknown as Record<string, unknown>)[field.prop];
+        if (!Array.isArray(projectList) || !Array.isArray(guiList)) continue;
+        const index = projectList.indexOf(use.owner);
+        if (index < 0 || index >= guiList.length) continue;
+        const owner = guiList[index] as Condition;
+        return owner.type === use.owner.type ? owner : null;
+    }
+    return null;
+}
+
 function walk(
     out: SourceDiffEntry,
     prefix: string,
@@ -357,7 +450,10 @@ function walk(
     cachedItems: readonly Action[],
     lists: { [k: string]: string[] | undefined },
     sourceFile: ReturnType<typeof parseHtslFile>,
-    changedItemsByAction: WeakSet<Action>
+    changedItemsByAction: WeakMap<
+        Action,
+        { use: ItemReferenceUse; openPath: string | undefined }[]
+    >
 ): void {
     const cacheKey = cacheBracketed === "" ? prefix : `${prefix}${cacheBracketed}`;
     const slots = lists[cacheKey];
@@ -396,8 +492,54 @@ function walk(
                 slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
         const textState = state;
-        if (changedItemsByAction.has(action)) {
-            out.changedItems.add(sourcePathKey);
+        const changedUses = changedItemsByAction.get(action);
+        if (changedUses !== undefined) {
+            const refs: ChangedItemRef[] = [];
+            const names = new Set<string>();
+            const claimed = new Set<string>();
+            const guiAction = ActionPath.resolve(sourceFile.actions, sourcePath);
+            const range = actionLineRange(sourceFile, sourcePath);
+            for (let changedIndex = 0; changedIndex < changedUses.length; changedIndex++) {
+                const changed = changedUses[changedIndex];
+                if (!names.has(changed.use.itemName)) {
+                    names.add(changed.use.itemName);
+                    refs.push({
+                        itemName: changed.use.itemName,
+                        openPath: changed.openPath,
+                    });
+                }
+                const owner = guiAction === null
+                    ? null
+                    : relocateItemOwner(action, guiAction, changed.use);
+                let span = owner === null
+                    ? null
+                    : changedItemSpanFor(
+                          sourceFile,
+                          owner,
+                          changed.use.property
+                      );
+                if (span === null && range !== null) {
+                    span = changedItemSpanFallback(
+                        sourceFile,
+                        range,
+                        changed.use.itemName,
+                        claimed
+                    );
+                }
+                if (span !== null) {
+                    claimed.add(`${span.line}:${span.startColumn}:${span.endColumn}`);
+                    const lineSpans = out.changedItemSpans.get(span.line);
+                    const value = {
+                        itemName: changed.use.itemName,
+                        openPath: changed.openPath,
+                        startColumn: span.startColumn,
+                        endColumn: span.endColumn,
+                    };
+                    if (lineSpans === undefined) out.changedItemSpans.set(span.line, [value]);
+                    else lineSpans.push(value);
+                }
+            }
+            out.changedItems.set(sourcePathKey, refs);
             if (state === "match") {
                 state = "edit";
                 out.itemOnlyChanges.add(sourcePathKey);

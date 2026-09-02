@@ -10,6 +10,7 @@ import { offerLineHover } from "./diagnosticHover";
 import { chatWidth } from "../../utils/helpers";
 import { COLOR_SELECTION } from "../lib/theme";
 import { beginSelection, onRowDrag, selectWord, sourceColAtX } from "./selection";
+import { tokensWithMarks } from "./tokenMarks";
 
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
@@ -229,12 +230,26 @@ export function buildLineRows(
     lineSelection: LineSelection | null
 ): Element[] {
     const effectiveBodyW = effectiveBodyWidth(options.bodyMaxWidth, dec);
-    const visualRows = wrapTokensIntoVisualRows(line.tokens, effectiveBodyW);
+    const visualRows = wrapTokensIntoVisualRows(decoratedTokens(line, dec), effectiveBodyW);
     const out: Element[] = [];
     for (let i = 0; i < visualRows.length; i++) {
         out.push(buildVisualLineRow(line, dec, options, visualRows[i], i > 0, lineSelection));
     }
     return out;
+}
+
+const decoratedTokenCache = new WeakMap<LineDecorations, TokenSpan[]>();
+
+export function decoratedTokens(
+    line: RenderableLine,
+    dec: LineDecorations
+): readonly TokenSpan[] {
+    if (dec.tokenMarks === undefined || dec.tokenMarks.length === 0) return line.tokens;
+    const cached = decoratedTokenCache.get(dec);
+    if (cached !== undefined) return cached;
+    const tokens = tokensWithMarks(line.tokens, dec.tokenMarks);
+    decoratedTokenCache.set(dec, tokens);
+    return tokens;
 }
 
 function buildVisualLineRow(

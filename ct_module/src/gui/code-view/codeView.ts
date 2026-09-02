@@ -13,6 +13,7 @@ import { COLOR_TEXT_FAINT } from "../lib/theme";
 import { linesForFile } from "./lineModel";
 import {
     buildLineRows,
+    decoratedTokens,
     effectiveBodyWidth,
     FOCUS_GUTTER_W,
     gutterWidthForLines,
@@ -543,7 +544,7 @@ function buildCodeViewChildren(props: CodeViewProps): Element[] {
  * calls this for every line every frame; without a cache that's the
  * dominant scroll-frame cost on long files.
  */
-const wrapRowCountCache = new WeakMap<RenderableLine, { width: number; count: number }>();
+const wrapRowCountCache = new WeakMap<object, { width: number; count: number }>();
 
 function wrapRowCount(
     line: RenderableLine,
@@ -551,12 +552,13 @@ function wrapRowCount(
     dec: LineDecorations
 ): number {
     const effective = effectiveBodyWidth(bodyMaxWidth, dec);
-    const cached = wrapRowCountCache.get(line);
+    const tokens = decoratedTokens(line, dec);
+    const cached = wrapRowCountCache.get(tokens);
     if (cached !== undefined && cached.width === effective) {
         return cached.count;
     }
-    const wrapped = wrapTokensIntoVisualRows(line.tokens, effective);
-    wrapRowCountCache.set(line, { width: effective, count: wrapped.length });
+    const wrapped = wrapTokensIntoVisualRows(tokens, effective);
+    wrapRowCountCache.set(tokens, { width: effective, count: wrapped.length });
     return wrapped.length;
 }
 

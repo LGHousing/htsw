@@ -119,6 +119,7 @@ export interface ItemDependencyIndex {
     fingerprintOfItem(item: ImportableItem): string | undefined;
     itemByName(name: string): ImportableItem | undefined;
     clickActionsFingerprint(item: ImportableItem): string;
+    sourcePathOf(use: ItemReferenceUse): string | undefined;
 }
 
 const indexByImportable = new WeakMap<Importable, ItemDependencyIndex>();
@@ -253,6 +254,16 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
             );
         this.clickActionFingerprints.set(item, fingerprint);
         return fingerprint;
+    }
+
+    public sourcePathOf(use: ItemReferenceUse): string | undefined {
+        const resolved = this.resolveUse(use);
+        if (resolved === undefined) return undefined;
+        if (resolved.entry.source === "named") {
+            return resolved.entry.importable?.sourcePath;
+        }
+        if (resolved.entry.source === "snbtPath") return resolved.entry.path;
+        return undefined;
     }
 
     private graphFromEntries(entries: readonly ProjectItem[]): GraphNode[] {

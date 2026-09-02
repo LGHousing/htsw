@@ -25,6 +25,13 @@ export type TokenSpan = SyntaxToken & {
     srcStart?: number;
 };
 
+export type TokenMark = {
+    startColumn: number;
+    endColumn: number;
+    underlineColor?: number;
+    linkTarget?: string;
+};
+
 /**
  * The selected source-column range on a single logical line. `continuesRight`
  * is true when the selection extends past this line (so the highlight should
@@ -78,6 +85,7 @@ export type LineDecorations = {
     italic?: boolean;
     hideLineNum?: boolean;
     cursorColumnBackground?: number;
+    tokenMarks?: readonly TokenMark[];
 };
 
 export type LineDecorator = {
