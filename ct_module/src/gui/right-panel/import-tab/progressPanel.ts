@@ -8,6 +8,7 @@
  */
 
 import type { Element } from "../../lib/layout";
+import { getAnchorRect } from "../../lib/anchors";
 import { Button, Col, Container, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
@@ -57,7 +58,24 @@ import {
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;
+const PROGRESS_BAR_ANCHOR = "footer-progress-bar";
+const SEGMENT_DIVIDER_W = 2;
+// Below this a per-row slice reads as a tick mark instead of a bar fill.
+const MIN_SEGMENT_W = 6;
+// Fallback for the first frame, before the bar has reported its width.
 const MAX_DETAILED_PROGRESS_ROWS = 128;
+
+/**
+ * Per-row slices only make sense while each slice is wide enough to see
+ * fill. Decide from the bar's laid-out width so a 125-row read on a narrow
+ * panel collapses to the single compact fill instead of a row of ticks.
+ */
+function useCompactProgressBar(rowCount: number): boolean {
+    const rect = getAnchorRect(PROGRESS_BAR_ANCHOR);
+    if (rect === null) return rowCount > MAX_DETAILED_PROGRESS_ROWS;
+    const dividers = Math.max(0, rowCount - 1) * SEGMENT_DIVIDER_W;
+    return (rect.w - dividers) / Math.max(1, rowCount) < MIN_SEGMENT_W;
+}
 
 // ── Time formatting ────────────────────────────────────────────────────
 
@@ -344,7 +362,7 @@ function compactProgressBarChildren(): Element[] {
 function segmentDivider(background?: number): Element {
     return Container({
         style: {
-            width: { kind: "px", value: 2 },
+            width: { kind: "px", value: SEGMENT_DIVIDER_W },
             height: { kind: "grow" },
             background,
         },
@@ -383,7 +401,7 @@ function activeSegmentCaretRow(): Element {
         children: () => {
             const p = getTaskProgress();
             if (p === null || p.totalUnits <= 0 || p.active === null) return [];
-            if (p.rows.length > MAX_DETAILED_PROGRESS_ROWS) return [];
+            if (useCompactProgressBar(p.rows.length)) return [];
             const active = p.active;
             const children: Element[] = [];
             for (let i = 0; i < p.rows.length; i++) {
@@ -414,10 +432,11 @@ function progressBar(): Element {
             height: { kind: "px", value: PROGRESS_BAR_H },
             background: COLOR_BAR_BG,
         },
+        anchorKey: PROGRESS_BAR_ANCHOR,
         children: () => {
             const p = getTaskProgress();
             if (p === null || p.totalUnits <= 0) return [];
-            if (p.rows.length > MAX_DETAILED_PROGRESS_ROWS) {
+            if (useCompactProgressBar(p.rows.length)) {
                 return compactProgressBarChildren();
             }
             const children: Element[] = [];
