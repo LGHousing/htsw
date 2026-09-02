@@ -26,6 +26,7 @@ import { recordTimedOp } from "../progress/timing";
 import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 import { getMinecraft, javaType, sendPacket } from "../../utils/java";
+import { itemLore } from "../../utils/itemLore";
 
 const GuiEditSign = javaType("net.minecraft.client.gui.inventory.GuiEditSign");
 const C12PacketUpdateSign = javaType(
@@ -80,7 +81,7 @@ function describeAllMenuSlots(ctx: TaskContext): string {
         const item = slot.getItem();
         let label = removedFormatting(item.getName()).trim();
         if (label.length === 0) {
-            const lore = item.getLore();
+            const lore = itemLore(item);
             label =
                 lore.length > 0
                     ? `lore:"${removedFormatting(lore[0]).trim()}"`
@@ -200,7 +201,7 @@ function findPaginationControl(
     const needle = `${direction} page`;
     return ctx.tryGetMenuItemSlot((slot) => {
         const item = slot.getItem();
-        const lines = [item.getName(), ...item.getLore()];
+        const lines = [item.getName(), ...itemLore(item)];
         return lines.some((line) =>
             removedFormatting(line).trim().toLowerCase().includes(needle)
         );
@@ -346,7 +347,7 @@ function readCurrentValue(slot: ItemSlot): string | null {
 }
 
 function readCurrentValueLines(slot: ItemSlot): string[] | null {
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     let index = -1;
     for (let i = 0; i < lore.length; i++) {
         if (removedFormatting(lore[i]) === "Current Value:") {
@@ -394,7 +395,7 @@ function normalizeSelectedOption(line: string): string {
 function readSelectedOption(slot: ItemSlot, options: readonly string[]): string | null {
     const optionSet = new Set(options);
 
-    for (const line of slot.getItem().getLore()) {
+    for (const line of itemLore(slot.getItem())) {
         const trimmedLine = removedFormatting(line).trim();
         const option = normalizeSelectedOption(line);
         const hasSelectionMarker = trimmedLine !== option;
@@ -443,20 +444,16 @@ export function findMenuOptionByLore(
     loreLine: string
 ): ItemSlot | null {
     return ctx.tryGetMenuItemSlot((slot) =>
-        slot
-            .getItem()
-            .getLore()
-            .some((line) => removedFormatting(line).trim() === loreLine)
+        itemLore(slot.getItem()).some(
+            (line) => removedFormatting(line).trim() === loreLine
+        )
     );
 }
 
 function isAlreadySelectedOption(slot: ItemSlot): boolean {
-    return slot
-        .getItem()
-        .getLore()
-        .some((line) =>
-            removedFormatting(line).trim().toLowerCase().includes("already selected")
-        );
+    return itemLore(slot.getItem()).some((line) =>
+        removedFormatting(line).trim().toLowerCase().includes("already selected")
+    );
 }
 
 function getCycleFieldSlot(
@@ -479,7 +476,7 @@ function getCycleFieldSlot(
             if (name !== "Change Variable" && name !== "Head") return false;
 
             const foundOptions = new Set<string>();
-            const lore = slot.getItem().getLore();
+            const lore = itemLore(slot.getItem());
             for (let i = 0; i < lore.length; i++) {
                 const option = normalizeSelectedOption(lore[i]);
                 if (options.indexOf(option) !== -1) foundOptions.add(option);
@@ -807,10 +804,7 @@ export async function setLocationValue(
  */
 export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): boolean {
     const message = `You can't have more of this ${kind}!`;
-    return slot
-        .getItem()
-        .getLore()
-        .some((line) => removedFormatting(line) === message);
+    return itemLore(slot.getItem()).some((line) => removedFormatting(line) === message);
 }
 
 /**
