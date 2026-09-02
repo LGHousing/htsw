@@ -10,6 +10,7 @@ const state = {
     statuses: new Map<string, "current" | "modified" | "unknown" | null>(),
     mtimes: new Map<string, number>(),
     treeBumps: 0,
+    dirtyMarks: 0,
 };
 
 vi.mock("../src/gui/state", () => ({
@@ -19,6 +20,11 @@ vi.mock("../src/gui/cache-status", () => ({
     cachedStatusForImportable: (imp: ImportableFunction) =>
         state.statuses.get(imp.name) ?? null,
     importableLinkStatusContextKey: () => state.statusKey,
+}));
+vi.mock("../src/gui/lib/dirty", () => ({
+    markGuiDirty: () => {
+        state.dirtyMarks++;
+    },
 }));
 vi.mock("../src/gui/lib/java", () => ({
     getMtimeMs: (path: string) => state.mtimes.get(path) ?? 0,
@@ -83,6 +89,7 @@ describe("lockBannerFor", () => {
         state.statuses = new Map();
         state.mtimes = new Map([[LOCK_PATH, 1000]]);
         state.treeBumps = 0;
+        state.dirtyMarks = 0;
         vi.stubGlobal("FileLib", {
             exists: (path: string) => files.has(path),
             read: (path: string) => files.get(path) ?? null,
@@ -150,7 +157,7 @@ describe("lockBannerFor", () => {
         expect(lockBannerFor(r)).toBeNull();
     });
 
-    it("notices a rewritten lock through the polled revision", async () => {
+    it("notices a rewritten lock from the render-tick poll and dirties the GUI", async () => {
         const behind = fn("Behind", "same");
         state.statuses.set("Behind", "modified");
         const banner = await import("../src/gui/left-panel/projects/lockBanner");
@@ -163,10 +170,19 @@ describe("lockBannerFor", () => {
             const before = banner.getLockBannerRevision();
             writeLock(files, [behind]);
             state.mtimes.set(LOCK_PATH, 2000);
+            banner.pollLockBanners();
             expect(banner.getLockBannerRevision()).toBe(before);
+            expect(state.dirtyMarks).toBe(0);
             vi.advanceTimersByTime(1500);
+            // The idle overlay never rebuilds the tree on its own; the poll
+            // has to mark the GUI dirty so the next frame picks the lock up.
+            banner.pollLockBanners();
+            expect(state.dirtyMarks).toBe(1);
             expect(banner.getLockBannerRevision()).toBe(before + 1);
             expect(banner.lockBannerFor(r)).toEqual({ count: 1, lockMtime: 2000 });
+            vi.advanceTimersByTime(1500);
+            banner.pollLockBanners();
+            expect(state.dirtyMarks).toBe(1);
         } finally {
             vi.useRealTimers();
         }

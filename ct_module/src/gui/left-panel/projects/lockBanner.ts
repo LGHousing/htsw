@@ -10,6 +10,7 @@ import {
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
+import { markGuiDirty } from "../../lib/dirty";
 import { getMtimeMs } from "../../lib/java";
 import { getHousingUuid } from "../../state";
 import {
@@ -35,8 +36,8 @@ import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./row
 // into the cache (lock hash == project hash, dependencies match, ITEM blob
 // cached) whose cache status is still modified/unknown. The count is memoized
 // per project on parse identity, the cache status context and the lock's
-// mtime; the mtime is polled once a second through the tree's status
-// fingerprint so a `git pull` shows up without a reload.
+// mtime; the mtime is polled once a second from the overlay's render tick so
+// a `git pull` shows up without a reload or any other interaction.
 
 export type LockBannerState = { count: number; lockMtime: number };
 
@@ -55,17 +56,27 @@ const dismissedByProject = new Map<string, number>();
 let revision = 0;
 let lastPollAt = 0;
 
-export function getLockBannerRevision(): number {
+// Called from the overlay's guiRender tick. The Projects panel only rebuilds
+// after markGuiDirty(), so the poll has to run outside the rebuild path and
+// dirty the GUI itself when a lock changes underneath an idle overlay.
+export function pollLockBanners(): void {
     const now = Date.now();
-    if (now - lastPollAt >= LOCK_POLL_MS) {
-        lastPollAt = now;
-        lockMtimeByProject.forEach((mtime, key) => {
-            const next = getMtimeMs(houseLockPathForImportJson(key));
-            if (next === mtime) return;
-            lockMtimeByProject.set(key, next);
-            revision++;
-        });
-    }
+    if (now - lastPollAt < LOCK_POLL_MS) return;
+    lastPollAt = now;
+    let changed = 0;
+    lockMtimeByProject.forEach((mtime, key) => {
+        const next = getMtimeMs(houseLockPathForImportJson(key));
+        if (next === mtime) return;
+        lockMtimeByProject.set(key, next);
+        changed++;
+    });
+    if (changed === 0) return;
+    revision++;
+    markGuiDirty();
+}
+
+export function getLockBannerRevision(): number {
+    pollLockBanners();
     return revision;
 }
 

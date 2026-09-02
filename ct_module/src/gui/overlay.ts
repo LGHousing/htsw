@@ -119,6 +119,7 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { closeBoundProjectForHouse, openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
 import { processImportableCacheWarm } from "./cache-status/cacheWarm";
+import { pollLockBanners } from "./left-panel/projects/lockBanner";
 import { clearQueue } from "./right-panel/import-tab/queue";
 import { cancelActiveTask } from "../tasks/activeTask";
 
@@ -739,6 +740,7 @@ export function initHtswGui(): void {
         const visible = frameVisible();
         syncHtswGuiProperties({ enabled, visible });
         pollWheel();
+        pollLockBanners();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
