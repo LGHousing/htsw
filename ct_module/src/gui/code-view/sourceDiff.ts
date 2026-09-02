@@ -73,8 +73,8 @@ import type { ItemReferenceUse } from "../../importables/items/dependencies";
 import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
 import { notesEqual } from "../../housingSync/actions/comparison";
 
-export type ChangedItemRef = { itemName: string; openPath: string | undefined };
-export type ChangedItemSpan = ChangedItemRef & {
+type ChangedItemRef = { itemName: string; openPath: string | undefined };
+type ChangedItemSpan = ChangedItemRef & {
     startColumn: number;
     endColumn: number;
 };
