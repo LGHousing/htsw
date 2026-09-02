@@ -358,6 +358,39 @@ describe("Main API", () => {
             .toBe(parse('var "x" += var g %var.player/k%'));
     });
 
+    it("keeps sibling placeholders with fallbacks apart inside one condition list", () => {
+        // Regression: the nested-placeholder read-back treated every later `%`
+        // on the line as a possible nesting, so the first fallback placeholder
+        // in a multi-condition `if` swallowed the rest of the line and tripped
+        // the 32-character cap.
+        const parse = (line: string) => {
+            const sm = new htsw.SourceMap(
+                new SimpleFileLoader({ "/project/test.htsl": line + "\n" })
+            );
+            const result = htsw.parseActionsResult(sm, "/project/test.htsl");
+            expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+            return JSON.stringify(result.value);
+        };
+
+        const boss = parse("if (var boss_id <= 8 0, var badges >= %var.player/boss_id 1% 0, var gym_day < %var.global/srv_day 0% 0) {}");
+        expect(boss).toContain('"%var.player/boss_id 1%"');
+        expect(boss).toContain('"%var.global/srv_day 0%"');
+
+        const daily = parse("if (var f10 = 0 0, var f5 >= %var.player/f6 1% 0, var badges >= %var.player/f7 99% 0, var f3 < 3 0) {}");
+        expect(daily).toContain('"%var.player/f6 1%"');
+        expect(daily).toContain('"%var.player/f7 99%"');
+
+        // No trailing unset flag, so the closer follows the placeholder directly.
+        const tight = parse("if (var a >= %var.player/a 1%, var b < %var.player/b 2%) {}");
+        expect(tight).toContain('"%var.player/a 1%"');
+        expect(tight).toContain('"%var.player/b 2%"');
+
+        // The nested form still reads back whole, including before a delimiter.
+        const nested = parse("if (var a = %var.player/g %var.player/k%%, var b = %var.player/g %var.player/k 5%%) {}");
+        expect(nested).toContain('"%var.player/g %var.player/k%%"');
+        expect(nested).toContain('"%var.player/g %var.player/k 5%%"');
+    });
+
     it("parseActionsResult accepts bare placeholders as string arguments", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

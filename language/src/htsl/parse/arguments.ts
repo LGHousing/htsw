@@ -346,14 +346,42 @@ export function parseNumericValue(p: Parser): Value {
         .addPrimarySpan(p.token.span);
 }
 
-// A bare placeholder value is one balanced `%...%` group, but its fallback may
-// itself be a placeholder: `%var.player/g %var.player/k%%` is the normalized
-// form of the `var g %var.player/k%` shorthand, and it is what the printer
-// emits. The lexer knows nothing of nesting and fragments such a value at the
-// inner `%`s, so rebuild it from the raw source: take the longest balanced
-// group that is followed by whitespace or the end of the line, and advance
-// past every token it covers.
-const BALANCED_PLACEHOLDER = /^%[^%"\n]*(?:(?:%[^%\n]*%|"(?:[^"\\\n]|\\.)*")[^%"\n]*)*%/;
+// A bare placeholder value is one `%...%` group, but its fallback may itself
+// be a placeholder: `%var.player/g %var.player/k%%` is the normalized form of
+// the `var g %var.player/k%` shorthand, and it is what the printer emits. The
+// lexer knows nothing of nesting and fragments such a value at the inner `%`s,
+// so rebuild it from the raw source. A `%` only opens a nested placeholder
+// when it directly follows whitespace, where a fallback starts; every other
+// `%` closes the group. Treating any later `%` on the line as a possible
+// nesting is ambiguous with two sibling placeholders, which is exactly what a
+// multi-condition `if` looks like: `%a 1% 0, var b < %c 2%`.
+const PLACEHOLDER_STRING = /^"(?:[^"\\\n]|\\.)*"/;
+
+function balancedPlaceholderEnd(raw: string, from: number): number | undefined {
+    let i = from + 1;
+    while (i < raw.length) {
+        const c = raw[i];
+        if (c === '"') {
+            const str = raw.slice(i).match(PLACEHOLDER_STRING)?.[0];
+            if (str === undefined) return undefined;
+            i += str.length;
+            continue;
+        }
+        if (c === "%") {
+            // A `%` right after whitespace opens the nested fallback
+            // placeholder; any other `%` closes this one.
+            if (i > from + 1 && /\s/.test(raw[i - 1])) {
+                const inner = balancedPlaceholderEnd(raw, i);
+                if (inner === undefined) return undefined;
+                i = inner;
+                continue;
+            }
+            return i + 1;
+        }
+        i++;
+    }
+    return undefined;
+}
 
 function parseBarePlaceholderValue(p: Parser): Value {
     const startSpan = p.token.span;
@@ -363,9 +391,9 @@ function parseBarePlaceholderValue(p: Parser): Value {
     if (lineEnd === -1) lineEnd = src.length;
     const raw = src.slice(from, lineEnd);
 
-    const matched = raw.match(BALANCED_PLACEHOLDER)?.[0];
-    const after = matched !== undefined ? raw.charAt(matched.length) : "";
-    if (matched !== undefined && (after === "" || /\s/.test(after))) {
+    const matchedEnd = balancedPlaceholderEnd(raw, 0);
+    if (matchedEnd !== undefined) {
+        const matched = raw.slice(0, matchedEnd);
         const end = startSpan.start + matched.length;
         while (p.token.kind !== "eof" && p.token.kind !== "eol" && p.token.span.start < end) {
             p.next();
