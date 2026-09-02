@@ -3,6 +3,7 @@ import {
     applyItemEditsToTag,
     buildItemTag,
     customItemTagsFromTag,
+    itemFieldsFromTag,
     MAX_HOUSING_ENCHANTMENT_LEVEL,
 } from "htsw-editor-common/item/buildItemNbt";
 import { ensureMinecraftFont, renderItemPreviewInto, type ItemView } from "../mcItem/render";
@@ -56,6 +57,7 @@ type State = {
     targets: ImportTarget[];
     createLeftClickActions: boolean;
     createRightClickActions: boolean;
+    snbtError: string;
     status: { kind: "idle" | "ok" | "error"; text: string };
     /** Set when editing an existing `.snbt`: the file to save back to, a label
      * for the header, and the original parsed tag (so unmanaged NBT survives). */
@@ -97,6 +99,7 @@ export function mountItemEditor(
         targets: [],
         createLeftClickActions: false,
         createRightClickActions: false,
+        snbtError: "",
         status: { kind: "idle", text: "" },
         editPath: load?.snbtPath,
         editLabel: load?.label,
@@ -156,85 +159,12 @@ export function mountItemEditor(
             preview: app.querySelector<HTMLElement>(".preview-panel")?.scrollTop ?? initialScroll.preview ?? 0,
         };
         initialScroll = {};
-        const item = currentItem(state);
-        const maxCount = item?.stackSize ?? 64;
-        if (state.count > maxCount) state.count = maxCount;
+        clampCountToItem();
 
         app.innerHTML = `
             <div class="app">
                 <div class="panel form-panel">
-                    <div class="section">
-                        <h2>Item</h2>
-                        <div id="itemPicker" class="item-picker">
-                            <span class="label-text">Item type</span>
-                            <div class="item-combobox">
-                                <input
-                                    id="itemSearch"
-                                    role="combobox"
-                                    aria-autocomplete="list"
-                                    aria-controls="itemResults"
-                                    aria-expanded="false"
-                                    aria-label="Item type"
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                    value="${escapeAttr(selectedItemLabel(state))}"
-                                    placeholder="Search by name or ID"
-                                >
-                                <button id="itemPickerToggle" class="item-picker-toggle" type="button" aria-label="Show item types" tabindex="-1">⌄</button>
-                                <div id="itemResults" class="item-results" role="listbox" hidden></div>
-                            </div>
-                            <span class="field-hint">Type to search, then choose a match.</span>
-                        </div>
-                        ${variantSelect(item, state.metadata)}
-                        <div class="two">
-                            <label>
-                                <span class="label-text">Count</span>
-                                <input id="count" type="number" min="1" max="${maxCount}" value="${state.count}">
-                            </label>
-                            <label>
-                                <span class="label-text">Max</span>
-                                <input value="${maxCount}" disabled>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="section">
-                        <h2>Display</h2>
-                        <label>
-                            <span class="label-text">Name</span>
-                            <input id="displayName" value="${escapeAttr(state.displayName)}" placeholder="&aLauncher">
-                        </label>
-                        <label>
-                            <span class="label-text">Lore</span>
-                        </label>
-                        <div id="loreRows">
-                            ${state.lore.map((line, index) => loreRow(line, index)).join("")}
-                        </div>
-                        <button id="addLore" class="secondary" type="button">Add Lore</button>
-                    </div>
-
-                    <div class="section">
-                        <h2>Enchantments</h2>
-                        <div id="enchantRows">
-                            ${state.enchants.map((enchant, index) => enchantRow(enchant, index)).join("")}
-                        </div>
-                        <button id="addEnchant" class="secondary" type="button">Add Enchant</button>
-                    </div>
-
-                    <div class="section">
-                        <h2>Custom NBT</h2>
-                        <p class="section-hint">Added inside <code>tag</code>. Values use SNBT, for example <code>ItemModel</code> with <code>"minecraft:netherite_spear"</code>.</p>
-                        <div class="custom-tag-headings" aria-hidden="true">
-                            <span>Tag name</span>
-                            <span>SNBT value</span>
-                        </div>
-                        <div id="customTagRows">
-                            ${state.customTags.map((customTag, index) => customTagRow(customTag, index)).join("")}
-                        </div>
-                        <button id="addCustomTag" class="secondary" type="button">Add Tag</button>
-                    </div>
-
-                    ${projectSection(state)}
+                    ${formPanelHtml(state)}
                 </div>
 
                 <div class="panel preview-panel">
@@ -244,13 +174,16 @@ export function mountItemEditor(
                     </div>
                     <div class="section">
                         <h2>SNBT</h2>
-                        <pre id="snbtPreview"></pre>
+                        <p class="section-hint">Edit the raw item NBT here. Valid edits update the form, and tags the form does not manage are kept.</p>
+                        <textarea id="snbtEditor" class="snbt-editor" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Item SNBT"></textarea>
+                        <div id="snbtError" class="field-error" role="status"></div>
                     </div>
                 </div>
             </div>
         `;
 
         bindControls(vscode);
+        bindSnbtEditor();
         updateCustomTagFeedback();
         updateFormattedPreviews();
         updateSnbtPreview();
@@ -261,6 +194,24 @@ export function mountItemEditor(
         if (page) page.scrollTop = scroll.page;
         if (form) form.scrollTop = scroll.form;
         if (preview) preview.scrollTop = scroll.preview;
+    }
+
+    function clampCountToItem(): void {
+        const maxCount = currentItem(state)?.stackSize ?? 64;
+        if (state.count > maxCount) state.count = maxCount;
+    }
+
+    function renderFormPanel(): void {
+        clampCountToItem();
+        const form = app.querySelector<HTMLElement>(".form-panel");
+        if (!form) return;
+        const scrollTop = form.scrollTop;
+        form.innerHTML = formPanelHtml(state);
+        bindControls(vscode);
+        updateCustomTagFeedback();
+        updateFormattedPreviews();
+        renderStatus();
+        form.scrollTop = scrollTop;
     }
 
     function bindControls(vscode: VsCodeApi): void {
@@ -388,10 +339,10 @@ export function mountItemEditor(
             if (!canSubmit(state)) return;
             state.status = { kind: "idle", text: "Generating..." };
             renderStatus();
-            post(vscode, { type: "submitItem", form: toForm(state) });
+            post(vscode, { type: "submitItem", form: toForm(state), tag: currentItemTag(state) });
         });
         bindClick("save", () => {
-            if (state.editPath === undefined || !customTagsAreValid(state.customTags)) return;
+            if (state.editPath === undefined || state.snbtError !== "" || !customTagsAreValid(state.customTags)) return;
             state.status = { kind: "idle", text: "Saving..." };
             renderStatus();
             post(vscode, { type: "saveItem", snbtPath: state.editPath, tag: currentItemTag(state) });
@@ -434,15 +385,12 @@ export function mountItemEditor(
         };
         const choose = (value: string) => {
             const previous = currentItem(state);
-            const syncEntryName =
-                state.entryName.trim().length === 0 ||
-                state.entryName === (previous?.displayName ?? previous?.name);
             const selected = parseItemOptionValue(value);
             const item = itemByName(selected.itemName);
             state.itemName = selected.itemName;
             state.metadata = selected.metadata ?? firstMetadata(item);
             state.itemSearch = "";
-            if (syncEntryName) state.entryName = selected.label ?? item?.displayName ?? selected.itemName;
+            syncEntryName(state, previous, selected.label ?? item?.displayName ?? selected.itemName);
             render();
         };
         const open = () => {
@@ -500,16 +448,68 @@ export function mountItemEditor(
     }
 
     function updateSnbtPreview(): void {
-        const preview = app.querySelector("#snbtPreview");
-        if (!preview) return;
+        const editor = app.querySelector<HTMLTextAreaElement>("#snbtEditor");
+        if (!editor) return;
         try {
-            preview.textContent = htsw.nbt.printSnbt(currentItemTag(state), {
+            editor.value = htsw.nbt.printSnbt(currentItemTag(state), {
                 pretty: true,
                 indent: "    ",
             });
+            setSnbtError("");
         } catch (err) {
-            preview.textContent = err instanceof Error ? err.message : String(err);
+            setSnbtError(errorMessage(err));
         }
+    }
+
+    function bindSnbtEditor(): void {
+        const editor = app.querySelector<HTMLTextAreaElement>("#snbtEditor");
+        if (!editor) return;
+        editor.addEventListener("input", () => applySnbtText(editor.value));
+        editor.addEventListener("blur", () => {
+            if (state.snbtError === "") updateSnbtPreview();
+        });
+    }
+
+    function applySnbtText(text: string): void {
+        let tag: ReturnType<typeof htsw.nbt.parseSnbtText>;
+        try {
+            tag = htsw.nbt.parseSnbtText(text);
+        } catch (err) {
+            setSnbtError(`Invalid SNBT: ${errorMessage(err)}`);
+            return;
+        }
+        const fields = itemFieldsFromTag(tag);
+        if (fields === null) {
+            setSnbtError('Item SNBT must be a compound with a string id, for example { id: "minecraft:stone", Count: 1b }.');
+            return;
+        }
+
+        const previous = currentItem(state);
+        state.itemName = fields.itemName;
+        const item = itemByName(fields.itemName);
+        state.metadata = item?.variations?.length
+            ? fields.metadata
+            : (fields.metadata === 0 ? null : fields.metadata);
+        state.count = clamp(fields.count, 1, 127);
+        state.displayName = fields.displayName;
+        state.lore = fields.lore.length > 0 ? fields.lore : [""];
+        state.enchants = fields.enchants;
+        state.customTags = customTagInputsFromTag(tag);
+        state.originalTag = tag;
+        state.itemSearch = "";
+        syncEntryName(state, previous, item?.displayName ?? fields.itemName);
+        setSnbtError("");
+        renderFormPanel();
+    }
+
+    function setSnbtError(text: string): void {
+        state.snbtError = text;
+        const error = app.querySelector<HTMLElement>("#snbtError");
+        if (error) error.textContent = text;
+        const editor = app.querySelector<HTMLTextAreaElement>("#snbtEditor");
+        editor?.classList.toggle("invalid", text.length > 0);
+        editor?.setAttribute("aria-invalid", String(text.length > 0));
+        updateActionState();
     }
 
     function updateFormattedPreviews(): void {
@@ -520,7 +520,7 @@ export function mountItemEditor(
         const generate = app.querySelector("#generate") as HTMLButtonElement | null;
         if (generate) generate.disabled = !canSubmit(state);
         const save = app.querySelector("#save") as HTMLButtonElement | null;
-        if (save) save.disabled = !customTagsAreValid(state.customTags);
+        if (save) save.disabled = state.snbtError !== "" || !customTagsAreValid(state.customTags);
     }
 
     function updateCustomTagFeedback(): void {
@@ -556,6 +556,7 @@ function applyItemLoad(state: State, load: ItemEditorLoad): void {
     state.lore = load.item.lore.length > 0 ? [...load.item.lore] : [""];
     state.enchants = load.item.enchants.map((enchant) => ({ ...enchant }));
     state.customTags = customTagInputsFromTag(load.tag);
+    state.snbtError = "";
     state.status = { kind: "idle", text: "" };
     state.editPath = load.snbtPath;
     state.editLabel = load.label;
@@ -578,10 +579,10 @@ function toForm(state: State): ItemEditorForm {
     };
 }
 
-// When editing an existing file, merge onto its original tag so keys the editor
-// doesn't model (skull owners, hide flags, ...) survive the round-trip.
+// Merge onto the original tag so keys the editor doesn't model (skull owners,
+// hide flags, ...) survive the round-trip.
 function currentItemTag(state: State) {
-    if (state.editPath !== undefined && state.originalTag !== undefined) {
+    if (state.originalTag !== undefined) {
         return applyItemEditsToTag(
             state.originalTag as Parameters<typeof applyItemEditsToTag>[0],
             toForm(state),
@@ -590,13 +591,92 @@ function currentItemTag(state: State) {
     return buildItemTag(toForm(state));
 }
 
+function formPanelHtml(state: State): string {
+    const item = currentItem(state);
+    const maxCount = item?.stackSize ?? 64;
+    return `
+        <div class="section">
+            <h2>Item</h2>
+            <div id="itemPicker" class="item-picker">
+                <span class="label-text">Item type</span>
+                <div class="item-combobox">
+                    <input
+                        id="itemSearch"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-controls="itemResults"
+                        aria-expanded="false"
+                        aria-label="Item type"
+                        autocomplete="off"
+                        spellcheck="false"
+                        value="${escapeAttr(selectedItemLabel(state))}"
+                        placeholder="Search by name or ID"
+                    >
+                    <button id="itemPickerToggle" class="item-picker-toggle" type="button" aria-label="Show item types" tabindex="-1">⌄</button>
+                    <div id="itemResults" class="item-results" role="listbox" hidden></div>
+                </div>
+                <span class="field-hint">Type to search, then choose a match.</span>
+            </div>
+            ${variantSelect(item, state.metadata)}
+            <div class="two">
+                <label>
+                    <span class="label-text">Count</span>
+                    <input id="count" type="number" min="1" max="${maxCount}" value="${state.count}">
+                </label>
+                <label>
+                    <span class="label-text">Max</span>
+                    <input value="${maxCount}" disabled>
+                </label>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Display</h2>
+            <label>
+                <span class="label-text">Name</span>
+                <input id="displayName" value="${escapeAttr(state.displayName)}" placeholder="&aLauncher">
+            </label>
+            <label>
+                <span class="label-text">Lore</span>
+            </label>
+            <div id="loreRows">
+                ${state.lore.map((line, index) => loreRow(line, index)).join("")}
+            </div>
+            <button id="addLore" class="secondary" type="button">Add Lore</button>
+        </div>
+
+        <div class="section">
+            <h2>Enchantments</h2>
+            <div id="enchantRows">
+                ${state.enchants.map((enchant, index) => enchantRow(enchant, index)).join("")}
+            </div>
+            <button id="addEnchant" class="secondary" type="button">Add Enchant</button>
+        </div>
+
+        <div class="section">
+            <h2>Custom NBT</h2>
+            <p class="section-hint">Added inside <code>tag</code>. Values use SNBT, for example <code>ItemModel</code> with <code>"minecraft:netherite_spear"</code>.</p>
+            <div class="custom-tag-headings" aria-hidden="true">
+                <span>Tag name</span>
+                <span>SNBT value</span>
+            </div>
+            <div id="customTagRows">
+                ${state.customTags.map((customTag, index) => customTagRow(customTag, index)).join("")}
+            </div>
+            <button id="addCustomTag" class="secondary" type="button">Add Tag</button>
+        </div>
+
+        ${projectSection(state)}
+    `;
+}
+
 function projectSection(state: State): string {
     if (state.editPath !== undefined) {
         return `
             <div class="section">
                 <h2>Save</h2>
                 <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>.</p>
-                <button id="save" type="button" ${customTagsAreValid(state.customTags) ? "" : "disabled"}>Save</button>
+                <button id="save" type="button" ${state.snbtError === "" && customTagsAreValid(state.customTags) ? "" : "disabled"}>Save</button>
                 <div id="status" class="status"></div>
             </div>
         `;
@@ -639,6 +719,13 @@ function trimTrailingEmptyLines(lines: readonly string[]): string[] {
 
 function currentItem(state: State): MinecraftItem | undefined {
     return itemByName(state.itemName);
+}
+
+function syncEntryName(state: State, previous: MinecraftItem | undefined, nextName: string): void {
+    if (state.editPath !== undefined) return;
+    if (state.entryName.trim().length === 0 || state.entryName === (previous?.displayName ?? previous?.name)) {
+        state.entryName = nextName;
+    }
 }
 
 function itemByName(name: string): MinecraftItem | undefined {
@@ -927,6 +1014,7 @@ function option(value: string, label: string, selected: boolean): string {
 function canSubmit(state: State): boolean {
     return state.entryName.trim().length > 0 &&
         state.importJsonPath.length > 0 &&
+        state.snbtError === "" &&
         customTagsAreValid(state.customTags);
 }
 

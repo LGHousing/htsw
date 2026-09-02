@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import * as htsw from "htsw";
-import { buildItemTag } from "htsw-editor-common/item/buildItemNbt";
 import {
     canonicalSlug,
     relativePath,
@@ -43,7 +42,7 @@ export async function handleItemEditorMessage(
             await createItemImportJson(webview, message.rootImportJsonPath);
             return;
         case "submitItem":
-            await submitItem(webview, message.form);
+            await submitItem(webview, message.form, message.tag);
             return;
         case "saveItem":
             await saveItem(webview, message.snbtPath, message.tag);
@@ -108,9 +107,9 @@ async function saveItem(webview: vscode.Webview, snbtPath: string, tag: unknown)
     }
 }
 
-async function submitItem(webview: vscode.Webview, form: ItemEditorForm): Promise<void> {
+async function submitItem(webview: vscode.Webview, form: ItemEditorForm, tag: unknown): Promise<void> {
     try {
-        const created = await writeItem(form);
+        const created = await writeItem(form, tag);
         await webview.postMessage({
             type: "submitResult",
             ok: true,
@@ -165,7 +164,7 @@ async function discoverImportTargets(): Promise<ImportTarget[]> {
     return [...found.values()].sort((left, right) => left.label.localeCompare(right.label));
 }
 
-async function writeItem(form: ItemEditorForm): Promise<CreatedItem> {
+async function writeItem(form: ItemEditorForm, tag: unknown): Promise<CreatedItem> {
     const importJsonPath = form.importJsonPath;
     if (!importJsonPath) throw new Error("Choose a target import.json.");
     if (!nodeProjectFs.exists(importJsonPath)) {
@@ -177,16 +176,10 @@ async function writeItem(form: ItemEditorForm): Promise<CreatedItem> {
 
     const rootDir = path.dirname(importJsonPath);
     const target = snbtTargetForItemExport(nodeProjectFs, importJsonPath, rootDir, entryName);
-    const tag = buildItemTag({
-        itemName: form.itemName,
-        count: form.count,
-        metadata: form.metadata,
-        displayName: form.displayName,
-        lore: form.lore,
-        enchants: form.enchants,
-        customTags: form.customTags,
-    });
-    const snbt = `${htsw.nbt.printSnbt(tag, { pretty: true, indent: "    " })}\n`;
+    const snbt = `${htsw.nbt.printSnbt(tag as Parameters<typeof htsw.nbt.printSnbt>[0], {
+        pretty: true,
+        indent: "    ",
+    })}\n`;
 
     nodeProjectFs.ensureDir(path.dirname(target.snbtPath));
     nodeProjectFs.writeFile(target.snbtPath, snbt);

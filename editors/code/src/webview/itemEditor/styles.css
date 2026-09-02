@@ -67,6 +67,27 @@ textarea {
     resize: vertical;
 }
 
+textarea.snbt-editor {
+    display: block;
+    min-height: 220px;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    font-family: var(--vscode-editor-font-family), monospace;
+    font-size: var(--vscode-editor-font-size, 13px);
+    line-height: 1.45;
+    white-space: pre;
+    tab-size: 4;
+    resize: vertical;
+}
+
+textarea.snbt-editor.invalid {
+    border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
 .app {
     display: grid;
     grid-template-columns: minmax(310px, 450px) minmax(320px, 1fr);
@@ -326,17 +347,6 @@ button.item-result.active {
     font-smooth: never;
 }
 
-pre {
-    margin: 0;
-    padding: 10px;
-    overflow: auto;
-    min-height: 220px;
-    max-height: none;
-    color: var(--vscode-editor-foreground);
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border);
-}
-
 .tooltip-stage {
     min-height: 260px;
     padding: 20px;
@@ -379,9 +389,5 @@ pre {
     .form-panel {
         flex: none;
         overflow: visible;
-    }
-
-    pre {
-        max-height: none;
     }
 }

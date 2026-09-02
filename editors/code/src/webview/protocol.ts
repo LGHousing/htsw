@@ -196,7 +196,7 @@ export type ProjectFromHostMessage =
 export type ItemEditorToHostMessage =
     | { type: "requestImportTargets" }
     | { type: "createItemImportJson"; rootImportJsonPath: string }
-    | { type: "submitItem"; form: ItemEditorForm }
+    | { type: "submitItem"; form: ItemEditorForm; tag: unknown }
     | { type: "saveItem"; snbtPath: string; tag: unknown };
 
 export type ItemEditorFromHostMessage =
