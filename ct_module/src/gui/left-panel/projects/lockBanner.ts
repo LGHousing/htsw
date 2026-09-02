@@ -12,6 +12,7 @@ import {
 } from "../../lib/theme";
 import { markGuiDirty } from "../../lib/dirty";
 import { getMtimeMs } from "../../lib/java";
+import { TaskManager } from "../../../tasks/manager";
 import { getHousingUuid } from "../../state";
 import {
     cachedStatusForImportable,
@@ -38,6 +39,12 @@ import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./row
 // per project on parse identity, the cache status context and the lock's
 // mtime; the mtime is polled once a second from the overlay's render tick so
 // a `git pull` shows up without a reload or any other interaction.
+//
+// While a task runs the banner is hidden outright: an import rewrites
+// house.lock.json entry by entry while the cache catches up, so the lock is
+// briefly "ahead" of the cache on every step and the banner would flash in
+// and out. The busy->idle edge bumps the revision so the tree re-evaluates
+// once the import has settled.
 
 export type LockBannerState = { count: number; lockMtime: number };
 
@@ -55,21 +62,29 @@ const lockMtimeByProject = new Map<string, number>();
 const dismissedByProject = new Map<string, number>();
 let revision = 0;
 let lastPollAt = 0;
+let lastBusy = false;
 
 // Called from the overlay's guiRender tick. The Projects panel only rebuilds
 // after markGuiDirty(), so the poll has to run outside the rebuild path and
 // dirty the GUI itself when a lock changes underneath an idle overlay.
 export function pollLockBanners(): void {
-    const now = Date.now();
-    if (now - lastPollAt < LOCK_POLL_MS) return;
-    lastPollAt = now;
+    const busy = TaskManager.isBusy();
     let changed = 0;
-    lockMtimeByProject.forEach((mtime, key) => {
-        const next = getMtimeMs(houseLockPathForImportJson(key));
-        if (next === mtime) return;
-        lockMtimeByProject.set(key, next);
+    if (busy !== lastBusy) {
+        lastBusy = busy;
         changed++;
-    });
+    }
+    const now = Date.now();
+    if (now - lastPollAt >= LOCK_POLL_MS) {
+        lastPollAt = now;
+        lockMtimeByProject.forEach((mtime, key) => {
+            const next = getMtimeMs(houseLockPathForImportJson(key));
+            if (next === mtime) return;
+            lockMtimeByProject.set(key, next);
+            // Mid-task mtime churn is expected; the idle edge rebuilds once.
+            if (!busy) changed++;
+        });
+    }
     if (changed === 0) return;
     revision++;
     markGuiDirty();
@@ -100,7 +115,7 @@ function evaluate(
 }
 
 export function lockBannerFor(r: ResultImport): LockBannerState | null {
-    if (r.parse === null) return null;
+    if (r.parse === null || TaskManager.isBusy()) return null;
     const bound = r.parse.importJson.houseUuid;
     const current = getHousingUuid();
     if (bound === null || current === null || bound !== current) return null;

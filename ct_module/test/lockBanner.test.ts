@@ -11,6 +11,7 @@ const state = {
     mtimes: new Map<string, number>(),
     treeBumps: 0,
     dirtyMarks: 0,
+    busy: false,
 };
 
 vi.mock("../src/gui/state", () => ({
@@ -20,6 +21,9 @@ vi.mock("../src/gui/cache-status", () => ({
     cachedStatusForImportable: (imp: ImportableFunction) =>
         state.statuses.get(imp.name) ?? null,
     importableLinkStatusContextKey: () => state.statusKey,
+}));
+vi.mock("../src/tasks/manager", () => ({
+    TaskManager: { isBusy: () => state.busy },
 }));
 vi.mock("../src/gui/lib/dirty", () => ({
     markGuiDirty: () => {
@@ -90,6 +94,7 @@ describe("lockBannerFor", () => {
         state.mtimes = new Map([[LOCK_PATH, 1000]]);
         state.treeBumps = 0;
         state.dirtyMarks = 0;
+        state.busy = false;
         vi.stubGlobal("FileLib", {
             exists: (path: string) => files.has(path),
             read: (path: string) => files.get(path) ?? null,
@@ -183,6 +188,46 @@ describe("lockBannerFor", () => {
             vi.advanceTimersByTime(1500);
             banner.pollLockBanners();
             expect(state.dirtyMarks).toBe(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("hides while a task runs and re-evaluates once on the idle edge", async () => {
+        const behind = fn("Behind", "same");
+        writeLock(files, [behind]);
+        state.statuses.set("Behind", "modified");
+        const banner = await import("../src/gui/left-panel/projects/lockBanner");
+        const r = project([behind]);
+        expect(banner.lockBannerFor(r)?.count).toBe(1);
+
+        vi.useFakeTimers();
+        try {
+            banner.pollLockBanners();
+            const before = banner.getLockBannerRevision();
+            state.busy = true;
+            banner.pollLockBanners();
+            // The busy edge rebuilds so the row leaves the tree at once.
+            expect(banner.getLockBannerRevision()).toBe(before + 1);
+            expect(state.dirtyMarks).toBe(1);
+            expect(banner.lockBannerFor(r)).toBeNull();
+
+            // An import rewrites the lock every step; none of that churn
+            // should rebuild the tree while the task is still running.
+            for (let i = 0; i < 3; i++) {
+                vi.advanceTimersByTime(1500);
+                state.mtimes.set(LOCK_PATH, 3000 + i);
+                banner.pollLockBanners();
+            }
+            expect(banner.getLockBannerRevision()).toBe(before + 1);
+            expect(state.dirtyMarks).toBe(1);
+            expect(banner.lockBannerFor(r)).toBeNull();
+
+            state.busy = false;
+            banner.pollLockBanners();
+            expect(banner.getLockBannerRevision()).toBe(before + 2);
+            expect(state.dirtyMarks).toBe(2);
+            expect(banner.lockBannerFor(r)).toEqual({ count: 1, lockMtime: 3002 });
         } finally {
             vi.useRealTimers();
         }
