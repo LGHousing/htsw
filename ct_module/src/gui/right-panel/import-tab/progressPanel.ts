@@ -51,7 +51,7 @@ import {
 } from "./taskProgress";
 import {
     countTaskRowsByStatus,
-    isTaskTotalLocked,
+    isTaskTotalEtaReady,
     type MenuSlotFocus,
 } from "../../../housingSync/progress/types";
 
@@ -476,13 +476,11 @@ function progressTotalEtaLine(): string {
     const p = getTaskProgress();
     if (p === null) return "";
     if (isEtaEstimating()) return "total calculating…";
-    // Until the apply phase, the per-importable apply cost is just a rough
-    // guess — the real op-by-op diff isn't known until each importable has
-    // been read + hydrated. Showing a total before then is fiction, so we
-    // withhold it until the session-wide apply plan is fixed.
-    const phase = p.active?.phase;
-    const ready = (phase === "applying" || phase === "done") && isTaskTotalLocked(p);
-    if (!ready) {
+    // Imports withhold the total until the apply phase: the per-importable
+    // apply cost is a guess until each importable has been read + hydrated.
+    // Reads, exports, and diffs never apply, so their total is real as soon
+    // as the session locks it.
+    if (!isTaskTotalEtaReady(p, getSessionVerb() === "import")) {
         return "total calculating…";
     }
     const secs = getTaskEtaSeconds();
