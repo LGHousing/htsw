@@ -18,6 +18,7 @@ import type { ItemDependencySnapshot } from "../importables/items/dependencyInde
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { rememberImportableHash } from "./hashMemo";
+import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -113,7 +114,19 @@ export function cacheEntryHash(entry: ImportableCacheEntry): string {
     if (cacheEntryHashesAreCurrent(entry)) return entry.hash;
     let hash = entryHashCache.get(entry);
     if (hash === undefined) {
-        hash = importableHash(entry.importable);
+        try {
+            hash = importableHash(entry.importable);
+        } catch (error) {
+            // Status rows compute this per frame, so a stored importable the
+            // current hash spec cannot digest must not throw out of render. A
+            // hash nothing equals reads as "modified": the next import
+            // re-verifies against Housing instead of trusting a stale baseline.
+            recordRuntimeDebug("cacheEntryHashFailed", {
+                name: entry.name ?? null,
+                error: String(error),
+            });
+            hash = "unhashable";
+        }
         entryHashCache.set(entry, hash);
     }
     return hash;
@@ -556,11 +569,18 @@ type LoadedCacheFile = {
     path: string;
     type: Importable["type"];
     entry: ImportableCacheEntry | null;
-    entryHash: string | null;
     house: HouseImportable | null;
     mtime: number;
 };
 
+// Reads cache files on a worker thread and publishes them on the main thread.
+// The worker only does file IO and JSON parsing: it never hashes. Hashing
+// walks the comparison-key memo maps that the main thread mutates while it
+// renders status rows, and Rhino's Map/WeakMap are not safe for concurrent
+// writes. cacheEntryHash computes lazily on the main thread instead (once per
+// entry object). `onComplete` fires exactly once, whatever the worker hits:
+// a batch that never reports back would leave the warm queue stuck for the
+// rest of the session with every unloaded row iconless.
 export function loadImportableCachesOffThread(
     requests: readonly ImportableCacheLoadRequest[],
     onComplete: () => void
@@ -578,6 +598,65 @@ export function loadImportableCachesOffThread(
             memo: readCache.get(path),
         };
     });
+    let completed = false;
+    const publish = (loaded: LoadedCacheFile[], failure: unknown): void => {
+        if (completed) return;
+        completed = true;
+        try {
+            if (failure !== null) {
+                recordRuntimeDebug("cacheWarmBatchFailed", {
+                    requested: plans.length,
+                    loaded: loaded.length,
+                    error:
+                        failure instanceof Error
+                            ? failure.message
+                            : typeof failure === "string"
+                              ? failure
+                              : "unknown error",
+                });
+            }
+            for (let i = 0; i < loaded.length; i++) {
+                const result = loaded[i];
+                const current = readCache.get(result.path);
+                if (current !== undefined && current.checkedAt > startedAt) {
+                    continue;
+                }
+                readCache.set(result.path, {
+                    entry: result.entry,
+                    house: result.house,
+                    mtime: result.mtime,
+                    checkedAt: Date.now(),
+                });
+            }
+        } finally {
+            onComplete();
+        }
+    };
+    const loadOne = (plan: (typeof plans)[number]): LoadedCacheFile => {
+        const mtime = getFileMtimeMs(plan.path);
+        if (plan.memo !== undefined && plan.memo.mtime === mtime) {
+            return {
+                path: plan.path,
+                type: plan.type,
+                entry: plan.memo.entry,
+                house: plan.memo.house,
+                mtime,
+            };
+        }
+        let raw: string | null;
+        try {
+            raw = FileLib.read(plan.path);
+        } catch {
+            raw = null;
+        }
+        return {
+            path: plan.path,
+            type: plan.type,
+            entry: parseCacheEntry(raw),
+            house: parseHouseRecord(raw, plan.type),
+            mtime,
+        };
+    };
     const Thread = javaType("java.lang.Thread");
     const Runnable = javaType("java.lang.Runnable");
     try {
@@ -585,62 +664,41 @@ export function loadImportableCachesOffThread(
             new Runnable({
                 run: function () {
                     const loaded: LoadedCacheFile[] = [];
-                    for (let i = 0; i < plans.length; i++) {
-                        const plan = plans[i];
-                        const mtime = getFileMtimeMs(plan.path);
-                        if (plan.memo !== undefined && plan.memo.mtime === mtime) {
-                            loaded.push({
-                                path: plan.path,
-                                type: plan.type,
-                                entry: plan.memo.entry,
-                                entryHash: null,
-                                house: plan.memo.house,
-                                mtime,
-                            });
-                            continue;
+                    let failure: unknown = null;
+                    try {
+                        for (let i = 0; i < plans.length; i++) {
+                            const plan = plans[i];
+                            try {
+                                loaded.push(loadOne(plan));
+                            } catch (error) {
+                                // Publish the file as unreadable rather than
+                                // dropping it: the row settles on "unknown"
+                                // and a later mtime check re-reads it.
+                                failure = error;
+                                loaded.push({
+                                    path: plan.path,
+                                    type: plan.type,
+                                    entry: null,
+                                    house: null,
+                                    mtime: getFileMtimeMs(plan.path),
+                                });
+                            }
                         }
-                        let raw: string | null;
-                        try {
-                            raw = FileLib.read(plan.path);
-                        } catch {
-                            raw = null;
-                        }
-                        const entry = parseCacheEntry(raw);
-                        loaded.push({
-                            path: plan.path,
-                            type: plan.type,
-                            entry,
-                            entryHash: entry === null ? null : cacheEntryHash(entry),
-                            house: parseHouseRecord(raw, plan.type),
-                            mtime,
-                        });
+                    } catch (error) {
+                        failure = error;
                     }
-                    runOnMainThread(() => {
-                        for (let i = 0; i < loaded.length; i++) {
-                            const result = loaded[i];
-                            const current = readCache.get(result.path);
-                            if (current !== undefined && current.checkedAt > startedAt) {
-                                continue;
-                            }
-                            if (result.entry !== null && result.entryHash !== null) {
-                                entryHashCache.set(result.entry, result.entryHash);
-                            }
-                            readCache.set(result.path, {
-                                entry: result.entry,
-                                house: result.house,
-                                mtime: result.mtime,
-                                checkedAt: Date.now(),
-                            });
-                        }
-                        onComplete();
-                    });
+                    try {
+                        runOnMainThread(() => publish(loaded, failure));
+                    } catch (error) {
+                        publish(loaded, error);
+                    }
                 },
             })
         );
         thread.setDaemon(true);
         thread.start();
-    } catch (_error) {
-        onComplete();
+    } catch (error) {
+        publish([], error);
     }
 }
 
