@@ -69,6 +69,14 @@ function unregisterEventTrigger(trigger: EventTrigger): void {
     trigger?.unregister?.();
 }
 
+// `/ct load` clears every trigger but leaves this instance's objects alive.
+// Any later hop back onto the main thread (a packet runnable queued before the
+// clear, the failure-upload thread's callback) resumes an awaiting task, whose
+// next wait re-arms the tick trigger through updateTriggerRegistration — and
+// the old export keeps driving menus beside the freshly loaded module. Once
+// unloaded, this instance drops its waiters and never arms a trigger again.
+let unloaded = false;
+
 function updateTriggerRegistration(event: EventName): void {
     const needed =
         EVENT_CONTAINERS[event].length > 0 ||
@@ -76,7 +84,7 @@ function updateTriggerRegistration(event: EventName): void {
         ((event === "packetReceived" || event === "packetSent") &&
             packetCaptureForTask);
     const trigger = EVENT_TRIGGERS[event];
-    if (needed) trigger?.register?.();
+    if (needed && !unloaded) trigger?.register?.();
     else unregisterEventTrigger(trigger);
 }
 
@@ -320,6 +328,11 @@ export function resetEventContainers(): number {
     return total;
 }
 
+register("gameUnload", () => {
+    unloaded = true;
+    resetEventContainers();
+});
+
 type EventName = keyof CheckPredicateMap;
 
 type ContainerFor<E extends EventName> = EventContainers[E][number];
@@ -345,6 +358,7 @@ export function waitForTimeout(
             isCancelled,
             cleanupInner,
         };
+        if (unloaded) return;
         TIMEOUTS.push(entry);
         updateTriggerRegistration("tick");
     }) as WaitForPromise<never>;
@@ -373,6 +387,9 @@ export function waitFor<E extends EventName>(
             resolve,
             remaining: amount,
         };
+        // A dead instance's wait must never settle: resolving it would run
+        // more of the stale task, and rejecting it would run its catch path.
+        if (unloaded) return;
         EVENT_CONTAINERS[event].push(container);
         updateTriggerRegistration(event);
     }) as WaitForPromise<ParametersFor<E>>;
