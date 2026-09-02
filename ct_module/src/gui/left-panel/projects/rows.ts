@@ -611,11 +611,58 @@ function projectBindingWarning(parent: ResultImport): string[] {
         : [];
 }
 
+// The menu counts the rows the tree currently shows. When a search or
+// filter narrows that list, a bulk row (re-evaluated against the whole file
+// at run time) would silently widen the work back out, so queue exactly the
+// counted importables instead. Unfiltered, the bulk row is the better deal:
+// it picks up edits made between queueing and running.
+function queueProjectConcrete(
+    op: "read" | "export" | "import",
+    house: string | null,
+    importJsonPath: string,
+    importables: readonly Importable[],
+    verb: string
+): void {
+    const results = importables.map((imp) =>
+        addQueueRow(
+            makeImportableQueueRow({
+                op,
+                house,
+                path: importJsonPath,
+                type: imp.type,
+                identity: importableIdentity(imp),
+                label: imp.type === "EVENT" ? imp.event : imp.name,
+            })
+        )
+    );
+    let added = 0;
+    for (const result of results) {
+        if (result.kind === "added" || result.kind === "alsoQueuedOtherDirection") added++;
+    }
+    if (added === 0) {
+        showToast(results[0]?.message ?? "Nothing to queue", ACCENT_WARN);
+        return;
+    }
+    showToast(`Queued ${added} ${verb} → ${shortPath(importJsonPath)}`, ACCENT_INFO);
+    autoRunQueueChanged();
+}
+
 function runProjectReExport(
     parent: ResultImport,
     importJsonPath: string,
-    _importables: readonly Importable[]
+    importables: readonly Importable[],
+    narrowed: boolean
 ): void {
+    if (narrowed) {
+        queueProjectConcrete(
+            "export",
+            parent.parse?.importJson.houseUuid ?? getHousingUuid(),
+            importJsonPath,
+            importables.filter((imp) => imp.type !== "ITEM"),
+            "exports"
+        );
+        return;
+    }
     const result = addQueueRow(
         makeBulkQueueRow({
             op: "export",
@@ -637,7 +684,8 @@ function runProjectReExport(
 function confirmProjectReExport(
     parent: ResultImport,
     importJsonPath: string,
-    importables: readonly Importable[]
+    importables: readonly Importable[],
+    narrowed: boolean
 ): void {
     const count = houseExportCount(importables);
     openConfirmPopover({
@@ -648,7 +696,7 @@ function confirmProjectReExport(
         ],
         confirmLabel: "Re-export",
         danger: true,
-        onConfirm: () => runProjectReExport(parent, importJsonPath, importables),
+        onConfirm: () => runProjectReExport(parent, importJsonPath, importables, narrowed),
     });
 }
 
@@ -765,10 +813,21 @@ function deepReadableCount(importables: readonly Importable[]): number {
 function runProjectDeepRead(
     parent: ResultImport,
     importJsonPath: string,
-    _importables: readonly Importable[]
+    importables: readonly Importable[],
+    narrowed: boolean
 ): void {
     const housingUuid = getHousingUuid();
     if (housingUuid === null) return;
+    if (narrowed) {
+        queueProjectConcrete(
+            "read",
+            housingUuid,
+            importJsonPath,
+            importables.filter((imp) => HOUSE_READERS[imp.type] !== null),
+            "reads"
+        );
+        return;
+    }
     const result = addQueueRow(
         makeBulkQueueRow({
             op: "read",
@@ -1000,8 +1059,19 @@ function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): El
 function queueImportables(
     parent: ResultImport,
     scopePath: string,
-    _importables: readonly Importable[]
+    importables: readonly Importable[],
+    narrowed: boolean
 ): void {
+    if (narrowed) {
+        queueProjectConcrete(
+            "import",
+            parent.parse?.importJson.houseUuid ?? null,
+            parent.fullPath,
+            importables,
+            "imports"
+        );
+        return;
+    }
     const result = addQueueRow(
         makeBulkQueueRow({
             op: "import",
@@ -1390,13 +1460,17 @@ export function resultRow(
         const filteredImportables = isImport
             ? filteredSubtreeImportables(r, includeTreeOf(r))
             : [];
+        const narrowed =
+            isImport &&
+            filteredImportables.length !== subtreeImportables(includeTreeOf(r)).length;
         const exportCount = houseExportCount(filteredImportables);
         const fileExtras: MenuAction[] = isImport
             ? [
                   {
                       label: `Queue all for import (${filteredImportables.length})`,
                       icon: Icons.listPlus,
-                      onClick: () => queueImportables(r, r.fullPath, filteredImportables),
+                      onClick: () =>
+                          queueImportables(r, r.fullPath, filteredImportables, narrowed),
                   },
                   ...queueModifiedAction(filteredImportables, () =>
                       queueModifiedSubtree(r, r.fullPath, filteredImportables)
@@ -1406,14 +1480,19 @@ export function resultRow(
                       icon: Icons.refreshCw,
                       disabled: () => getHousingUuid() === null,
                       onClick: () =>
-                          confirmProjectReExport(r, r.fullPath, filteredImportables),
+                          confirmProjectReExport(
+                              r,
+                              r.fullPath,
+                              filteredImportables,
+                              narrowed
+                          ),
                   },
                   {
                       label: `Queue read from house (${deepReadableCount(filteredImportables)})`,
                       icon: Icons.scanEye,
                       disabled: () => getHousingUuid() === null,
                       onClick: () =>
-                          runProjectDeepRead(r, r.fullPath, filteredImportables),
+                          runProjectDeepRead(r, r.fullPath, filteredImportables, narrowed),
                   },
                   { kind: "separator" },
                   openInViewAction(r.fullPath, importJsonPath),
@@ -1549,12 +1628,14 @@ export function includeGroupRow(
     const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
     const actions = (): MenuAction[] => {
         const declaredImportables = filteredSubtreeImportables(parent, node);
+        const narrowed = declaredImportables.length !== subtreeImportables(node).length;
         const count = houseExportCount(declaredImportables);
         return [
             {
                 label: `Queue all for import (${declaredImportables.length})`,
                 icon: Icons.listPlus,
-                onClick: () => queueImportables(parent, fullPath, declaredImportables),
+                onClick: () =>
+                    queueImportables(parent, fullPath, declaredImportables, narrowed),
             },
             ...queueModifiedAction(declaredImportables, () =>
                 queueModifiedSubtree(parent, fullPath, declaredImportables)
@@ -1564,13 +1645,14 @@ export function includeGroupRow(
                 icon: Icons.refreshCw,
                 disabled: () => getHousingUuid() === null,
                 onClick: () =>
-                    confirmProjectReExport(parent, fullPath, declaredImportables),
+                    confirmProjectReExport(parent, fullPath, declaredImportables, narrowed),
             },
             {
                 label: `Queue read from house (${deepReadableCount(declaredImportables)})`,
                 icon: Icons.scanEye,
                 disabled: () => getHousingUuid() === null,
-                onClick: () => runProjectDeepRead(parent, fullPath, declaredImportables),
+                onClick: () =>
+                    runProjectDeepRead(parent, fullPath, declaredImportables, narrowed),
             },
             { kind: "separator" },
             openInViewAction(fullPath, parent.fullPath),

@@ -401,6 +401,8 @@ function selectedImportables(
     const filter = row.target.filter;
     return values.filter((importable) => {
         if (type !== null && importable.type !== type) return false;
+        // Items have no house reader and export only from the held stack.
+        if (row.op !== "import" && importable.type === "ITEM") return false;
         const identity = importableIdentity(importable);
         if (liveNames !== undefined && !liveNames.has(identity)) return false;
         const status = buildCacheStatusRow(house, importable).state;

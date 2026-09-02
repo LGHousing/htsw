@@ -102,7 +102,11 @@ function bulkLiveCount(row: QueueRow): number {
     const scopePath = row.target.scope.kind === "file" ? row.target.scope.path : row.path;
     const values = sourceImportables(scopePath);
     if (row.target.scope.kind === "file") {
-        return values.filter((imp) => cacheStateMatches(row, house, imp)).length;
+        return values.filter(
+            (imp) =>
+                (row.op === "import" || imp.type !== "ITEM") &&
+                cacheStateMatches(row, house, imp)
+        ).length;
     }
     const type = row.target.scope.type;
     const local = values.filter((imp) => imp.type === type);
