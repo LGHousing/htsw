@@ -1,6 +1,6 @@
 import type TaskContext from "./context";
 
-export type ActiveTaskKind = "import" | "export" | "diff";
+export type ActiveTaskKind = "queue" | "import" | "export" | "diff";
 
 type ActiveTask = {
     kind: ActiveTaskKind;
@@ -31,6 +31,10 @@ export function cancelActiveTask(): "requested" | "forced" | null {
 
 export function getActiveTaskStartedAt(): number | null {
     return activeTask?.ctx.startedAt ?? null;
+}
+
+export function getActiveTaskKind(): ActiveTaskKind | null {
+    return activeTask?.kind ?? null;
 }
 
 export function getActiveTaskElapsedMs(): number | null {

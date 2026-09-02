@@ -13,6 +13,7 @@ import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { snbtFromItem } from "../../housingSync/items/itemNbt";
 import { openMenuElements } from "./housing";
+import { itemLore } from "../../utils/itemLore";
 
 const PLAYER_INVENTORY_SLOTS = 36;
 
@@ -67,7 +68,7 @@ export type LiveMenu = {
 const EMPTY_SLOT_LORE = "Click to set item!";
 
 function isEmptySlotFiller(item: Item): boolean {
-    for (const line of item.getLore()) {
+    for (const line of itemLore(item)) {
         if (removedFormatting(line).trim() === EMPTY_SLOT_LORE) return true;
     }
     return false;

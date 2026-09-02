@@ -27,6 +27,7 @@ import {
     writeIsItem,
     writeCompareDamage,
 } from "./writers";
+import { itemLore } from "../../../utils/itemLore";
 
 export type ConditionIo<T extends Condition> = {
     displayName: string;
@@ -50,10 +51,9 @@ export function getConditionIo<T extends Condition["type"]>(
 }
 
 export function isConditionListItemInverted(slot: ItemSlot): boolean {
-    return slot
-        .getItem()
-        .getLore()
-        .some((line) => removedFormatting(line).trim() === "Inverted");
+    return itemLore(slot.getItem()).some(
+        (line) => removedFormatting(line).trim() === "Inverted"
+    );
 }
 
 const CONDITION_IO = {

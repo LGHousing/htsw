@@ -7,29 +7,15 @@ import {
     readProjectItemsForExport,
     type ProjectExportDestination,
 } from "./projectDestination";
-import {
-    HOUSE_EXPORT_TYPES,
-    type HouseExportTypeName,
-} from "./exportTypes";
-import {
-    functionExportReferencesExist,
-    readFunctionNamesFromImportJson,
-    readNpcEntriesFromImportJson,
-} from "../../project/paths";
+import { readNpcEntriesFromImportJson } from "../../project/paths";
 import { HOUSE_READERS } from "./readers";
 import type { ReadFn, ReadResult } from "./reader";
 import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
+import type { QueueRow } from "../../gui/right-panel/import-tab/queue";
+import type { HouseExportTypeName } from "./exportTypes";
 
 export type ExportBatchType = HouseExportTypeName | "NPC";
 export type NamedExportType = Exclude<HouseExportTypeName, "EVENT">;
-
-export type ExportBatchRequest =
-    | { type: HouseExportTypeName; names?: readonly string[]; skipExisting?: boolean }
-    | {
-          type: "NPC";
-          entries?: ReturnType<typeof readNpcEntriesFromImportJson>;
-          skipExisting?: boolean;
-      };
 
 export type ExportSessionDestination =
     | { kind: "project"; project: ProjectExportDestination }
@@ -48,35 +34,9 @@ export type ExportSessionBatch = {
     skipExisting?: boolean;
     newExportTargetImportJson?: string;
     onNamesListed?: (names: readonly string[]) => void;
+    queueRows?: readonly QueueRow[];
+    onQueueRowFinished?: (key: string, error?: string) => void;
 };
-
-export function notYetExportedFunctionNames(
-    importJsonPath: string,
-    liveNames: readonly string[]
-): { names: string[]; skipped: number; missingTargets: number } {
-    const declared = new Set(readFunctionNamesFromImportJson(importJsonPath));
-    const names: string[] = [];
-    let skipped = 0;
-    let missingTargets = 0;
-
-    for (let i = 0; i < liveNames.length; i++) {
-        const name = liveNames[i];
-        if (!declared.has(name)) {
-            names.push(name);
-            continue;
-        }
-
-        if (functionExportReferencesExist(importJsonPath, name)) {
-            skipped++;
-            continue;
-        }
-
-        missingTargets++;
-        names.push(name);
-    }
-
-    return { names, skipped, missingTargets };
-}
 
 export async function runExportSession(
     ctx: TaskContext,
@@ -114,7 +74,16 @@ export async function runExportSession(
                 entries: batch.npcEntries,
                 skipExisting: batch.skipExisting,
                 newExportTargetImportJson: batch.newExportTargetImportJson,
-                progress: createExportProgressSink("NPC", project.importJsonPath),
+                progress: createExportProgressSink(
+                    "NPC",
+                    project.importJsonPath,
+                    "export",
+                    undefined,
+                    {
+                        queueRows: batch.queueRows,
+                        onFinished: batch.onQueueRowFinished,
+                    }
+                ),
                 output: { kind: "project" },
                 onItemFailure,
             });
@@ -143,7 +112,12 @@ export async function runExportSession(
             progress: createExportProgressSink(
                 batch.type,
                 target.importJsonPath,
-                destination.kind === "cache" ? "read" : undefined
+                destination.kind === "cache" ? "read" : undefined,
+                undefined,
+                {
+                    queueRows: batch.queueRows,
+                    onFinished: batch.onQueueRowFinished,
+                }
             ),
             output:
                 destination.kind === "cache"
@@ -159,91 +133,6 @@ export async function runExportSession(
         }
     }
     return total;
-}
-
-export async function exportBatch(
-    ctx: TaskContext,
-    destination: ProjectExportDestination,
-    request: ExportBatchRequest
-): Promise<ReadResult> {
-    return runExportSession(
-        ctx,
-        { kind: "project", project: destination },
-        [
-            request.type === "NPC"
-                ? {
-                      type: "NPC",
-                      npcEntries: request.entries,
-                      skipExisting: request.skipExisting,
-                  }
-                : {
-                      type: request.type,
-                      names: request.names,
-                      skipExisting: request.skipExisting,
-                  },
-        ]
-    );
-}
-
-export async function exportExisting(
-    ctx: TaskContext,
-    destination: ProjectExportDestination,
-    importables?: readonly Importable[]
-): Promise<ReadResult> {
-    const { importJsonPath } = destination;
-    const batches: ExportSessionBatch[] = [];
-
-    for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
-        const spec = HOUSE_EXPORT_TYPES[i];
-        const names: string[] = [];
-        if (importables === undefined) {
-            names.push(...spec.declaredNames(importJsonPath));
-        } else {
-            for (let j = 0; j < importables.length; j++) {
-                const imp = importables[j];
-                if (imp.type !== spec.type) continue;
-                names.push(imp.type === "EVENT" ? imp.event : imp.name);
-            }
-        }
-        if (names.length === 0) continue;
-        batches.push({
-            type: spec.type,
-            names,
-        });
-    }
-
-    let npcEntries: ReturnType<typeof readNpcEntriesFromImportJson>;
-    if (importables === undefined) {
-        npcEntries = readNpcEntriesFromImportJson(importJsonPath);
-    } else {
-        npcEntries = [];
-        for (let i = 0; i < importables.length; i++) {
-            const imp = importables[i];
-            if (imp.type === "NPC") {
-                npcEntries.push({ name: imp.name, pos: imp.pos });
-            }
-        }
-    }
-    if (npcEntries.length > 0) {
-        batches.push({
-            type: "NPC",
-            npcEntries,
-        });
-    }
-
-    const result = await runExportSession(
-        ctx,
-        { kind: "project", project: destination },
-        batches
-    );
-
-    if (result.total === 0) {
-        const sections = HOUSE_EXPORT_TYPES.map((spec) => `${spec.token}s[]`).join(", ");
-        ctx.displayMessage(
-            `&cNo ${sections}, or npcs[] entries found in ${importJsonPath}`
-        );
-    }
-    return result;
 }
 
 function addReadResult(target: ReadResult, result: ReadResult): void {

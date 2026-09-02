@@ -60,6 +60,7 @@ import { removedFormatting } from "../../utils/helpers";
 import { normalizeSoundKey } from "../fields/sounds";
 import { setItemValue } from "../items/itemPicker";
 import type { WriteActionOptions } from "./io";
+import { itemLore } from "../../utils/itemLore";
 
 function booleanActionDefault(type: Action["type"], prop: string): boolean {
     return getActionFieldDefault(type, prop) as boolean;
@@ -351,15 +352,10 @@ function isAdvancedVarOperation(value: string): boolean {
     return (ADVANCED_VAR_OPERATIONS as readonly string[]).indexOf(value) !== -1;
 }
 
-function isAlreadySelectedOptionSlot(slot: {
-    getItem(): { getLore(): string[] };
-}): boolean {
-    return slot
-        .getItem()
-        .getLore()
-        .some((line) =>
-            removedFormatting(line).trim().toLowerCase().includes("already selected")
-        );
+function isAlreadySelectedOptionSlot(slot: { getItem(): Item }): boolean {
+    return itemLore(slot.getItem()).some((line) =>
+        removedFormatting(line).trim().toLowerCase().includes("already selected")
+    );
 }
 
 async function selectOpenOption(

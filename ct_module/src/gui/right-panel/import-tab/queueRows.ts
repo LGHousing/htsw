@@ -1,11 +1,5 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-/**
- * Queue rows for the import tab: the visible list of items waiting to be
- * imported, with expand/collapse for import.json bundles and per-row mini
- * progress bars driven by the live task session.
- */
-
 import type { Importable } from "htsw/types";
 
 import type { ClickInfo, Element } from "../../lib/layout";
@@ -22,254 +16,160 @@ import {
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
-
-import {
-    getHousingUuid,
-    isCurrentHouseTrusted,
-} from "../../state";
-import {
-    getQueueItemRunState,
-    isCurrentQueueItem,
-    type QueueItemRunState,
-} from "./taskProgress";
-import { importableIdentity } from "../../../importables/identity";
+import { openMenu, type MenuAction } from "../../lib/menu";
+import { basename, compactPath, shortPath } from "../../lib/pathDisplay";
 import { buildCacheStatusRow } from "../../../importCache/status";
-import { getImportCacheWriteRevision } from "../../../importCache/cache";
-import {
-    isQueueSessionItem,
-    queueItemKey,
-    removeFromQueueKey,
-    type QueueItem,
-} from "./queue";
-import {
-    canonicalPath,
-    getParseCacheRevision,
-    requestParse,
-} from "../../parsing/parses";
-import { orderImportablesForSession } from "../../../importables/import/session";
+import { listCachedImportables } from "../../../importCache/cache";
+import { importableIdentity } from "../../../importables/identity";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
+import { getHousingUuid, isCurrentHouseTrusted } from "../../state";
+import { isHouseTrusted } from "../../state/trust";
+import { canonicalPath, requestParse } from "../../parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
-import type { IncludeNode } from "../../left-panel/projects/includeTree";
+import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
+import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
+import {
+    getQueueRowRunState,
+    isCurrentQueueRow,
+    type QueueRowRunState,
+} from "./taskProgress";
+import {
+    dismissQueueRow,
+    getQueue,
+    getQueueRowBadge,
+    removeQueueRow,
+    retryQueueRow,
+    type QueueRow,
+} from "./queue";
+import { cancelQueue } from "./queueRunner";
 
-type QueueSourceIndex = {
-    importables: Map<string, Importable>;
-    declaringFolders: Map<string, string | null>;
-    importJsonChildren: QueueItem[] | null;
-    parsedImportables: readonly Importable[];
-};
-
-let queueSourceIndexRevision = -1;
-const queueSourceIndexes = new Map<string, QueueSourceIndex | null>();
-
-function importableIndexKey(type: Importable["type"], identity: string): string {
-    return `${type}\u0000${identity}`;
-}
-
-function directoryOf(path: string): string {
-    const slash = path.lastIndexOf("/");
-    return slash < 0 ? "" : path.substring(0, slash);
-}
-
-function relativeDeclaringFolder(rootDir: string, nodePath: string): string | null {
-    const homeDir = directoryOf(canonicalPath(nodePath));
-    const prefix = rootDir === "" ? "" : `${rootDir}/`;
-    if (homeDir === rootDir || homeDir.indexOf(prefix) !== 0) return null;
-    return homeDir.substring(prefix.length);
-}
-
-function indexDeclaringFolders(
-    node: IncludeNode,
-    rootDir: string,
-    folders: Map<string, string | null>
-): void {
-    if (node.reference !== true) {
-        const folder = relativeDeclaringFolder(rootDir, node.path);
-        for (let i = 0; i < node.importables.length; i++) {
-            const imp = node.importables[i];
-            const key = importableIndexKey(imp.type, importableIdentity(imp));
-            if (!folders.has(key)) folders.set(key, folder);
-        }
-    }
-    for (let i = 0; i < node.includes.length; i++) {
-        indexDeclaringFolders(node.includes[i], rootDir, folders);
-    }
-}
-
-function queueSourceIndex(sourcePath: string): QueueSourceIndex | null {
-    const revision = getParseCacheRevision();
-    if (revision !== queueSourceIndexRevision) {
-        queueSourceIndexRevision = revision;
-        queueSourceIndexes.clear();
-    }
-    const sourceKey = canonicalPath(sourcePath);
-    if (queueSourceIndexes.has(sourceKey)) {
-        return queueSourceIndexes.get(sourceKey) ?? null;
-    }
-    const parse = requestParse(sourcePath);
-    if (parse === null || parse.parsed === null) {
-        queueSourceIndexes.set(sourceKey, null);
-        return null;
-    }
-    const importables = new Map<string, Importable>();
-    for (let i = 0; i < parse.parsed.value.length; i++) {
-        const imp = parse.parsed.value[i];
-        const key = importableIndexKey(imp.type, importableIdentity(imp));
-        if (!importables.has(key)) importables.set(key, imp);
-    }
-    const tree: IncludeNode = parse.parsed.importJson.fileTree ?? {
-        path: sourcePath,
-        importables: parse.parsed.value,
-        includes: [],
-    };
-    const declaringFolders = new Map<string, string | null>();
-    indexDeclaringFolders(tree, directoryOf(sourceKey), declaringFolders);
-    const index: QueueSourceIndex = {
-        importables,
-        declaringFolders,
-        importJsonChildren: null,
-        parsedImportables: parse.parsed.value,
-    };
-    queueSourceIndexes.set(sourceKey, index);
-    return index;
-}
-
-function declaringFolder(item: QueueItem): string | null {
-    if (item.operation !== "import" || item.kind !== "importable") return null;
-    const index = queueSourceIndex(item.sourcePath);
-    if (index === null) return null;
-    return index.declaringFolders.get(importableIndexKey(item.type, item.identity)) ?? null;
-}
-
-function declaringFolderElement(item: QueueItem): Element | false {
-    const folder = declaringFolder(item);
-    return (
-        folder !== null &&
-        Text({
-            text: folder,
-            color: COLOR_TEXT_FAINT,
-            truncate: true,
-            style: { width: { kind: "px", value: 110 } },
-        })
-    );
-}
-
-function revealQueueItem(item: QueueItem, info: ClickInfo): void {
-    if (info.button !== 0 || info.isDoubleClickSecond) return;
-    setActiveLeftTab("projects");
-    if (item.operation === "import" && item.kind === "importable") {
-        revealInProjectsTree({
-            kind: "importable",
-            declaringImportJson: item.sourcePath,
-            type: item.type,
-            identity: item.identity,
-        });
-    } else {
-        revealInProjectsTree({
-            kind: "file",
-            importJsonPath:
-                item.operation === "import" ? item.sourcePath : item.destinationPath,
-        });
-    }
-}
-
-type SkipPredictionContext = {
-    housingUuid: string | null;
-    trusted: boolean;
-};
-
-let skipPredictionParseRevision = -1;
-let skipPredictionCacheRevision = -1;
-let skipPredictionHousingUuid: string | null = null;
-let skipPredictionTrusted = false;
-const skipPredictions = new Map<string, boolean>();
+const collapsedBulkRows = new Set<string>();
 
 export function queueRowCacheSizes(): {
     sourceIndexes: number;
     skipPredictions: number;
 } {
-    return {
-        sourceIndexes: queueSourceIndexes.size,
-        skipPredictions: skipPredictions.size,
-    };
+    return { sourceIndexes: 0, skipPredictions: 0 };
 }
 
-function currentSkipPredictionContext(): SkipPredictionContext {
-    const parseRevision = getParseCacheRevision();
-    const cacheRevision = getImportCacheWriteRevision();
-    const housingUuid = getHousingUuid();
-    const trusted = isCurrentHouseTrusted();
-    if (
-        parseRevision !== skipPredictionParseRevision ||
-        cacheRevision !== skipPredictionCacheRevision ||
-        housingUuid !== skipPredictionHousingUuid ||
-        trusted !== skipPredictionTrusted
-    ) {
-        skipPredictionParseRevision = parseRevision;
-        skipPredictionCacheRevision = cacheRevision;
-        skipPredictionHousingUuid = housingUuid;
-        skipPredictionTrusted = trusted;
-        skipPredictions.clear();
-    }
-    return { housingUuid, trusted };
+export function queueBulkChildren(row: QueueRow): QueueRow[] {
+    if (row.target.kind !== "bulk") return [];
+    return getQueue().filter((candidate) => candidate.parentKey === row.key);
 }
 
-function willBeSkipped(
-    item: QueueItem,
-    context: SkipPredictionContext = currentSkipPredictionContext()
+export function queueRowCanExpand(row: QueueRow): boolean {
+    return row.target.kind === "bulk" && queueBulkChildren(row).length > 0;
+}
+
+export function isQueueBulkExpanded(row: QueueRow): boolean {
+    return queueRowCanExpand(row) && !collapsedBulkRows.has(row.key);
+}
+
+// Fixed row content with the op word shown (rail, gutter, icon, op word, type,
+// file, status, remove, gaps, padding) is ~240px. Below this viewport width
+// the name column would drop under ~60px, so the op word gives way to its icon.
+const QUEUE_ROW_COMPACT_BELOW = 300;
+
+/** Whether queue rows should drop the READ/IMPORT word and keep only the icon. */
+export function isQueueRowCompact(viewportW: number): boolean {
+    return viewportW > 0 && viewportW < QUEUE_ROW_COMPACT_BELOW;
+}
+
+function sourceImportables(path: string): readonly Importable[] {
+    return requestParse(path)?.parsed?.value ?? [];
+}
+
+function cacheStateMatches(
+    row: QueueRow,
+    house: string | null,
+    imp: Importable
 ): boolean {
-    if (isTaskRunning() || !context.trusted) return false;
-    if (item.operation !== "import" || item.kind !== "importable") return false;
-    if (context.housingUuid === null) return false;
-    const key = queueItemKey(item);
-    const cached = skipPredictions.get(key);
-    if (cached !== undefined) return cached;
-    const index = queueSourceIndex(item.sourcePath);
-    const imp = index?.importables.get(importableIndexKey(item.type, item.identity));
-    const skipped =
-        imp !== undefined &&
-        buildCacheStatusRow(context.housingUuid, imp).state === "current";
-    skipPredictions.set(key, skipped);
-    return skipped;
+    if (row.target.kind !== "bulk") return true;
+    if (row.target.filter === "all" || row.target.filter === "new") return true;
+    const state = house === null ? "unknown" : buildCacheStatusRow(house, imp).state;
+    if (row.target.filter === "modified") return state !== "current";
+    const trusted = house !== null && isHouseTrusted(house);
+    if (row.target.filter === "unread") return !trusted || state === "unknown";
+    return trusted && state === "modified";
 }
 
-const collapsedQueueImportJsonRows: Set<string> = new Set();
+function bulkLiveCount(row: QueueRow): number {
+    if (row.target.kind !== "bulk") return 0;
+    const children = queueBulkChildren(row);
+    if (children.length > 0) return children.length;
+    const house = row.house ?? getHousingUuid();
+    const scopePath = row.target.scope.kind === "file" ? row.target.scope.path : row.path;
+    const values = sourceImportables(scopePath);
+    if (row.target.scope.kind === "file") {
+        return values.filter((imp) => cacheStateMatches(row, house, imp)).length;
+    }
+    const type = row.target.scope.type;
+    const local = values.filter((imp) => imp.type === type);
+    const live = listCachedImportables(house, type);
+    if (row.target.filter === "new") {
+        const declared = new Set(local.map(importableIdentity));
+        return live.filter((entry) => !declared.has(entry.name)).length;
+    }
+    if (row.op === "import") {
+        return local.filter((imp) => cacheStateMatches(row, house, imp)).length;
+    }
+    if (row.target.filter === "changed" || row.target.filter === "unread") {
+        const liveNames = new Set(live.map((entry) => entry.name));
+        return local.filter(
+            (imp) =>
+                liveNames.has(importableIdentity(imp)) &&
+                cacheStateMatches(row, house, imp)
+        ).length;
+    }
+    return live.length;
+}
 
-function queueRowMiniBar(state: QueueItemRunState): Element {
+function operationVisual(op: QueueRow["op"]): {
+    icon: (typeof Icons)[keyof typeof Icons];
+    color: number;
+} {
+    if (op === "import") return { icon: Icons.arrowDownToLine, color: PHASE_APPLYING };
+    if (op === "export") return { icon: Icons.arrowUpFromLine, color: PHASE_HYDRATING };
+    return { icon: Icons.scanEye, color: PHASE_READING };
+}
+
+function phaseColor(phase: "reading" | "hydrating" | "applying"): number {
+    if (phase === "applying") return PHASE_APPLYING;
+    if (phase === "hydrating") return PHASE_HYDRATING;
+    return PHASE_READING;
+}
+
+function queueStateRail(color: number | undefined): Element {
+    return Container({
+        style: {
+            width: { kind: "px", value: 2 },
+            height: { kind: "grow" },
+            background: color,
+        },
+        children: [],
+    });
+}
+
+function queueRowMiniBar(state: QueueRowRunState): Element {
     if (state.kind === "queued") {
         return Container({
             style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
             children: [],
         });
     }
-    if (state.kind === "done") {
+    if (state.kind === "done" || state.kind === "skipped" || state.kind === "failed") {
+        const color =
+            state.kind === "done"
+                ? ACCENT_SUCCESS
+                : state.kind === "skipped"
+                  ? ACCENT_TEAL
+                  : ACCENT_DANGER;
         return Container({
             style: {
                 width: { kind: "grow" },
                 height: { kind: "px", value: 2 },
-                background: ACCENT_SUCCESS,
-            },
-            children: [],
-        });
-    }
-    if (state.kind === "skipped") {
-        return Container({
-            style: {
-                width: { kind: "grow" },
-                height: { kind: "px", value: 2 },
-                background: ACCENT_TEAL,
-            },
-            children: [],
-        });
-    }
-    if (state.kind === "failed") {
-        return Container({
-            style: {
-                width: { kind: "grow" },
-                height: { kind: "px", value: 2 },
-                background: ACCENT_DANGER,
+                background: color,
             },
             children: [],
         });
@@ -287,230 +187,362 @@ function queueRowMiniBar(state: QueueItemRunState): Element {
     });
 }
 
-function phaseColor(phase: "reading" | "hydrating" | "applying"): number {
-    if (phase === "applying") return PHASE_APPLYING;
-    if (phase === "hydrating") return PHASE_HYDRATING;
-    return PHASE_READING;
+function rowMessage(row: QueueRow): string | null {
+    if (row.status === "failed") return `Failed: ${row.error ?? "Unknown error"}`;
+    if (row.status !== "cancelled") return null;
+    if (row.error === null || row.error === "") return "Cancelled";
+    return row.error.toLowerCase().startsWith("cancelled")
+        ? row.error
+        : `Cancelled: ${row.error}`;
 }
 
-function activeQueueItemColor(state: QueueItemRunState): number | undefined {
-    return state.kind === "current" ? phaseColor(state.phase) : undefined;
+function rowHasRunningWork(row: QueueRow): boolean {
+    return row.target.kind === "importable"
+        ? row.status === "running"
+        : queueBulkChildren(row).some((child) => child.status === "running");
 }
 
-function queueStateRail(color: number | undefined): Element {
+function rowMenuActions(row: QueueRow): MenuAction[] {
+    if (row.status === "failed" || row.status === "cancelled") {
+        return [
+            {
+                label: "Retry",
+                icon: Icons.rotateCcw,
+                onClick: () => retryQueueRow(row.key),
+            },
+            { label: "Dismiss", icon: Icons.x, onClick: () => dismissQueueRow(row.key) },
+        ];
+    }
+    if (rowHasRunningWork(row)) {
+        return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
+    }
+    return [
+        {
+            label: row.target.kind === "bulk" ? "Remove group" : "Remove",
+            icon: Icons.x,
+            onClick: () => removeQueueRow(row.key),
+        },
+    ];
+}
+
+function rowControls(row: QueueRow): Element {
+    const retry = row.status === "failed" || row.status === "cancelled";
+    const controls: Element[] = [];
+    if (retry) {
+        controls.push(
+            Container({
+                style: {
+                    direction: "col",
+                    align: "center",
+                    justify: "center",
+                    width: { kind: "px", value: 14 },
+                    height: { kind: "grow" },
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button === 0) retryQueueRow(row.key);
+                },
+                children: [Icon({ name: Icons.rotateCcw, tooltip: "Retry" })],
+            })
+        );
+    }
+    controls.push(
+        Container({
+            style: {
+                direction: "col",
+                align: "center",
+                justify: "center",
+                width: { kind: "px", value: 14 },
+                height: { kind: "grow" },
+                hoverBackground: 0x40e85c5c | 0,
+            },
+            onClick: (_rect, info) => {
+                if (info.button !== 0) return;
+                if (rowHasRunningWork(row)) cancelQueue();
+                else if (retry) dismissQueueRow(row.key);
+                else removeQueueRow(row.key);
+            },
+            children: [
+                Icon({
+                    name: Icons.x,
+                    tooltip: rowHasRunningWork(row)
+                        ? "Cancel current queue session"
+                        : retry
+                          ? "Dismiss"
+                          : "Remove from queue",
+                    tooltipColor: ACCENT_DANGER,
+                }),
+            ],
+        })
+    );
     return Container({
         style: {
-            width: { kind: "px", value: 2 },
+            direction: "row",
+            width: { kind: "px", value: controls.length * 14 },
             height: { kind: "grow" },
-            background: color,
         },
-        children: [],
+        children: controls,
     });
 }
 
-function queueImportableLabel(imp: Importable): string {
-    return imp.type === "EVENT" ? imp.event : imp.name;
+function statusIcon(row: QueueRow, runState: QueueRowRunState): Element {
+    const visual =
+        row.status === "failed"
+            ? { icon: Icons.circleX, color: ACCENT_DANGER, label: "Failed" }
+            : row.status === "cancelled"
+              ? { icon: Icons.ban, color: COLOR_TEXT_FAINT, label: "Cancelled" }
+              : runState.kind === "done" || runState.kind === "skipped"
+                ? { icon: Icons.circleCheck, color: ACCENT_SUCCESS, label: "Done" }
+                : row.status === "running"
+                  ? {
+                        icon: Icons.play,
+                        color: operationVisual(row.op).color,
+                        label: "Running",
+                    }
+                  : { icon: Icons.clock, color: COLOR_TEXT_DIM, label: "Queued" };
+    return Icon({
+        name: visual.icon,
+        color: visual.color,
+        tooltip: row.error === null ? visual.label : `${visual.label}: ${row.error}`,
+        tooltipColor: visual.color,
+        style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+    });
 }
 
-export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
-    if (item.operation !== "import" || item.kind !== "importJson") return [];
-    const index = queueSourceIndex(item.sourcePath);
-    if (index === null) return [];
-    if (index.importJsonChildren !== null) return index.importJsonChildren;
-    const ordered = orderImportablesForSession(
-        index.parsedImportables,
-        index.parsedImportables
+function revealQueueRow(row: QueueRow, info: ClickInfo): void {
+    if (info.button !== 0 || info.isDoubleClickSecond) return;
+    setActiveLeftTab("projects");
+    if (row.op === "import" && row.target.kind === "importable") {
+        revealInProjectsTree({
+            kind: "importable",
+            declaringImportJson: row.path,
+            type: row.target.type,
+            identity: row.target.identity,
+        });
+    } else {
+        revealInProjectsTree({ kind: "file", importJsonPath: row.path });
+    }
+}
+
+function willSkip(row: QueueRow): boolean {
+    if (
+        isTaskRunning() ||
+        !isCurrentHouseTrusted() ||
+        row.op !== "import" ||
+        row.target.kind !== "importable"
+    ) {
+        return false;
+    }
+    const house = getHousingUuid();
+    if (house === null) return false;
+    const target = row.target;
+    const imp = sourceImportables(row.path).find(
+        (candidate) =>
+            candidate.type === target.type &&
+            importableIdentity(candidate) === target.identity
     );
-    index.importJsonChildren = ordered.map((imp) => ({
-        operation: "import",
-        kind: "importable",
-        sourcePath: item.sourcePath,
-        identity: importableIdentity(imp),
-        type: imp.type,
-        label: queueImportableLabel(imp),
-    }));
-    return index.importJsonChildren;
+    return imp !== undefined && buildCacheStatusRow(house, imp).state === "current";
 }
 
-export function isQueueImportJsonExpanded(item: QueueItem): boolean {
-    return (
-        item.operation === "import" &&
-        item.kind === "importJson" &&
-        !collapsedQueueImportJsonRows.has(queueItemKey(item))
-    );
-}
+export type QueueRowRenderOptions = {
+    child?: boolean;
+    dimmed?: boolean;
+    /** Drop the READ/IMPORT word; the op icon's tooltip still names it. */
+    compact?: boolean;
+    /** Reserve the chevron column so names line up with expandable rows. */
+    gutter?: boolean;
+};
 
-// Teal skip badge for a queue row: predictive ("will skip") until the run
-// resolves the row, then only an actually-skipped outcome keeps the badge —
-// a prediction has no business outliving the event it predicts.
-function skipBadge(
-    item: QueueItem,
-    runState: QueueItemRunState
-): { teal: boolean; tooltip: string | undefined } {
-    if (runState.kind === "skipped") return { teal: true, tooltip: "Trusted - skipped" };
-    const finished = runState.kind === "done" || runState.kind === "failed";
-    if (!isTaskRunning() && !finished && willBeSkipped(item))
-        return { teal: true, tooltip: "Trusted - will skip" };
-    return { teal: false, tooltip: undefined };
-}
-
-export function queueRow(item: QueueItem): Element {
-    const typeText = item.kind === "importJson" ? "ALL" : item.type;
-    const isCurrent = isCurrentQueueItem(item);
-    const runState = getQueueItemRunState(item);
-    const { teal: skip, tooltip: skipTooltip } = skipBadge(item, runState);
-    const canExpand = item.operation === "import" && item.kind === "importJson";
-    const expanded = canExpand && isQueueImportJsonExpanded(item);
-    const stateColor = activeQueueItemColor(runState);
+export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): Element {
+    const child = options.child === true;
+    const dimmed = options.dimmed === true;
+    const compact = options.compact === true;
+    const gutter = options.gutter === true;
+    const runState = getQueueRowRunState(row);
+    const skip = runState.kind === "skipped" || willSkip(row);
+    const canExpand = queueRowCanExpand(row);
+    const expanded = canExpand && isQueueBulkExpanded(row);
+    const message = rowMessage(row);
+    const op = operationVisual(row.op);
+    const badge = getQueueRowBadge(row);
+    const typeLabel =
+        row.target.kind === "importable"
+            ? row.target.type
+            : row.target.scope.kind === "houseType"
+              ? row.target.scope.type
+              : "ALL";
+    const label =
+        row.target.kind === "bulk"
+            ? `${row.target.label} (${bulkLiveCount(row)})`
+            : row.target.label;
+    const stateColor =
+        row.status === "failed"
+            ? ACCENT_DANGER
+            : row.status === "cancelled"
+              ? COLOR_TEXT_FAINT
+              : runState.kind === "current"
+                ? phaseColor(runState.phase)
+                : undefined;
+    const labelColor = dimmed ? COLOR_TEXT_FAINT : skip ? ACCENT_TEAL : undefined;
+    // The rail, status icon and controls sit beside the text strip so they
+    // span the full row height. Only the text strip stacks on the 2px mini
+    // bar; a control centered inside that strip would sit 1px high and its
+    // hover fill would stop short of the row's bottom edge.
     return Container({
         style: {
-            direction: "col",
+            direction: "row",
+            align: "center",
+            padding: [
+                { side: "left", value: 0 },
+                { side: "right", value: 4 },
+            ],
+            gap: 4,
             height: { kind: "px", value: SIZE_ROW_H },
-            background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
+            background: isCurrentQueueRow(row) ? COLOR_ROW_HOVER : COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
         },
-        onClick: (_rect, info) => revealQueueItem(item, info),
+        onClick: (_rect, info) => {
+            if (info.button === 1) {
+                openMenu(info.x, info.y, rowMenuActions(row));
+                return;
+            }
+            revealQueueRow(row, info);
+        },
         children: [
-            Container({
-                style: {
-                    direction: "row",
-                    align: "center",
-                    padding: [
-                        { side: "left", value: 0 },
-                        { side: "right", value: 6 },
-                    ],
-                    gap: 6,
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                },
-                children: [
-                    queueStateRail(stateColor),
-                    canExpand &&
-                        Container({
-                            style: {
-                                direction: "col",
-                                align: "center",
-                                justify: "center",
-                                width: { kind: "px", value: 14 },
-                                height: { kind: "grow" },
-                                hoverBackground: COLOR_BUTTON_HOVER,
-                            },
-                            onClick: (_rect, info) => {
-                                if (info.button !== 0) return;
-                                const key = queueItemKey(item);
-                                if (expanded) collapsedQueueImportJsonRows.add(key);
-                                else collapsedQueueImportJsonRows.delete(key);
-                            },
-                            children: [
-                                Icon({
-                                    name: expanded
-                                        ? Icons.chevronDown
-                                        : Icons.chevronRight,
-                                }),
-                            ],
-                        }),
-                    Text({
-                        text: typeText,
-                        color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
-                        tooltip: skipTooltip,
-                        tooltipColor: ACCENT_TEAL,
-                        style: { width: { kind: "px", value: 48 } },
-                    }),
-                    Text({
-                        text: item.label,
-                        color: skip ? ACCENT_TEAL : undefined,
-                        tooltip: skipTooltip,
-                        tooltipColor: ACCENT_TEAL,
-                        truncate: true,
-                        style: { width: { kind: "grow" } },
-                    }),
-                    declaringFolderElement(item),
-                    // No removal while an import is running — the queue is
-                    // locked for the duration of the run.
-                    isTaskRunning() || isQueueSessionItem(queueItemKey(item))
-                        ? Container({
-                              style: {
-                                  width: { kind: "px", value: 14 },
-                                  height: { kind: "grow" },
-                              },
-                              children: [],
-                          })
-                        : Container({
-                              style: {
-                                  direction: "col",
-                                  width: { kind: "px", value: 14 },
-                                  height: { kind: "grow" },
-                                  align: "center",
-                                  justify: "center",
-                                  hoverBackground: 0x40e85c5c | 0,
-                              },
-                              onClick: (_rect, info) => {
-                                  if (info.button !== 0) return;
-                                  removeFromQueueKey(queueItemKey(item));
-                              },
-                              children: [Icon({ name: Icons.x })],
+            queueStateRail(stateColor),
+            child &&
+                Container({
+                    style: {
+                        width: { kind: "px", value: 14 },
+                        height: { kind: "grow" },
+                    },
+                    children: [],
+                }),
+            canExpand
+                ? Container({
+                      style: {
+                          direction: "col",
+                          align: "center",
+                          justify: "center",
+                          width: { kind: "px", value: 14 },
+                          height: { kind: "grow" },
+                          hoverBackground: COLOR_BUTTON_HOVER,
+                      },
+                      onClick: (_rect, info) => {
+                          if (info.button !== 0) return;
+                          if (expanded) collapsedBulkRows.add(row.key);
+                          else collapsedBulkRows.delete(row.key);
+                      },
+                      children: [
+                          Icon({
+                              name: expanded ? Icons.chevronDown : Icons.chevronRight,
                           }),
-                ],
-            }),
-            queueRowMiniBar(runState),
-        ],
-    });
-}
-
-export function queueImportJsonChildRow(item: QueueItem): Element {
-    const isCurrent = isCurrentQueueItem(item);
-    const runState = getQueueItemRunState(item);
-    const { teal: skip, tooltip: skipTooltip } = skipBadge(item, runState);
-    const stateColor = activeQueueItemColor(runState);
-    return Container({
-        style: {
-            direction: "col",
-            height: { kind: "px", value: SIZE_ROW_H },
-            background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
-            hoverBackground: COLOR_ROW_HOVER,
-        },
-        onClick: (_rect, info) => revealQueueItem(item, info),
-        children: [
+                      ],
+                  })
+                : !child &&
+                  gutter &&
+                  Container({
+                      style: {
+                          width: { kind: "px", value: 14 },
+                          height: { kind: "grow" },
+                      },
+                      children: [],
+                  }),
             Container({
                 style: {
-                    direction: "row",
-                    align: "center",
-                    padding: [
-                        { side: "left", value: 0 },
-                        { side: "right", value: 6 },
-                    ],
-                    gap: 6,
+                    direction: "col",
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                 },
                 children: [
-                    queueStateRail(stateColor),
-                    Text({
-                        text: item.kind === "importable" ? item.type : "ALL",
-                        color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
-                        tooltip: skipTooltip,
-                        tooltipColor: ACCENT_TEAL,
-                        style: { width: { kind: "px", value: 48 } },
-                    }),
-                    Text({
-                        text: item.label,
-                        color: skip ? ACCENT_TEAL : undefined,
-                        tooltip: skipTooltip,
-                        tooltipColor: ACCENT_TEAL,
-                        truncate: true,
-                        style: { width: { kind: "grow" } },
-                    }),
-                    declaringFolderElement(item),
                     Container({
                         style: {
-                            width: { kind: "px", value: 14 },
+                            direction: "row",
+                            align: "center",
+                            gap: 4,
+                            width: { kind: "grow" },
                             height: { kind: "grow" },
                         },
-                        children: [],
+                        children: [
+                            Icon({
+                                name: op.icon,
+                                color: dimmed ? COLOR_TEXT_FAINT : op.color,
+                                tooltip: row.op.toUpperCase(),
+                                style: {
+                                    width: { kind: "px", value: 10 },
+                                    height: { kind: "px", value: 10 },
+                                },
+                            }),
+                            !compact &&
+                                Text({
+                                    text: row.op.toUpperCase(),
+                                    color: dimmed ? COLOR_TEXT_FAINT : op.color,
+                                    style: { width: { kind: "px", value: 42 } },
+                                }),
+                            Text({
+                                text: typeLabel,
+                                color: dimmed
+                                    ? COLOR_TEXT_FAINT
+                                    : skip
+                                      ? ACCENT_TEAL
+                                      : COLOR_TEXT_DIM,
+                                tooltip: label,
+                                tooltipColor: labelColor,
+                                style: { width: { kind: "px", value: 46 } },
+                            }),
+                            // No explicit tooltip: a truncated name reveals itself in
+                            // place on hover. The file column carries the path chip.
+                            Text({
+                                text: label,
+                                color: labelColor,
+                                truncate: true,
+                                style: { width: { kind: "grow" } },
+                            }),
+                            message !== null
+                                ? Text({
+                                      text: message,
+                                      color:
+                                          row.status === "failed"
+                                              ? ACCENT_DANGER
+                                              : COLOR_TEXT_FAINT,
+                                      tooltip: message,
+                                      tooltipColor:
+                                          row.status === "failed"
+                                              ? ACCENT_DANGER
+                                              : COLOR_TEXT_DIM,
+                                      truncate: true,
+                                      style: { width: { kind: "px", value: 112 } },
+                                  })
+                                : Text({
+                                      // Rows are already grouped by house, so the
+                                      // project folder alone identifies the file.
+                                      text: basename(shortPath(canonicalPath(row.path))),
+                                      color: COLOR_TEXT_FAINT,
+                                      tooltip: compactPath(row.path),
+                                      tooltipColor: COLOR_TEXT_DIM,
+                                      truncate: true,
+                                      style: { width: { kind: "px", value: 64 } },
+                                  }),
+                            badge !== null &&
+                                Icon({
+                                    name: Icons.arrowLeftRight,
+                                    color: dimmed
+                                        ? COLOR_TEXT_FAINT
+                                        : operationVisual(badge.op).color,
+                                    tooltip: badge.tooltip,
+                                    tooltipColor: operationVisual(badge.op).color,
+                                    style: {
+                                        width: { kind: "px", value: 10 },
+                                        height: { kind: "px", value: 10 },
+                                    },
+                                }),
+                        ],
                     }),
+                    queueRowMiniBar(runState),
                 ],
             }),
-            queueRowMiniBar(runState),
+            statusIcon(row, runState),
+            rowControls(row),
         ],
     });
 }

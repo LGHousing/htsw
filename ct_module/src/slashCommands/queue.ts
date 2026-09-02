@@ -1,23 +1,37 @@
 import type { Importable } from "htsw/types";
 
-import { queueModifiedImportables } from "../gui/autoTrack";
+import { autoRunQueueChanged, setAutoRunEnabled } from "../gui/autoRun";
+import { getExportDestinationStatus } from "../gui/export/destinationStatus";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import {
     parseImportJsonCurrent,
     parseImportJsonCurrentBlocking,
 } from "../gui/parsing/parses";
+import { getHousingUuid } from "../gui/state";
 import {
-    addToQueue,
+    addQueueRow,
     clearQueue,
     getQueue,
-    makeImportableQueueItem,
-    removeFromQueue,
+    makeBulkQueueRow,
+    makeImportableQueueRow,
+    removeQueueRow,
+    retryQueueRow,
+    type QueueAddResult,
+    type QueueRow,
 } from "../gui/right-panel/import-tab/queue";
-import { startImport } from "../gui/right-panel/import-tab/taskController";
+import {
+    isQueueRunning,
+    pauseQueue,
+    startQueue,
+} from "../gui/right-panel/import-tab/queueRunner";
+import { houseDisplayName } from "../importCache/aliases";
 import { importableIdentity } from "../importables/identity";
+import {
+    HOUSE_READABLE_TYPES,
+    type HouseReadableType,
+} from "../importables/export/readers";
 import { resolveModuleRelativePath } from "../project/paths";
-import { TaskManager } from "../tasks/manager";
-import { isTaskRunning } from "../tasks/runningState";
+import { getAutoRun } from "../settings";
 import { stripSurroundingQuotes } from "../utils/helpers";
 
 const IMPORTABLE_TYPES: Importable["type"][] = [
@@ -34,33 +48,42 @@ const IMPORTABLE_TYPES: Importable["type"][] = [
 
 export function commandQueue(args: string[]): void {
     const action = args.length === 0 ? "" : args[0].toLowerCase();
-    if (action === "add") {
-        void commandQueueAdd(args.slice(1));
-    } else if (action === "modified") {
-        commandQueueModified(args.slice(1));
-    } else if (action === "list") {
-        commandQueueList();
-    } else if (action === "remove") {
-        commandQueueRemove(args.slice(1));
-    } else if (action === "clear") {
-        commandQueueClear();
-    } else if (action === "run") {
-        commandQueueRun();
-    } else {
-        printQueueUsage();
-    }
+    if (action === "add") void commandQueueAdd(args.slice(1));
+    else if (action === "modified") commandQueueModified(args.slice(1));
+    else if (action === "export") commandQueueHouseOperation("export", args.slice(1));
+    else if (action === "read") commandQueueHouseOperation("read", args.slice(1));
+    else if (action === "list") commandQueueList();
+    else if (action === "remove") commandQueueRemove(args.slice(1));
+    else if (action === "retry") commandQueueRetry(args.slice(1));
+    else if (action === "clear") commandQueueClear();
+    else if (action === "run") commandQueueRun();
+    else if (action === "pause") commandQueuePause();
+    else if (action === "autorun") commandQueueAutoRun(args.slice(1));
+    else printQueueUsage();
 }
 
 function printQueueUsage(): void {
     ChatLib.chat("&7[htsw] /htsw queue add <import.json path>");
-    ChatLib.chat(
-        "&7[htsw] /htsw queue add <import.json path> <TYPE> <identity...>"
-    );
+    ChatLib.chat("&7[htsw] /htsw queue add <import.json path> <TYPE> <identity...>");
     ChatLib.chat("&7[htsw] /htsw queue modified <import.json path>");
+    ChatLib.chat("&7[htsw] /htsw queue export <TYPE> <all|new|changed|identity...>");
+    ChatLib.chat("&7[htsw] /htsw queue read <TYPE> <all|unread|identity...>");
     ChatLib.chat("&7[htsw] /htsw queue list");
     ChatLib.chat("&7[htsw] /htsw queue remove <index>");
+    ChatLib.chat("&7[htsw] /htsw queue retry <index>");
     ChatLib.chat("&7[htsw] /htsw queue clear");
-    ChatLib.chat("&7[htsw] /htsw queue run");
+    ChatLib.chat("&7[htsw] /htsw queue run|pause");
+    ChatLib.chat("&7[htsw] /htsw queue autorun <on|off>");
+}
+
+function rowAdded(result: QueueAddResult): boolean {
+    return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
+}
+
+function addUserRow(row: QueueRow): QueueAddResult {
+    const result = addQueueRow(row);
+    if (rowAdded(result)) autoRunQueueChanged();
+    return result;
 }
 
 async function commandQueueAdd(args: string[]): Promise<void> {
@@ -75,39 +98,6 @@ async function commandQueueAdd(args: string[]): Promise<void> {
         return;
     }
     const path = split.path;
-    if (split.remaining.length === 0) {
-        const parsed = await parseImportJsonCurrent(path);
-        if (parsed.parsed === null) {
-            ChatLib.chat(
-                `&c[htsw] Could not parse ${compactFileLabel(path)}: ${parsed.error ?? "parse failed"}`
-            );
-            return;
-        }
-        const added = addToQueue({
-            operation: "import",
-            kind: "importJson",
-            sourcePath: parsed.canonicalPath,
-            label: compactFileLabel(parsed.canonicalPath),
-        });
-        ChatLib.chat(
-            `&a[htsw] ${added ? "Queued" : "Already queued"} IMPORT_JSON ${compactFileLabel(parsed.canonicalPath)}`
-        );
-        return;
-    }
-
-    const rawType = split.remaining[0].toUpperCase();
-    if (IMPORTABLE_TYPES.indexOf(rawType as Importable["type"]) < 0) {
-        ChatLib.chat(`&c[htsw] Invalid importable type '${split.remaining[0]}'`);
-        return;
-    }
-    const type = rawType as Importable["type"];
-    const identity = stripSurroundingQuotes(split.remaining.slice(1).join(" "));
-    if (identity.length === 0) {
-        ChatLib.chat(
-            "&c[htsw] Usage: /htsw queue add <import.json path> <TYPE> <identity...>"
-        );
-        return;
-    }
     const cached = await parseImportJsonCurrent(path);
     if (cached.parsed === null) {
         ChatLib.chat(
@@ -115,6 +105,37 @@ async function commandQueueAdd(args: string[]): Promise<void> {
         );
         return;
     }
+
+    if (split.remaining.length === 0) {
+        const result = addUserRow(
+            makeBulkQueueRow({
+                op: "import",
+                house: cached.parsed.importJson.houseUuid,
+                path: cached.canonicalPath,
+                scope: { kind: "file", path: cached.canonicalPath },
+                filter: "all",
+                label: `Import ${compactFileLabel(cached.canonicalPath)}`,
+            })
+        );
+        ChatLib.chat(
+            `&a[htsw] ${rowAdded(result) ? "Queued" : "Already queued"} IMPORT_JSON ${compactFileLabel(cached.canonicalPath)}`
+        );
+        return;
+    }
+
+    const type = parseImportableType(split.remaining[0]);
+    if (type === null) {
+        ChatLib.chat(`&c[htsw] Invalid importable type '${split.remaining[0]}'`);
+        return;
+    }
+    const identity = stripSurroundingQuotes(split.remaining.slice(1).join(" "));
+    if (identity.length === 0) {
+        ChatLib.chat(
+            "&c[htsw] Usage: /htsw queue add <import.json path> <TYPE> <identity...>"
+        );
+        return;
+    }
+
     const available: string[] = [];
     let match: Importable | null = null;
     for (const imp of cached.parsed.value) {
@@ -132,40 +153,31 @@ async function commandQueueAdd(args: string[]): Promise<void> {
                 `&c[htsw] No ${type} importables declared in ${compactFileLabel(cached.canonicalPath)}`
             );
         } else {
-            for (let i = 0; i < available.length; i++) {
-                ChatLib.chat(`&7[htsw] Available ${type}: &f${available[i]}`);
+            for (const candidate of available) {
+                ChatLib.chat(`&7[htsw] Available ${type}: &f${candidate}`);
             }
         }
         return;
     }
 
-    const added = addToQueue(makeImportableQueueItem(match, cached.canonicalPath));
-    ChatLib.chat(
-        `&a[htsw] ${added ? "Queued" : "Already queued"} ${type} ${identity} from ${compactFileLabel(cached.canonicalPath)}`
+    const result = addUserRow(
+        makeImportableQueueRow({
+            op: "import",
+            house: cached.parsed.importJson.houseUuid,
+            path: cached.canonicalPath,
+            type,
+            identity,
+            label: match.type === "EVENT" ? match.event : match.name,
+        })
     );
-}
-
-function splitAddArguments(
-    args: string[]
-): { path: string; remaining: string[] } | null {
-    for (let i = 1; i <= args.length; i++) {
-        const path = resolvePath(args.slice(0, i));
-        if (FileLib.exists(path)) {
-            return { path, remaining: args.slice(i) };
-        }
-    }
-    return null;
-}
-
-function resolvePath(args: string[]): string {
-    return resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
+    ChatLib.chat(
+        `&a[htsw] ${rowAdded(result) ? "Queued" : "Already queued"} ${type} ${identity} from ${compactFileLabel(cached.canonicalPath)}`
+    );
 }
 
 function commandQueueModified(args: string[]): void {
     if (args.length === 0) {
-        ChatLib.chat(
-            "&c[htsw] Usage: /htsw queue modified <import.json path>"
-        );
+        ChatLib.chat("&c[htsw] Usage: /htsw queue modified <import.json path>");
         return;
     }
     const path = resolvePath(args);
@@ -176,10 +188,85 @@ function commandQueueModified(args: string[]): void {
         );
         return;
     }
-    queueModifiedImportables(cached.canonicalPath, cached.parsed, undefined, {
-        blockingCacheRead: true,
-    });
+    addUserRow(
+        makeBulkQueueRow({
+            op: "import",
+            house: cached.parsed.importJson.houseUuid,
+            path: cached.canonicalPath,
+            scope: { kind: "file", path: cached.canonicalPath },
+            filter: "modified",
+            label: `Import modified in ${compactFileLabel(cached.canonicalPath)}`,
+        })
+    );
     ChatLib.chat(`&a[htsw] Queue now contains ${getQueue().length} item(s)`);
+}
+
+function commandQueueHouseOperation(op: "export" | "read", args: string[]): void {
+    const type = parseReadableType(args[0]);
+    const selector = stripSurroundingQuotes(args.slice(1).join(" "));
+    if (type === null || selector.length === 0) {
+        ChatLib.chat(
+            `&c[htsw] Usage: /htsw queue ${op} <TYPE> <${op === "export" ? "all|new|changed|" : "all|unread|"}identity...>`
+        );
+        return;
+    }
+    const destination = getExportDestinationStatus();
+    if (destination.kind !== "ready") {
+        ChatLib.chat(
+            destination.kind === "missing"
+                ? `&c[htsw] Export project is missing: ${destination.path}`
+                : "&c[htsw] Choose an export project in the Houses tab first."
+        );
+        return;
+    }
+    const house = getHousingUuid();
+    if (house === null) {
+        ChatLib.chat("&c[htsw] Enter a Housing house first.");
+        return;
+    }
+
+    const filter = selector.toLowerCase();
+    if (filter === "modified") {
+        ChatLib.chat(
+            `&c[htsw] ${op === "export" ? "Export" : "Read"} does not support the modified filter.`
+        );
+        return;
+    }
+    if ((filter === "new" || filter === "changed") && op === "read") {
+        ChatLib.chat("&c[htsw] Read supports all, unread, or an identity.");
+        return;
+    }
+    if (filter === "unread" && op === "export") {
+        ChatLib.chat("&c[htsw] Export supports all, new, changed, or an identity.");
+        return;
+    }
+    const result =
+        filter === "all" || filter === "new" || filter === "changed" || filter === "unread"
+            ? addUserRow(
+                  makeBulkQueueRow({
+                      op,
+                      house,
+                      path: destination.path,
+                      scope: { kind: "houseType", type },
+                      filter,
+                      label: `${op === "export" ? "Export" : "Read"} ${filter} ${type.toLowerCase()}s`,
+                  })
+              )
+            : addUserRow(
+                  makeImportableQueueRow({
+                      op,
+                      house,
+                      path: destination.path,
+                      type,
+                      identity: selector,
+                      label: selector,
+                  })
+              );
+    ChatLib.chat(
+        rowAdded(result)
+            ? `&a[htsw] Queued ${op} ${type} ${selector}`
+            : `&e[htsw] ${result.message}`
+    );
 }
 
 function commandQueueList(): void {
@@ -189,47 +276,60 @@ function commandQueueList(): void {
         return;
     }
     for (let i = 0; i < queue.length; i++) {
-        const item = queue[i];
-        if (item.operation === "import" && item.kind === "importJson") {
-            ChatLib.chat(
-                `&7[htsw] ${i + 1}. &fimport/importJson IMPORT_JSON ${item.label} ${compactFileLabel(item.sourcePath)}`
-            );
-        } else if (item.operation === "import") {
-            ChatLib.chat(
-                `&7[htsw] ${i + 1}. &fimport/importable ${item.type} ${item.identity} ${compactFileLabel(item.sourcePath)}`
-            );
-        } else {
-            ChatLib.chat(
-                `&7[htsw] ${i + 1}. &f${item.operation}/importable ${item.type} ${item.identity} ${compactFileLabel(item.destinationPath)}`
-            );
-        }
+        const row = queue[i];
+        const house = row.house === null ? "any house" : houseDisplayName(row.house);
+        const target =
+            row.target.kind === "importable"
+                ? `${row.target.type} ${row.target.identity}`
+                : row.target.label;
+        ChatLib.chat(
+            `&7[htsw] ${i + 1}. &f${row.op} ${target} &7in ${house} [${row.status}] ${compactFileLabel(row.path)}`
+        );
     }
 }
 
-function commandQueueRemove(args: string[]): void {
-    if (isTaskRunning()) {
-        ChatLib.chat("&c[htsw] Cannot remove queue items while a task is running");
-        return;
-    }
+function queueIndex(args: string[]): number | null {
     const index = Number(args[0]);
-    const queue = getQueue();
     if (
         args.length !== 1 ||
         !isFinite(index) ||
         Math.floor(index) !== index ||
         index < 1 ||
-        index > queue.length
+        index > getQueue().length
     ) {
         ChatLib.chat(`&c[htsw] Invalid queue index '${args[0] ?? ""}'`);
+        return null;
+    }
+    return index - 1;
+}
+
+function commandQueueRemove(args: string[]): void {
+    if (isQueueRunning()) {
+        ChatLib.chat("&c[htsw] Cannot remove queue items while the queue is running");
         return;
     }
-    removeFromQueue(queue[index - 1]);
-    ChatLib.chat(`&a[htsw] Removed queue item ${index}`);
+    const index = queueIndex(args);
+    if (index === null) return;
+    const row = getQueue()[index];
+    if (!removeQueueRow(row.key)) return;
+    ChatLib.chat(`&a[htsw] Removed queue item ${index + 1}`);
+}
+
+function commandQueueRetry(args: string[]): void {
+    const index = queueIndex(args);
+    if (index === null) return;
+    const row = getQueue()[index];
+    if (!retryQueueRow(row.key)) {
+        ChatLib.chat(`&c[htsw] Queue item ${index + 1} has not failed.`);
+        return;
+    }
+    ChatLib.chat(`&a[htsw] Retrying queue item ${index + 1}`);
+    autoRunQueueChanged();
 }
 
 function commandQueueClear(): void {
-    if (isTaskRunning()) {
-        ChatLib.chat("&c[htsw] Cannot clear the queue while a task is running");
+    if (isQueueRunning()) {
+        ChatLib.chat("&c[htsw] Cannot clear the queue while it is running");
         return;
     }
     clearQueue();
@@ -241,14 +341,49 @@ function commandQueueRun(): void {
         ChatLib.chat("&c[htsw] Queue is empty");
         return;
     }
-    if (TaskManager.isBusy()) {
-        ChatLib.chat(
-            "&c[htsw] An import (or another task) is already running — wait for it to finish first."
-        );
+    const count = getQueue().length;
+    if (startQueue()) ChatLib.chat(`&a[htsw] Running queue with ${count} item(s)`);
+    else
+        ChatLib.chat("&c[htsw] The queue could not start while another task is running.");
+}
+
+function commandQueuePause(): void {
+    const result = pauseQueue();
+    if (result === null) ChatLib.chat("&7[htsw] The queue is not running.");
+    else ChatLib.chat("&e[htsw] Pausing the queue…");
+}
+
+function commandQueueAutoRun(args: string[]): void {
+    const action = (args[0] ?? "").toLowerCase();
+    if (action === "on" || action === "off") {
+        setAutoRunEnabled(action === "on");
         return;
     }
-    const count = getQueue().length;
-    if (startImport()) {
-        ChatLib.chat(`&a[htsw] Running queue with ${count} item(s)`);
+    ChatLib.chat(`&7[htsw] Auto-run is ${getAutoRun() ? "&aon" : "&coff"}&7.`);
+    ChatLib.chat("&7[htsw] Usage: /htsw queue autorun <on|off>");
+}
+
+function parseImportableType(raw: string | undefined): Importable["type"] | null {
+    const type = (raw ?? "").toUpperCase() as Importable["type"];
+    return IMPORTABLE_TYPES.indexOf(type) >= 0 ? type : null;
+}
+
+function parseReadableType(raw: string | undefined): HouseReadableType | null {
+    const type = parseImportableType(raw);
+    if (type === null) return null;
+    return HOUSE_READABLE_TYPES.indexOf(type as HouseReadableType) >= 0
+        ? (type as HouseReadableType)
+        : null;
+}
+
+function splitAddArguments(args: string[]): { path: string; remaining: string[] } | null {
+    for (let i = 1; i <= args.length; i++) {
+        const path = resolvePath(args.slice(0, i));
+        if (FileLib.exists(path)) return { path, remaining: args.slice(i) };
     }
+    return null;
+}
+
+function resolvePath(args: string[]): string {
+    return resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
 }

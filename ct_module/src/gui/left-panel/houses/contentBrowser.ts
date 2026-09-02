@@ -14,7 +14,6 @@ import {
 import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
 import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "../../state";
-import { GLYPH_DOT } from "../../lib/theme";
 import { requestParse } from "../../parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
@@ -66,6 +65,23 @@ import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
 import { markGuiDirty } from "../../lib/dirty";
 import { getUnmatchedFunctionsFirst } from "../../../settings";
+import type { HouseReadableType } from "../../../importables/export/readers";
+import { showToast } from "../../toast";
+import {
+    enqueueHouseBulk,
+    enqueueHouseConcrete,
+    enqueueWholeHouse,
+    type HouseQueueTarget,
+} from "./queueActions";
+import {
+    buildHouseQueueMenu,
+    declaredOverwriteNames,
+    queueNamesForRow,
+    type HouseQueueCounts,
+    type HouseQueueMenuActionId,
+} from "./queueMenu";
+import { buildOverwriteConfirmation } from "./overwriteConfirmation";
+import { TaskManager } from "../../../tasks/manager";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
@@ -318,16 +334,121 @@ function sourcePathForImportable(
     return null;
 }
 
-function itemRowMenu(
-    t: HouseContentType,
+type QueueableHouseContentType = HouseContentType & {
+    type: HouseReadableType;
+    queueLabel: string;
+};
+
+function isQueueableType(t: HouseContentType): t is QueueableHouseContentType {
+    return t.queueLabel !== undefined;
+}
+
+function selectionFor(uuid: string, type: HouseContentType["type"]): string[] {
+    return getExportSelection()
+        .filter((item) => item.uuid === uuid && item.type === type)
+        .map((item) => item.name);
+}
+
+function targetsForNames(
+    names: readonly string[],
+    items: readonly HouseImportable[]
+): HouseQueueTarget[] {
+    const labels = new Map<string, string>();
+    for (const item of items) labels.set(item.name, item.label ?? item.name);
+    return names.map((identity) => ({
+        identity,
+        label: labels.get(identity) ?? identity,
+    }));
+}
+
+function queueConcrete(
+    t: QueueableHouseContentType,
     uuid: string,
-    name: string,
-    canExport: boolean
+    path: string,
+    items: readonly HouseImportable[],
+    names: readonly string[],
+    op: "read" | "export",
+    clearSelection: boolean
+): void {
+    enqueueHouseConcrete({
+        op,
+        house: uuid,
+        path,
+        type: t.type,
+        singularLabel: t.queueLabel,
+        targets: targetsForNames(names, items),
+        onAdded: clearSelection ? () => clearExportSelection(uuid, t.type) : undefined,
+    });
+}
+
+function runImmediateHousingAction(run: () => void): void {
+    if (TaskManager.isBusy()) {
+        showToast(
+            "A queued Housing operation is running — wait for it to finish",
+            0xffe5bc4b
+        );
+        return;
+    }
+    run();
+}
+
+function itemRowMenu(
+    t: QueueableHouseContentType,
+    uuid: string,
+    item: HouseImportable,
+    items: readonly HouseImportable[],
+    inCurrentHouse: boolean
 ): MenuAction[] {
     const actions: MenuAction[] = [];
+    const selectedNames = selectionFor(uuid, t.type);
+    const queuedNames = queueNamesForRow(selectedNames, item.name);
+    const clearSelection = selectedNames.length > 0;
+    const destination = getExportDestinationStatus();
+    const destinationPath = destination.kind === "ready" ? destination.path : null;
+    actions.push({
+        label: "Queue export",
+        icon: Icons.fileUp,
+        disabled: destinationPath === null,
+        onClick: () => {
+            confirmDestructiveExport(
+                t.label.toLowerCase(),
+                namesAlreadyInDestination(t, queuedNames),
+                () => {
+                    if (destinationPath === null) return;
+                    queueConcrete(
+                        t,
+                        uuid,
+                        destinationPath,
+                        items,
+                        queuedNames,
+                        "export",
+                        clearSelection
+                    );
+                }
+            );
+        },
+    });
+    actions.push({
+        label: "Queue read",
+        icon: Icons.scanEye,
+        disabled: destinationPath === null,
+        onClick: () => {
+            if (destinationPath === null) return;
+            queueConcrete(
+                t,
+                uuid,
+                destinationPath,
+                items,
+                queuedNames,
+                "read",
+                clearSelection
+            );
+        },
+    });
+    actions.push({ kind: "separator" });
     // Reuse the existing View-tab diff (source vs cached house content) rather
     // than building a diff here — only when the importable is in your file.
-    const sourcePath = sourcePathForImportable(t.type, name);
+    const sourcePath = sourcePathForImportable(t.type, item.name);
     if (sourcePath !== null) {
         actions.push({
             label: "View diff",
@@ -338,16 +459,11 @@ function itemRowMenu(
         });
     }
     for (const a of t.rowActions ?? []) {
-        actions.push({ label: a.label, icon: a.icon, onClick: () => a.run(name) });
-    }
-    if (canExport) {
-        const selected = isInExportSelection(uuid, t.type, name);
         actions.push({
-            label: selected ? "Deselect" : "Select for export",
-            icon: selected ? Icons.squareCheck : Icons.square,
-            onClick: () => {
-                toggleExportSelection({ uuid, type: t.type, name });
-            },
+            label: a.label,
+            icon: a.icon,
+            disabled: !inCurrentHouse,
+            onClick: () => runImmediateHousingAction(() => a.run(item.name)),
         });
     }
     if (t.remove !== undefined) {
@@ -355,7 +471,8 @@ function itemRowMenu(
         actions.push({
             label: "Delete",
             icon: Icons.trash2,
-            onClick: () => t.remove?.(name),
+            disabled: !inCurrentHouse,
+            onClick: () => runImmediateHousingAction(() => t.remove?.(item.name)),
         });
     }
     return actions;
@@ -366,7 +483,8 @@ type HouseLinkState =
     | "exists-in-house"
     | "unread"
     | "matches-knowledge"
-    | "differs-from-knowledge";
+    | "differs-from-knowledge"
+    | "unknown";
 
 type HouseRow = { item: HouseImportable; state: HouseLinkState };
 
@@ -381,6 +499,7 @@ const HOUSE_LINK_VISUAL: {
     unread: { key: "present", tooltip: "Also in your files; content not read yet" },
     "matches-knowledge": { key: "matches", tooltip: "Matches your files" },
     "differs-from-knowledge": { key: "differs", tooltip: "Differs from your files" },
+    unknown: { key: "unknown", tooltip: "Waiting for the project to load" },
 };
 
 // Source importables (from the selected import.json) keyed by identity, so each
@@ -399,18 +518,13 @@ function loadedSourceImportablesByType(
     return out;
 }
 
-function sourceImportablesByType(
-    type: HouseContentType["type"]
-): Map<string, Importable> {
-    return loadedSourceImportablesByType(type) ?? new Map<string, Importable>();
-}
-
 function houseLinkStateFor(
     uuid: string | null,
     item: HouseImportable,
-    sourceByKey: Map<string, Importable>,
+    sourceByKey: Map<string, Importable> | null,
     trusted: boolean
 ): HouseLinkState {
+    if (sourceByKey === null) return "unknown";
     const source = sourceByKey.get(item.name);
     if (source === undefined) return "house-only";
     if (!trusted) return "exists-in-house";
@@ -419,6 +533,19 @@ function houseLinkStateFor(
     if (state === "current") return "matches-knowledge";
     if (state === "modified") return "differs-from-knowledge";
     return "unread";
+}
+
+function houseRowsFor(
+    t: QueueableHouseContentType,
+    uuid: string,
+    items: readonly HouseImportable[]
+): HouseRow[] {
+    const sourceMap = loadedSourceImportablesByType(t.type);
+    const trusted = isHouseTrusted(uuid);
+    return items.map((item) => ({
+        item,
+        state: houseLinkStateFor(uuid, item, sourceMap, trusted),
+    }));
 }
 
 function itemRowActionButton(
@@ -436,7 +563,7 @@ function itemRowActionButton(
         },
         onClick: (_rect, info) => {
             if (info.button !== 0 || info.isDoubleClickSecond) return;
-            action.run(name);
+            runImmediateHousingAction(() => action.run(name));
         },
         tooltip: action.label,
         tooltipColor: COLOR_TEXT_DIM,
@@ -453,16 +580,55 @@ function itemRowActionButton(
     });
 }
 
-function itemRow(
-    t: HouseContentType,
+function itemRowMenuButton(
+    t: QueueableHouseContentType,
     uuid: string,
     item: HouseImportable,
-    interactive: boolean,
-    canExport: boolean,
+    items: readonly HouseImportable[],
+    inCurrentHouse: boolean
+): Element {
+    return Button({
+        style: {
+            width: { kind: "px", value: 16 },
+            height: { kind: "grow" },
+            padding: 0,
+            background: 0x00000000,
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        tooltip: "More actions",
+        tooltipColor: COLOR_TEXT_DIM,
+        onClick: (rect, info) => {
+            if (info.button !== 0 || info.isDoubleClickSecond) return;
+            openMenu(
+                rect.x + rect.w,
+                rect.y,
+                itemRowMenu(t, uuid, item, items, inCurrentHouse),
+                { key: `house-row:${uuid}:${t.type}:${item.name}`, trigger: rect }
+            );
+        },
+        children: [
+            Icon({
+                name: Icons.ellipsisVertical,
+                color: COLOR_TEXT_FAINT,
+                style: {
+                    width: { kind: "px", value: 11 },
+                    height: { kind: "px", value: 11 },
+                },
+            }),
+        ],
+    });
+}
+
+function itemRow(
+    t: QueueableHouseContentType,
+    uuid: string,
+    item: HouseImportable,
+    items: readonly HouseImportable[],
+    inCurrentHouse: boolean,
     state: HouseLinkState
 ): Element {
     const inSelection = isInExportSelection(uuid, t.type, item.name);
-    const selected = canExport && inSelection;
+    const selected = inSelection;
     return Container({
         style: {
             direction: "row",
@@ -473,46 +639,27 @@ function itemRow(
             background: selected ? COLOR_ROW_SELECTED : COLOR_ROW,
             hoverBackground: selected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
-        onClick: interactive
-            ? (_rect, info) => {
-                  if (info.button === 1) {
-                      const actions = itemRowMenu(t, uuid, item.name, canExport);
-                      if (actions.length > 0) openMenu(info.x, info.y, actions);
-                      return;
-                  }
-                  if (info.button !== 0) return;
-                  if (canExport)
-                      toggleExportSelection({ uuid, type: t.type, name: item.name });
-              }
-            : undefined,
+        onClick: (_rect, info) => {
+            if (info.isDoubleClickSecond) return;
+            if (info.button === 1) {
+                openMenu(
+                    info.x,
+                    info.y,
+                    itemRowMenu(t, uuid, item, items, inCurrentHouse)
+                );
+                return;
+            }
+            if (info.button !== 0) return;
+            toggleExportSelection({ uuid, type: t.type, name: item.name });
+        },
         children: [
-            t.export === undefined
-                ? // Browse-only type (no exporter): a plain bullet, no checkbox.
-                  Text({
-                      text: GLYPH_DOT,
-                      color: COLOR_TEXT_DIM,
-                      style: { width: { kind: "px", value: 12 } },
-                  })
-                : canExport
-                  ? Icon({
-                        name: selected ? Icons.squareCheck : Icons.square,
-                        style: {
-                            width: { kind: "px", value: 12 },
-                            height: { kind: "px", value: 12 },
-                        },
-                    })
-                  : Icon({
-                        // Grayed checkbox: export needs the live menu, so it's
-                        // disabled until you're standing in this house.
-                        name: inSelection ? Icons.squareCheck : Icons.square,
-                        color: COLOR_TEXT_FAINT,
-                        style: {
-                            width: { kind: "px", value: 12 },
-                            height: { kind: "px", value: 12 },
-                        },
-                        tooltip: "Stand in this house to select for export",
-                        tooltipColor: COLOR_TEXT_DIM,
-                    }),
+            Icon({
+                name: selected ? Icons.squareCheck : Icons.square,
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
+            }),
             ImportableIcon({
                 type: item.type,
                 name: item.name,
@@ -531,7 +678,7 @@ function itemRow(
                 tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
-            ...(interactive
+            ...(inCurrentHouse
                 ? (t.rowActions ?? []).map((a) => itemRowActionButton(a, item.name))
                 : []),
             linkStatusIcon(
@@ -539,6 +686,7 @@ function itemRow(
                 HOUSE_LINK_VISUAL[state].tooltip,
                 12
             ),
+            itemRowMenuButton(t, uuid, item, items, inCurrentHouse),
         ],
     });
 }
@@ -548,244 +696,369 @@ function namesAlreadyInDestination(
     names: readonly string[]
 ): string[] | null {
     const sourceMap = loadedSourceImportablesByType(t.type);
-    if (sourceMap === null) return null;
-    const out: string[] = [];
-    for (const n of names) {
-        if (sourceMap.has(n)) out.push(n);
-    }
-    return out;
+    return declaredOverwriteNames(
+        names,
+        sourceMap === null ? null : new Set(sourceMap.keys())
+    );
 }
 
 function confirmDestructiveExport(
-    t: HouseContentType,
-    names: readonly string[],
+    noun: string,
+    existingNames: readonly string[] | null,
     runOverwrite: () => void
 ): void {
-    const existing = namesAlreadyInDestination(t, names);
-    if (existing !== null && existing.length === 0) {
+    const confirmation = buildOverwriteConfirmation(noun, existingNames);
+    if (confirmation === null) {
         runOverwrite();
         return;
     }
-    if (existing === null) {
-        openConfirmPopover({
-            title: "Overwrite local files?",
-            lines: [
-                "HTSW couldn't verify which entries already exist in the destination.",
-                "Export may replace local versions with the house versions.",
-            ],
-            confirmLabel: "Export anyway",
-            danger: true,
-            onConfirm: runOverwrite,
-        });
-        return;
-    }
-    const shown = existing.slice(0, 5);
-    const lines = shown.map((n) => `• ${n}`);
-    if (existing.length > shown.length) {
-        lines.push(`…and ${existing.length - shown.length} more`);
-    }
-    lines.push("Export replaces the local versions with the house versions.");
     openConfirmPopover({
-        title: `Overwrite existing ${t.label.toLowerCase()} (${existing.length})?`,
-        lines,
+        title: confirmation.title,
+        lines: confirmation.lines,
         confirmLabel: "Export anyway",
         danger: true,
         onConfirm: runOverwrite,
     });
 }
 
-function exportActionBar(
-    t: HouseContentType,
+function queueableTypes(): QueueableHouseContentType[] {
+    return HOUSE_CONTENT_TYPES.filter(isQueueableType);
+}
+
+function wholeHouseOverwriteNames(uuid: string): string[] | null {
+    const existing: string[] = [];
+    for (const type of queueableTypes()) {
+        const source = loadedSourceImportablesByType(type.type);
+        if (source === null) return null;
+        for (const item of type.items(uuid)) {
+            if (source.has(item.name)) {
+                existing.push(`${type.label}: ${item.label ?? item.name}`);
+            }
+        }
+    }
+    return existing;
+}
+
+function queueBulk(
+    t: QueueableHouseContentType,
+    uuid: string,
+    path: string,
+    op: "read" | "export",
+    filter: "all" | "new" | "changed" | "unread",
+    label: string
+): void {
+    enqueueHouseBulk({ op, house: uuid, path, type: t.type, filter, label });
+}
+
+function runQueueMenuAction(
+    id: HouseQueueMenuActionId,
+    t: QueueableHouseContentType,
+    uuid: string,
+    path: string,
+    items: readonly HouseImportable[],
+    allRows: readonly HouseRow[],
+    shownRows: readonly HouseRow[]
+): void {
+    const noun = t.label.toLowerCase();
+    const shownNames = shownRows.map((row) => row.item.name);
+    const changedNames = allRows
+        .filter((row) => row.state === "differs-from-knowledge")
+        .map((row) => row.item.name);
+    switch (id) {
+        case "read-all":
+            queueBulk(t, uuid, path, "read", "all", `Read all ${noun}`);
+            return;
+        case "read-unread":
+            queueBulk(t, uuid, path, "read", "unread", `Read unread ${noun}`);
+            return;
+        case "read-shown":
+            queueConcrete(t, uuid, path, items, shownNames, "read", false);
+            return;
+        case "export-all":
+            confirmDestructiveExport(
+                noun,
+                namesAlreadyInDestination(
+                    t,
+                    allRows.map((row) => row.item.name)
+                ),
+                () => queueBulk(t, uuid, path, "export", "all", `Export all ${noun}`)
+            );
+            return;
+        case "export-new":
+            queueBulk(t, uuid, path, "export", "new", `Export new ${noun}`);
+            return;
+        case "export-changed":
+            confirmDestructiveExport(
+                noun,
+                namesAlreadyInDestination(t, changedNames),
+                () =>
+                    queueBulk(
+                        t,
+                        uuid,
+                        path,
+                        "export",
+                        "changed",
+                        `Export changed ${noun}`
+                    )
+            );
+            return;
+        case "export-shown":
+            confirmDestructiveExport(noun, namesAlreadyInDestination(t, shownNames), () =>
+                queueConcrete(t, uuid, path, items, shownNames, "export", false)
+            );
+            return;
+        case "export-house": {
+            confirmDestructiveExport(
+                "local entries",
+                wholeHouseOverwriteNames(uuid),
+                () =>
+                    enqueueWholeHouse({
+                        house: uuid,
+                        path,
+                        types: queueableTypes().map((type) => ({
+                            type: type.type,
+                            pluralLabel: type.label,
+                        })),
+                    })
+            );
+        }
+    }
+}
+
+function queueAllMenuActions(
+    t: QueueableHouseContentType,
+    uuid: string,
+    destinationPath: string | null,
+    items: readonly HouseImportable[],
+    allRows: readonly HouseRow[],
+    shownRows: readonly HouseRow[],
+    counts: HouseQueueCounts,
+    destinationReady: boolean
+): MenuAction[] {
+    return buildHouseQueueMenu(t.label, counts, destinationReady).map((entry) =>
+        entry.kind === "separator"
+            ? { kind: "separator" }
+            : {
+                  label: entry.label,
+                  disabled: entry.disabled || destinationPath === null,
+                  onClick: () =>
+                      destinationPath !== null &&
+                      runQueueMenuAction(
+                          entry.id,
+                          t,
+                          uuid,
+                          destinationPath,
+                          items,
+                          allRows,
+                          shownRows
+                      ),
+              }
+    );
+}
+
+function queueActionBar(
+    t: QueueableHouseContentType,
     uuid: string,
     items: HouseImportable[],
-    shownRows: HouseRow[]
+    allRows: HouseRow[],
+    shownRows: HouseRow[],
+    inCurrentHouse: boolean
 ): Element {
-    const selected = getExportSelection().filter(
-        (it) => it.uuid === uuid && it.type === t.type
-    );
-    const selectedCount = selected.length;
-    const shownItems = shownRows.map((row) => row.item);
-    const shownCount = shownItems.length;
-    const houseCount = items.length;
-    const labels = new Map<string, string>();
-    for (const item of items) {
-        if (item.label !== undefined) labels.set(item.name, item.label);
-    }
-    const deepRead = t.deepRead;
+    const selectedNames = selectionFor(uuid, t.type);
+    const selectedCount = selectedNames.length;
     const destination = getExportDestinationStatus();
-    const hasDest = destination.kind === "ready";
-    const canExportPrimary = hasDest && (selectedCount > 0 || shownCount > 0);
-    const canReadPrimary =
-        deepRead !== undefined && hasDest && (selectedCount > 0 || shownCount > 0);
-    const noShownItemsTooltip =
-        houseCount === 0
-            ? `No ${t.label.toLowerCase()} in this house`
-            : `No ${t.label.toLowerCase()} match the current filters`;
-    return Col({
-        style: { gap: 4, padding: { side: "right", value: 8 } },
-        children: [
-            Row({
-                style: { gap: 4, height: { kind: "px", value: 20 } },
+    const destinationReady = destination.kind === "ready";
+    const destinationPath = destination.kind === "ready" ? destination.path : null;
+    const counts: HouseQueueCounts = {
+        all: t.scanned(uuid) ? allRows.length : null,
+        changed: allRows.filter((row) => row.state === "differs-from-knowledge").length,
+        unread: allRows.filter(
+            (row) => row.state === "unread" || row.state === "exists-in-house"
+        ).length,
+        shown: shownRows.length,
+        new: allRows.filter((row) => row.state === "house-only").length,
+    };
+    const destinationTooltip =
+        destination.kind === "missing"
+            ? "The selected export project is missing"
+            : destination.kind === "none"
+              ? "Choose an export project first"
+              : undefined;
+    const barChildren: Element[] = [];
+    if (selectedCount > 0) {
+        barChildren.push(
+            Button({
+                icon: Icons.x,
+                text: String(selectedCount),
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                tooltip: "Clear selection",
+                tooltipColor: COLOR_TEXT_DIM,
+                onClick: () => clearExportSelection(uuid, t.type),
+            })
+        );
+        barChildren.push(
+            Button({
+                icon: Icons.scanEye,
+                text: "Read",
+                disabled: !destinationReady,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: destinationReady ? COLOR_BUTTON_HOVER : COLOR_BUTTON,
+                },
+                tooltip: destinationTooltip ?? "Queue the selected entries to read",
+                tooltipColor: destinationReady ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
+                onClick: () => {
+                    if (destinationPath === null) return;
+                    queueConcrete(
+                        t,
+                        uuid,
+                        destinationPath,
+                        items,
+                        selectedNames,
+                        "read",
+                        true
+                    );
+                },
+            })
+        );
+        barChildren.push(
+            Button({
+                icon: Icons.fileUp,
+                text: "Export",
+                disabled: !destinationReady,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: destinationReady ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                    hoverBackground: destinationReady
+                        ? COLOR_BUTTON_PRIMARY_HOVER
+                        : COLOR_BUTTON,
+                },
+                tooltip: destinationTooltip ?? "Queue the selected entries to export",
+                tooltipColor: destinationReady ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
+                onClick: () =>
+                    confirmDestructiveExport(
+                        t.label.toLowerCase(),
+                        namesAlreadyInDestination(t, selectedNames),
+                        () => {
+                            if (destinationPath === null) return;
+                            queueConcrete(
+                                t,
+                                uuid,
+                                destinationPath,
+                                items,
+                                selectedNames,
+                                "export",
+                                true
+                            );
+                        }
+                    ),
+            })
+        );
+    } else {
+        if (inCurrentHouse && t.scanNames !== false) {
+            barChildren.push(
+                Button({
+                    icon: Icons.scanText,
+                    text: () => (t.scanInFlight() ? "Scanning…" : "Scan"),
+                    disabled: () => t.scanInFlight(),
+                    style: {
+                        width: { kind: "grow" },
+                        height: { kind: "grow" },
+                        background: COLOR_BUTTON,
+                        hoverBackground: COLOR_BUTTON_HOVER,
+                    },
+                    tooltip: "Refresh the names listed for this house",
+                    tooltipColor: COLOR_TEXT_DIM,
+                    onClick: () => {
+                        if (!t.scanInFlight()) t.scan();
+                    },
+                })
+            );
+        }
+        barChildren.push(
+            Button({
+                // Centered like Scan beside it; the chevron rides along as a
+                // small trailing hint rather than being pushed to the edge.
                 children: [
-                    t.scanNames !== false &&
-                        Button({
-                            icon: Icons.scanText,
-                            text: () => (t.scanInFlight() ? "Scanning…" : "Scan Names"),
-                            disabled: () => t.scanInFlight(),
-                            style: {
-                                width: { kind: "grow" },
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: COLOR_BUTTON_HOVER,
-                            },
-                            tooltip: "Refresh the names listed for this house",
-                            tooltipColor: COLOR_TEXT_DIM,
-                            onClick: () => {
-                                if (!t.scanInFlight()) t.scan();
-                            },
-                        }),
-                    deepRead !== undefined &&
-                        Button({
-                            children: [
-                                Icon({
-                                    name: Icons.scanEye,
-                                    color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
-                                }),
-                                Text({
-                                    text:
-                                        selectedCount > 0
-                                            ? `Read (${selectedCount})`
-                                            : `Read All (${shownCount})`,
-                                    color: canReadPrimary ? undefined : COLOR_TEXT_FAINT,
-                                    truncate: true,
-                                    style: { width: { kind: "grow" } },
-                                }),
-                            ],
-                            style: {
-                                width: { kind: "grow" },
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: canReadPrimary
-                                    ? COLOR_BUTTON_HOVER
-                                    : COLOR_BUTTON,
-                            },
-                            tooltip: !hasDest
-                                ? destination.kind === "missing"
-                                    ? "The selected export project is missing"
-                                    : "Choose an export project first"
-                                : selectedCount === 0 && shownCount === 0
-                                  ? noShownItemsTooltip
-                                  : selectedCount > 0
-                                    ? "Read the selected entries into knowledge"
-                                    : "Read into knowledge",
-                            tooltipColor: canReadPrimary
-                                ? COLOR_TEXT_DIM
-                                : COLOR_TEXT_FAINT,
-                            disabled: !canReadPrimary,
-                            onClick: () => {
-                                if (!canReadPrimary) return;
-                                deepRead(
-                                    selectedCount > 0
-                                        ? selected.map((it) => it.name)
-                                        : shownItems.map((it) => it.name)
-                                );
-                            },
-                        }),
-                    Button({
-                        children: [
-                            Icon({
-                                name: Icons.fileUp,
-                                color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
-                            }),
-                            Text({
-                                text:
-                                    selectedCount > 0
-                                        ? `Export (${selectedCount})`
-                                        : `Export All (${shownCount})`,
-                                color: canExportPrimary ? undefined : COLOR_TEXT_FAINT,
-                                truncate: true,
-                                style: { width: { kind: "grow" } },
-                            }),
-                        ],
+                    Icon({ name: Icons.listPlus }),
+                    Text({ text: "Queue all", truncate: true }),
+                    Icon({
+                        name: Icons.chevronDown,
                         style: {
-                            width: { kind: "grow" },
-                            height: { kind: "grow" },
-                            background: canExportPrimary
-                                ? COLOR_BUTTON_PRIMARY
-                                : COLOR_BUTTON,
-                            hoverBackground: canExportPrimary
-                                ? COLOR_BUTTON_PRIMARY_HOVER
-                                : COLOR_BUTTON,
-                        },
-                        tooltip: !hasDest
-                            ? destination.kind === "missing"
-                                ? "The selected export project is missing"
-                                : "Choose an export project first"
-                            : selectedCount === 0 && shownCount === 0
-                              ? noShownItemsTooltip
-                              : selectedCount > 0
-                                ? "Export the selected entries"
-                                : undefined,
-                        tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !canExportPrimary,
-                        onClick: () => {
-                            if (!canExportPrimary) return;
-                            if (t.export === undefined) return;
-                            const exp = t.export;
-                            if (selectedCount > 0) {
-                                const names = selected.map((it) => it.name);
-                                confirmDestructiveExport(t, names, () =>
-                                    exp.selected(
-                                        names,
-                                        () => clearExportSelection(),
-                                        labels
-                                    )
-                                );
-                            } else {
-                                const names = shownItems.map((i) => i.name);
-                                confirmDestructiveExport(t, names, () =>
-                                    exp.selected(names, () => {}, labels)
-                                );
-                            }
+                            width: { kind: "px", value: 10 },
+                            height: { kind: "px", value: 10 },
                         },
                     }),
                 ],
-            }),
-            t.type === "MENU" &&
-                Row({
-                    style: { height: { kind: "px", value: 20 } },
-                    children: [
-                        Button({
-                            children: [
-                                Icon({
-                                    name: Icons.packageOpen,
-                                    color: hasDest ? undefined : COLOR_TEXT_FAINT,
-                                }),
-                                Text({
-                                    text: "Export open chest…",
-                                    color: hasDest ? undefined : COLOR_TEXT_FAINT,
-                                }),
-                            ],
-                            style: {
-                                width: { kind: "grow" },
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: hasDest
-                                    ? COLOR_BUTTON_HOVER
-                                    : COLOR_BUTTON,
-                            },
-                            tooltip: !hasDest
-                                ? destination.kind === "missing"
-                                    ? "The selected export project is missing"
-                                    : "Choose an export project first"
-                                : undefined,
-                            tooltipColor: COLOR_TEXT_FAINT,
-                            disabled: !hasDest,
-                            onClick: () => startChestExport(),
-                        }),
-                    ],
-                }),
-        ],
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                tooltip: destinationTooltip,
+                tooltipColor: COLOR_TEXT_FAINT,
+                onClick: (rect) =>
+                    openMenu(
+                        rect.x + rect.w,
+                        rect.y,
+                        queueAllMenuActions(
+                            t,
+                            uuid,
+                            destinationPath,
+                            items,
+                            allRows,
+                            shownRows,
+                            counts,
+                            destinationReady
+                        ),
+                        { key: `house-queue-all:${uuid}:${t.type}`, trigger: rect }
+                    ),
+            })
+        );
+    }
+    const children: Element[] = [
+        Row({
+            style: { gap: 4, height: { kind: "px", value: 20 } },
+            children: barChildren,
+        }),
+    ];
+    if (t.type === "MENU" && inCurrentHouse) {
+        children.push(
+            Row({
+                style: { height: { kind: "px", value: 20 } },
+                children: [
+                    Button({
+                        icon: Icons.packageOpen,
+                        text: "Export open chest…",
+                        disabled: !destinationReady,
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground: destinationReady
+                                ? COLOR_BUTTON_HOVER
+                                : COLOR_BUTTON,
+                        },
+                        tooltip: destinationTooltip,
+                        tooltipColor: COLOR_TEXT_FAINT,
+                        onClick: () => startChestExport(),
+                    }),
+                ],
+            })
+        );
+    }
+    return Col({
+        style: { gap: 4, padding: { side: "right", value: 8 } },
+        children,
     });
 }
 
@@ -800,7 +1073,6 @@ export function typeBrowserSection(
             const uuid = getViewedUuid();
             const inCurrentHouse = uuid !== null && uuid === getHousingUuid();
             const canScan = inCurrentHouse && t.scanNames !== false;
-            const canExport = t.export !== undefined && inCurrentHouse;
             const tabCount = HOUSE_CONTENT_TYPES.length;
             const perTab = (availW - TAB_GAP * (tabCount - 1)) / tabCount;
             const showLabels = tabLabelsFit(
@@ -833,6 +1105,7 @@ export function typeBrowserSection(
                 );
                 return out;
             }
+            if (!isQueueableType(t)) return out;
             if (uuid === null) {
                 out.push(
                     Text({
@@ -843,10 +1116,12 @@ export function typeBrowserSection(
                 return out;
             }
             const scanned = t.scanned(uuid);
-            const items = scanned ? t.items(uuid) : [];
+            const cachedItems = t.items(uuid);
+            const items = scanned ? cachedItems : [];
+            const allRows = houseRowsFor(t, uuid, cachedItems);
             const shown: HouseRow[] = [];
             // Keep search and filtering available before the first scan and in
-            // empty states; Scan Names itself stays in the bottom action row.
+            // empty states; Scan itself stays in the bottom action row.
             if (canScan || items.length > 0) {
                 out.push(searchRow(t));
             }
@@ -858,18 +1133,20 @@ export function typeBrowserSection(
                             Text({
                                 text: () => {
                                     if (!canScan) {
-                                        return `Stand in this house and Scan Names to list its ${t.label.toLowerCase()}.`;
+                                        return `Stand in this house and Scan to list its ${t.label.toLowerCase()}.`;
                                     }
                                     return t.scanInFlight()
                                         ? "Scanning…"
-                                        : `Click Scan Names to list this house's ${t.label.toLowerCase()}.`;
+                                        : `Click Scan to list this house's ${t.label.toLowerCase()}.`;
                                 },
                                 color: COLOR_TEXT_FAINT,
                             }),
                         ],
                     })
                 );
-                if (canExport) out.push(exportActionBar(t, uuid, items, shown));
+                out.push(
+                    queueActionBar(t, uuid, cachedItems, allRows, shown, inCurrentHouse)
+                );
                 return out;
             }
             if (items.length === 0) {
@@ -886,11 +1163,10 @@ export function typeBrowserSection(
                 );
             } else {
                 const query = itemSearch.trim().toLowerCase();
-                const sourceMap = sourceImportablesByType(t.type);
-                const trusted = isHouseTrusted(uuid);
                 const statusActive = selectedHouseStatuses.size > 0;
-                for (let i = 0; i < items.length; i++) {
-                    const item = items[i];
+                for (let i = 0; i < allRows.length; i++) {
+                    const row = allRows[i];
+                    const item = row.item;
                     if (
                         query !== "" &&
                         (item.label ?? item.name).toLowerCase().indexOf(query) === -1 &&
@@ -898,14 +1174,13 @@ export function typeBrowserSection(
                     ) {
                         continue;
                     }
-                    const state = houseLinkStateFor(uuid, item, sourceMap, trusted);
                     if (
                         statusActive &&
-                        !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[state].key)
+                        !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[row.state].key)
                     ) {
                         continue;
                     }
-                    shown.push({ item, state });
+                    shown.push(row);
                 }
                 const unmatchedFunctionsFirst =
                     t.type === "FUNCTION" && getUnmatchedFunctionsFirst();
@@ -928,48 +1203,13 @@ export function typeBrowserSection(
                             id: "houses-type-scroll",
                             style: { height: { kind: "grow" }, gap: 1 },
                             children: shown.map((s) =>
-                                itemRow(
-                                    t,
-                                    uuid,
-                                    s.item,
-                                    inCurrentHouse,
-                                    canExport,
-                                    s.state
-                                )
+                                itemRow(t, uuid, s.item, items, inCurrentHouse, s.state)
                             ),
                         })
                     );
                 }
             }
-            if (canExport) {
-                out.push(exportActionBar(t, uuid, items, shown));
-            } else if (t.export !== undefined) {
-                out.push(
-                    Row({
-                        style: {
-                            gap: 6,
-                            align: "center",
-                            padding: { side: "x", value: 4 },
-                            height: { kind: "px", value: SIZE_ROW_H },
-                        },
-                        children: [
-                            Icon({
-                                name: Icons.house,
-                                color: COLOR_TEXT_FAINT,
-                                style: {
-                                    width: { kind: "px", value: 12 },
-                                    height: { kind: "px", value: 12 },
-                                },
-                            }),
-                            Text({
-                                text: `Stand in this house to export its ${t.label.toLowerCase()}.`,
-                                color: COLOR_TEXT_FAINT,
-                                style: { width: { kind: "grow" } },
-                            }),
-                        ],
-                    })
-                );
-            }
+            out.push(queueActionBar(t, uuid, items, allRows, shown, inCurrentHouse));
             return out;
         },
     });

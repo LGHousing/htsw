@@ -12,10 +12,8 @@
  * op. Content for sizing comes from the cache (post-Read/sync) or the
  * destination import.json; names with neither get the average of the rest.
  *
- * The sink also mirrors the batch into the queue UI (rows appear at start,
- * clear at done) because item names are only known once the batch lists them.
- * The import-running flag is NOT owned here — the session initiator
- * (startExport / deep read) owns its own task lifecycle.
+ * Queue rows already exist before the session starts. When supplied, their
+ * stable QueueRow keys drive both reducer progress and completion callbacks.
  */
 
 import type { Importable } from "htsw/types";
@@ -34,22 +32,19 @@ import {
     setTaskProgress,
     startTaskProgress,
 } from "../right-panel/import-tab/taskProgress";
-import {
-    addToQueue,
-    makeExportQueueItem,
-    queueItemKey,
-    removeFromQueueKey,
-    type QueueItem,
-} from "../right-panel/import-tab/queue";
+import type { QueueRow } from "../right-panel/import-tab/queue";
 import { createReadLivePreview } from "../right-panel/import-tab/readLivePreview";
 
 export function createExportProgressSink(
     type: Importable["type"],
     importJsonPath: string,
     verb: "export" | "read" = "export",
-    labels?: ReadonlyMap<string, string>
+    labels?: ReadonlyMap<string, string>,
+    queue?: {
+        queueRows?: readonly QueueRow[];
+        onFinished?: (key: string, error?: string) => void;
+    }
 ): ExportProgressSink {
-    const queueItems: QueueItem[] = [];
     let names: readonly string[] = [];
     let units: number[] = [];
     let state = initialReducerState();
@@ -61,8 +56,23 @@ export function createExportProgressSink(
     let totalsLocked = false;
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
     const livePreview = createReadLivePreview(type, canonicalImportJsonPath);
+    const queueKeyFor = (name: string): string | null => {
+        const rows = queue?.queueRows;
+        if (rows === undefined) return null;
+        for (let i = 0; i < rows.length; i++) {
+            const target = rows[i].target;
+            if (
+                target.kind === "importable" &&
+                target.type === type &&
+                target.identity === name
+            ) {
+                return rows[i].key;
+            }
+        }
+        return null;
+    };
     const keyFor = (name: string): string =>
-        queueRowKey(type, name, canonicalImportJsonPath);
+        queueKeyFor(name) ?? queueRowKey(type, name, canonicalImportJsonPath);
 
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
@@ -160,18 +170,7 @@ export function createExportProgressSink(
                 etaRough: resolved.knownCount === 0,
             });
             livePreview.start(ns);
-            for (const n of ns) {
-                const item = makeExportQueueItem(
-                    verb,
-                    type,
-                    n,
-                    importJsonPath,
-                    getHousingUuid(),
-                    labels?.get(n)
-                );
-                queueItems.push(item);
-                addToQueue(item);
-            }
+            void labels;
         },
         scanStarted() {
             if (names.length === 0) return;
@@ -210,7 +209,11 @@ export function createExportProgressSink(
             });
         },
         itemFinished(index) {
-            if (index === currentIndex) finishCurrent("imported");
+            if (index === currentIndex) {
+                finishCurrent("imported");
+                const key = queueKeyFor(names[index]);
+                if (key !== null) queue?.onFinished?.(key);
+            }
         },
         itemProgress(index, payload) {
             if (names.length === 0 || index !== currentIndex || currentClosed) return;
@@ -234,6 +237,8 @@ export function createExportProgressSink(
         itemFailed(index, error) {
             if (index !== currentIndex) return;
             finishCurrent("failed", error);
+            const key = queueKeyFor(names[index]);
+            if (key !== null) queue?.onFinished?.(key, error);
         },
         done() {
             if (names.length > 0) {
@@ -241,8 +246,6 @@ export function createExportProgressSink(
                 emit({ kind: "sessionFinished" });
             }
             livePreview.clear();
-            for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
-            queueItems.length = 0;
         },
     };
 }

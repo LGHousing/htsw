@@ -24,12 +24,7 @@ import {
 import { setProgressTraceSampler } from "../../../housingSync/trace/progressTrace";
 import { resetSessionTiming } from "../../../housingSync/progress/timing";
 import { importableIdentity } from "../../../importables/identity";
-import {
-    isQueueSessionItem,
-    queueItemKey,
-    queueItemProgressPath,
-    type QueueItem,
-} from "./queue";
+import type { QueueRow } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
 import {
     onTaskRunningChanged,
@@ -337,7 +332,7 @@ export function clearLastFinishedProgress(): void {
  */
 type QueuePhase = "reading" | "hydrating" | "applying";
 
-export type QueueItemRunState =
+export type QueueRowRunState =
     | { kind: "queued" }
     | { kind: "done" }
     | { kind: "skipped" }
@@ -359,21 +354,27 @@ export type QueueItemRunState =
           hydrationRequired: boolean;
       };
 
-export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    const useLastFinished =
-        taskProgress === null && isQueueSessionItem(queueItemKey(item));
+export function getQueueRowRunState(item: QueueRow): QueueRowRunState {
+    if (item.status === "failed") return { kind: "failed" };
+    const useLastFinished = taskProgress === null && item.status === "running";
     const progress = taskProgress ?? (useLastFinished ? lastFinishedTaskProgress : null);
     if (progress === null) {
         return { kind: "queued" };
     }
-    if (item.kind !== "importable") {
-        // importJson rows aren't tracked individually; treat as queued.
+    if (item.target.kind !== "importable") {
+        // Bulk headers aren't tracked individually; their real child rows are.
         return { kind: "queued" };
     }
-    const progressPath = queueItemProgressPath(item);
-    if (progressPath === null) return { kind: "queued" };
-    const key = queueRowKey(item.type, item.identity, progressPath);
-    const row = (useLastFinished ? lastFinishedTaskRows : taskProgressRows).get(key);
+    const progressKey = queueRowKey(
+        item.target.type,
+        item.target.identity,
+        item.path
+    );
+    const rows = useLastFinished ? lastFinishedTaskRows : taskProgressRows;
+    // Import sessions still key reducer rows by importable/path. Export and read
+    // sessions use the operation queue's stable key so opposite-direction rows
+    // cannot mirror one another's progress.
+    const row = rows.get(item.key) ?? rows.get(progressKey);
     if (row === undefined) return { kind: "queued" };
     if (row.status === "imported") return { kind: "done" };
     if (row.status === "skipped") return { kind: "skipped" };
@@ -386,8 +387,12 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     if (row.status === "queued") return { kind: "queued" };
     const current = progress.active;
-    if (current === null || current.key !== key) {
-        const parked = parkedTaskFor(progress, key);
+    if (
+        current === null ||
+        (current.key !== item.key && current.key !== progressKey)
+    ) {
+        const parked =
+            parkedTaskFor(progress, item.key) ?? parkedTaskFor(progress, progressKey);
         if (parked !== undefined) {
             const snap = runStateFromActive(parked);
             return {
@@ -455,7 +460,7 @@ function runStateFromActive(active: {
     phaseUnits: PhaseUnits;
     scanCompleted: boolean;
     hydrationRequired: boolean;
-}): Extract<QueueItemRunState, { kind: "current" }> {
+}): Extract<QueueRowRunState, { kind: "current" }> {
     let phase: QueuePhase;
     if (active.phase === "applying") {
         phase = "applying";
@@ -478,15 +483,18 @@ function runStateFromActive(active: {
  * True iff this queue item corresponds to the importable currently being
  * processed by the in-flight task session.
  */
-export function isCurrentQueueItem(item: QueueItem): boolean {
+export function isCurrentQueueRow(item: QueueRow): boolean {
     if (taskProgress === null) return false;
     const current = taskProgress.active;
     if (current === null) return false;
-    if (item.kind === "importable") {
-        const progressPath = queueItemProgressPath(item);
-        if (progressPath === null) return false;
-        return current.key === queueRowKey(item.type, item.identity, progressPath);
+    if (item.target.kind === "importable") {
+        const progressKey = queueRowKey(
+            item.target.type,
+            item.target.identity,
+            item.path
+        );
+        return current.key === item.key || current.key === progressKey;
     }
     if (activeTaskPath === null) return false;
-    return canonicalPath(item.sourcePath) === canonicalPath(activeTaskPath);
+    return canonicalPath(item.path) === canonicalPath(activeTaskPath);
 }

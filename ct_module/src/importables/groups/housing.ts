@@ -11,6 +11,7 @@ import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait"
 import type TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
+import { itemLore } from "../../utils/itemLore";
 
 const CHANGE_TAG_SLOT = "Change Tag";
 const CHANGE_COLOR_SLOT = "Change Color";
@@ -37,7 +38,7 @@ function stripTooltipDebugSuffix(name: string): string {
 // ("Current Tag: [GUEST]", "Current Color: Gray", "Tag Shows in Chat:
 // Disabled"); a value on the following line is tolerated too.
 function readLabeledLoreValue(slot: ItemSlot, label: string): string | null {
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     for (let i = 0; i < lore.length; i++) {
         const line = removedFormatting(lore[i]).trim();
         if (line.indexOf(label) !== 0) continue;
@@ -212,7 +213,7 @@ function groupPermissionsLocked(ctx: TaskContext): boolean {
     if (slot === null) return false;
     // The lore is word-wrapped, so "cannot be modified" is split across two
     // lines ("...cannot be" / "modified!"); join before matching.
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     const joined: string[] = [];
     for (let i = 0; i < lore.length; i++) joined.push(removedFormatting(lore[i]));
     return joined.join(" ").indexOf("cannot be modified") >= 0;

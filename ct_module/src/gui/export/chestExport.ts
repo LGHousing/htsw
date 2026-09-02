@@ -4,7 +4,6 @@ import {
     exportCapturedChest,
     type CapturedChest,
 } from "../../importables/menus/exportChest";
-import { runHousingSyncTask } from "../../housingSync/taskRunner";
 import { parentDirOf } from "../../project/paths";
 import { TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
@@ -30,10 +29,17 @@ function runChestExport(
     name: string,
     importJsonPath: string
 ): void {
+    // Explicit phase-1 queue deviation: QueueTarget can identify only a live
+    // importable or bulk scope; it cannot carry the captured open-container
+    // snapshot this export must write. Re-reading MENU/name later would target
+    // a Housing menu, not this chest. Keep the snapshot write immediate until
+    // the queue model gains a persisted captured-chest target/executor.
     const rootDir = parentDirOf(importJsonPath);
     const newExportTargetImportJson = getNewExportTarget() ?? undefined;
-    runHousingSyncTask("export", (ctx) =>
-        exportCapturedChest(ctx, captured, {
+    void exportCapturedChest(
+        { displayMessage: (message) => ChatLib.chat(message) },
+        captured,
+        {
             ...projectExportDestinationFromParsedImportJson(
                 { rootDir, importJsonPath },
                 getParseAt(importJsonPath)?.parsed
@@ -41,10 +47,9 @@ function runChestExport(
             name,
             newExportTargetImportJson,
             showProgressMessages: false,
-        })
+        }
     )
         .then((result) => {
-            if (result === undefined) return;
             markParseStale(importJsonPath);
             showToast(
                 `Exported chest '${name}' (${result.populatedSlots} slots, ${result.newItemsWritten} new items) → ${shortPath(importJsonPath)}`,

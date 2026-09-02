@@ -1,15 +1,9 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import {
-    getHousingUuid,
-    isCurrentHouseTrusted,
-    isImportCompletionSoundEnabled,
-    setHousingUuid,
-} from "../../state";
+import { isCurrentHouseTrusted, isImportCompletionSoundEnabled } from "../../state";
 import {
     createTaskRows,
     createTaskProgress,
-    clearLastFinishedProgress,
     finishTaskProgress,
     getTaskProgress,
     setActiveTaskPath,
@@ -17,17 +11,13 @@ import {
     startTaskProgress,
 } from "./taskProgress";
 import {
-    addSessionQueueItem,
-    addToQueue,
-    beginQueueSession,
-    endQueueSession,
-    getQueue,
-    isImportQueueItem,
-    makeImportableQueueItem,
-    queueItemKey,
-    removeFromQueueKey,
-    type ImportQueueItem,
+    insertQueueRowsBefore,
+    insertQueueRowsAfter,
+    makeImportableQueueRow,
+    setQueueRowStatus,
+    type QueueRow,
 } from "./queue";
+import type { QueueSessionResult } from "./queueRunner";
 import { parseImportJsonCurrent } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
@@ -38,8 +28,7 @@ import {
 import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
 import { importableIdentity, importableKey } from "../../../importables/identity";
 import { HOUSE_READERS } from "../../../importables/export/readers";
-import { getCurrentHousingUuid } from "../../../importCache/housingId";
-import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
+import { isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
@@ -54,13 +43,7 @@ import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
 import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
-import { isTaskRunning } from "../../../tasks/runningState";
-import {
-    gmcOnImportStart,
-    playImportSuccessSound,
-    waitForCreativeMode,
-} from "../../../housingSync/sideEffects";
-import { runHousingSyncTask } from "../../../housingSync/taskRunner";
+import { playImportSuccessSound } from "../../../housingSync/sideEffects";
 import {
     activatePreview,
     applyComplete,
@@ -87,25 +70,8 @@ import { autoTrackRefresh } from "../../autoTrack";
 import { openAnswerableConflictPrompt } from "../../popovers/conflictPrompt";
 import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
-import { previewSelect } from "../selection";
-import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
-
-function errorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === "string") return error;
-    if (error !== null && typeof error === "object") {
-        if ("message" in error && typeof error.message === "string") {
-            return error.message;
-        }
-        try {
-            const serialized: unknown = JSON.stringify(error);
-            if (typeof serialized === "string") return serialized;
-        } catch (_e) {}
-        return "Unknown error";
-    }
-    return String(error);
-}
+import { previewSelect } from "../selection";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -225,6 +191,7 @@ function editAffectsHeadLine(fieldsChanged: readonly string[]): boolean {
 
 type SessionEventHandler = SyncEventHandler & {
     counts(): { imported: number; skipped: number; failed: number };
+    rows(): readonly { key: string; status: string }[];
 };
 
 function createSyncEventHandler(args: {
@@ -415,6 +382,7 @@ function createSyncEventHandler(args: {
             }
             return { imported, skipped, failed };
         },
+        rows: () => state.progress.rows,
     };
 }
 
@@ -445,82 +413,66 @@ function importablesByKey(parsed: ImportablesParseResult): Map<string, Importabl
 type ConflictReviewRequest = {
     batch: ImportBatch;
     conflicts: readonly ImportConflict[];
-    housingUuid: string;
     retainedKeys: readonly string[];
 };
 
 function conflictedImportables(request: ConflictReviewRequest): Importable[] {
     const byKey = importablesByKey(request.batch.parsed);
-
     const resolved: Importable[] = [];
     const seen = new Set<string>();
     for (const conflict of request.conflicts) {
-        const key = `${conflict.type}:${conflict.identity}`;
+        const key = importableKey(conflict.type, conflict.identity);
         if (seen.has(key)) continue;
         seen.add(key);
-        const imp = byKey.get(key);
-        if (imp !== undefined) resolved.push(imp);
+        const importable = byKey.get(key);
+        if (importable !== undefined) resolved.push(importable);
     }
     return resolved;
 }
 
-function startConflictReview(request: ConflictReviewRequest): void {
+function prepareConflictReview(
+    request: ConflictReviewRequest,
+    importRows: readonly QueueRow[]
+): NonNullable<QueueSessionResult["completionHooks"]>[number] {
     const importables = conflictedImportables(request);
-    if (importables.length === 0) return;
-    const retainedKeys = new Set(request.retainedKeys);
+    const retained = new Set(request.retainedKeys);
     const remaining = importables.filter(
         (importable) =>
-            !retainedKeys.has(
+            !retained.has(
                 importableKey(importable.type, importableIdentity(importable))
-            )
+            ) && HOUSE_READERS[importable.type] !== null
     );
-    const firstSourcePath = importableSourcePath(importables[0]);
+    const firstSourcePath =
+        importables.length > 0 ? importableSourcePath(importables[0]) : undefined;
     const openReview = (message: string): void => {
         if (firstSourcePath !== undefined) {
             previewSelect(firstSourcePath, request.batch.sourcePath);
         }
         ChatLib.chat(message);
     };
-    if (remaining.length === 0) {
-        openReview(
-            "&7[htsw] Kept the changed lists from this import — the View tab shows what changed in Housing."
-        );
-        return;
-    }
-
-    const specsByType = new Map<Importable["type"], DeepReadSpec & { names: string[] }>();
-    for (const imp of remaining) {
-        const read = HOUSE_READERS[imp.type];
-        if (read === null) continue;
-        let spec = specsByType.get(imp.type);
-        if (spec === undefined) {
-            spec = {
-                type: imp.type,
-                label: (CONFLICT_TYPE_LABEL[imp.type] ?? imp.type).toLowerCase(),
-                read,
-                names: [],
-            };
-            specsByType.set(imp.type, spec);
-        }
-        spec.names.push(importableIdentity(imp));
-    }
-    const specs = Array.from(specsByType.values());
-    if (specs.length === 0) {
-        ChatLib.chat(
-            "&e[htsw] Couldn't retain a complete Housing snapshot for the changed lists."
-        );
-        return;
-    }
-    startDeepRead(specs, {
-        housingUuid: request.housingUuid,
-        importJsonPath: request.batch.sourcePath,
-        parsed: request.batch.parsed,
-        summaryLabel: "changed importable",
-        onSuccess: () =>
+    const readRows = insertQueueRowsBefore(
+        importRows[0].key,
+        remaining.map((importable) =>
+            makeImportableQueueRow({
+                op: "read",
+                house: importRows[0].house,
+                path: request.batch.sourcePath,
+                type: importable.type,
+                identity: importableIdentity(importable),
+                label: importable.type === "EVENT" ? importable.event : importable.name,
+                origin: "dependency",
+            })
+        )
+    );
+    return {
+        keys: readRows.map((row) => row.key),
+        callback: () =>
             openReview(
-                "&7[htsw] Kept the available changes and read the remaining lists — the View tab shows what changed in Housing."
+                readRows.length === 0
+                    ? "&7[htsw] Kept the changed lists from this import — the View tab shows what changed in Housing."
+                    : "&7[htsw] Kept the available changes and read the remaining lists — the View tab shows what changed in Housing."
             ),
-    });
+    };
 }
 
 /**
@@ -533,10 +485,7 @@ function startConflictReview(request: ConflictReviewRequest): void {
  * Returns null when nothing in the queue could be resolved — the caller
  * uses that to short-circuit with a friendly chat message.
  */
-async function buildBatches(
-    explicit?: readonly ImportQueueItem[]
-): Promise<ImportBatch[] | null> {
-    const queue = explicit ?? getQueue().filter(isImportQueueItem);
+async function buildBatches(queue: readonly QueueRow[]): Promise<ImportBatch[] | null> {
     if (queue.length === 0) return null;
     type Group = {
         parsed: ImportablesParseResult;
@@ -547,12 +496,12 @@ async function buildBatches(
     };
     const groups = new Map<string, Group>();
     for (const item of queue) {
-        let group = groups.get(item.sourcePath);
+        let group = groups.get(item.path);
         if (group === undefined) {
-            const cached = await parseImportJsonCurrent(item.sourcePath);
+            const cached = await parseImportJsonCurrent(item.path);
             if (cached.parsed === null) {
                 ChatLib.chat(
-                    `&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`
+                    `&c[htsw] Skipping ${item.path}: ${cached.error ?? "parse failed"}`
                 );
                 continue;
             }
@@ -562,12 +511,12 @@ async function buildBatches(
                 seen: new Set<string>(),
                 addAll: false,
             };
-            groups.set(item.sourcePath, group);
+            groups.set(item.path, group);
         }
-        if (item.kind === "importJson") {
+        if (item.target.kind === "bulk") {
             group.addAll = true;
         } else {
-            const k = `${item.type}:${item.identity}`;
+            const k = `${item.target.type}:${item.target.identity}`;
             if (!group.seen.has(k)) {
                 group.seen.add(k);
                 group.orderedIds.push(k);
@@ -618,353 +567,223 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
     );
 }
 
-let importPreparationRunning = false;
-
-export function isImportPreparationRunning(): boolean {
-    return importPreparationRunning;
-}
-
-export function startImport(
-    explicit?: readonly ImportQueueItem[],
-    options: ImportStartOptions = {}
-): boolean {
-    return startImportIfIdle(explicit, options);
-}
-
-type ImportStartOptions = {
-    silentBusy?: boolean;
-    onStarted?: () => void;
-    onComplete?: (successful: boolean) => void;
-    onAbortedForErrors?: () => void;
-};
-
-export function startImportIfIdle(
-    explicit?: readonly ImportQueueItem[],
-    options: ImportStartOptions = {}
-): boolean {
-    if (TaskManager.isBusy() || importPreparationRunning) {
-        if (options.silentBusy !== true) {
-            ChatLib.chat(
-                "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
-            );
-        }
-        return false;
-    }
-    importPreparationRunning = true;
-    void prepareAndStartImport(explicit, options).then(
-        () => {
-            importPreparationRunning = false;
-        },
-        (error: unknown) => {
-            importPreparationRunning = false;
-            ChatLib.chat(
-                `&c[htsw] Import failed: Couldn't prepare import: ${String(error)}`
-            );
-        }
+export async function runImportQueueSession(
+    ctx: TaskContext,
+    rows: readonly QueueRow[],
+    housingUuid: string
+): Promise<QueueSessionResult> {
+    const importRows = rows.filter(
+        (
+            row
+        ): row is QueueRow & {
+            target: Extract<QueueRow["target"], { kind: "importable" }>;
+        } => row.op === "import" && row.target.kind === "importable"
     );
-    return true;
-}
+    if (importRows.length === 0) return { completedKeys: [], failed: [] };
 
-async function prepareAndStartImport(
-    explicit: readonly ImportQueueItem[] | undefined,
-    options: ImportStartOptions
-): Promise<void> {
-    if (TaskManager.isBusy()) {
-        if (options.silentBusy !== true) {
-            ChatLib.chat(
-                "&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first."
-            );
-        }
-        return;
-    }
-    const batches = await buildBatches(explicit);
-    if (TaskManager.isBusy()) {
-        if (options.silentBusy !== true) {
-            ChatLib.chat(
-                "&c[htsw] Import failed: Another task started while the project was being checked."
-            );
-        }
-        return;
-    }
+    const batches = await buildBatches(importRows);
     if (batches === null) {
-        const msg =
-            explicit !== undefined
-                ? "Nothing matched the selection — try checking importables in the Projects tab first."
-                : "Queue is empty — right-click something and Add to queue.";
-        ChatLib.chat(`&c[htsw] Import failed: ${msg}`);
-        return;
+        const message = "Nothing matched the queued import selection.";
+        ChatLib.chat(`&c[htsw] Import failed: ${message}`);
+        return {
+            completedKeys: [],
+            failed: [{ key: importRows[0].key, error: message }],
+        };
     }
-    const failed = batches
+    const failedParses = batches
         .map((batch) => ({ batch, errors: relevantParseErrors(batch) }))
-        .filter((f) => f.errors.length > 0);
-    if (failed.length > 0) {
+        .filter((entry) => entry.errors.length > 0);
+    if (failedParses.length > 0) {
         ChatLib.chat(
-            `&c[htsw] Import aborted — ${failed.length} file${failed.length === 1 ? "" : "s"} ` +
-                `with errors. Fix the diagnostics below and retry.`
+            `&c[htsw] Import aborted — ${failedParses.length} file${failedParses.length === 1 ? "" : "s"} ` +
+                "with errors. Fix the diagnostics below and retry."
         );
-        for (const { batch, errors } of failed) {
+        for (const { batch, errors } of failedParses) {
             ChatLib.chat(`&7  in ${batch.sourcePath}:`);
             printDiagnostics(batch.parsed.gcx.sourceMap, errors);
         }
-        options.onAbortedForErrors?.();
-        return;
+        return {
+            completedKeys: [],
+            failed: [{ key: importRows[0].key, error: "Import file has errors" }],
+            parseError: true,
+        };
     }
+
+    const batch = batches[0];
     const trustMode = isCurrentHouseTrusted();
-    const selectedCount = batches.reduce(
-        (total, batch) => total + batch.importables.length,
-        0
+    const expansion = expandImportDependencies(
+        batch.parsed,
+        batch.importables,
+        housingUuid,
+        { trustMode, importJsonPath: batch.sourcePath }
     );
-    const dependencyAdditions: Array<{
-        importable: Importable;
-        sourcePath: string;
-    }> = [];
-    let addedItemCount = 0;
-    const knownHousingUuid = getHousingUuid();
-    if (knownHousingUuid !== null) {
-        for (const batch of batches) {
-            const expansion = expandImportDependencies(
-                batch.parsed,
-                batch.importables,
-                knownHousingUuid,
-                {
-                    trustMode,
-                    importJsonPath: batch.sourcePath,
-                }
+    batch.importables = expansion.importables;
+    const queueRowsByProgressKey = new Map<string, QueueRow>();
+    for (const row of importRows) {
+        queueRowsByProgressKey.set(
+            queueRowKey(row.target.type, row.target.identity, row.path),
+            row
+        );
+    }
+    if (expansion.addedImportables.length > 0) {
+        const dependencyRows = expansion.addedImportables.map((importable) =>
+            makeImportableQueueRow({
+                op: "import",
+                house: importRows[0].house,
+                path: batch.sourcePath,
+                type: importable.type,
+                identity: importableIdentity(importable),
+                label: importable.type === "EVENT" ? importable.event : importable.name,
+                origin: "dependency",
+            })
+        );
+        const inserted = insertQueueRowsAfter(
+            importRows[importRows.length - 1].key,
+            dependencyRows
+        );
+        for (const row of inserted) {
+            setQueueRowStatus(row.key, "running");
+            if (row.target.kind !== "importable") continue;
+            queueRowsByProgressKey.set(
+                queueRowKey(row.target.type, row.target.identity, row.path),
+                row
             );
-            batch.importables = expansion.importables;
-            addedItemCount += expansion.addedItems.length;
-            for (const importable of expansion.addedImportables) {
-                dependencyAdditions.push({
-                    importable,
-                    sourcePath: batch.sourcePath,
-                });
-            }
         }
     }
 
-    // Concatenate every batch's ordered importables for the run-row
-    // tracking; the per-row UI only needs the flat list, not the
-    // per-batch grouping.
-    let rows = createTaskRows(batches[0].importables, batches[0].sourcePath);
-    for (let i = 1; i < batches.length; i++) {
-        rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
+    const allErrors = relevantParseErrors(batch);
+    if (allErrors.length > 0) {
+        ChatLib.chat(
+            "&c[htsw] Import aborted — required dependencies contain errors. Fix the diagnostics below and retry."
+        );
+        printDiagnostics(batch.parsed.gcx.sourceMap, allErrors);
+        return {
+            completedKeys: [],
+            failed: [{ key: importRows[0].key, error: "Import dependency has errors" }],
+            parseError: true,
+        };
     }
+
     startTaskProgress({
         progress: createTaskProgress({
             totalUnits: 1,
-            rows,
+            rows: createTaskRows(batch.importables, batch.sourcePath),
         }),
         verb: "import",
-        path: batches[0].sourcePath,
+        path: batch.sourcePath,
     });
-
-    // A command import (`explicit`) gets reflected into the visible queue so
-    // it shows up + animates like a GUI run; otherwise we'd run an invisible
-    // import with an empty queue. Add the explicit items first, THEN snapshot
-    // the session keys to exactly those — pre-existing queue items get
-    // session-marked by beginQueueSession but must NOT be cleaned up here,
-    // since the explicit batch only ran what `explicit` named.
-    if (explicit !== undefined) {
-        for (const item of explicit) addToQueue(item);
-    }
-    for (const addition of dependencyAdditions) {
-        addToQueue(makeImportableQueueItem(addition.importable, addition.sourcePath));
-    }
-    beginQueueSession();
-
-    // Snapshot this session's queue keys so the post-run cleanup can drop
-    // exactly these items even if a newer import supersedes the session.
-    const sessionItemKeys: string[] = (
-        explicit ?? getQueue().filter(isImportQueueItem)
-    ).map(queueItemKey);
-    if (explicit !== undefined) {
-        for (const addition of dependencyAdditions) {
-            const key = queueItemKey(
-                makeImportableQueueItem(addition.importable, addition.sourcePath)
-            );
-            if (sessionItemKeys.indexOf(key) < 0) sessionItemKeys.push(key);
-        }
-    }
-    if (dependencyAdditions.length > 0) {
-        const totalCount = batches.reduce(
-            (total, batch) => total + batch.importables.length,
-            0
-        );
-        const dependencyLabel =
-            addedItemCount === dependencyAdditions.length
-                ? `${addedItemCount} required click-action item${addedItemCount === 1 ? "" : "s"}`
-                : `${dependencyAdditions.length} required dependenc${dependencyAdditions.length === 1 ? "y" : "ies"}`;
-        showToast(
-            `Queued ${dependencyLabel} · ${selectedCount} selected → ${totalCount} total`,
-            0xff5c9ded,
-            8000
-        );
-    }
-    let reviewRequest: ConflictReviewRequest | null = null;
-    options.onStarted?.();
-
-    runHousingSyncTask("import", async (ctx) => {
-        gmcOnImportStart();
-        let importSucceeded = false;
-        let cancelled = false;
-        const sessionCancelled = (): boolean => cancelled;
-        let totalImported = 0;
-        let totalSkipped = 0;
-        let totalFailed = 0;
-        let unexpectedError: unknown = null;
-        try {
-            const cached = getHousingUuid();
-            let housingUuid = cached;
-            if (housingUuid === null) {
-                housingUuid = await getCurrentHousingUuid(ctx);
-                setHousingUuid(housingUuid);
-            }
-            if (!(await waitForCreativeMode(ctx))) {
-                ChatLib.chat(
-                    "&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot."
-                );
-            }
-            for (const batch of batches) {
-                const events = createSyncEventHandler({
-                    parsed: batch.parsed,
-                    sessionSourcePath: batch.sourcePath,
-                    trustMode,
-                    housingUuid,
+    const events = createSyncEventHandler({
+        parsed: batch.parsed,
+        sessionSourcePath: batch.sourcePath,
+        trustMode,
+        housingUuid,
+    });
+    let cancelled = false;
+    const reviewState: { request: ConflictReviewRequest | null } = { request: null };
+    try {
+        await runImportSession(ctx, {
+            importables: batch.importables,
+            trustMode,
+            housingUuid,
+            sourcePath: batch.sourcePath,
+            parsed: batch.parsed,
+            events,
+            conflictHandling: {
+                kind: "prompt",
+                decide: async (conflicts) => {
+                    const decision = await confirmImportConflicts(ctx, conflicts);
+                    if (decision === "review") {
+                        reviewState.request = {
+                            batch,
+                            conflicts,
+                            retainedKeys: [],
+                        };
+                    }
+                    if (decision !== "proceed") {
+                        cancelled = true;
+                        ChatLib.chat("[htsw] Import cancelled by user · 0 imported");
+                    }
+                    return decision;
+                },
+                onReviewPrepared: (retainedKeys) => {
+                    if (reviewState.request !== null) {
+                        reviewState.request.retainedKeys = retainedKeys;
+                    }
+                },
+            },
+            onImportableAutoAdded: (importable) => {
+                const dependency = makeImportableQueueRow({
+                    op: "import",
+                    house: importRows[0].house,
+                    path: batch.sourcePath,
+                    type: importable.type,
+                    identity: importableIdentity(importable),
+                    label:
+                        importable.type === "EVENT" ? importable.event : importable.name,
+                    origin: "dependency",
                 });
-                await runImportSession(ctx, {
-                    importables: batch.importables,
-                    trustMode,
-                    housingUuid,
-                    sourcePath: batch.sourcePath,
-                    parsed: batch.parsed,
-                    events,
-                    conflictHandling: {
-                        kind: "prompt",
-                        decide: async (conflicts) => {
-                            const decision = await confirmImportConflicts(ctx, conflicts);
-                            if (decision === "review") {
-                                reviewRequest = {
-                                    batch,
-                                    conflicts: conflicts.slice(),
-                                    housingUuid,
-                                    retainedKeys: [],
-                                };
-                            }
-                            if (decision !== "proceed") {
-                                cancelled = true;
-                                ChatLib.chat(
-                                    `[htsw] Import cancelled by user · ${totalImported} imported`
-                                );
-                            }
-                            return decision;
-                        },
-                        onReviewPrepared: (retainedKeys) => {
-                            if (reviewRequest !== null) {
-                                reviewRequest.retainedKeys = retainedKeys;
-                            }
-                        },
-                    },
-                    onImportableAutoAdded: (importable) => {
-                        const queueItem = makeImportableQueueItem(
-                            importable,
-                            batch.sourcePath
+                const inserted = insertQueueRowsAfter(
+                    importRows[importRows.length - 1].key,
+                    [dependency]
+                );
+                for (const row of inserted) {
+                    setQueueRowStatus(row.key, "running");
+                    if (row.target.kind === "importable") {
+                        queueRowsByProgressKey.set(
+                            queueRowKey(row.target.type, row.target.identity, row.path),
+                            row
                         );
-                        addSessionQueueItem(queueItem);
-                        // Track it with this session's keys so the
-                        // post-success cleanup removes it like any other
-                        // session row.
-                        const key = queueItemKey(queueItem);
-                        if (sessionItemKeys.indexOf(key) < 0) {
-                            sessionItemKeys.push(key);
-                        }
-                    },
-                });
-                const c = events.counts();
-                totalImported += c.imported;
-                totalSkipped += c.skipped;
-                totalFailed += c.failed;
-                if (sessionCancelled()) break;
-                // A failed importable can leave the Housing menu mid-edit, so
-                // the menu state for the next batch is unknown. Abort the run
-                // rather than drive unrelated files from an uncertain menu.
-                if (c.failed > 0) break;
-            }
-            importSucceeded = totalFailed === 0 && !cancelled;
-        } catch (err) {
-            if (isTaskCancelled(err)) {
-                cancelled = true;
-                ChatLib.chat(
-                    `&e[htsw] Import cancelled by user &7· &f${totalImported}&e imported`
-                );
-            } else {
-                unexpectedError = err;
-            }
-        } finally {
-            options.onComplete?.(importSucceeded);
-            autoTrackRefresh();
-            const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
-            let failureMessage: string | null = null;
-            if (cancelled) {
-                showToast(
-                    `Import cancelled after ${elapsed} · ${totalImported} imported`,
-                    0xffe5bc4b
-                );
-            } else if (importSucceeded) {
-                // Gate our own cue here: the overlay soundPlay interceptor only
-                // suppresses sounds while task progress is live, and this fires
-                // at completion — so the toggle must be checked directly.
-                if (isImportCompletionSoundEnabled()) playImportSuccessSound();
-                showToast(
-                    `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
-                    0xff5cb85c
-                );
-                ChatLib.chat(
-                    `&a[htsw] Import complete in ${elapsed} &7· &f${totalImported}&a imported, &f${totalSkipped}&7 skipped`
-                );
-            } else {
-                // Surface the failure reason (read before clearing progress
-                // below) — a failure halts the whole run, so the *why* must be
-                // visible, not just "N failed".
-                const failure = getTaskProgress()?.failure;
-                failureMessage =
-                    failure?.message ??
-                    (unexpectedError === null
-                        ? `${totalFailed} failed`
-                        : errorMessage(unexpectedError));
-                showToast(`Import failed: ${failureMessage}`, 0xffe85c5c, 8000);
-            }
-            finishTaskProgress(failureMessage);
-            // End the queue session after the 1.5s done-state window. A fully
-            // successful queue run removes the session items (pending adds
-            // stay); a cancel/failure keeps them for retry and just drops the
-            // session marking so they merge back into the normal queue.
-            const removeSessionItems = importSucceeded;
-            setTimeout(() => {
-                // Drop this session's successful items even if a newer import
-                // has since started — otherwise a superseded cleanup leaves
-                // them (and their "done" bar) stuck in the queue forever.
-                if (removeSessionItems) {
-                    for (let i = 0; i < sessionItemKeys.length; i++) {
-                        removeFromQueueKey(sessionItemKeys[i]);
                     }
                 }
-                // A conflict review may start a separate read task for snapshots
-                // the importer could not reconstruct, so don't strand the session.
-                if (!isTaskRunning() || reviewRequest !== null) {
-                    endQueueSession(false);
-                    if (removeSessionItems || cancelled) clearLastFinishedProgress();
-                }
-            }, 1500);
-        }
-        if (unexpectedError !== null) {
-            if (unexpectedError instanceof Error) throw unexpectedError;
-            throw new Error(errorMessage(unexpectedError));
-        }
-    })
-        .then(() => {
-            if (reviewRequest !== null) startConflictReview(reviewRequest);
-        })
-        .catch((err: unknown) => {
-            ChatLib.chat(`&c[htsw] Import failed: ${String(err)}`);
+            },
         });
+    } catch (error) {
+        if (!isTaskCancelled(error)) throw error;
+        cancelled = true;
+        const counts = events.counts();
+        ChatLib.chat(
+            `&e[htsw] Import cancelled by user &7· &f${counts.imported}&e imported`
+        );
+    }
+
+    const counts = events.counts();
+    const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
+    if (!cancelled && counts.failed === 0) {
+        if (isImportCompletionSoundEnabled()) playImportSuccessSound();
+        showToast(
+            `Import complete in ${elapsed} · ${counts.imported} imported, ${counts.skipped} skipped`,
+            0xff5cb85c
+        );
+        ChatLib.chat(
+            `&a[htsw] Import complete in ${elapsed} &7· &f${counts.imported}&a imported, &f${counts.skipped}&7 skipped`
+        );
+    }
+
+    const completedKeys: string[] = [];
+    const failed: Array<{ key: string; error: string }> = [];
+    for (const progressRow of events.rows()) {
+        const queueRow = queueRowsByProgressKey.get(progressRow.key);
+        if (queueRow === undefined) continue;
+        if (progressRow.status === "imported" || progressRow.status === "skipped") {
+            completedKeys.push(queueRow.key);
+        } else if (progressRow.status === "failed") {
+            const message = getTaskProgress()?.failure?.message ?? "Import failed";
+            failed.push({ key: queueRow.key, error: message });
+        }
+    }
+    finishTaskProgress(failed[0]?.error ?? null);
+    autoTrackRefresh();
+    if (reviewState.request !== null) {
+        const sessionKeys = Array.from(
+            new Set(Array.from(queueRowsByProgressKey.values()).map((row) => row.key))
+        );
+        const completionHook = prepareConflictReview(reviewState.request, importRows);
+        return {
+            completedKeys: [],
+            failed: [],
+            cancelledKeys: sessionKeys,
+            completionHooks: [completionHook],
+        };
+    }
+    return { completedKeys, failed, cancelled };
 }

@@ -121,6 +121,28 @@ export function isTaskTotalLocked(progress: TaskProgress): boolean {
     return progress.active.phase === "applying" || progress.active.phase === "done";
 }
 
+/**
+ * True when the footer may show a session-wide total ETA.
+ *
+ * Imports withhold it until the active importable is applying: the apply
+ * cost is only a guess until each importable has been read and hydrated.
+ * Reads, exports, and diffs never apply, so their per-importable costs are
+ * final once the session locks its totals (the export sink locks at the
+ * first item, or when a staged scan finishes) and hydration plans are exact
+ * after each read pass.
+ */
+export function isTaskTotalEtaReady(
+    progress: TaskProgress,
+    appliesChanges: boolean
+): boolean {
+    // The active-null shortcut in isTaskTotalLocked is not enough here: before
+    // the first item starts the session total is still the placeholder.
+    if (!appliesChanges) return progress.totalsLocked;
+    if (!isTaskTotalLocked(progress)) return false;
+    const phase = progress.active?.phase;
+    return phase === "applying" || phase === "done";
+}
+
 export function countTaskRowsByStatus(progress: TaskProgress): {
     completed: number;
     failed: number;

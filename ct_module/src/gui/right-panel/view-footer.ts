@@ -26,25 +26,31 @@ import {
     getActiveTaskLabel,
     getFinishedTaskFailure,
     getFinishedTaskSummary,
-    getSessionVerb,
     getTaskProgress,
-    isCurrentQueueItem,
+    isCurrentQueueRow,
 } from "./import-tab/taskProgress";
 import { isLiveTabActive } from "./selection";
 import {
     clearQueue,
+    getQueue,
     getQueueLength,
-    queueDisplayGroups,
-    type QueueItem,
+    getQueueRow,
+    groupQueueRowsByHouse,
+    queueWorkRowCount,
+    type QueueHouseGroup,
+    type QueueRow,
 } from "./import-tab/queue";
 import { isTaskRunning } from "../../tasks/runningState";
+import { getHousingUuid } from "../state";
+import { houseDisplayName } from "../../importCache/aliases";
 import {
-    isQueueImportJsonExpanded,
-    queueImportJsonChildren,
-    queueImportJsonChildRow,
+    isQueueBulkExpanded,
+    isQueueRowCompact,
+    queueBulkChildren,
     queueRow,
+    queueRowCanExpand,
 } from "./import-tab/queueRows";
-import { importControl } from "./import-tab/importButtons";
+import { queueControl } from "./import-tab/importButtons";
 import {
     failedTaskFooterPanel,
     finishedTaskFooterPanel,
@@ -58,7 +64,7 @@ const QUEUE_SCROLL_ID = "right-import-queue-scroll";
 const QUEUE_SCROLL_H = 120;
 const QUEUE_ROW_GAP = 2;
 const QUEUE_OVERSCAN_PX = 60;
-const PENDING_DIVIDER_H = 12;
+const HOUSE_DIVIDER_H = 12;
 
 function isQueueExpanded(): boolean {
     return queueExpanded && getQueueLength() > 0;
@@ -73,7 +79,7 @@ function queueSummary(): Element {
         Text({
             text: () => {
                 const active = getActiveTaskLabel();
-                const n = getQueueLength();
+                const n = queueWorkRowCount(getQueue());
                 if (active !== null) return `Queue (${n}) · Now: ${active}`;
                 return n === 0 ? "Queue (empty)" : `Queue (${n})`;
             },
@@ -99,9 +105,7 @@ function queueSummary(): Element {
                 background: () =>
                     queueFollowRequested ? COLOR_ROW_SELECTED : COLOR_BUTTON,
                 hoverBackground: () =>
-                    queueFollowRequested
-                        ? COLOR_ROW_SELECTED_HOVER
-                        : COLOR_BUTTON_HOVER,
+                    queueFollowRequested ? COLOR_ROW_SELECTED_HOVER : COLOR_BUTTON_HOVER,
             },
             onClick: (_rect, info) => {
                 if (info.button !== 0) return;
@@ -192,12 +196,34 @@ function advanceQueueFollow(): boolean {
     return true;
 }
 
+/** Top-level rows of a house group: bulk children render under their parent. */
+function topLevelRows(rows: readonly QueueRow[]): QueueRow[] {
+    const out: QueueRow[] = [];
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.parentKey !== null && getQueueRow(row.parentKey) !== null) continue;
+        out.push(row);
+    }
+    return out;
+}
+
+function expandedChildren(row: QueueRow): QueueRow[] {
+    return isQueueBulkExpanded(row) ? queueBulkChildren(row) : [];
+}
+
+function houseDividerLabel(group: QueueHouseGroup): string {
+    const alias = group.house === null ? "another house" : houseDisplayName(group.house);
+    return `In ${alias} (${queueWorkRowCount(group.rows)})`;
+}
+
 function virtualQueueRows(): Child[] {
     const state = getScrollState(QUEUE_SCROLL_ID);
     const viewportH = state.viewportRect.h > 0 ? state.viewportRect.h : QUEUE_SCROLL_H;
-    const groups = queueDisplayGroups();
+    const groups = groupQueueRowsByHouse(getQueue(), getHousingUuid());
+    const compact = isQueueRowCompact(state.viewportRect.w);
+    const gutter = groups.some((group) => group.rows.some(queueRowCanExpand));
     const followOn = advanceQueueFollow();
-    const activeIdentity = followOn ? getActiveTaskLabel() : null;
+    const following = followOn && getActiveTaskLabel() !== null;
     let activeTop = -1;
     let measuredRows = 0;
     let measuredH = 0;
@@ -212,47 +238,33 @@ function virtualQueueRows(): Child[] {
     const nextRowTop = (): number =>
         measuredRows > 0 ? measuredH + QUEUE_ROW_GAP : measuredH;
 
-    const isActiveImportableRow = (item: QueueItem): boolean =>
-        item.kind === "importable" &&
-        item.identity === activeIdentity &&
-        isCurrentQueueItem(item);
-
-    const measureItems = (items: readonly QueueItem[]): void => {
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            const expanded =
-                item.operation === "import" &&
-                item.kind === "importJson" &&
-                isQueueImportJsonExpanded(item);
+    const measureGroup = (group: QueueHouseGroup): void => {
+        if (!group.current) measureRows(1, HOUSE_DIVIDER_H);
+        const rows = topLevelRows(group.rows);
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const children = expandedChildren(row);
             const rowTop = nextRowTop();
-            if (activeTop < 0 && activeIdentity !== null && !expanded) {
-                const current =
-                    item.kind === "importable"
-                        ? isActiveImportableRow(item)
-                        : isCurrentQueueItem(item);
-                if (current) activeTop = rowTop;
+            if (activeTop < 0 && following && children.length === 0) {
+                if (isCurrentQueueRow(row)) activeTop = rowTop;
             }
             measureRows(1, SIZE_ROW_H);
-            if (!expanded) continue;
-            const children = queueImportJsonChildren(item);
             if (children.length === 0) continue;
-            if (activeTop < 0 && activeIdentity !== null) {
+            if (activeTop < 0 && following) {
                 const blockTop = nextRowTop();
                 for (let j = 0; j < children.length; j++) {
-                    if (isActiveImportableRow(children[j])) {
+                    if (isCurrentQueueRow(children[j])) {
                         activeTop = blockTop + j * (SIZE_ROW_H + QUEUE_ROW_GAP);
                         break;
                     }
                 }
-                if (activeTop < 0 && isCurrentQueueItem(item)) activeTop = rowTop;
+                if (activeTop < 0 && isCurrentQueueRow(row)) activeTop = rowTop;
             }
             measureRows(children.length, SIZE_ROW_H);
         }
     };
 
-    measureItems(groups.active);
-    if (groups.showDivider) measureRows(1, PENDING_DIVIDER_H);
-    measureItems(groups.pending);
+    for (let g = 0; g < groups.length; g++) measureGroup(groups[g]);
     if (measuredRows === 0) return [];
 
     // Apply follow before the window below reads the offset, so the same
@@ -282,32 +294,29 @@ function virtualQueueRows(): Child[] {
     let firstVisibleY = -1;
     let lastVisibleBottom = -1;
 
-    const append = (height: number, item: QueueItem | null): void => {
+    const append = (height: number, build: () => Element): void => {
         if (rowCount > 0) contentH += QUEUE_ROW_GAP;
         const top = contentH;
         const bottom = top + height;
         if (bottom >= minY && top <= maxY) {
             if (firstVisibleY < 0) firstVisibleY = top;
-            if (item === null) visible.push(pendingDividerRow());
-            else visible.push(queueRow(item));
+            visible.push(build());
             lastVisibleBottom = bottom;
         }
         contentH = bottom;
         rowCount++;
     };
 
-    const appendItems = (items: readonly QueueItem[]): void => {
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            append(SIZE_ROW_H, item);
-            if (
-                item.operation !== "import" ||
-                item.kind !== "importJson" ||
-                !isQueueImportJsonExpanded(item)
-            ) {
-                continue;
-            }
-            const children = queueImportJsonChildren(item);
+    const appendGroup = (group: QueueHouseGroup): void => {
+        if (!group.current) {
+            append(HOUSE_DIVIDER_H, () => houseDividerRow(houseDividerLabel(group)));
+        }
+        const dimmed = !group.current;
+        const rows = topLevelRows(group.rows);
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            append(SIZE_ROW_H, () => queueRow(row, { dimmed, compact, gutter }));
+            const children = expandedChildren(row);
             if (children.length === 0) continue;
             if (rowCount > 0) contentH += QUEUE_ROW_GAP;
             const blockTop = contentH;
@@ -321,15 +330,14 @@ function virtualQueueRows(): Child[] {
             );
             const last = Math.max(
                 first,
-                Math.min(
-                    children.length,
-                    Math.floor((maxY - blockTop) / stride) + 1
-                )
+                Math.min(children.length, Math.floor((maxY - blockTop) / stride) + 1)
             );
             for (let j = first; j < last; j++) {
                 const top = blockTop + j * stride;
                 if (firstVisibleY < 0) firstVisibleY = top;
-                visible.push(queueImportJsonChildRow(children[j]));
+                visible.push(
+                    queueRow(children[j], { child: true, dimmed, compact, gutter })
+                );
                 lastVisibleBottom = top + SIZE_ROW_H;
             }
             contentH =
@@ -340,9 +348,7 @@ function virtualQueueRows(): Child[] {
         }
     };
 
-    appendItems(groups.active);
-    if (groups.showDivider) append(PENDING_DIVIDER_H, null);
-    appendItems(groups.pending);
+    for (let g = 0; g < groups.length; g++) appendGroup(groups[g]);
     if (visible.length === 0) return [queueSpacer(contentH)];
 
     const rows: Child[] = [];
@@ -363,21 +369,48 @@ function queueSpacer(height: number): Element {
     });
 }
 
-function pendingDividerRow(): Element {
+/** Rows for a house other than the current one wait until you visit it. */
+function houseDividerRow(label: string): Element {
     return Container({
         style: {
             direction: "row",
             align: "center",
             padding: { side: "left", value: 6 },
-            height: { kind: "px", value: PENDING_DIVIDER_H },
+            height: { kind: "px", value: HOUSE_DIVIDER_H },
             background: COLOR_ROW,
         },
         children: [
             Text({
-                text: "Pending — added during import, runs next",
+                text: label,
                 color: COLOR_TEXT_FAINT,
+                tooltip: "Runs when you are in that house",
+                tooltipColor: COLOR_TEXT_FAINT,
+                truncate: true,
+                style: { width: { kind: "grow" } },
             }),
         ],
+    });
+}
+
+/** "N more in <alias>" for rows that wait on another house. */
+function otherHouseNote(): Element | null {
+    const groups = groupQueueRowsByHouse(getQueue(), getHousingUuid());
+    const parts: string[] = [];
+    for (let g = 0; g < groups.length; g++) {
+        const group = groups[g];
+        if (group.current || group.house === null) continue;
+        parts.push(
+            `${queueWorkRowCount(group.rows)} more in ${houseDisplayName(group.house)}`
+        );
+    }
+    if (parts.length === 0) return null;
+    return Text({
+        text: parts.join(" · "),
+        color: COLOR_TEXT_FAINT,
+        tooltip: "Those rows run when you are in that house",
+        tooltipColor: COLOR_TEXT_FAINT,
+        truncate: true,
+        style: { width: { kind: "grow" } },
     });
 }
 
@@ -392,20 +425,17 @@ export function viewFooter(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" } },
         children: () => {
-            const taskListIsInView =
-                getTaskProgress() !== null && getSessionVerb() !== "import";
-            const children: Child[] = [divider()];
-            if (!taskListIsInView) {
-                children.push(queueSummary());
-                if (isQueueExpanded()) children.push(queueScroll());
-            }
+            const children: Child[] = [divider(), queueSummary()];
+            if (isQueueExpanded()) children.push(queueScroll());
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             else if (isLiveTabActive() && getFinishedTaskFailure() !== null) {
                 children.push(failedTaskFooterPanel());
             } else if (isLiveTabActive() && getFinishedTaskSummary() !== null) {
                 children.push(finishedTaskFooterPanel());
             }
-            children.push(importControl());
+            const note = otherHouseNote();
+            if (note !== null) children.push(note);
+            children.push(queueControl());
             return children;
         },
     });

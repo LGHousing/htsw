@@ -32,12 +32,18 @@ vi.mock("../src/gui/parsing/parses", () => ({
     forEachCachedParse: (
         visit: (entry: {
             canonicalPath: string;
-            parsed: { value: (typeof fixture.importable)[] };
+            parsed: {
+                value: (typeof fixture.importable)[];
+                importJson: { houseUuid: string };
+            };
         }) => void
     ) => {
         visit({
             canonicalPath: SOURCE_PATH,
-            parsed: { value: [fixture.importable] },
+            parsed: {
+                value: [fixture.importable],
+                importJson: { houseUuid: "house-uuid" },
+            },
         });
     },
     getParseCacheRevision: () => 0,
@@ -60,14 +66,14 @@ vi.mock("../src/importables/import/dependencyExpansion", () => ({
 }));
 
 vi.mock("../src/gui/toast", () => ({ showToast: () => {} }));
-vi.mock("../src/gui/watchMode", () => ({ watchModeRefresh: () => {} }));
+vi.mock("../src/gui/autoRun", () => ({ autoRunRefresh: () => {} }));
 
 import { autoTrackRefresh } from "../src/gui/autoTrack";
 import {
     addToQueue,
     clearQueue,
     getQueue,
-    makeImportableQueueItem,
+    makeImportableQueueRow,
 } from "../src/gui/right-panel/import-tab/queue";
 
 beforeEach(() => {
@@ -90,7 +96,15 @@ describe("Auto-Track queue reconciliation", () => {
 
     test("leaves a manually queued current function alone", () => {
         fixture.status = "current";
-        addToQueue(makeImportableQueueItem(fixture.importable, SOURCE_PATH));
+        addToQueue(
+            makeImportableQueueRow({
+                op: "import",
+                house: "house-uuid",
+                path: SOURCE_PATH,
+                type: "FUNCTION",
+                identity: fixture.importable.name,
+            })
+        );
 
         autoTrackRefresh("reparse");
 

@@ -17,13 +17,7 @@ import {
 import type { ReadFn } from "./reader";
 
 export type HouseExportTypeName =
-    | "FUNCTION"
-    | "EVENT"
-    | "MENU"
-    | "REGION"
-    | "COMMAND"
-    | "TEAM"
-    | "GROUP";
+    "FUNCTION" | "EVENT" | "MENU" | "REGION" | "COMMAND" | "TEAM" | "GROUP";
 
 // One importable type HTSW reads out of a live Housing menu by name. This is the
 // single registry the /export slash command AND the GUI house browser both
@@ -137,17 +131,12 @@ function matchesToken(spec: HouseExportType, token: string): boolean {
     return token === spec.token || token === `${spec.token}s`;
 }
 
-export function houseExportTypeByToken(token: string | undefined): HouseExportType | null {
+export function houseExportTypeByToken(
+    token: string | undefined
+): HouseExportType | null {
     if (token === undefined) return null;
     for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
         if (matchesToken(HOUSE_EXPORT_TYPES[i], token)) return HOUSE_EXPORT_TYPES[i];
     }
     return null;
-}
-
-export function houseExportTypeOf(type: HouseExportTypeName): HouseExportType {
-    for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
-        if (HOUSE_EXPORT_TYPES[i].type === type) return HOUSE_EXPORT_TYPES[i];
-    }
-    throw new Error(`No house export type registered for ${type}`);
 }

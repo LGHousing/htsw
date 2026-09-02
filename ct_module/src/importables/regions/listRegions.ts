@@ -8,6 +8,7 @@ import {
 } from "../../housingSync/menus/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 import { regionListOpened } from "../waiters";
+import { itemLore } from "../../utils/itemLore";
 
 const REGION_LIST_CONFIG: PaginatedListConfig = {
     label: "region",
@@ -85,7 +86,7 @@ export async function listAllRegions(ctx: TaskContext): Promise<RegionListEntry[
                 out.push({
                     index: i,
                     name: extracted,
-                    bounds: parseRegionBounds(item.getLore()),
+                    bounds: parseRegionBounds(itemLore(item)),
                 });
             }
             return out;
