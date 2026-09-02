@@ -24,15 +24,15 @@
         "package": "npm run build && npm run package:built"
     },
     "dependencies": {
+        "@south-paw/typeface-minecraft": "^1.0.0",
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
         "jsonc-parser": "^3.3.1",
-        "@south-paw/typeface-minecraft": "^1.0.0",
         "minecraft-icon-items": "^0.4.5"
     },
     "devDependencies": {
         "@types/node": "^26.1.2",
-        "@types/vscode": "^1.134",
+        "@types/vscode": "1.97.0",
         "@vscode/vsce": "^3.6",
         "knip": "^6.31.0",
         "typescript": "^7.0",

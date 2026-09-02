@@ -19,6 +19,10 @@ updates:
     ignore:
       - dependency-name: "@babel/*"
         update-types: ["version-update:semver-major"]
+      # vsce refuses to package when @types/vscode is newer than
+      # engines.vscode (^1.97.2 in editors/code). The types version must move
+      # together with the engine floor, by hand.
+      - dependency-name: "@types/vscode"
     groups:
       dev-dependencies:
         applies-to: version-updates
