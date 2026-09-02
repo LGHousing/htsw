@@ -10,6 +10,7 @@ import type TaskContext from "../../tasks/context";
 import { ItemSlot, menuStateDescription } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { openTeamsList } from "./listTeams";
+import { itemLore } from "../../utils/itemLore";
 
 const CHANGE_TAG_SLOT = "Change Tag";
 const CHANGE_COLOR_SLOT = "Change Color";
@@ -33,7 +34,7 @@ function stripTooltipDebugSuffix(name: string): string {
 // ("Current Tag: [x]", "Current Color: White", "Current Value: Disabled");
 // some toggles put the value on the following line instead.
 function readLabeledLoreValue(slot: ItemSlot, label: string): string | null {
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     for (let i = 0; i < lore.length; i++) {
         const line = removedFormatting(lore[i]).trim();
         if (line.indexOf(label) !== 0) continue;

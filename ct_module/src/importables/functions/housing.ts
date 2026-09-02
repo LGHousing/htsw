@@ -35,6 +35,7 @@ import type {
     FunctionSettingChange,
     ObservedFunctionSettings,
 } from "./settings";
+import { itemLore } from "../../utils/itemLore";
 
 export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
@@ -128,7 +129,7 @@ function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
         return undefined;
     }
 
-    for (const line of autoExecSlot.getItem().getLore()) {
+    for (const line of itemLore(autoExecSlot.getItem())) {
         const kv = parseLoreKeyValueLine(line);
         if (!kv || kv.label !== "Current") continue;
         const ticks = parseInt(removedFormatting(kv.value).trim(), 10);
@@ -142,7 +143,19 @@ function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
 }
 
 function readFunctionDescription(ctx: TaskContext): string | undefined {
-    const lore = ctx.getItemSlot("Edit Description").getItem().getLore();
+    return parseFunctionDescriptionLore(
+        itemLore(ctx.getItemSlot("Edit Description").getItem())
+    );
+}
+
+/**
+ * Parse the "Edit Description" item lore: the description sits between the
+ * first blank line and the next blank line or the "Click to rename!"
+ * sentinel. Exported for unit tests.
+ */
+export function parseFunctionDescriptionLore(
+    lore: readonly string[]
+): string | undefined {
     let separator = -1;
     for (let i = 0; i < lore.length; i++) {
         if (removedFormatting(lore[i]).trim() === "") {
@@ -160,7 +173,7 @@ function readFunctionDescription(ctx: TaskContext): string | undefined {
         const line = stripWrapInheritedColor(
             normalizeLoreValueFormatting(lore[i])
         ).trim();
-        if (line === "Click to rename!") break;
+        if (removedFormatting(lore[i]).trim() === "Click to rename!") break;
         lines.push(line);
     }
     return lines.length === 0 ? undefined : lines.join(" ");

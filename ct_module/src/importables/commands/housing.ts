@@ -11,6 +11,7 @@ import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { getSessionCommandNamesLower, noteCommandCreated } from "./listCommands";
 import { desiredCommandSettings, type CommandSettings } from "./settings";
+import { itemLore } from "../../utils/itemLore";
 
 export async function ensureCommandExists(
     ctx: TaskContext,
@@ -44,7 +45,7 @@ export async function openCommandSettings(ctx: TaskContext, name: string): Promi
 }
 
 function readCurrentLine(slot: ItemSlot): string | null {
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     for (let i = 0; i < lore.length; i++) {
         const line = removedFormatting(lore[i]).trim();
         const match = line.match(/^Current:\s*(.+)$/);

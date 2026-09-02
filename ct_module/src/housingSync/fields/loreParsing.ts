@@ -12,6 +12,7 @@ import type { Location } from "htsw/types";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 import type { UiFieldKind } from "./loreSpecs";
+import { itemLore } from "../../utils/itemLore";
 
 export function parseLoreKeyValueLine(
     line: string
@@ -216,7 +217,7 @@ export function parseLoreFields<TProp extends string>(
     loreFields: Partial<Record<string, { prop: TProp; kind: UiFieldKind }>>
 ): Partial<Record<TProp, string | boolean | Location>> {
     const parsed: Partial<Record<TProp, string | boolean | Location>> = {};
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
 
     for (let i = 0; i < lore.length; i++) {
         const keyValue = parseLoreKeyValueLine(lore[i]);
@@ -252,10 +253,7 @@ export function parseLoreFields<TProp extends string>(
 }
 
 export function readListItemNote(slot: ItemSlot): string | undefined {
-    const lore = slot
-        .getItem()
-        .getLore()
-        .map((line) => removedFormatting(line).trim());
+    const lore = itemLore(slot.getItem()).map((line) => removedFormatting(line).trim());
 
     const instructionPatterns = [
         "Right Click to remove!",
@@ -304,7 +302,7 @@ export function readListItemNote(slot: ItemSlot): string | undefined {
 }
 
 export function shallowActionListHasActions(slot: ItemSlot): boolean {
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     let inActions = false;
     for (let i = 0; i < lore.length; i++) {
         const line = removedFormatting(lore[i]).trim();
@@ -346,7 +344,7 @@ export function parseHolderField(
         return { type: rawHolder };
     }
     if (rawHolder === "Team") {
-        for (const line of slot.getItem().getLore()) {
+        for (const line of itemLore(slot.getItem())) {
             const kv = parseLoreKeyValueLine(line);
             if (kv !== null && kv.label === "Team") {
                 return { type: "Team", team: removedFormatting(kv.value).trim() };

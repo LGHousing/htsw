@@ -13,6 +13,7 @@ import TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 import { teleportSucceeded } from "../waiters";
+import { itemLore } from "../../utils/itemLore";
 
 const NPC_LIST_CONFIG: PaginatedListConfig = {
     label: "npc",
@@ -110,7 +111,7 @@ function readVisibleNpcEntries(ctx: TaskContext): NpcListEntry[] {
 function readNpcEntryFromSlot(slot: ItemSlot, index: number): NpcListEntry | null {
     const item = slot.getItem();
     const name = extractNpcName(item.getName());
-    const pos = parseNpcPos(item.getLore());
+    const pos = parseNpcPos(itemLore(item));
     if (name === null || pos === null) return null;
     return { index, name, pos };
 }
