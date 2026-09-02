@@ -27,7 +27,7 @@ function formatHouseLockError(error: unknown): string {
     return typeof stack === "string" && stack ? stack : String(error);
 }
 
-type HouseLockEntry = {
+export type HouseLockEntry = {
     type: Importable["type"];
     identity: string;
     hash: string;
@@ -52,7 +52,7 @@ function parentDir(path: string): string {
     return norm.substring(0, slash);
 }
 
-function houseLockPathForImportJson(importJsonPath: string): string {
+export function houseLockPathForImportJson(importJsonPath: string): string {
     return `${parentDir(importJsonPath)}/${HOUSE_LOCK_FILE}`;
 }
 
