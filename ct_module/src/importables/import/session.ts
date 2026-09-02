@@ -19,6 +19,7 @@ import {
     type ImportableCacheLoadRequest,
 } from "../../importCache";
 import {
+    removeHouseLockImportables,
     upsertHouseLockImportablesOffThread,
     type HouseLockImportableUpdate,
 } from "../../importCache/houseLock";
@@ -763,6 +764,9 @@ async function runImportSessionInner(
                         row.importable.type,
                         row.identity
                     );
+                    removeHouseLockImportables(selection.sourcePath, [
+                        { type: row.importable.type, identity: row.identity },
+                    ]);
                 }
                 const diag = toImportDiagnostic(error, "import", row.importable.type);
                 events?.emit({
@@ -832,6 +836,12 @@ async function runImportSessionInner(
                     active.row.importable.type,
                     active.row.identity
                 );
+                removeHouseLockImportables(selection.sourcePath, [
+                    {
+                        type: active.row.importable.type,
+                        identity: active.row.identity,
+                    },
+                ]);
                 invalidatedCurrent = invalidated;
                 invalidationFailed = !invalidated;
             }

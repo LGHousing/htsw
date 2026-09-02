@@ -240,6 +240,24 @@ export function houseLockAcceptsUpdate(
     );
 }
 
+export function removeHouseLockImportables(
+    importJsonPath: string,
+    keys: ReadonlyArray<{ type: Importable["type"]; identity: string }>
+): boolean {
+    if (keys.length === 0) return true;
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return true;
+    let removed = false;
+    for (const key of keys) {
+        const storedKey = importableKey(key.type, key.identity);
+        if (Object.prototype.hasOwnProperty.call(lock.importables, storedKey)) {
+            delete lock.importables[storedKey];
+            removed = true;
+        }
+    }
+    return !removed || writeHouseLock(houseLockPathForImportJson(importJsonPath), lock);
+}
+
 function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     try {
         ensureParentDirs(lockPath);

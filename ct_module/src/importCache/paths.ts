@@ -1,6 +1,7 @@
 import type { Importable } from "htsw/types";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 import { importableIdentity } from "../importables/identity";
+import { cyrb53 } from "../utils/helpers";
 
 export const IMPORT_CACHE_ROOT = "./htsw/.cache";
 
@@ -49,9 +50,13 @@ function slug(identity: string): string {
     return encodeFilesystemComponent(identity, { escapeDots: true });
 }
 
+function cacheFilename(identity: string): string {
+    return `${slug(identity)}~${cyrb53(identity).toString(16)}.knowledge.json`;
+}
+
 /** Full path to the cache JSON file for a (housing, importable) pair. */
 export function cachePathFor(housingUuid: string, importable: Importable): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${cacheDirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
+    return `${cacheTypeDir(housingUuid, importable.type)}/${cacheFilename(importableIdentity(importable))}`;
 }
 
 /** The per-(housing, type) directory holding that type's `.knowledge.json`
@@ -73,5 +78,14 @@ export function cachePathForId(
     type: Importable["type"],
     identity: string
 ): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${cacheDirFor(type)}/${slug(identity)}.knowledge.json`;
+    return `${cacheTypeDir(housingUuid, type)}/${cacheFilename(identity)}`;
+}
+
+/** Old cache path, retained only to migrate pre-case-safe cache entries. */
+export function legacyCachePathForId(
+    housingUuid: string,
+    type: Importable["type"],
+    identity: string
+): string {
+    return `${cacheTypeDir(housingUuid, type)}/${slug(identity)}.knowledge.json`;
 }

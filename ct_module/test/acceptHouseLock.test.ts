@@ -24,8 +24,8 @@ describe("acceptHouseLockAsCurrent", () => {
         const importJsonPath = "./projects/demo/import.json";
         const accepted = fn("Accepted", "current");
         const changed = fn("Changed", "working tree");
-        const undeclaredPath = `./htsw/.cache/${uuid}/function/HouseOnly.knowledge.json`;
-        const changedPath = `./htsw/.cache/${uuid}/function/Changed.knowledge.json`;
+        const undeclaredPath = `./htsw/.cache/${uuid}/function/HouseOnly~178222745900fb.knowledge.json`;
+        const changedPath = `./htsw/.cache/${uuid}/function/Changed~17247bdd2a5e14.knowledge.json`;
         const lockPath = "./projects/demo/house.lock.json";
         const lockText = JSON.stringify({
             schemaVersion: 1,
@@ -68,7 +68,7 @@ describe("acceptHouseLockAsCurrent", () => {
         expect(result.skipped).toBe(0);
         expect(result.failed).toBe(0);
         expect(
-            JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted.knowledge.json`]!)
+            JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted~1530ac92e449d6.knowledge.json`]!)
         ).toMatchObject({
             writer: "project-lock",
             importable: accepted,
@@ -245,11 +245,11 @@ describe("acceptHouseLockAsCurrent", () => {
             failed: 0,
         });
         expect(
-            files[`./htsw/.cache/${uuid}/item/Missing_0020Blob.knowledge.json`]
+            files[`./htsw/.cache/${uuid}/item/Missing_0020Blob~118fd761abf0af.knowledge.json`]
         ).toBeDefined();
         expect(
             JSON.parse(
-                files[`./htsw/.cache/${uuid}/item/Cached_0020Blob.knowledge.json`]!
+                files[`./htsw/.cache/${uuid}/item/Cached_0020Blob~11e73fa307cc3b.knowledge.json`]!
             )
         ).toMatchObject({ importable: cached, writer: "project-lock" });
     });
@@ -258,7 +258,7 @@ describe("acceptHouseLockAsCurrent", () => {
         const uuid = "missing-entry-house";
         const importJsonPath = "./projects/missing/import.json";
         const importable = fn("Not Locked", "current");
-        const cachePath = `./htsw/.cache/${uuid}/function/Not_0020Locked.knowledge.json`;
+        const cachePath = `./htsw/.cache/${uuid}/function/Not_0020Locked~bda22203eefe4.knowledge.json`;
         const files: Partial<Record<string, string>> = {
             "./projects/missing/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
@@ -294,7 +294,7 @@ describe("acceptHouseLockAsCurrent", () => {
         const uuid = "verified-entry-house";
         const importJsonPath = "./projects/verified/import.json";
         const importable = fn("Verified", "working tree");
-        const cachePath = `./htsw/.cache/${uuid}/function/Verified.knowledge.json`;
+        const cachePath = `./htsw/.cache/${uuid}/function/Verified~19f7a5e43934a3.knowledge.json`;
         const verified = JSON.stringify({
             schemaVersion: 2,
             version: 1,
@@ -347,7 +347,7 @@ describe("acceptHouseLockAsCurrent", () => {
                                         return {
                                             getFileName: () => ({
                                                 toString: () =>
-                                                    "Verified.knowledge.json",
+                                                    "Verified~19f7a5e43934a3.knowledge.json",
                                             }),
                                         };
                                     },

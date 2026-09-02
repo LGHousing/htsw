@@ -7,10 +7,10 @@ import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
 import {
     IMPORT_CACHE_ROOT,
-    cachePathFor,
     cachePathForId,
     cacheScanMarkerPath,
     cacheTypeDir,
+    legacyCachePathForId,
 } from "./paths";
 import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
@@ -62,6 +62,44 @@ type ReadCacheMemo = {
 };
 
 const readCache = new Map<string, ReadCacheMemo>();
+// Legacy migration is deliberately paid once per identity per process. This
+// resolver is only called on the main thread, including before worker plans.
+const legacyMigrationChecked = new Set<string>();
+
+function resolvedCachePath(
+    housingUuid: string,
+    type: Importable["type"],
+    identity: string
+): string {
+    const path = cachePathForId(housingUuid, type, identity);
+    if (legacyMigrationChecked.has(path)) return path;
+    legacyMigrationChecked.add(path);
+    const legacyPath = legacyCachePathForId(housingUuid, type, identity);
+    try {
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        if (Files.exists(Paths.get(path)) || !Files.exists(Paths.get(legacyPath))) {
+            return path;
+        }
+        const raw = FileLib.read(legacyPath);
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed === null || typeof parsed !== "object") return path;
+        const stored = parsed as { name?: unknown; importable?: unknown };
+        let storedIdentity = typeof stored.name === "string" ? stored.name : null;
+        if (
+            storedIdentity === null &&
+            stored.importable !== null &&
+            typeof stored.importable === "object"
+        ) {
+            storedIdentity = importableIdentity(stored.importable as Importable);
+        }
+        if (storedIdentity !== identity) return path;
+        Files.move(Paths.get(legacyPath), Paths.get(path));
+    } catch (_e) {
+        // Unreadable or invalid legacy data is not safe to claim for this case.
+    }
+    return path;
+}
 
 // Bumped on every content write/delete. Lets lazy consumers revalidate
 // content-derived state without re-reading the filesystem. Presence-only
@@ -196,11 +234,18 @@ function prepareImportableCacheWrite(
     housingUuid: string,
     importable: Importable,
     writer: CacheWriter,
-    itemDependencies?: ItemDependencySnapshot
+    itemDependencies?: ItemDependencySnapshot,
+    resolvedPath?: string
 ): PreparedImportableCacheWrite {
     const entry = buildImportableCacheEntry(importable, writer, itemDependencies);
     return {
-        path: cachePathFor(housingUuid, importable),
+        path:
+            resolvedPath ??
+            resolvedCachePath(
+                housingUuid,
+                importable.type,
+                importableIdentity(importable)
+            ),
         entry,
         serialized: JSON.stringify(entry, null, 4),
     };
@@ -295,6 +340,13 @@ function writeImportableCacheOffThread(
     writer: CacheWriter,
     options: ImportableCacheWriteOptions
 ): Promise<boolean> {
+    // Resolve and migrate before starting the worker: java.nio migration must
+    // stay on the Minecraft main thread even though hashing/serialization do not.
+    const path = resolvedCachePath(
+        housingUuid,
+        importable.type,
+        importableIdentity(importable)
+    );
     return new Promise((resolve) => {
         const Thread = javaType("java.lang.Thread");
         const Runnable = javaType("java.lang.Runnable");
@@ -309,7 +361,8 @@ function writeImportableCacheOffThread(
                                 housingUuid,
                                 importable,
                                 writer,
-                                options.itemDependencies
+                                options.itemDependencies,
+                                path
                             );
                         } catch (prepareError) {
                             error = prepareError;
@@ -426,7 +479,7 @@ export function writePresence(
     ) {
         return true;
     }
-    const path = cachePathForId(housingUuid, type, name);
+    const path = resolvedCachePath(housingUuid, type, name);
     const record: PresenceRecord = {
         schemaVersion: CACHE_SCHEMA_VERSION,
         writtenAt: new Date().toISOString(),
@@ -505,7 +558,7 @@ export function readImportableCache(
     type: Importable["type"],
     identity: string
 ): ImportableCacheEntry | null {
-    const path = cachePathForId(housingUuid, type, identity);
+    const path = resolvedCachePath(housingUuid, type, identity);
     const now = Date.now();
     const memo = readCache.get(path);
     if (memo !== undefined) {
@@ -553,7 +606,7 @@ export function peekImportableCache(
     type: Importable["type"],
     identity: string
 ): ImportableCachePeek {
-    const memo = readCache.get(cachePathForId(housingUuid, type, identity));
+    const memo = readCache.get(resolvedCachePath(housingUuid, type, identity));
     return memo === undefined
         ? { loaded: false }
         : { loaded: true, entry: memo.entry, house: memo.house };
@@ -591,7 +644,11 @@ export function loadImportableCachesOffThread(
     }
     const startedAt = Date.now();
     const plans = requests.map((request) => {
-        const path = cachePathForId(request.housingUuid, request.type, request.identity);
+        const path = resolvedCachePath(
+            request.housingUuid,
+            request.type,
+            request.identity
+        );
         return {
             path,
             type: request.type,
@@ -708,7 +765,7 @@ export function deleteImportableCache(
     type: Importable["type"],
     identity: string
 ): boolean {
-    const path = cachePathForId(housingUuid, type, identity);
+    const path = resolvedCachePath(housingUuid, type, identity);
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");

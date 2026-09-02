@@ -39,7 +39,7 @@ describe("trusted dependency expansion", () => {
     it("does not add a matching referenced team when trust is enabled", () => {
         const uuid = "trusted-dependency-expansion";
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/team/Runners.knowledge.json`]: JSON.stringify(
+            [`./htsw/.cache/${uuid}/team/Runners~131026e586e37.knowledge.json`]: JSON.stringify(
                 cacheEntry(team)
             ),
         };

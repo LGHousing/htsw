@@ -3,6 +3,7 @@ import type { Action, ImportableFunction } from "htsw/types";
 
 import {
     readHouseLock,
+    removeHouseLockImportables,
     upsertHouseLockImportable,
     upsertHouseLockImportables,
     type HouseLock,
@@ -45,6 +46,57 @@ afterEach(() => {
 });
 
 describe("house lock scan hashes", () => {
+    it("removes only requested entries and preserves lock metadata", () => {
+        const write = vi.fn();
+        const files: Partial<Record<string, string>> = {
+            [lockPath]: JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: "bound-house",
+                scanHashVersion: 7,
+                contentHashVersion: 8,
+                importables: {
+                    "FUNCTION:Remove": {
+                        type: "FUNCTION",
+                        identity: "Remove",
+                        hash: "remove-hash",
+                    },
+                    "FUNCTION:Keep": {
+                        type: "FUNCTION",
+                        identity: "Keep",
+                        hash: "keep-hash",
+                    },
+                },
+            }),
+        };
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: (path: string, content: string) => {
+                write(path, content);
+                files[path] = content;
+            },
+        });
+
+        expect(
+            removeHouseLockImportables(importJsonPath, [
+                { type: "FUNCTION", identity: "Remove" },
+            ])
+        ).toBe(true);
+        const written = JSON.parse(files[lockPath]!) as HouseLock;
+        expect(written.houseUuid).toBe("bound-house");
+        expect(written.scanHashVersion).toBe(7);
+        expect(written.contentHashVersion).toBe(8);
+        expect(Object.keys(written.importables)).toEqual(["FUNCTION:Keep"]);
+        expect(write).toHaveBeenCalledTimes(1);
+
+        expect(
+            removeHouseLockImportables(importJsonPath, [
+                { type: "FUNCTION", identity: "Absent" },
+            ])
+        ).toBe(true);
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
     it("parses an old-format lock without new fields", () => {
         const files = {
             [lockPath]: JSON.stringify({

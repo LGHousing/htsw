@@ -98,7 +98,7 @@ describe("exported item dependency trust", () => {
             itemDependencies,
         };
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Use_0020Key~a73e962693730.knowledge.json`]:
                 JSON.stringify(entry),
         };
         vi.stubGlobal("FileLib", {
@@ -131,7 +131,7 @@ describe("exported item dependency trust", () => {
             itemDependencies,
         };
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Use_0020Key~a73e962693730.knowledge.json`]:
                 JSON.stringify(entry),
         };
         vi.stubGlobal("FileLib", {
@@ -302,7 +302,7 @@ describe("buildTrustPlan house lock gating", () => {
             itemDependencies: { version: 1, dependencies: [] },
         };
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/item/Wand.knowledge.json`]: JSON.stringify(entry),
+            [`./htsw/.cache/${uuid}/item/Wand~1d97f35bb6ebbf.knowledge.json`]: JSON.stringify(entry),
         };
         vi.stubGlobal("FileLib", {
             exists: (path: string) => files[path] !== undefined,
@@ -347,7 +347,7 @@ describe("buildTrustPlan house lock gating", () => {
         };
         const entry = cacheEntry(desired);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Use_0020Key.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Use_0020Key~a73e962693730.knowledge.json`]:
                 JSON.stringify(entry),
         };
         vi.stubGlobal("FileLib", {
@@ -380,7 +380,7 @@ describe("buildTrustPlan house lock gating", () => {
         const uuid = "dependency-cache-empty";
         const desired = fn([chat("same")]);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(
+            [`./htsw/.cache/${uuid}/function/Debug~42922385e697c.knowledge.json`]: JSON.stringify(
                 cacheEntry(desired)
             ),
         };
@@ -414,7 +414,7 @@ describe("buildTrustPlan house lock gating", () => {
         const desired = fn([chat("cached")]);
         const entry = cacheEntry(cached);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Debug~42922385e697c.knowledge.json`]:
                 JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
@@ -452,7 +452,7 @@ describe("buildTrustPlan house lock gating", () => {
         const cached = fn([chat("same")]);
         const entry = cacheEntry(cached);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]:
+            [`./htsw/.cache/${uuid}/function/Debug~42922385e697c.knowledge.json`]:
                 JSON.stringify(entry),
             "./projects/demo/house.lock.json": JSON.stringify({
                 schemaVersion: 1,
@@ -487,7 +487,7 @@ describe("buildTrustPlan house lock gating", () => {
         const importJsonPath = "./projects/demo/import.json";
         const cached = fn([chat("same")]);
         const files: Partial<Record<string, string>> = {
-            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(
+            [`./htsw/.cache/${uuid}/function/Debug~42922385e697c.knowledge.json`]: JSON.stringify(
                 cacheEntry(cached)
             ),
             "./projects/demo/house.lock.json": JSON.stringify({

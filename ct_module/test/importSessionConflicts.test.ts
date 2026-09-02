@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     hydrateImportable: vi.fn(async () => undefined),
     tryWriteImportableCache: vi.fn(async () => true),
     deleteImportableCache: vi.fn(() => true),
+    removeHouseLockImportables: vi.fn(() => true),
     upsertHouseLockImportablesOffThread: vi.fn(
         async (_path: string, _housingUuid: string, _updates: unknown[]) => true
     ),
@@ -52,6 +53,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
 }));
 
 vi.mock("../src/importCache/houseLock", () => ({
+    removeHouseLockImportables: mocks.removeHouseLockImportables,
     upsertHouseLockImportablesOffThread: mocks.upsertHouseLockImportablesOffThread,
 }));
 
@@ -579,6 +581,10 @@ describe("import conflict gate", () => {
             "test-house",
             "FUNCTION",
             "Unsafe"
+        );
+        expect(mocks.removeHouseLockImportables).toHaveBeenCalledWith(
+            "./project/import.json",
+            [{ type: "FUNCTION", identity: "Unsafe" }]
         );
         expect(messages).toContain(
             "&7[htsw] Cancellation could not save a verified state for the current importable."

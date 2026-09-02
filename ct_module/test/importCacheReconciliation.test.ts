@@ -57,8 +57,8 @@ describe("house scan cache reconciliation", () => {
         recordHouseScan("complete-house", "COMMAND", ["first", "second"]);
 
         expect(io.atomicWriteText.mock.calls.map(([path]) => path)).toEqual([
-            "./htsw/.cache/complete-house/command/first.knowledge.json",
-            "./htsw/.cache/complete-house/command/second.knowledge.json",
+            "./htsw/.cache/complete-house/command/first~1eff3d51872b57.knowledge.json",
+            "./htsw/.cache/complete-house/command/second~18580246d47863.knowledge.json",
             "./htsw/.cache/complete-house/command/.scan-complete",
         ]);
         expect(houseTypeScanned("complete-house", "COMMAND")).toBe(true);
