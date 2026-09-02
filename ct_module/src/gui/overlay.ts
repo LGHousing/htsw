@@ -75,7 +75,14 @@ import {
 } from "./lib/hoverCards";
 import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { detectHousingUuid } from "../importCache/housingId";
-import { getHousingPresence, resetHousingPresence } from "../importCache/housingPresence";
+import {
+    getImportCachePresenceRevision,
+    getImportCacheWriteRevision,
+} from "../importCache/cache";
+import {
+    getHousingPresence,
+    resetHousingPresence,
+} from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
@@ -116,6 +123,7 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { closeBoundProjectForHouse, openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
 import { processImportableCacheWarm } from "./cache-status/cacheWarm";
+import { pollLockBanners } from "./left-panel/projects/lockBanner";
 import { clearQueue } from "./right-panel/import-tab/queue";
 import { cancelActiveTask } from "../tasks/activeTask";
 
@@ -125,6 +133,8 @@ onParseCacheEntryChanged((entry) => {
 
 let enabled = true;
 let initialized = false;
+let lastWrittenGuiEnabled: boolean | null = null;
+let lastWrittenGuiVisible: boolean | null = null;
 
 const ZERO_RECT: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -150,6 +160,37 @@ function frameVisible(): boolean {
     if (!canShowHousingFrame(getHousingPresence(), isTaskRunning())) return false;
     if (getContainerBounds() !== null) return true;
     return isTaskRunning() && getImportCachedBounds() !== null;
+}
+
+export type HtswGuiState = {
+    enabled: boolean;
+    visible: boolean;
+};
+
+export function getHtswGuiState(): HtswGuiState {
+    return { enabled, visible: frameVisible() };
+}
+
+function syncHtswGuiProperties(state: HtswGuiState = getHtswGuiState()): void {
+    if (
+        lastWrittenGuiEnabled === state.enabled &&
+        lastWrittenGuiVisible === state.visible
+    ) {
+        return;
+    }
+    try {
+        const System = javaType("java.lang.System");
+        if (lastWrittenGuiEnabled !== state.enabled) {
+            System.setProperty("htsw.gui.enabled", state.enabled ? "true" : "false");
+            lastWrittenGuiEnabled = state.enabled;
+        }
+        if (lastWrittenGuiVisible !== state.visible) {
+            System.setProperty("htsw.gui.visible", state.visible ? "true" : "false");
+            lastWrittenGuiVisible = state.visible;
+        }
+    } catch (_error) {
+        // External state reporting must never interfere with overlay rendering.
+    }
 }
 
 function inventoryToolbarBounds(): Rect {
@@ -426,6 +467,7 @@ function isPlaceholderScreen(s: unknown): boolean {
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
+    syncHtswGuiProperties();
 
     // Drive the lib's wheel easing from the user's "Smooth scrolling" setting.
     setScrollEasingProvider(getSmoothScrolling);
@@ -707,12 +749,27 @@ export function initHtswGui(): void {
     // target moves, dirty marks — lands BEFORE the panel paints this same
     // frame (Panel's render trigger is Priority.LOW). Moving any of it after
     // the paint costs one frame of input latency.
+    // Any Knowledge cache write (a house scan, a deep read, an import, a
+    // lock sync) can change which rows exist, so treat the cache revisions as
+    // part of the retained layout's inputs. Writers used to be responsible
+    // for calling markGuiDirty() themselves and several of them forgot.
+    let lastCacheRevision = "";
+    const trackCacheRevision = (): void => {
+        const rev = `${getImportCacheWriteRevision()}:${getImportCachePresenceRevision()}`;
+        if (rev === lastCacheRevision) return;
+        lastCacheRevision = rev;
+        markGuiDirty();
+    };
     register("guiRender", (mouseX: number, mouseY: number) => {
+        const visible = frameVisible();
+        syncHtswGuiProperties({ enabled, visible });
+        trackCacheRevision();
         pollWheel();
+        pollLockBanners();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
-        if (frameVisible() && getShowChatPanel() && refreshChatLines()) markGuiDirty();
+        if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
         // Rebuild every frame while the thumb is dragged so scrolled content
         // tracks at the refresh rate.
         if (dragging) markGuiDirty();
@@ -847,15 +904,17 @@ export function initHtswGui(): void {
     // popovers + focus whenever the underlying inventory GUI is no longer open, so they don't
     // linger across opens/closes.
     register("tick", () => {
+        const visible = frameVisible();
+        syncHtswGuiProperties({ enabled, visible });
         tickAllFields();
         applyFocus(getFocusedInput());
-        setAutoRunDetectionLive(frameVisible());
-        noteOverlayVisibility(frameVisible());
+        setAutoRunDetectionLive(visible);
+        noteOverlayVisibility(visible);
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file; the parse itself runs off-thread. It stays
         // paused during tasks — except Auto-run, which needs save
         // detection live so a mid-run save can cancel the stale run.
-        if (frameVisible() && (!isTaskRunning() || isAutoRunQueueRunning())) {
+        if (visible && (!isTaskRunning() || isAutoRunQueueRunning())) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Projects tree, queue rows) so a cold parse never blocks render.
@@ -866,7 +925,7 @@ export function initHtswGui(): void {
         }
         // First-open consent comes before the walkthrough so two onboarding
         // popovers never compete for the same screen.
-        if (frameVisible() && !isTaskRunning()) {
+        if (visible && !isTaskRunning()) {
             if (!maybeOpenDiagnosticsConsent()) maybeAutoStartTour();
         }
         // If the import ended while our placeholder is still up (Hypixel
@@ -965,5 +1024,12 @@ function walkForInput(
 
 export function toggleHtswGui(): boolean {
     enabled = !enabled;
+    syncHtswGuiProperties();
+    return enabled;
+}
+
+export function setHtswGuiEnabled(nextEnabled: boolean): boolean {
+    enabled = nextEnabled;
+    syncHtswGuiProperties();
     return enabled;
 }

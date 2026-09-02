@@ -7,6 +7,8 @@ export interface ProjectFs {
     resolvePath(baseDir: string, ref: string): string;
     /** Identity key using this filesystem's path and case-sensitivity rules. */
     pathKey(path: string): string;
+    /** Canonical path with symlinks resolved. Absent when the filesystem cannot resolve them. */
+    realPath?(path: string): string;
     deleteFile?(path: string): void;
 }
 

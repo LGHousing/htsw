@@ -71,6 +71,7 @@ import type { Importable } from "htsw/types";
 import { importableLinkStatusContextKey } from "../../cache-status";
 import { getAliasRevision } from "../../../importCache/aliases";
 import { getAutoTrackRevision } from "../../state";
+import { getLockBannerRevision, lockBannerFor, lockBannerRow } from "./lockBanner";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -425,6 +426,26 @@ function emitImportContents(
     emitIncludeNode(out, r, includeTreeOf(r), baseLevels, isNarrowing());
 }
 
+// The "lock is ahead of cache" banner sits as the first child of a bound
+// project, expanded or not: a collapsed project with a stale cache still
+// needs the nudge. Presence is structural (it's a row), so the tree's status
+// fingerprint carries the lock-banner revision; the count itself is live.
+function emitLockBanner(
+    out: TreeRow[],
+    r: ResultImport,
+    baseLevels: LevelGuide[],
+    expanded: boolean
+): void {
+    if (lockBannerFor(r) === null) return;
+    out.push({
+        levels: baseLevels,
+        branch: expanded ? "tee" : "ell",
+        content: () => lockBannerRow(r),
+        height: 18,
+        key: `lock-banner:${r.fullPath}`,
+    });
+}
+
 function pendingImportablesRow(): Element {
     return Container({
         style: {
@@ -587,7 +608,13 @@ let cachedRowEnds: number[] = [];
 let cachedTreeHeight = 0;
 
 function treeStatusFingerprint(): string {
-    return importableLinkStatusContextKey() + "|" + String(getAutoTrackRevision());
+    return (
+        importableLinkStatusContextKey() +
+        "|" +
+        String(getAutoTrackRevision()) +
+        "|" +
+        String(getLockBannerRevision())
+    );
 }
 
 let lastBuildMs = 0;
@@ -738,8 +765,12 @@ function buildTreeRows(): TreeRow[] {
                     key: expKey,
                 });
 
-                if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
-                    emitImportContents(out, r, [isLastResult ? "empty" : "vertical"]);
+                if (r.type === "import") {
+                    const expanded = isImportExpanded(expKey, defaultExpanded);
+                    emitLockBanner(out, r, [isLastResult ? "empty" : "vertical"], expanded);
+                    if (expanded) {
+                        emitImportContents(out, r, [isLastResult ? "empty" : "vertical"]);
+                    }
                 }
             }
         } else {
@@ -766,11 +797,10 @@ function buildTreeRows(): TreeRow[] {
                         key: expKey,
                     });
 
-                    if (
-                        r.type === "import" &&
-                        isImportExpanded(expKey, defaultExpanded)
-                    ) {
-                        emitImportContents(out, r, []);
+                    if (r.type === "import") {
+                        const expanded = isImportExpanded(expKey, defaultExpanded);
+                        emitLockBanner(out, r, [], expanded);
+                        if (expanded) emitImportContents(out, r, []);
                     }
                 }
             }

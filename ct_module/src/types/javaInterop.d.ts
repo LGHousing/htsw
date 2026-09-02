@@ -330,6 +330,7 @@ declare global {
 
     interface HtswJavaSystemClass {
         getProperty(name: string): unknown;
+        setProperty(name: string, value: string): unknown;
     }
 
     interface HtswJavaFile {

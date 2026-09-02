@@ -86,7 +86,7 @@ function acceptProjectLock(importJsonPath: string): void {
     });
 }
 
-function confirmAcceptProjectLock(importJsonPath: string): void {
+export function confirmAcceptProjectLock(importJsonPath: string): void {
     const lock = readHouseLock(importJsonPath);
     if (lock === null) {
         showToast("This project has no house.lock.json", 0xffe85c5c, 8000);
