@@ -1,6 +1,7 @@
 import { removedFormatting } from "../../utils/helpers";
 import { getMinecraft, javaType } from "../../utils/java";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero as lastObservedWindowID } from "./waitFor";
+import { itemLore } from "../../utils/itemLore";
 
 export enum MouseButton {
     LEFT = "LEFT",
@@ -285,8 +286,7 @@ export function menuItemDebugSnapshot(limit: number = 54): MenuItemDebugSnapshot
             slot: slot.getSlotId(),
             name,
             cleanName: removedFormatting(name),
-            lore: item
-                .getLore()
+            lore: itemLore(item)
                 .slice(0, 12)
                 .map((line) => removedFormatting(line)),
         };

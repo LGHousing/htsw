@@ -11,6 +11,7 @@ import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { listAllGroupNames, openEditGroup } from "./listGroups";
 import { openGroupPermissions } from "./housing";
+import { itemLore } from "../../utils/itemLore";
 
 const REPORT_PATH = "./htsw/group-permissions.json";
 
@@ -101,7 +102,7 @@ function readPage(ctx: TaskContext, page: number): PermPageReport {
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
             const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
-            const rawLore = item.getLore();
+            const rawLore = itemLore(item);
             const lore: string[] = [];
             for (let j = 0; j < rawLore.length; j++) {
                 const line = removedFormatting(rawLore[j]).trim();

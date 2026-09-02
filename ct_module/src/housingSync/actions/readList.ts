@@ -47,6 +47,7 @@ import type { SyncEventHandler } from "../syncEvents";
 import { ActionPath, ActionListPath } from "../actionPath";
 import { COST, exactHydrationPlanUnits, phaseUnitsTotal } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfigs";
+import { itemLore } from "../../utils/itemLore";
 
 export type ActionListReadMode =
     | { kind: "full" }
@@ -63,7 +64,7 @@ function readChildListSummaries(
     slot: ItemSlot
 ): { summaries: ChildListSummaries; childListsToRead: ChildListsToRead } {
     const childListFields = getChildListFields(action.type);
-    const lore = slot.getItem().getLore();
+    const lore = itemLore(slot.getItem());
     const summaries: ChildListSummaries = {};
     const childListsToRead: ChildListsToRead = new Set();
     const labels = new Set(childListFields.map((field) => field.label));
