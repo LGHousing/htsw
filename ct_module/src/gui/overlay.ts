@@ -76,6 +76,10 @@ import {
 import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { detectHousingUuid } from "../importCache/housingId";
 import {
+    getImportCachePresenceRevision,
+    getImportCacheWriteRevision,
+} from "../importCache/cache";
+import {
     getHousingPresence,
     resetHousingPresence,
 } from "../importCache/housingPresence";
@@ -735,9 +739,21 @@ export function initHtswGui(): void {
     // target moves, dirty marks — lands BEFORE the panel paints this same
     // frame (Panel's render trigger is Priority.LOW). Moving any of it after
     // the paint costs one frame of input latency.
+    // Any Knowledge cache write (a house scan, a deep read, an import, a
+    // lock sync) can change which rows exist, so treat the cache revisions as
+    // part of the retained layout's inputs. Writers used to be responsible
+    // for calling markGuiDirty() themselves and several of them forgot.
+    let lastCacheRevision = "";
+    const trackCacheRevision = (): void => {
+        const rev = `${getImportCacheWriteRevision()}:${getImportCachePresenceRevision()}`;
+        if (rev === lastCacheRevision) return;
+        lastCacheRevision = rev;
+        markGuiDirty();
+    };
     register("guiRender", (mouseX: number, mouseY: number) => {
         const visible = frameVisible();
         syncHtswGuiProperties({ enabled, visible });
+        trackCacheRevision();
         pollWheel();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
