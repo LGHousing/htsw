@@ -4,6 +4,8 @@ import { Diagnostic, SourceFile, SourceMap, Span } from "htsw";
 import { formatDiagnostic, formatDiagnostics } from "../src/diagnostics/format";
 import { normalizeDiagnosticSpans } from "../src/diagnostics/spans";
 import { placeAnchoredRect } from "../src/gui/lib/anchoredRect";
+import { TextLayoutWrap } from "../src/diagnostics/textLayout";
+import { chatWidth } from "../src/utils/helpers";
 
 function sourceMap(files: { path: string; src: string }[]): SourceMap {
     const sm = new SourceMap({
@@ -93,7 +95,7 @@ describe("shared diagnostic formatting", () => {
         const block = formatDiagnostic(sm, root, 200);
         const text = block.lines.join("\n");
 
-        expect(text).toContain("&c&lerror&7: &f&lMismatched types");
+        expect(text).toContain("&c&lerror&r&7: &f&lMismatched types");
         expect(text).toContain("Type is int");
         expect(text).toContain("Type is string");
         expect(text.match(/Change one side/g)?.length).toBe(1);
@@ -106,9 +108,9 @@ describe("shared diagnostic formatting", () => {
             Diagnostic.warning("two"),
         ], 200);
         expect(block.lines).toEqual([
-            "&c&lerror&7: &f&lone",
+            "&c&lerror&r&7: &f&lone",
             "",
-            "&e&lwarning&7: &f&ltwo",
+            "&e&lwarning&r&7: &f&ltwo",
         ]);
     });
 
@@ -158,6 +160,161 @@ describe("shared diagnostic formatting", () => {
             .toBe(true);
     });
 
+});
+
+describe("long diagnostic messages", () => {
+    const unwrap = (line: string) => line.replace(/&[0-9a-fklmnor]/gi, "");
+
+    test("wraps a message that would overflow the card instead of cutting it", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        const message =
+            "`dangerouslyDeleteEverythingNotInThisFile` requires `houseUuid` to be set";
+        const block = formatDiagnostic(sm, Diagnostic.error(message), 40);
+
+        expect(block.lines.length).toBeGreaterThan(1);
+        // Rendered width, not character count: the message draws bold, and it
+        // is exactly that extra per-glyph pixel that used to overflow the card.
+        for (const line of block.lines) expect(chatWidth(line)).toBeLessThanOrEqual(40);
+        expect(block.width).toBeLessThanOrEqual(40);
+        // Nothing is dropped. Spaces are ignored on both sides because the
+        // wrap both consumes them at breaks and adds them as continuation
+        // indent; what matters is that every character of the message survives.
+        const squashed = block.lines.map(unwrap).join("").replace(/ /g, "");
+        expect(squashed).toContain(message.replace(/ /g, ""));
+        expect(squashed).not.toContain("...");
+    });
+
+    test("indents continuation lines under the level prefix", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        const block = formatDiagnostic(
+            sm,
+            Diagnostic.error("alpha bravo charlie delta echo foxtrot golf"),
+            24
+        );
+
+        const prefixWidth = chatWidth("&c&lerror&r&7: ");
+        expect(unwrap(block.lines[0]).startsWith("error: ")).toBe(true);
+        expect(block.lines.length).toBeGreaterThan(1);
+        for (let i = 1; i < block.lines.length; i++) {
+            expect(unwrap(block.lines[i]).startsWith(" ")).toBe(true);
+            expect(block.segments[i][0].x).toBe(prefixWidth);
+        }
+    });
+
+    test("fills the first line when the next word must be split anyway", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        // One unbreakable word, far too wide for any line. Breaking at the
+        // space after "error:" would strand the label on a line of its own and
+        // split the word on the next line regardless, so the split starts here.
+        const block = formatDiagnostic(
+            sm,
+            Diagnostic.error("dangerouslyDeleteEverythingNotInThisFile"),
+            40
+        );
+
+        expect(unwrap(block.lines[0]).startsWith("error: d")).toBe(true);
+        expect(chatWidth(block.lines[0])).toBeGreaterThan(30);
+        for (const line of block.lines) expect(chatWidth(line)).toBeLessThanOrEqual(40);
+    });
+
+    test("reopens active formatting on each continuation line", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        const block = formatDiagnostic(
+            sm,
+            Diagnostic.error("alpha bravo charlie delta echo foxtrot golf"),
+            24
+        );
+
+        // The message runs in white+bold; a continuation line that dropped the
+        // codes would render grey and unbolded halfway through the sentence.
+        for (let i = 1; i < block.lines.length; i++) {
+            expect(block.segments[i][0].text.startsWith("&f&l")).toBe(true);
+        }
+    });
+
+    test("breaks a single unbroken token rather than overflowing", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        const block = formatDiagnostic(
+            sm,
+            Diagnostic.error("dangerouslyDeleteEverythingNotInThisFile"),
+            20
+        );
+
+        expect(block.lines.length).toBeGreaterThan(1);
+        for (const line of block.lines) expect(chatWidth(line)).toBeLessThanOrEqual(20);
+        expect(block.lines.map(unwrap).join("").replace(/ /g, ""))
+            .toContain("dangerouslyDeleteEverythingNotInThisFile");
+    });
+
+    test("measures bold at its drawn width, so a bold message wraps", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        // Diagnostic messages draw bold. Measured as regular text this fits on
+        // one line; measured as it actually draws it does not, and laying it
+        // out on one line is what let it spill past the card and get clipped.
+        const message = "alpha bravo charlie delta";
+        const plain = chatWidth(message);
+        expect(chatWidth("&l" + message)).toBeGreaterThan(plain);
+
+        const block = formatDiagnostic(sm, Diagnostic.error(message), plain + 8);
+        expect(block.lines.length).toBeGreaterThan(1);
+        for (const line of block.lines) {
+            expect(chatWidth(line)).toBeLessThanOrEqual(plain + 8);
+        }
+    });
+
+    test("wraps sub-diagnostic messages too", () => {
+        const sm = sourceMap([{ path: "a.htsl", src: "x" }]);
+        const block = formatDiagnostic(
+            sm,
+            Diagnostic.error("short").addSubDiagnostic(
+                Diagnostic.help("Declare it in `functions`, or drop the key entirely")
+            ),
+            30
+        );
+
+        for (const line of block.lines) expect(chatWidth(line)).toBeLessThanOrEqual(30);
+        const joined = block.lines.map(unwrap).join(" ").replace(/\s+/g, " ");
+        for (const word of "Declare it in `functions`, or drop the key entirely".split(" ")) {
+            expect(joined).toContain(word);
+        }
+    });
+});
+
+describe("TextLayoutWrap", () => {
+    test("leaves text that already fits on one line", () => {
+        const wrap = new TextLayoutWrap("&fshort enough", 40);
+        expect(wrap.getHeight()).toBe(1);
+        expect(wrap.render()).toEqual(["&fshort enough"]);
+        expect(wrap.renderSegments()).toEqual([[{ x: 0, text: "&fshort enough" }]]);
+    });
+
+    test("without a hanging indent every line starts at x 0", () => {
+        const wrap = new TextLayoutWrap("alpha bravo charlie delta echo", 12);
+        expect(wrap.getHeight()).toBeGreaterThan(1);
+        for (const segs of wrap.renderSegments()) expect(segs[0].x).toBe(0);
+        expect(wrap.getWidth()).toBeLessThanOrEqual(12);
+    });
+
+    test("never loses a character to the break", () => {
+        const text = "one two three four five six seven eight nine ten";
+        const wrap = new TextLayoutWrap(text, 11);
+        expect(wrap.render().join("").replace(/ /g, "")).toBe(text.replace(/ /g, ""));
+    });
+
+    test("makes progress even when the budget is narrower than a character", () => {
+        const wrap = new TextLayoutWrap("abc", 0);
+        expect(wrap.render()).toEqual(["a", "b", "c"]);
+    });
+
+    test("treats a non-code ampersand as literal width", () => {
+        // `&&` is not a format code, so it costs two characters of budget and
+        // must not be smuggled onto a line as if it were free.
+        const wrap = new TextLayoutWrap("a&&b", 2);
+        for (const line of wrap.render()) {
+            expect(line.replace(/&[0-9a-fklmnor]/gi, "").length).toBeLessThanOrEqual(2);
+        }
+        expect(wrap.render().join("")).toBe("a&&b");
+    });
 });
 
 describe("anchored card placement", () => {

@@ -1,4 +1,4 @@
-import { chatWidth } from "../utils/helpers";
+import { chatWidth, spaceWidth } from "../utils/helpers";
 
 export type LineSegment = { x: number; text: string };
 
@@ -42,6 +42,166 @@ function clipTextToWidth(text: string, maxWidth: number): string {
         width += chWidth;
     }
     return out;
+}
+
+// The subset of `&x` codes the Minecraft font actually consumes. Anything
+// else (`&&`, `&z`) is literal text that chatWidth() charges for, so the
+// wrapper must charge for it too or its lines come out wider than the budget.
+const FORMAT_CODES = "0123456789abcdefklmnor";
+
+function isFormatCode(text: string, index: number): boolean {
+    if (text.charAt(index) !== "&" || index + 1 >= text.length) return false;
+    return FORMAT_CODES.indexOf(text.charAt(index + 1).toLowerCase()) >= 0;
+}
+
+// A color code clears any style codes before it, exactly as the vanilla font
+// renderer treats it, so a wrapped line reopens only what is still in effect.
+type FormatState = { color: string; styles: string[] };
+
+const NO_FORMAT: FormatState = { color: "", styles: [] };
+
+function applyFormatCode(state: FormatState, code: string): FormatState {
+    const c = code.charAt(1).toLowerCase();
+    if (c === "r") return NO_FORMAT;
+    if ("0123456789abcdef".indexOf(c) >= 0) return { color: "&" + c, styles: [] };
+    if (state.styles.indexOf("&" + c) >= 0) return state;
+    return { color: state.color, styles: state.styles.concat("&" + c) };
+}
+
+function formatPrefix(state: FormatState): string {
+    return state.color + state.styles.join("");
+}
+
+/**
+ * Greedy word wrap that keeps `&x` codes intact and reopens the active ones
+ * at the start of every continuation line. Breaks at the last space that fits;
+ * falls back to a mid-token break so an unbroken run (a long identifier, a
+ * path) still wraps rather than overflowing.
+ */
+function wrapFormatted(text: string, firstWidth: number, restWidth: number): string[] {
+    const out: string[] = [];
+    let limit = Math.max(1, firstWidth);
+    let state = NO_FORMAT;
+    let prefix = "";
+    let body = "";
+    // chatWidth(prefix + body): the width of the line as it stands.
+    let width = 0;
+    // Last space in `body`, and the formatting in effect just after it.
+    let breakIndex = -1;
+    let breakState = NO_FORMAT;
+
+    for (let i = 0; i < text.length; i++) {
+        if (isFormatCode(text, i)) {
+            const code = text.substring(i, i + 2);
+            state = applyFormatCode(state, code);
+            body += code;
+            i++;
+            continue;
+        }
+        const ch = text.charAt(i);
+        // Measure whole candidate lines, never single characters. Summing
+        // per-character widths does not reproduce chatWidth() of the finished
+        // line — format codes and bold only mean anything in context — and a
+        // wrap measured differently from the container that holds it either
+        // overflows or, as here, breaks far short of the space available.
+        // Measuring the same way the caller sizes the box makes the two agree
+        // by construction.
+        let next = chatWidth(prefix + body + ch);
+        // Loops rather than branches: a break at a space leaves the rest of an
+        // over-long token behind, which then has to break again against the
+        // narrower continuation budget. `width > 0` keeps at least one visible
+        // character per line, so a tight budget still makes progress.
+        while (next > limit && width > 0) {
+            let atSpace = breakIndex >= 0;
+            if (atSpace) {
+                // How wide is the word we are in the middle of, in full? Format
+                // codes never contain a space, so the next space ends it.
+                const nextSpace = text.indexOf(" ", i);
+                const word =
+                    body.substring(breakIndex + 1)
+                    + (nextSpace < 0 ? text.substring(i) : text.substring(i, nextSpace));
+                // A word too wide for a line of its own gets split no matter
+                // where we break. Breaking at the space would leave the rest of
+                // this line empty and split the word on the next one anyway, so
+                // split it here and use the space up.
+                if (chatWidth(formatPrefix(breakState) + word) > Math.max(1, restWidth)) {
+                    atSpace = false;
+                }
+            }
+            if (atSpace) {
+                out.push(prefix + body.substring(0, breakIndex));
+                prefix = formatPrefix(breakState);
+                body = body.substring(breakIndex + 1);
+            } else {
+                out.push(prefix + body);
+                prefix = formatPrefix(state);
+                body = "";
+            }
+            breakIndex = -1;
+            limit = Math.max(1, restWidth);
+            width = chatWidth(prefix + body);
+            next = chatWidth(prefix + body + ch);
+        }
+        if (ch === " ") {
+            breakIndex = body.length;
+            breakState = state;
+        }
+        body += ch;
+        width = next;
+    }
+    out.push(prefix + body);
+    return out;
+}
+
+/**
+ * Formatted text broken across as many lines as it takes to fit `maxWidth`.
+ * Continuation lines sit at `hangingIndent` so a wrapped diagnostic message
+ * still reads as one paragraph hanging off its `error: ` prefix instead of
+ * looking like a second diagnostic.
+ */
+export class TextLayoutWrap implements TextLayoutElement {
+    private readonly wrapped: string[];
+    private readonly indent: number;
+
+    constructor(text: string, maxWidth: number, hangingIndent: number = 0) {
+        const limit = Math.max(1, maxWidth);
+        // An indent wider than the budget would leave no room for text.
+        this.indent = Math.max(0, Math.min(hangingIndent, limit - 1));
+        this.wrapped = wrapFormatted(text, limit, limit - this.indent);
+    }
+
+    getWidth(): number {
+        let width = 0;
+        for (let i = 0; i < this.wrapped.length; i++) {
+            width = Math.max(width, (i === 0 ? 0 : this.indent) + chatWidth(this.wrapped[i]));
+        }
+        return width;
+    }
+
+    getHeight(): number {
+        return this.wrapped.length;
+    }
+
+    render(): string[] {
+        if (this.indent === 0) return this.wrapped.slice();
+        // Chat has no x-positioning, so the indent has to be spelled in spaces.
+        let pad = "";
+        const count = Math.round(this.indent / spaceWidth());
+        for (let i = 0; i < count; i++) pad += " ";
+        const out: string[] = [];
+        for (let i = 0; i < this.wrapped.length; i++) {
+            out.push(i === 0 ? this.wrapped[i] : pad + this.wrapped[i]);
+        }
+        return out;
+    }
+
+    renderSegments(): LineSegment[][] {
+        const out: LineSegment[][] = [];
+        for (let i = 0; i < this.wrapped.length; i++) {
+            out.push([{ x: i === 0 ? 0 : this.indent, text: this.wrapped[i] }]);
+        }
+        return out;
+    }
 }
 
 export class TextLayoutText implements TextLayoutElement {
