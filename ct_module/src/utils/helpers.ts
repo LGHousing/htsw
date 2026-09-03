@@ -9,10 +9,18 @@ export function normalizeFormattingCodes(str: string): string {
     return helpers.sectionToAmp(str);
 }
 
-export function chatWidth(string: string, removeFormatting: boolean = true): number {
-    const raw = removeFormatting
-        ? ChatLib.removeFormatting(ChatLib.replaceFormatting(string))
-        : string;
+/**
+ * Rendered width of `string` in the Minecraft font.
+ *
+ * With `hasFormatCodes`, `&x` codes go through `ChatLib.addColor` (`&`→`§`), so
+ * the font renderer skips them and charges the extra pixel per character that
+ * `&l` bold costs. `removeFormatting` would measure bold too narrow, and
+ * `replaceFormatting` (`§`→`&`) would measure the codes as glyphs, far too wide.
+ *
+ * Pass `false` for literal text, where `&` is just an ampersand.
+ */
+export function chatWidth(string: string, hasFormatCodes: boolean = true): number {
+    const raw = hasFormatCodes ? ChatLib.addColor(string) : string;
     return getMinecraft().field_71466_p.func_78256_a(raw);
 }
 
