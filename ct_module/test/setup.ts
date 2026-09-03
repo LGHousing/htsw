@@ -17,7 +17,27 @@ stubGlobal("Client", {
     sendPacket: () => undefined,
     getMinecraft: () => ({
         field_71466_p: {
-            func_78256_a: (text: string) => text.replace(/(?:§|&)[0-9a-fklmnor]/gi, "").length,
+            // Mirrors 1.8.9 FontRenderer.getStringWidth at 1 unit per glyph:
+            // a "§x" pair is free, and bold costs one extra unit per glyph
+            // after it. Note only "§r" clears bold there — a color code does
+            // NOT — so the emulation keeps that quirk rather than the
+            // renderer's. "&" is an ordinary character, as it is in game.
+            func_78256_a: (text: string) => {
+                let width = 0;
+                let bold = false;
+                for (let i = 0; i < text.length; i++) {
+                    const ch = text.charAt(i);
+                    if (ch === "§" && i + 1 < text.length) {
+                        const code = text.charAt(i + 1).toLowerCase();
+                        if (code === "l") bold = true;
+                        else if (code === "r") bold = false;
+                        i++;
+                        continue;
+                    }
+                    width += bold ? 2 : 1;
+                }
+                return width;
+            },
         },
     }),
 });
@@ -26,8 +46,13 @@ stubGlobal("ChatLib", {
     command: () => undefined,
     say: () => undefined,
     getChatWidth: () => 320,
-    replaceFormatting: (text: string) => text.replace(/&([0-9a-fklmnor])/gi, "§$1"),
-    removeFormatting: (text: string) => text.replace(/§[0-9a-fklmnor]/gi, ""),
+    // Mirrors ChatTriggers: addColor is "&"->"§", replaceFormatting is the other
+    // direction, and removeFormatting strips both spellings. The mock used to
+    // have addColor's behaviour under replaceFormatting's name, which made a
+    // measurement bug pass its tests and only show up in game.
+    addColor: (text: string) => text.replace(/&([0-9a-fklmnor])/gi, "§$1"),
+    replaceFormatting: (text: string) => text.replace(/§([0-9a-fklmnor])/gi, "&$1"),
+    removeFormatting: (text: string) => text.replace(/[&§][0-9a-fklmnor]/gi, ""),
 });
 stubGlobal("Player", { getName: () => "tester" });
 stubGlobal("World", { playSound: () => undefined });
