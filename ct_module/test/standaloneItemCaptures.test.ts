@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import * as htsw from "htsw";
+import { MINECRAFT_ITEMS } from "htsw/types";
 
 import { StandaloneItemCaptures } from "../src/gui/export/standaloneItemCaptures";
 
@@ -40,6 +42,24 @@ describe("StandaloneItemCaptures", () => {
                 "Special Stone"
             )
         ).toBe("items/special_stone.snbt");
+    });
+
+    test("names an unnamed captured item from its vanilla damage variation", () => {
+        const greenPane = MINECRAFT_ITEMS.find(
+            (entry) => entry.name === "stained_glass_pane"
+        )?.variations?.find((entry) => entry.metadata === 13);
+        expect(greenPane).toBeDefined();
+        expect(
+            htsw.items.vanillaVariationReferenceName(greenPane?.displayName ?? "")
+        ).toBe("green_stained_glass_pane");
+        const captures = new StandaloneItemCaptures(() => null);
+
+        expect(
+            captures.register(
+                '{id:"minecraft:stained_glass_pane",Count:2b,Damage:13s}',
+                ""
+            )
+        ).toBe("items/green_stained_glass_pane.snbt");
     });
 
     test("captures and deduplicates custom items by live NBT", () => {

@@ -10,6 +10,10 @@ import {
 import { canonicalSlug } from "../../project/paths";
 import { removedFormatting } from "../../utils/helpers";
 import { extractInteractDataSnbt } from "../../utils/nbt";
+import {
+    numericTagValue,
+    slugForUnnamedItem,
+} from "../../importables/items/itemSlug";
 
 export type StandaloneItemCaptureEntry = {
     reference: string;
@@ -39,7 +43,7 @@ export class StandaloneItemCaptures implements ItemCaptureSink {
         const registered = this.entriesByKey[key];
         if (registered !== undefined) return registered.reference;
 
-        const base = slugForDisplayName(displayNameHint);
+        const base = slugForDisplayName(displayNameHint, snbt);
         let suffix = 1;
         while (suffix < 1000) {
             const slug = suffix === 1 ? base : `${base}_${suffix}`;
@@ -122,21 +126,7 @@ function vanillaReferenceForSnbt(snbt: string, key: string): string | null {
         : null;
 }
 
-function numericTagValue(tag: htsw.nbt.Tag): number | null {
-    if (
-        tag.type !== "byte" &&
-        tag.type !== "short" &&
-        tag.type !== "int" &&
-        tag.type !== "long" &&
-        tag.type !== "float" &&
-        tag.type !== "double"
-    ) {
-        return null;
-    }
-    return Number(tag.value);
-}
-
-function slugForDisplayName(displayName: string): string {
+function slugForDisplayName(displayName: string, snbt: string): string {
     const slug = canonicalSlug(removedFormatting(displayName).trim().toLowerCase());
-    return slug.length > 0 ? slug : "captured_item";
+    return slug.length > 0 ? slug : slugForUnnamedItem(snbt);
 }

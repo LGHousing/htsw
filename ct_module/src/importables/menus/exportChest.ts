@@ -4,7 +4,7 @@ import { portableItemSnbt, snbtFromItem } from "../../housingSync/items/itemNbt"
 import { ItemCaptureRegistry } from "../items/captureRegistry";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { importJsonTargetForSectionEntry, parentDirOf } from "../../project/paths";
-import { ensureParentDirs } from "../../utils/filesystem";
+import { ensureParentDirs, readTextFileOrNull } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
 
 type CapturedChestSlot = {
@@ -94,11 +94,6 @@ export async function exportCapturedChest(
     captured: CapturedChest,
     options: ChestExportOptions
 ): Promise<ChestExportCounts> {
-    const registry = new ItemCaptureRegistry("shell");
-    for (let i = 0; i < options.projectItems.length; i++) {
-        registry.seedNbtOnly(options.projectItems[i].name, options.projectItems[i].nbt);
-    }
-
     const importJsonPath = importJsonTargetForSectionEntry(
         options.importJsonPath,
         "menus",
@@ -109,6 +104,13 @@ export async function exportCapturedChest(
         importJsonPath === options.importJsonPath
             ? options.rootDir
             : parentDirOf(importJsonPath);
+    const registry = new ItemCaptureRegistry("shell", {
+        existingSnbt: (name) =>
+            readTextFileOrNull(`${rootDir}/items/${name}.snbt`),
+    });
+    for (let i = 0; i < options.projectItems.length; i++) {
+        registry.seedNbtOnly(options.projectItems[i].name, options.projectItems[i].nbt);
+    }
     const writtenItems = new Set<string>();
     const registeredSlots: RegisteredChestSlot[] = [];
 

@@ -21,6 +21,8 @@ export const exportHeldItem: ReadFn = async (ctx, options) => {
     const registry = createExportItemCaptureRegistry(
         options.importJsonPath,
         housingUuid,
+        options.rootDir,
+        options.newExportTargetImportJson,
         options.projectItems
     );
     const name = registry.register(

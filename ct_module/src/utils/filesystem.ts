@@ -1,5 +1,11 @@
 import { javaType, runtimeString, type RuntimeString } from "./java";
 
+export function readTextFileOrNull(path: string): string | null {
+    if (!FileLib.exists(path)) return null;
+    const value = FileLib.read(path) as unknown as string | null | undefined;
+    return value === null || value === undefined ? null : value;
+}
+
 /**
  * Best-effort `mkdir -p` for the parent directory of `path`. Used before
  * `FileLib.write` because that call doesn't create missing parents on its

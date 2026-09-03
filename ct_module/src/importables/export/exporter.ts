@@ -26,6 +26,8 @@ import {
     capturedItemFieldContent,
     sourceItemFieldContent,
 } from "../../housingSync/items/fieldContent";
+import { parentDirOf } from "../../project/paths";
+import { readTextFileOrNull } from "../../utils/filesystem";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -213,9 +215,24 @@ export function defineHouseExporter<
             itemCaptures: createExportItemCaptureRegistry(
                 importJsonPath,
                 lockHousingUuid,
+                options.rootDir,
+                options.newExportTargetImportJson,
                 options.projectItems
             ),
-            menuSlotItemCaptures: new ItemCaptureRegistry("shell"),
+            menuSlotItemCaptures: new ItemCaptureRegistry("shell", {
+                existingSnbt: (name) => {
+                    const roots = [options.rootDir];
+                    if (options.newExportTargetImportJson !== undefined) {
+                        roots.push(parentDirOf(options.newExportTargetImportJson));
+                    }
+                    for (let i = 0; i < roots.length; i++) {
+                        const path = `${roots[i]}/items/${name}.snbt`;
+                        const value = readTextFileOrNull(path);
+                        if (value !== null) return value;
+                    }
+                    return null;
+                },
+            }),
             writtenItems: new Set<string>(),
             inventorySnapshot:
                 spec.capturesActionItems === true ? snapshotPlayerInventory() : null,

@@ -103,6 +103,8 @@ async function exportAllNpcsInner(
     const itemCaptures = createExportItemCaptureRegistry(
         importJsonPath,
         lockHousingUuid,
+        rootDir,
+        options.newExportTargetImportJson,
         options.projectItems
     );
     const npcLookup = createNpcLookupCache();
