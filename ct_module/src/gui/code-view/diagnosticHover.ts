@@ -1,7 +1,11 @@
 import type { Diagnostic, ImportablesParseResult } from "htsw";
 
 import { formatDiagnostics, type FormattedTextBlock, type LineSegment } from "../../diagnostics/format";
-import { chatWidth } from "../../utils/helpers";
+import {
+    renderTextBlock,
+    TextLayoutVStack,
+    TextLayoutWrap,
+} from "../../diagnostics/textLayout";
 import type { Rect } from "../lib/layout";
 import { hoverCardContentWidth, offerHoverCard } from "../lib/hoverCards";
 
@@ -55,6 +59,23 @@ function diagnosticsBlock(
 }
 
 /**
+ * Decorator lines wrapped to the card, for the same reason diagnostic messages
+ * are: an action's text can be far wider than the card, and the card has no
+ * horizontal scroll to reach what falls outside it.
+ */
+function extraLinesBlock(
+    extraLines: readonly string[] | undefined
+): FormattedTextBlock | null {
+    if (extraLines === undefined || extraLines.length === 0) return null;
+    const width = hoverCardContentWidth();
+    const stack = new TextLayoutVStack();
+    for (let i = 0; i < extraLines.length; i++) {
+        stack.add(new TextLayoutWrap(extraLines[i], width));
+    }
+    return renderTextBlock(stack);
+}
+
+/**
  * One hover card per code-view row: the row's diagnostics (if any) followed
  * by any extra lines the active decorator supplies (e.g. the house's version
  * of an edited action). No-op when both are empty.
@@ -68,32 +89,23 @@ export function offerLineHover(
 ): void {
     const diagBlock =
         diagnostics !== undefined ? diagnosticsBlock(diagnostics, diagnosticParse) : null;
-    const extras = extraLines !== undefined && extraLines.length > 0 ? extraLines : null;
-    if (diagBlock === null && extras === null) return;
+    const extraBlock = extraLinesBlock(extraLines);
+    if (diagBlock === null && extraBlock === null) return;
 
     let lines: string[];
     let segments: LineSegment[][];
     let width: number;
-    if (diagBlock !== null) {
-        if (extras === null) {
-            lines = diagBlock.lines;
-            segments = diagBlock.segments;
-        } else {
-            lines = [...diagBlock.lines, "", ...extras];
-            segments = [
-                ...diagBlock.segments,
-                [{ x: 0, text: "" }],
-                ...extras.map((line) => [{ x: 0, text: line }]),
-            ];
-        }
-        width = diagBlock.width;
+    if (diagBlock !== null && extraBlock !== null) {
+        lines = [...diagBlock.lines, "", ...extraBlock.lines];
+        segments = [...diagBlock.segments, [{ x: 0, text: "" }], ...extraBlock.segments];
+        width = Math.max(diagBlock.width, extraBlock.width);
     } else {
-        lines = extras === null ? [] : extras.slice();
-        segments = extras === null ? [] : extras.map((line) => [{ x: 0, text: line }]);
-        width = 0;
-    }
-    if (extras !== null) {
-        for (const line of extras) width = Math.max(width, chatWidth(line));
+        const only = diagBlock ?? extraBlock;
+        // Narrowed by the early return above, but TypeScript cannot see it.
+        if (only === null) return;
+        lines = only.lines;
+        segments = only.segments;
+        width = only.width;
     }
     const content: FormattedTextBlock = { lines, segments, width, height: lines.length };
     const key =
