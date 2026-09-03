@@ -57,7 +57,12 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // is gone.
 // 19: import.json entry-level diagnostics no longer discard the rest of an
 // included file's parsed importables.
-const SNAPSHOT_VERSION = 19;
+// 20: `dangerouslyDeleteEverythingNotInThisFile` is a recognized top-level key.
+// The fingerprint only covers file mtimes, so a v19 snapshot taken before this
+// branch keeps replaying its "Unknown key" warning for a file that never
+// changed. Bump whenever the parser's OUTPUT for unchanged input changes, not
+// just when this file's format does.
+const SNAPSHOT_VERSION = 20;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
