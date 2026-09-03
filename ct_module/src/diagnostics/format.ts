@@ -10,6 +10,7 @@ import {
     TextLayoutTruncate,
     TextLayoutVLine,
     TextLayoutVStack,
+    TextLayoutWrap,
     type FormattedTextBlock,
 } from "./textLayout";
 
@@ -80,7 +81,12 @@ function spansByFileAndLine(
     return byFile;
 }
 
-function snippetLine(lineContent: string, formattedContent: string, spans: DiagnosticLineSpan[]): TextLayoutCanvas {
+function snippetLine(
+    lineContent: string,
+    formattedContent: string,
+    spans: DiagnosticLineSpan[],
+    maxWidth: number
+): TextLayoutCanvas {
     const canvas = new TextLayoutCanvas();
     canvas.addElement(0, 0, new TextLayoutText(formattedContent));
     const occupation: number[] = [];
@@ -107,12 +113,11 @@ function snippetLine(lineContent: string, formattedContent: string, spans: Diagn
             continue;
         }
         const labelWidth = chatWidth(span.label);
-        if (underlineX + underlineWidth + spaceWidth() + labelWidth < getLastX(0)) {
-            canvas.addElement(
-                underlineX + underlineWidth + spaceWidth(),
-                1,
-                new TextLayoutText(labelColor + span.label)
-            );
+        const inlineX = underlineX + underlineWidth + spaceWidth();
+        // Also stay within `maxWidth`: past it the caller truncates the label to
+        // "...", which is worse than moving it to its own line.
+        if (inlineX + labelWidth < getLastX(0) && inlineX + labelWidth <= maxWidth) {
+            canvas.addElement(inlineX, 1, new TextLayoutText(labelColor + span.label));
             occupation[0] = underlineX;
             continue;
         }
@@ -120,7 +125,14 @@ function snippetLine(lineContent: string, formattedContent: string, spans: Diagn
         while (underlineX + labelWidth >= getLastX(line)) line++;
         for (let j = 0; j <= line; j++) occupation[j] = underlineX;
         canvas.addElement(underlineX, 2, new TextLayoutVLine(line, vLineChar));
-        canvas.addElement(underlineX, 2 + line, new TextLayoutText(labelColor + span.label));
+        // Slide left so the label ends inside the snippet, and wrap whatever
+        // still does not fit. The connector stays on the underline's column.
+        const labelX = Math.max(0, Math.min(underlineX, maxWidth - labelWidth));
+        canvas.addElement(
+            labelX,
+            2 + line,
+            new TextLayoutWrap(labelColor + span.label, Math.max(1, maxWidth - labelX))
+        );
     }
     return canvas;
 }
@@ -170,7 +182,8 @@ function snippetLineChunks(
         stack.add(snippetLine(
             chunkContent,
             "&7" + chunkContent.replace(/&/g, "&&7"),
-            chunkSpans
+            chunkSpans,
+            maxWidth
         ));
     }
     return stack;
@@ -228,9 +241,17 @@ function diagnosticElement(
     displayPath: (path: string) => string
 ): TextLayoutVStack {
     const stack = new TextLayoutVStack();
-    stack.add(new TextLayoutText(
-        `${LEVEL_COLORS[diagnostic.level]}&l${LEVEL_NAMES[diagnostic.level]}&7: `
-        + `${isPrimary ? "&f&l" : "&f"}${diagnostic.message}`
+    // Unlike spans and labels, the message has no length bound, and past the
+    // hover card it would be scissored away silently. Wrap it, hanging off its
+    // `error: ` prefix.
+    // The `&r` is load-bearing: 1.8.9 draws a color code as clearing bold, but
+    // FontRenderer.getStringWidth only clears bold on `r`, so `&l...&7` would
+    // measure bold to the end of the line while drawing regular.
+    const levelPrefix = `${LEVEL_COLORS[diagnostic.level]}&l${LEVEL_NAMES[diagnostic.level]}&r&7: `;
+    stack.add(new TextLayoutWrap(
+        levelPrefix + `${isPrimary ? "&f&l" : "&f"}${diagnostic.message}`,
+        maxWidth,
+        chatWidth(levelPrefix)
     ));
     const snippet = new TextLayoutVStack();
     const byFile = spansByFileAndLine(sm, diagnostic);
