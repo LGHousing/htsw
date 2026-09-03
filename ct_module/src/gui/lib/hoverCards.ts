@@ -42,7 +42,10 @@ let lastMouseOverCardAt = 0;
 
 export function hoverCardContentWidth(): number {
     const maxWidth = Math.min(MAX_W, Math.floor(getOverlayScreenW() * MAX_W_SCREEN_RATIO));
-    return Math.max(1, maxWidth - PAD * 2);
+    // Reserve the scrollbar unconditionally: cardRect() adds SCROLLBAR_W to the
+    // content width and then clamps to maxWidth, so content laid out to the full
+    // padded width would lose its last few pixels under the thumb.
+    return Math.max(1, maxWidth - PAD * 2 - SCROLLBAR_W);
 }
 
 export function offerHoverCard(options: {

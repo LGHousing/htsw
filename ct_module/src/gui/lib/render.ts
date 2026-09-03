@@ -22,6 +22,7 @@ import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { getIconImage, renderMcItem } from "./images";
 import { getMinecraft, javaType } from "./java";
+import { TextLayoutWrap } from "../../diagnostics/textLayout";
 
 const Gui = javaType("net.minecraft.client.gui.Gui" as never) as unknown as {
     func_73734_a(
@@ -245,14 +246,26 @@ export function drawLaid(
     if (tooltip !== null) deferredTooltip = tooltip;
 }
 
+// A comfortable reading width for a chip. Anything longer wraps rather than
+// growing into a single line that runs off the screen.
+const TOOLTIP_MAX_W = 320;
+
 function drawTooltip(t: QueuedTooltip): void {
     const padX = 3;
     const padY = 2;
-    const tw = Renderer.getStringWidth(t.text);
-    const w = tw + padX * 2;
-    const h = LINE_H + padY * 2;
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
+    // The chip used to be sized to the whole string on one line, so a long
+    // tooltip — most often a truncated label revealing its full text — was
+    // pinned to x = 2 by the clamp below and ran off the right edge with no way
+    // to read the rest. Wrap it to what the screen can actually hold instead.
+    const wrap = new TextLayoutWrap(
+        t.text,
+        Math.max(1, Math.min(TOOLTIP_MAX_W, screenW - 4 - padX * 2))
+    );
+    const lines = wrap.render();
+    const w = wrap.getWidth() + padX * 2;
+    const h = LINE_H * lines.length + padY * 2;
     let x;
     let y;
     if (t.inPlace) {
@@ -267,15 +280,21 @@ function drawTooltip(t: QueuedTooltip): void {
     }
     if (x + w > screenW - 2) x = screenW - 2 - w;
     if (x < 2) x = 2;
+    // A wrapped chip is taller than the one-liner this used to draw, so it can
+    // now overrun either edge; clamp both.
+    if (y + h > screenH - 2) y = screenH - 2 - h;
+    if (y < 2) y = 2;
     fillRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
     fillRect(COLOR_PANEL, x, y, w, h);
-    getMinecraft().field_71466_p.func_175065_a(
-        t.text,
-        x + padX,
-        y + padY,
-        t.color,
-        false
-    );
+    for (let i = 0; i < lines.length; i++) {
+        getMinecraft().field_71466_p.func_175065_a(
+            lines[i],
+            x + padX,
+            y + padY + i * LINE_H,
+            t.color,
+            false
+        );
+    }
 }
 
 function queueTooltip(
