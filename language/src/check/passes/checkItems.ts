@@ -1,6 +1,12 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import { resolveItemReference } from "../../items";
+import {
+    ITEM_COUNT_MAX,
+    ITEM_COUNT_MIN,
+    isValidItemCount,
+    parseItemReferenceParts,
+    resolveItemReference,
+} from "../../items";
 import type { Action, Condition, Importable, ImportableItem } from "../../types";
 import { visitActionTrees } from "../actionTree";
 
@@ -71,18 +77,36 @@ function checkItemReference(
     node: Action | Condition,
     itemName: string
 ): void {
+    const { base, count } = parseItemReferenceParts(itemName);
+    if (count !== undefined && !isValidItemCount(count)) {
+        gcx.addDiagnostic(
+            Diagnostic.error(
+                `Stack count '${count}' is out of range in item '${itemName}'`
+            )
+                .addPrimarySpan(
+                    gcx.spans.getField(node as { itemName: string }, "itemName")
+                )
+                .addSubDiagnostic(
+                    Diagnostic.help(
+                        `A '@<count>' suffix must be between ${ITEM_COUNT_MIN} and ${ITEM_COUNT_MAX}.`
+                    )
+                )
+        );
+        return;
+    }
+
     const resolved = resolveItemReference(gcx, itemNames, node, itemName);
     if (resolved !== undefined) {
         return;
     }
 
-    if (itemName.toLowerCase().endsWith(".snbt")) {
+    if (base.toLowerCase().endsWith(".snbt")) {
         return;
     }
 
-    if (itemName.startsWith("minecraft:")) {
+    if (base.startsWith("minecraft:")) {
         gcx.addDiagnostic(
-            Diagnostic.error(`Unknown vanilla item '${itemName}'`)
+            Diagnostic.error(`Unknown vanilla item '${base}'`)
                 .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
                 .addSubDiagnostic(
                     Diagnostic.help(
@@ -93,13 +117,23 @@ function checkItemReference(
         return;
     }
 
-    gcx.addDiagnostic(
-        Diagnostic.error(`Unknown item '${itemName}'`)
-            .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
-            .addSubDiagnostic(
-                Diagnostic.help(
-                    "Item fields must match a top-level items[].name, a known minecraft: item id or damage-variant name, or a direct .snbt path."
-                )
+    const diagnostic = Diagnostic.error(`Unknown item '${base}'`)
+        .addPrimarySpan(gcx.spans.getField(node as { itemName: string }, "itemName"))
+        .addSubDiagnostic(
+            Diagnostic.help(
+                "Item fields must match a top-level items[].name, a known minecraft: item id or damage-variant name, or a direct .snbt path."
             )
-    );
+        );
+
+    // `@` is reserved for the stack-count suffix and rejected in item names, so
+    // one that survived the split is a malformed count rather than a real name.
+    if (base.indexOf("@") >= 0) {
+        diagnostic.addSubDiagnostic(
+            Diagnostic.help(
+                `To set a stack size, suffix the name with '@' and a count between ${ITEM_COUNT_MIN} and ${ITEM_COUNT_MAX}, as in 'oak_log@8'.`
+            )
+        );
+    }
+
+    gcx.addDiagnostic(diagnostic);
 }

@@ -113,6 +113,32 @@ function parseMinecraftItemId(p: Parser): string {
     return value;
 }
 
+/**
+ * `@` is reserved as the delimiter of an item reference's `@<count>` stack-size
+ * suffix, so an item's declared name may not contain one — otherwise
+ * `giveItem coins@3` could mean either the item literally named `coins@3` or
+ * three of `coins`. Only ITEM names are affected; display names inside an
+ * item's NBT are matched as aliases, never resolved as references, and are
+ * left alone.
+ */
+export function parseItemImportableName(p: Parser): string {
+    const name = p.parseString();
+
+    if (name.indexOf("@") >= 0) {
+        p.gcx.addDiagnostic(
+            Diagnostic.error("Item names cannot contain `@`")
+                .addPrimarySpan(p.span())
+                .addSubDiagnostic(
+                    Diagnostic.help(
+                        "`@` is reserved for the stack-count suffix in item fields, as in `giveItem oak_log@8`. Rename the item and reference it by the new name."
+                    )
+                )
+        );
+    }
+
+    return name;
+}
+
 const TAG_RE = /^[a-z0-9 -]*$/i;
 
 export function parseTag(p: Parser): string {

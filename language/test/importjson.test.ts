@@ -746,6 +746,140 @@ describe("import.json diagnostics readability", () => {
         }
     });
 
+    it.each([
+        ["oakwood", "oakwood", undefined],
+        ["oakwood@8", "oakwood", 8],
+        ["oakwood@0", "oakwood", 0],
+        ["oakwood@100", "oakwood", 100],
+        ["minecraft:stone@16", "minecraft:stone", 16],
+        ["items/log.snbt@4", "items/log.snbt", 4],
+        // A digit-free suffix is part of the name, which is what keeps a
+        // `.snbt` path with an `@` in its filename resolvable.
+        ["items/oak@8.snbt", "items/oak@8.snbt", undefined],
+        ["oakwood@", "oakwood@", undefined],
+        ["oakwood@3x", "oakwood@3x", undefined],
+        ["@8", "@8", undefined],
+    ])("splits the count suffix off %s", (reference, base, count) => {
+        expect(htsw.items.parseItemReferenceParts(reference)).toEqual({
+            base,
+            ...(count === undefined ? {} : { count }),
+        });
+    });
+
+    it("applies a count suffix to every item reference form", () => {
+        const result = parseImportables(caseDirPath("item_count_suffix"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+
+        const items = new Map(
+            result.value
+                .filter((importable) => importable.type === "ITEM")
+                .map((importable) => [importable.name, importable])
+        );
+        const owner = result.value.find(
+            (importable) => importable.type === "FUNCTION"
+        );
+        if (owner === undefined) throw new Error("missing function importable");
+
+        for (const [reference, count] of [
+            ["Stone Item@8", 8],
+            ["minecraft:stone@16", 16],
+        ] as const) {
+            const resolved = htsw.items.resolveItemReference(
+                result.gcx,
+                items,
+                owner,
+                reference
+            );
+            expect(resolved?.key).toBe(reference);
+            expect(resolved?.count).toBe(count);
+            expect((resolved?.nbt as htsw.nbt.TagCompound).value.Count).toEqual({
+                type: "byte",
+                value: count,
+            });
+        }
+    });
+
+    it("applies a count suffix to a direct SNBT path", () => {
+        const result = parseImportables(caseDirPath("item_count_suffix"));
+        const sourcePath = resolve(
+            "test",
+            "cases",
+            "importjson",
+            "item_count_suffix",
+            "actions",
+            "main.htsl"
+        );
+
+        const resolved = htsw.items.resolveItemReferenceFromSourcePath(
+            result.gcx,
+            new Map(),
+            sourcePath,
+            "items/stone.snbt@4"
+        );
+
+        expect(resolved?.kind).toBe("snbtPath");
+        if (resolved?.kind !== "snbtPath") return;
+        expect(resolved.path).toBe(
+            resolve(dirname(sourcePath), "items", "stone.snbt")
+        );
+        expect(resolved.key).toBe("items/stone.snbt@4");
+        expect((resolved.nbt as htsw.nbt.TagCompound).value.Count).toEqual({
+            type: "byte",
+            value: 4,
+        });
+    });
+
+    it("leaves the declaration's nbt untouched when a count is applied", () => {
+        const result = parseImportables(caseDirPath("item_count_suffix"));
+        const declared = result.value.find(
+            (importable) => importable.type === "ITEM"
+        );
+        if (declared?.type !== "ITEM") throw new Error("missing item importable");
+        const items = new Map([[declared.name, declared]]);
+        const owner = result.value.find(
+            (importable) => importable.type === "FUNCTION"
+        );
+        if (owner === undefined) throw new Error("missing function importable");
+
+        htsw.items.resolveItemReference(
+            result.gcx,
+            items,
+            owner,
+            `${declared.name}@64`
+        );
+
+        expect((declared.nbt as htsw.nbt.TagCompound).value.Count).toEqual({
+            type: "byte",
+            value: 1,
+        });
+    });
+
+    it("reports a count suffix outside the stack range", () => {
+        const result = parseImportables(caseFilePath("item_count_out_of_range"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some(
+                (diagnostic) =>
+                    diagnostic.message ===
+                    "Stack count '100' is out of range in item 'Token@100'"
+            )
+        ).toBe(true);
+    });
+
+    it("rejects `@` in a declared item name", () => {
+        const result = parseImportables(caseFilePath("item_name_with_at"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some(
+                (diagnostic) =>
+                    diagnostic.message === "Item names cannot contain `@`"
+            )
+        ).toBe(true);
+    });
+
     it("reports missing direct SNBT item paths", () => {
         const result = parseImportables(caseFilePath("missing_direct_snbt"));
 

@@ -337,13 +337,18 @@ class DefaultItemDependencyIndex implements ItemDependencyIndex {
     }
 
     private resolveUse(use: ItemReferenceUse): ResolvedUse | undefined {
-        const entry =
+        const resolved =
             this.projectItems.resolveFromSourcePath(
                 use.itemName,
                 use.sourcePath,
                 use.owner
             ) ?? this.projectItems.resolve(use.itemName, use.owner);
-        if (entry === undefined) return undefined;
+        if (resolved === undefined) return undefined;
+        // A `@<count>` suffix belongs to the reference, not the item: changing
+        // it changes the HTSL, which the action diff already sees. Folding onto
+        // the base entry keeps one target and one fingerprint per item, so two
+        // stack sizes of the same item cannot race to define its graph node.
+        const entry = resolved.base ?? resolved;
         return { use, entry, target: targetOfEntry(entry) };
     }
 

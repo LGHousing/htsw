@@ -210,7 +210,10 @@ Requires the player to have a certain item.
 
 #### Options
 
-- **Item:** The item stack.
+- **Item:** The item stack. An
+  [`@<count>` suffix](basic-syntax.md#stack-counts) sets the stack size this is
+  checked against, which is what Required Amount's Equal or Greater Amount
+  compares to.
 - **What To Check:** A selection that determines how to decide whether an item matches the required
   item.
 
@@ -584,7 +587,10 @@ Requires a block type to match.
 
 #### Options
 
-- **Item:** The block item.
+- **Item:** The block item. An
+  [`@<count>` suffix](basic-syntax.md#stack-counts) changes the stack placed in
+  the field; whether Housing's block match takes stack size into account is
+  untested.
 
 #### HTSL
 
@@ -602,7 +608,8 @@ Requires an item to match.
 
 #### Options
 
-- **Item:** The item stack.
+- **Item:** The item stack. An
+  [`@<count>` suffix](basic-syntax.md#stack-counts) sets the stack size.
 
 #### HTSL
 

@@ -210,7 +210,7 @@ Omitting `onEnterActions` or `onExitActions` leaves that action list unchanged.
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `name` | Yes | string |
+| `name` | Yes | string matching `^[^@]*$` |
 | `nbt` | Yes | path ending in `.snbt` |
 | `leftClickActions` | No | path ending in `.htsl` |
 | `rightClickActions` | No | path ending in `.htsl` |
@@ -239,6 +239,12 @@ Plain vanilla items do not need an ITEM importable or an `.snbt` file. This
 includes damage variants such as colored wool and stained clay. Reference
 those items directly from item fields in HTSL. See
 [Vanilla Item Names](vanilla-item-names.md) for the complete list.
+
+An item's `name` may not contain `@`, which is reserved for the
+[stack-count suffix](htsl/basic-syntax.md#stack-counts) in item fields. The
+display name inside the `.snbt` is unaffected — only the `name` you reference
+the item by. One declaration serves every stack size, so there is no need for a
+separate item per count.
 
 ## Menu
 

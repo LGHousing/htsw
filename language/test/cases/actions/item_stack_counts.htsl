@@ -1,0 +1,8 @@
+giveItem oak_log@8
+giveItem oak_log@1
+giveItem items/log.snbt@64
+removeItem "Fancy Sword@2"
+dropItem minecraft:stone@16 "Current Location"
+if and (hasItem oak_log@4) {
+    giveItem oak_log
+}

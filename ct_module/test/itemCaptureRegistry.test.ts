@@ -78,6 +78,101 @@ describe("ItemCaptureRegistry identity", () => {
     });
 });
 
+describe("ItemCaptureRegistry stack counts", () => {
+    const plainStone = (count?: number): string =>
+        count === undefined
+            ? '{id:"minecraft:stone"}'
+            : `{id:"minecraft:stone",Count:${count}b}`;
+
+    test("reads a larger stack of a declared item as a count suffix", () => {
+        const registry = new ItemCaptureRegistry("shell");
+        registry.seedNbtOnly("building_stone", {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        });
+
+        expect(registry.register(plainStone(8), "Stone")).toBe("building_stone@8");
+        expect(registry.counts()).toEqual({ matched: 1, fresh: 0 });
+        expect(registry.newEntries()).toEqual([]);
+    });
+
+    test("marks the base item as captured, not the suffixed reference", () => {
+        const registry = new ItemCaptureRegistry("shell");
+        registry.seedNbtOnly("building_stone", {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        });
+
+        registry.register(plainStone(8), "Stone");
+
+        expect(registry.capturedItemNames()).toEqual(["building_stone"]);
+        expect(registry.matchedItemNames()).toEqual(["building_stone"]);
+    });
+
+    test("collapses several stack sizes onto one declaration", () => {
+        const registry = new ItemCaptureRegistry("shell");
+        registry.seedNbtOnly("building_stone", {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        });
+
+        expect(registry.register(plainStone(8), "Stone")).toBe("building_stone@8");
+        expect(registry.register(plainStone(4), "Stone")).toBe("building_stone@4");
+        expect(registry.register(plainStone(1), "Stone")).toBe("building_stone");
+        expect(registry.newEntries()).toEqual([]);
+    });
+
+    test("suffixes a freshly captured item too", () => {
+        const registry = new ItemCaptureRegistry("shell");
+
+        const name = registry.register(plainStone(), "Stone");
+        expect(registry.register(plainStone(16), "Stone")).toBe(`${name}@16`);
+        expect(registry.newEntries()).toHaveLength(1);
+    });
+
+    test("keeps a stack larger than a suffix can express as its own item", () => {
+        const registry = new ItemCaptureRegistry("shell");
+        registry.seedNbtOnly("building_stone", {
+            type: "compound",
+            value: { id: { type: "string", value: "minecraft:stone" } },
+        });
+
+        expect(registry.register(plainStone(65), "Stone")).not.toBe(
+            "building_stone@65"
+        );
+        expect(registry.newEntries()).toHaveLength(1);
+    });
+
+    test("does not restack onto an item whose click actions differ", () => {
+        const registry = new ItemCaptureRegistry("live");
+        registry.seedExportItem(item("first"), {
+            kind: "cached",
+            snbt: "{version:1}",
+        });
+
+        const stacked =
+            '{id:"minecraft:stone",Count:8b,tag:{ExtraAttributes:{interact_data:{version:2}}}}';
+        expect(registry.register(stacked, "Stone")).not.toBe("first@8");
+        expect(registry.newEntries()).toHaveLength(1);
+    });
+
+    test("restacks onto the declaration whose click actions match", () => {
+        const registry = new ItemCaptureRegistry("live");
+        registry.seedExportItem(item("first"), {
+            kind: "cached",
+            snbt: "{version:1}",
+        });
+        registry.seedExportItem(item("second"), {
+            kind: "cached",
+            snbt: "{version:2}",
+        });
+
+        const stacked =
+            '{id:"minecraft:stone",Count:8b,tag:{ExtraAttributes:{interact_data:{version:2}}}}';
+        expect(registry.register(stacked, "Stone")).toBe("second@8");
+    });
+});
+
 describe("ItemCaptureRegistry block references", () => {
     test("uses a vanilla id for a new default block payload", () => {
         const registry = new ItemCaptureRegistry("live");

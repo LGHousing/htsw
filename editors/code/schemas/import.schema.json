@@ -83,6 +83,10 @@
       "type": "string",
       "pattern": "\\.snbt$"
     },
+    "itemName": {
+      "type": "string",
+      "pattern": "^[^@]*$"
+    },
     "functionImportable": {
       "type": "object",
       "additionalProperties": false,
@@ -300,7 +304,7 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "type": "string"
+          "$ref": "#/definitions/itemName"
         },
         "nbt": {
           "$ref": "#/definitions/snbtPath"

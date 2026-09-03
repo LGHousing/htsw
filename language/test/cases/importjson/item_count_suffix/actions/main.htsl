@@ -1,0 +1,6 @@
+giveItem "Stone Item@8"
+giveItem minecraft:stone@16
+giveItem items/stone.snbt@4
+if and (hasItem "Stone Item@2") {
+    dropItem "Stone Item@64" "Current Location"
+}

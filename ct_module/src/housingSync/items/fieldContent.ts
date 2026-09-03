@@ -1,4 +1,5 @@
 import * as htsw from "htsw";
+import type { Tag } from "htsw/nbt";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { visitItemReferences } from "../../importables/items/dependencies";
@@ -48,15 +49,21 @@ export function capturedItemFieldContent(
     for (const item of captures) capturesByName.set(item.name, item);
     const fields = new WeakMap<Action | Condition, Map<string, string>>();
     visitItemReferences(importable, (use) => {
-        const captured = capturesByName.get(use.itemName);
+        // Captures are keyed by item name, but an exported field may reference
+        // one as `name@<count>` — look up the base and restack it.
+        const { base, count } = htsw.items.parseItemReferenceParts(use.itemName);
+        const captured = capturesByName.get(base);
         if (captured === undefined) return;
-        const tag =
+        let tag =
             captured.snbt === ""
                 ? captured.canonicalTagKey === undefined
                     ? undefined
                     : (JSON.parse(captured.canonicalTagKey) as TagLike)
                 : htsw.nbt.parseSnbtText(captured.snbt);
         if (tag === undefined) return;
+        if (count !== undefined && htsw.items.isValidItemCount(count)) {
+            tag = htsw.items.withItemCount(tag as Tag, count);
+        }
         let ownerFields = fields.get(use.owner);
         if (ownerFields === undefined) {
             ownerFields = new Map();
