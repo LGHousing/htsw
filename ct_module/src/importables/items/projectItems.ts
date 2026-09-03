@@ -17,6 +17,8 @@ export interface ProjectItem {
     source: "named" | "snbtPath" | "vanilla";
     importable?: ImportableItem;
     path?: string;
+    count?: number;
+    base?: ProjectItem;
 }
 
 export interface ProjectItemIndex {
@@ -36,6 +38,7 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
     private readonly directByOwnerPath: Partial<Record<string, ProjectItem>> = {};
     private readonly vanillaById: Partial<Record<string, ProjectItem>> = {};
     private readonly directByOwner = new WeakMap<object, Map<string, ProjectItem>>();
+    private readonly countedByEntry = new WeakMap<ProjectItem, Map<number, ProjectItem>>();
     private readonly itemNames = new Map<string, ImportableItem>();
     private readonly gcx?: GlobalCtxt;
 
@@ -79,6 +82,11 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
     }
 
     public resolve(name: string, ownerNode?: object): ProjectItem | undefined {
+        const { base, count } = itemReferences.parseItemReferenceParts(name);
+        return this.withCount(this.resolveBase(base, ownerNode), name, count);
+    }
+
+    private resolveBase(name: string, ownerNode?: object): ProjectItem | undefined {
         const named = this.get(name);
         if (named !== undefined) {
             return named;
@@ -136,6 +144,19 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         sourcePath?: string,
         ownerNode?: object
     ): ProjectItem | undefined {
+        const { base, count } = itemReferences.parseItemReferenceParts(name);
+        return this.withCount(
+            this.resolveBaseFromSourcePath(base, sourcePath, ownerNode),
+            name,
+            count
+        );
+    }
+
+    private resolveBaseFromSourcePath(
+        name: string,
+        sourcePath?: string,
+        ownerNode?: object
+    ): ProjectItem | undefined {
         const named = this.get(name);
         if (named !== undefined) return named;
         const vanilla = this.resolveVanilla(name);
@@ -180,6 +201,36 @@ class DefaultProjectItemIndex implements ProjectItemIndex {
         this.directByOwnerPath[resolved.path] = entry;
         this.bindDirectOwner(ownerNode, name, entry);
         return entry;
+    }
+
+    private withCount(
+        entry: ProjectItem | undefined,
+        reference: string,
+        count: number | undefined
+    ): ProjectItem | undefined {
+        if (entry === undefined) return entry;
+        if (count === undefined || !itemReferences.isValidItemCount(count)) {
+            return entry;
+        }
+        let byCount = this.countedByEntry.get(entry);
+        if (byCount === undefined) {
+            byCount = new Map();
+            this.countedByEntry.set(entry, byCount);
+        }
+        const existing = byCount.get(count);
+        if (existing !== undefined) return existing;
+        const counted = projectItem({
+            name: reference,
+            nbt: itemReferences.withItemCount(entry.nbt, count),
+            aliases: entry.aliases,
+            source: entry.source,
+            importable: entry.importable,
+            path: entry.path,
+            count,
+            base: entry,
+        });
+        byCount.set(count, counted);
+        return counted;
     }
 
     private resolveVanilla(name: string): ProjectItem | undefined {

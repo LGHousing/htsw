@@ -3,12 +3,13 @@
  *
  * The bare-name regex mirrors the lexer's ident continuation rule
  * (see `htsl/parse/lexer.ts`): an ident starts with `[a-zA-Z_]` and continues
- * with `[a-zA-Z_/0-9.\-]`, which lets us emit names like `trig/angle` or
- * `MyFunc.v2` unquoted.
+ * with `[a-zA-Z_/0-9.@\-]`, which lets us emit names like `trig/angle`,
+ * `MyFunc.v2`, or an item reference carrying a stack count (`oak_log@8`)
+ * unquoted.
  */
 
 const PLACEHOLDER_RE = /^%[^%]+%$/;
-const BARE_NAME_RE = /^[a-zA-Z_][a-zA-Z_/0-9.\-]*$/;
+const BARE_NAME_RE = /^[a-zA-Z_][a-zA-Z_/0-9.@\-]*$/;
 
 export function isPlaceholderOnly(s: string): boolean {
     return PLACEHOLDER_RE.test(s);

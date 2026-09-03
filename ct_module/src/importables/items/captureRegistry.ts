@@ -1,3 +1,5 @@
+import * as htsw from "htsw";
+import type { Tag } from "htsw/nbt";
 import type { ImportableItem } from "htsw/types";
 
 import { canonicalSlug } from "../../project/paths";
@@ -29,6 +31,12 @@ export type CapturedItem = {
 type RegistryItem = CapturedItem & {
     shellKey: string;
     exactKey?: string;
+    // The same pair of keys for this item restacked to one, which is what a
+    // `name@<count>` reference is matched against. They mirror the keys above
+    // exactly, including `singleExactKey` being unknown for a seeded item whose
+    // click-action payload has not been read back yet.
+    singleShellKey: string;
+    singleExactKey?: string;
 };
 
 export type ItemCaptureIdentity = "live" | "shell";
@@ -41,6 +49,14 @@ export class ItemCaptureRegistry {
         Record<string, string[]>
     >;
     private readonly shellNamesByKey = Object.create(null) as Partial<
+        Record<string, string[]>
+    >;
+    // Entries indexed by the keys of themselves restacked to one, so a captured
+    // stack can be recognized as an existing item at a larger size.
+    private readonly singleExactNamesByKey = Object.create(null) as Partial<
+        Record<string, string[]>
+    >;
+    private readonly singleShellNamesByKey = Object.create(null) as Partial<
         Record<string, string[]>
     >;
     private readonly seededDisplayNames = Object.create(null) as Partial<
@@ -57,16 +73,22 @@ export class ItemCaptureRegistry {
         expectedInteractData: InteractDataExpectation
     ): void {
         const shellKey = canonicalItemShellTagKey(item.nbt);
+        const single = htsw.items.withItemCount(item.nbt, 1);
         let exactKey: string | undefined;
+        let singleExactKey: string | undefined;
         if (this.identity === "shell") {
             exactKey = shellKey;
+            singleExactKey = canonicalItemShellTagKey(single);
         } else if (expectedInteractData.kind === "absent") {
             exactKey = canonicalLiveItemTagKey(item.nbt);
+            singleExactKey = canonicalLiveItemTagKey(single);
         }
         this.seed(
             item.name,
             shellKey,
+            canonicalItemShellTagKey(single),
             exactKey,
+            singleExactKey,
             displayNameFromTag(item.nbt),
             expectedInteractData
         );
@@ -74,15 +96,26 @@ export class ItemCaptureRegistry {
 
     seedNbtOnly(name: string, nbt: ImportableItem["nbt"]): void {
         const shellKey = canonicalItemShellTagKey(nbt);
-        const exactKey =
-            this.identity === "shell" ? shellKey : canonicalLiveItemTagKey(nbt);
-        this.seed(name, shellKey, exactKey, displayNameFromTag(nbt), undefined);
+        const single = htsw.items.withItemCount(nbt, 1);
+        const singleShellKey = canonicalItemShellTagKey(single);
+        const shell = this.identity === "shell";
+        this.seed(
+            name,
+            shellKey,
+            singleShellKey,
+            shell ? shellKey : canonicalLiveItemTagKey(nbt),
+            shell ? singleShellKey : canonicalLiveItemTagKey(single),
+            displayNameFromTag(nbt),
+            undefined
+        );
     }
 
     private seed(
         name: string,
         shellKey: string,
+        singleShellKey: string,
         exactKey: string | undefined,
+        singleExactKey: string | undefined,
         displayName: string | null,
         expectedInteractData: InteractDataExpectation | undefined
     ): void {
@@ -96,9 +129,15 @@ export class ItemCaptureRegistry {
             canonicalTagKey: shellKey,
             shellKey,
             exactKey,
+            singleShellKey,
+            singleExactKey,
         };
         this.entriesByName[name] = entry;
         this.addName(this.shellNamesByKey, shellKey, name);
+        this.addName(this.singleShellNamesByKey, singleShellKey, name);
+        if (singleExactKey !== undefined) {
+            this.addName(this.singleExactNamesByKey, singleExactKey, name);
+        }
         if (exactKey !== undefined) this.addName(this.exactNamesByKey, exactKey, name);
         if (displayName !== null && this.seededDisplayNames[displayName] === undefined) {
             this.seededDisplayNames[displayName] = name;
@@ -118,6 +157,20 @@ export class ItemCaptureRegistry {
             this.capturedNames[exact.name] = true;
             if (exact.seeded) this.matchedNames[exact.name] = true;
             return exact.name;
+        }
+
+        // A stack that differs from a known item only in size is that item at a
+        // larger count, not a new one. Emitting `name@<count>` keeps a house
+        // that uses stack-count suffixes from exporting back into one duplicate
+        // .snbt per size.
+        const restacked = restackedToOne(normalizedSnbt);
+        if (restacked !== undefined) {
+            const base = this.matchRestacked(normalizedSnbt, restacked.snbt);
+            if (base !== undefined) {
+                this.capturedNames[base.name] = true;
+                if (base.seeded) this.matchedNames[base.name] = true;
+                return `${base.name}@${restacked.count}`;
+            }
         }
 
         if (this.identity === "live") {
@@ -149,6 +202,7 @@ export class ItemCaptureRegistry {
                 changed.seeded = false;
                 changed.exactKey = exactKey;
                 this.addName(this.exactNamesByKey, exactKey, changed.name);
+                this.reindexSingleKeys(changed, normalizedSnbt);
                 this.capturedNames[changed.name] = true;
                 return changed.name;
             }
@@ -168,6 +222,12 @@ export class ItemCaptureRegistry {
             );
         }
 
+        const single = restackedSnbt(normalizedSnbt, 1);
+        const singleShellKey = canonicalItemShellSnbtKey(single);
+        const singleExactKey =
+            this.identity === "shell"
+                ? singleShellKey
+                : canonicalLiveItemSnbtKey(single);
         this.entriesByName[name] = {
             name,
             snbt: normalizedSnbt,
@@ -175,9 +235,13 @@ export class ItemCaptureRegistry {
             seeded: false,
             shellKey,
             exactKey,
+            singleShellKey,
+            singleExactKey,
         };
         this.addName(this.shellNamesByKey, shellKey, name);
         this.addName(this.exactNamesByKey, exactKey, name);
+        this.addName(this.singleShellNamesByKey, singleShellKey, name);
+        this.addName(this.singleExactNamesByKey, singleExactKey, name);
         this.capturedNames[name] = true;
         return name;
     }
@@ -247,6 +311,74 @@ export class ItemCaptureRegistry {
         return Object.keys(this.entriesByName).length;
     }
 
+    /**
+     * The known item that `singleSnbt` — the captured stack restacked to one —
+     * is a larger stack of, or undefined when it is a genuinely new item.
+     *
+     * Deliberately narrower than the matching `register` does for the stack as
+     * captured: that code may adopt a lone same-shell candidate as an *edit* of
+     * it and rewrite the entry. Restacking rewrites nothing, so a wrong guess
+     * would silently point an action at an item with different click actions.
+     * Only an identity match, or a cached click-action expectation that agrees,
+     * is accepted.
+     */
+    private matchRestacked(
+        originalSnbt: string,
+        singleSnbt: string
+    ): RegistryItem | undefined {
+        const exactKey =
+            this.identity === "shell"
+                ? canonicalItemShellSnbtKey(singleSnbt)
+                : canonicalLiveItemSnbtKey(singleSnbt);
+        const exactName = this.singleExactNamesByKey[exactKey]?.[0];
+        if (exactName !== undefined) return this.entriesByName[exactName];
+
+        if (this.identity === "shell") return undefined;
+
+        // A seeded item with click actions has no live key yet — its Housing
+        // interact_data is only known from the cache — so fall back to the same
+        // expectation check the exact-match path uses.
+        const shellCandidates =
+            this.singleShellNamesByKey[canonicalItemShellSnbtKey(singleSnbt)] ?? [];
+        for (const name of shellCandidates) {
+            const entry = this.entriesByName[name];
+            if (entry?.seeded !== true) continue;
+            const expected = entry.expectedInteractData;
+            if (
+                expected !== undefined &&
+                itemInteractDataMatches(originalSnbt, expected)
+            ) {
+                return entry;
+            }
+        }
+        return undefined;
+    }
+
+    /** Re-key an entry whose snbt was replaced by an edit captured this run. */
+    private reindexSingleKeys(entry: RegistryItem, snbt: string): void {
+        this.removeName(
+            this.singleShellNamesByKey,
+            entry.singleShellKey,
+            entry.name
+        );
+        if (entry.singleExactKey !== undefined) {
+            this.removeName(
+                this.singleExactNamesByKey,
+                entry.singleExactKey,
+                entry.name
+            );
+        }
+
+        const single = restackedSnbt(snbt, 1);
+        entry.singleShellKey = canonicalItemShellSnbtKey(single);
+        entry.singleExactKey =
+            this.identity === "shell"
+                ? entry.singleShellKey
+                : canonicalLiveItemSnbtKey(single);
+        this.addName(this.singleShellNamesByKey, entry.singleShellKey, entry.name);
+        this.addName(this.singleExactNamesByKey, entry.singleExactKey, entry.name);
+    }
+
     private availableName(displayNameHint: string): string {
         const preferred = slugForDisplayName(displayNameHint);
         let name = preferred;
@@ -282,6 +414,53 @@ export class ItemCaptureRegistry {
         if (position >= 0) names.splice(position, 1);
         if (names.length === 0) delete index[key];
     }
+}
+
+/** `snbt` restacked to `count`, or unchanged when it cannot be parsed. */
+function restackedSnbt(snbt: string, count: number): string {
+    const tag = parseItemSnbt(snbt);
+    if (tag === undefined) return snbt;
+    return htsw.nbt.printSnbt(htsw.items.withItemCount(tag, count), {
+        pretty: false,
+    });
+}
+
+/**
+ * `snbt` restacked to a single item, plus the stack size it had. Undefined for
+ * a stack of one (nothing to strip) and for a size outside what a `@<count>`
+ * suffix can express, so an unrepresentable stack still exports as its own item.
+ */
+function restackedToOne(snbt: string): { snbt: string; count: number } | undefined {
+    const tag = parseItemSnbt(snbt);
+    if (tag === undefined) return undefined;
+    const count = stackCountOf(tag);
+    if (count === undefined || count === 1 || !htsw.items.isValidItemCount(count)) {
+        return undefined;
+    }
+    return {
+        snbt: htsw.nbt.printSnbt(htsw.items.withItemCount(tag, 1), {
+            pretty: false,
+        }),
+        count,
+    };
+}
+
+function parseItemSnbt(snbt: string): Tag | undefined {
+    try {
+        return htsw.nbt.parseSnbtText(snbt);
+    } catch (_error) {
+        return undefined;
+    }
+}
+
+/** A missing `Count` is vanilla's default of one. */
+function stackCountOf(tag: Tag): number | undefined {
+    const count = tagChild(tag, "Count");
+    if (count === undefined) return 1;
+    if (count.type !== "byte" && count.type !== "short" && count.type !== "int") {
+        return undefined;
+    }
+    return Number(count.value);
 }
 
 function displayNameFromTag(root: unknown): string | null {

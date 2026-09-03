@@ -17,6 +17,7 @@ import {
     parseColor,
     parseEvent,
     parseFunctionIcon,
+    parseItemImportableName,
     parseMenuSlots,
     parsePermissions,
     parseChatSpeed,
@@ -126,7 +127,7 @@ export function parseImportableItem(p: Parser): ImportableItem {
 
     parseRawFields<RawItemImportable>(p, {
         name: requiredRawField((field) =>
-            field.setField(im, "name", (p) => p.parseString())
+            field.setField(im, "name", parseItemImportableName)
         ),
         nbt: requiredRawField((field) => {
             field.setField(im, "nbt", parseSnbt);

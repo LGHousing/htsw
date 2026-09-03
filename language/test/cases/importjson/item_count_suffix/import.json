@@ -1,0 +1,14 @@
+{
+    "items": [
+        {
+            "name": "Stone Item",
+            "nbt": "actions/items/stone.snbt"
+        }
+    ],
+    "functions": [
+        {
+            "name": "CountedItems",
+            "actions": "actions/main.htsl"
+        }
+    ]
+}
