@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type TaskContext from "../src/tasks/context";
 import { getActiveTaskKind } from "../src/tasks/activeTask";
@@ -21,6 +21,7 @@ import {
     drainQueue,
     matchesBulkCacheState,
     namesNotDeclared,
+    printQueueRunEnd,
     runQueuedExportSession,
     type QueueRunnerDependencies,
     type QueueSessionResult,
@@ -33,7 +34,14 @@ import {
     getTaskProgress,
 } from "../src/gui/right-panel/import-tab/taskProgress";
 
-const ctx = { checkCancelled: () => undefined } as unknown as TaskContext;
+const ctx = {
+    checkCancelled: () => undefined,
+    elapsedMs: () => 12_000,
+} as unknown as TaskContext;
+
+function chatSpy() {
+    return vi.spyOn(ChatLib, "chat");
+}
 
 function row(
     label: string,
@@ -75,6 +83,7 @@ function dependencies(
 }
 
 afterEach(() => {
+    vi.restoreAllMocks();
     clearQueue();
     clearTaskProgress();
 });
@@ -386,6 +395,76 @@ describe("queued export destination", () => {
 
         expect(queued.path).toBe("/project/import.json");
         expect(target).toBe("/project/functions/new.import.json");
+    });
+});
+
+describe("queued export and read chat", () => {
+    it("prints each export failure before the exact completion line", async () => {
+        const first = row("first", "export");
+        const second = row("second", "export");
+        const broken = row("broken", "export");
+        const chat = chatSpy();
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            batches[0].onQueueRowFinished?.(first.key);
+            batches[0].onQueueRowFinished?.(second.key);
+            batches[0].onQueueRowFinished?.(broken.key, "Housing menu closed");
+            return { total: 3, succeeded: 2, failed: 1 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(
+            ctx,
+            [first, second, broken],
+            "house-a",
+            fakeSession
+        );
+
+        expect(chat.mock.calls.map(([message]) => message)).toEqual([
+            "&c[htsw] Export failed on FUNCTION broken: Housing menu closed",
+            "&a[htsw] Export complete in 12s &7· &f2&a exported, &f1&c failed",
+        ]);
+    });
+
+    it("prints the exact read completion line", async () => {
+        const queued = row("cached", "read");
+        const chat = chatSpy();
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            batches[0].onQueueRowFinished?.(queued.key);
+            return { total: 1, succeeded: 1, failed: 0 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(ctx, [queued], "house-a", fakeSession);
+
+        expect(chat).toHaveBeenCalledWith(
+            "&a[htsw] Read complete in 12s &7· &f1&a read, &f0&c failed"
+        );
+    });
+});
+
+describe("queue terminal chat", () => {
+    it("prints the exact idle and paused summaries", () => {
+        const chat = chatSpy();
+        enqueue(row("still queued", "import", "/other/import.json", "house-b"));
+
+        printQueueRunEnd("idle", { completed: 2, failed: 1 });
+        printQueueRunEnd("paused", { completed: 3, failed: 4 });
+
+        expect(chat.mock.calls.map(([message]) => message)).toEqual([
+            "&a[htsw] Queue finished &7· &f2&a completed, &f1&a failed, &f1&7 queued",
+            "&e[htsw] Queue paused &7· &f3&e completed, &f4&e failed, &f1&7 queued",
+        ]);
+    });
+
+    it("prints zero run counts when no rows are runnable for the current house", async () => {
+        enqueue(row("other house", "export", "/other/import.json", "house-b"));
+        const chat = chatSpy();
+        const tally = { completed: 0, failed: 0 };
+
+        await expect(drainQueue(ctx, dependencies(), {}, tally)).resolves.toBe("idle");
+        printQueueRunEnd("idle", tally);
+
+        expect(chat).toHaveBeenCalledWith(
+            "&a[htsw] Queue finished &7· &f0&a completed, &f0&a failed, &f1&7 queued"
+        );
     });
 });
 

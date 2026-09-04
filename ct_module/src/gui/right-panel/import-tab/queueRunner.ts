@@ -33,6 +33,7 @@ import { isHouseTrusted } from "../../state/trust";
 import { holdAutoRunUntilReparse } from "../../autoRun";
 import { showToast } from "../../toast";
 import { runImportQueueSession } from "./taskController";
+import { formatElapsedSeconds } from "./elapsed";
 import {
     completeQueueRows,
     expandBulkQueueRow,
@@ -60,6 +61,7 @@ export type QueueSessionResult = {
 };
 
 type CompletionHook = { remaining: Set<string>; callback: () => void };
+export type QueueRunTally = { completed: number; failed: number };
 const completionHooks: CompletionHook[] = [];
 
 export function onQueueRowsCompleted(
@@ -197,11 +199,16 @@ function resetSessionRows(rows: readonly QueueRow[]): void {
 function applySessionResult(
     rows: readonly QueueRow[],
     result: QueueSessionResult,
-    scheduleDone: (callback: () => void) => void
+    scheduleDone: (callback: () => void) => void,
+    tally?: QueueRunTally
 ): boolean {
     const completed = new Set(result.completedKeys);
     const failed = new Map(result.failed.map((failure) => [failure.key, failure.error]));
     for (const [key, error] of failed) setQueueRowStatus(key, "failed", error);
+    if (tally !== undefined) {
+        tally.completed += completed.size;
+        tally.failed += failed.size;
+    }
     const cancelled = new Set(result.cancelledKeys ?? []);
     for (const key of cancelled) {
         setQueueRowStatus(key, "cancelled", "Cancelled for conflict review");
@@ -224,7 +231,8 @@ function applySessionResult(
 export async function drainQueue(
     ctx: TaskContext,
     dependencies: QueueRunnerDependencies,
-    options: QueueStartOptions = {}
+    options: QueueStartOptions = {},
+    tally?: QueueRunTally
 ): Promise<QueueRunState> {
     const currentHouse = await dependencies.currentHouse(ctx);
     let preparedImport = false;
@@ -240,7 +248,9 @@ export async function drainQueue(
                 if (isTaskCancelled(error)) return "paused";
                 const message = error instanceof Error ? error.message : String(error);
                 setQueueRowStatus(head.key, "failed", message);
+                if (tally !== undefined) tally.failed++;
                 if (head.op === "import") return "idle";
+                ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
                 continue;
             }
             const inserted = expandBulkQueueRow(head.key, children);
@@ -267,10 +277,16 @@ export async function drainQueue(
         } catch (error) {
             if (isTaskCancelled(error)) {
                 resetSessionRows(session);
+                if (head.op !== "import") {
+                    ChatLib.chat(
+                        `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f0&e ${queueOpVerb(head.op)}`
+                    );
+                }
                 return "paused";
             }
             const message = error instanceof Error ? error.message : String(error);
             setQueueRowStatus(head.key, "failed", message);
+            if (tally !== undefined) tally.failed++;
             for (let i = 1; i < session.length; i++) {
                 setQueueRowStatus(session[i].key, "queued");
             }
@@ -278,16 +294,25 @@ export async function drainQueue(
                 ChatLib.chat(`&c[htsw] Import failed: ${String(error)}`);
                 return "idle";
             }
+            ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
             continue;
         }
 
         if (result.cancelled === true) {
             resetSessionRows(session);
+            if (head.op !== "import") {
+                ChatLib.chat(
+                    `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f${result.completedKeys.length}&e ${queueOpVerb(head.op)}`
+                );
+            }
             return "paused";
         }
         if (result.parseError === true) holdAutoRunUntilReparse();
-        const failed = applySessionResult(session, result, (callback) =>
-            dependencies.scheduleDone(callback)
+        const failed = applySessionResult(
+            session,
+            result,
+            (callback) => dependencies.scheduleDone(callback),
+            tally
         );
         if (head.op === "import" && failed) {
             showToast("Queue stopped after import failure", 0xffe85c5c, 8000);
@@ -305,11 +330,13 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
     if (!eligible) return false;
     state = "running";
     pauseRequested = false;
+    const tally: QueueRunTally = { completed: 0, failed: 0 };
     void runHousingSyncTask("queue", (ctx) =>
-        drainQueue(ctx, defaultDependencies, options)
+        drainQueue(ctx, defaultDependencies, options, tally)
     )
         .then((next) => {
             state = next ?? (pauseRequested ? "paused" : "idle");
+            printQueueRunEnd(state, tally);
         })
         .catch((error: unknown) => {
             state = "idle";
@@ -321,6 +348,23 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
             notifyQueueRunEnded();
         });
     return true;
+}
+
+export function printQueueRunEnd(runState: QueueRunState, tally: QueueRunTally): void {
+    const queued = getQueue().filter((row) => row.status === "queued").length;
+    const label = runState === "paused" ? "paused" : "finished";
+    const colour = runState === "paused" ? "&e" : "&a";
+    ChatLib.chat(
+        `${colour}[htsw] Queue ${label} &7· &f${tally.completed}${colour} completed, &f${tally.failed}${colour} failed, &f${queued}&7 queued`
+    );
+}
+
+function queueOpLabel(op: QueueOp): "Export" | "Read" {
+    return op === "read" ? "Read" : "Export";
+}
+
+function queueOpVerb(op: QueueOp): "exported" | "read" {
+    return op === "read" ? "read" : "exported";
 }
 
 export function resumeQueue(): boolean {
@@ -527,39 +571,55 @@ export async function runQueuedExportSession(
     }
     const completedKeys: string[] = [];
     const failed: QueueSessionFailure[] = [];
-    await runSession(
-        ctx,
-        first.op === "read"
-            ? { kind: "cache", housingUuid: currentHouse, importJsonPath: first.path }
-            : {
-                  kind: "project",
-                  project: readProjectExportDestination({
-                      rootDir: directoryOf(first.path),
-                      importJsonPath: first.path,
-                  }),
-              },
-        Array.from(batches.entries()).map(([type, batchRows]) => ({
-            type,
-            reader: type === "ITEM" ? exportHeldItem : undefined,
-            names:
-                type === "ITEM"
-                    ? undefined
-                    : batchRows.map((row) =>
-                          row.target.kind === "importable" ? row.target.identity : ""
-                      ),
-            newExportTargetImportJson:
-                first.op === "export" ? (newExportTarget() ?? undefined) : undefined,
-            queueRows: batchRows,
-            onQueueRowFinished: (key: string, error?: string) => {
-                if (error === undefined) completedKeys.push(key);
-                else failed.push({ key, error });
-            },
-        }))
-    );
+    try {
+        await runSession(
+            ctx,
+            first.op === "read"
+                ? { kind: "cache", housingUuid: currentHouse, importJsonPath: first.path }
+                : {
+                      kind: "project",
+                      project: readProjectExportDestination({
+                          rootDir: directoryOf(first.path),
+                          importJsonPath: first.path,
+                      }),
+                  },
+            Array.from(batches.entries()).map(([type, batchRows]) => ({
+                type,
+                reader: type === "ITEM" ? exportHeldItem : undefined,
+                names:
+                    type === "ITEM"
+                        ? undefined
+                        : batchRows.map((row) =>
+                              row.target.kind === "importable" ? row.target.identity : ""
+                          ),
+                newExportTargetImportJson:
+                    first.op === "export" ? (newExportTarget() ?? undefined) : undefined,
+                queueRows: batchRows,
+                onQueueRowFinished: (key: string, error?: string) => {
+                    if (error === undefined) completedKeys.push(key);
+                    else failed.push({ key, error });
+                },
+            }))
+        );
+    } catch (error) {
+        if (!isTaskCancelled(error)) throw error;
+        return { completedKeys, failed, cancelled: true };
+    }
     const itemRows = batches.get("ITEM") ?? [];
     for (const itemRow of itemRows) {
         if (completedKeys.indexOf(itemRow.key) < 0) completedKeys.push(itemRow.key);
     }
+    for (const failure of failed) {
+        const row = rows.find((candidate) => candidate.key === failure.key);
+        if (row?.target.kind !== "importable") continue;
+        ChatLib.chat(
+            `&c[htsw] ${queueOpLabel(first.op)} failed on ${row.target.type} ${row.target.identity}: ${failure.error}`
+        );
+    }
+    const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
+    ChatLib.chat(
+        `&a[htsw] ${queueOpLabel(first.op)} complete in ${elapsed} &7· &f${completedKeys.length}&a ${queueOpVerb(first.op)}, &f${failed.length}&c failed`
+    );
     return { completedKeys, failed };
 }
 
