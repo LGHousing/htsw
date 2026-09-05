@@ -1,6 +1,8 @@
 import type { Importable, ImportableItem } from "htsw/types";
 
 import type TaskContext from "../../tasks/context";
+import { finishBridgeSession } from "../../bridge/status";
+import { isTaskCancelled } from "../../tasks/cancellation";
 import { createExportProgressSink } from "../../gui/export/progressSink";
 import { exportAllNpcs } from "../npcs/exportAll";
 import {
@@ -51,86 +53,107 @@ export async function runExportSession(
             ? destination.project.importJsonPath
             : destination.importJsonPath;
     const housingUuid = destination.kind === "cache" ? destination.housingUuid : "";
-    for (const batch of batches) {
-        const onItemFailure = (error: unknown, identity: string, rowIndex: number) => {
-            if (failureLogged) return;
-            failureLogged = true;
-            writeTaskFailureLog(
-                {
-                    phase,
-                    sourcePath,
-                    housingUuid,
-                    importableType: batch.type,
-                    identity,
-                    rowIndex,
-                },
-                error
-            );
-        };
-        if (destination.kind === "project" && batch.type === "NPC") {
-            const project = destination.project;
-            const result = await exportAllNpcs(ctx, {
-                ...project,
-                entries: batch.npcEntries,
+    try {
+        for (const batch of batches) {
+            const onItemFailure = (
+                error: unknown,
+                identity: string,
+                rowIndex: number
+            ) => {
+                if (failureLogged) return;
+                failureLogged = true;
+                writeTaskFailureLog(
+                    {
+                        phase,
+                        sourcePath,
+                        housingUuid,
+                        importableType: batch.type,
+                        identity,
+                        rowIndex,
+                    },
+                    error
+                );
+            };
+            if (destination.kind === "project" && batch.type === "NPC") {
+                const project = destination.project;
+                const result = await exportAllNpcs(ctx, {
+                    ...project,
+                    entries: batch.npcEntries,
+                    skipExisting: batch.skipExisting,
+                    newExportTargetImportJson: batch.newExportTargetImportJson,
+                    progress: createExportProgressSink(
+                        "NPC",
+                        project.importJsonPath,
+                        "export",
+                        undefined,
+                        {
+                            queueRows: batch.queueRows,
+                            onFinished: batch.onQueueRowFinished,
+                        }
+                    ),
+                    output: { kind: "project" },
+                    onItemFailure,
+                });
+                addReadResult(total, result);
+                finishBridgeSession(result.failed > 0 ? "failed" : "completed", {
+                    count: result.succeeded,
+                    failed: result.failed,
+                });
+                project.projectItems = readProjectItemsForExport(project.importJsonPath);
+                continue;
+            }
+            const reader = batch.reader ?? HOUSE_READERS[batch.type];
+            if (reader === null) {
+                throw new Error(`${batch.type} has no live Housing reader.`);
+            }
+            const target =
+                destination.kind === "project"
+                    ? destination.project
+                    : {
+                          importJsonPath: destination.importJsonPath,
+                          rootDir: "",
+                          projectItems: destination.projectItems ?? [],
+                      };
+            const result = await reader(ctx, {
+                ...target,
+                names: batch.names,
                 skipExisting: batch.skipExisting,
                 newExportTargetImportJson: batch.newExportTargetImportJson,
+                onNamesListed: batch.onNamesListed,
                 progress: createExportProgressSink(
-                    "NPC",
-                    project.importJsonPath,
-                    "export",
+                    batch.type,
+                    target.importJsonPath,
+                    destination.kind === "cache" ? "read" : undefined,
                     undefined,
                     {
                         queueRows: batch.queueRows,
                         onFinished: batch.onQueueRowFinished,
                     }
                 ),
-                output: { kind: "project" },
+                output:
+                    destination.kind === "cache"
+                        ? { kind: "cache", housingUuid: destination.housingUuid }
+                        : { kind: "project" },
                 onItemFailure,
             });
             addReadResult(total, result);
-            project.projectItems = readProjectItemsForExport(project.importJsonPath);
-            continue;
+            finishBridgeSession(result.failed > 0 ? "failed" : "completed", {
+                count: result.succeeded,
+                failed: result.failed,
+            });
+            if (destination.kind === "project") {
+                destination.project.projectItems = readProjectItemsForExport(
+                    destination.project.importJsonPath
+                );
+            }
         }
-        const reader = batch.reader ?? HOUSE_READERS[batch.type];
-        if (reader === null) {
-            throw new Error(`${batch.type} has no live Housing reader.`);
-        }
-        const target =
-            destination.kind === "project"
-                ? destination.project
-                : {
-                      importJsonPath: destination.importJsonPath,
-                      rootDir: "",
-                      projectItems: destination.projectItems ?? [],
-                  };
-        const result = await reader(ctx, {
-            ...target,
-            names: batch.names,
-            skipExisting: batch.skipExisting,
-            newExportTargetImportJson: batch.newExportTargetImportJson,
-            onNamesListed: batch.onNamesListed,
-            progress: createExportProgressSink(
-                batch.type,
-                target.importJsonPath,
-                destination.kind === "cache" ? "read" : undefined,
-                undefined,
-                {
-                    queueRows: batch.queueRows,
-                    onFinished: batch.onQueueRowFinished,
-                }
-            ),
-            output:
-                destination.kind === "cache"
-                    ? { kind: "cache", housingUuid: destination.housingUuid }
-                    : { kind: "project" },
-            onItemFailure,
+    } catch (error) {
+        finishBridgeSession(isTaskCancelled(error) ? "cancelled" : "failed", {
+            reason: String(error),
+            count: total.succeeded,
+            failed: total.failed,
         });
-        addReadResult(total, result);
-        if (destination.kind === "project") {
-            destination.project.projectItems = readProjectItemsForExport(
-                destination.project.importJsonPath
-            );
-        }
+        throw error;
     }
     return total;
 }

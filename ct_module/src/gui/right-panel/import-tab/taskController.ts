@@ -73,6 +73,7 @@ import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
 import { previewSelect } from "../selection";
+import { emitBridgeEvent, finishBridgeSession } from "../../../bridge/status";
 
 const CONFLICT_TYPE_LABEL: Partial<Record<ImportConflict["type"], string>> = {
     FUNCTION: "Function",
@@ -251,7 +252,13 @@ function createSyncEventHandler(args: {
         },
         importableScanCompleted: () => {},
         importableHydrationCompleted: () => {},
-        sessionTotalsLocked: () => {},
+        sessionTotalsLocked: (event) => {
+            emitBridgeEvent("htsw_plan", {
+                status: "completed",
+                rows: event.plannedRows,
+                sessionApplicationUnits: event.sessionApplicationUnits,
+            });
+        },
         sessionApplicationProgress: () => {},
         applicationProgress: () => {},
         sessionFinished: () => {
@@ -761,6 +768,10 @@ export async function runImportQueueSession(
             failed.push({ key: queueRow.key, error: message });
         }
     }
+    finishBridgeSession(
+        cancelled ? "cancelled" : failed.length > 0 ? "failed" : "completed",
+        { ...counts, elapsedMs: ctx.elapsedMs() }
+    );
     finishTaskProgress(failed[0]?.error ?? null);
     autoTrackRefresh();
     if (reviewState.request !== null) {

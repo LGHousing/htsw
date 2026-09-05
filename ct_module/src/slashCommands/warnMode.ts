@@ -3,6 +3,7 @@ import {
     setOverwriteWarningMode,
     type OverwriteWarningMode,
 } from "../importables/overwriteWarning";
+import { emitBridgeEvent } from "../bridge/status";
 
 export function parseWarnModeArgument(
     args: readonly string[]
@@ -23,14 +24,29 @@ export function commandWarnMode(args: string[]): void {
         return;
     }
     if (mode === null) {
+        emitBridgeEvent("htsw_setting", {
+            setting: "overwrite_warning",
+            status: "failed",
+            reason: "expected always, trusted, or off",
+        });
         ChatLib.chat(
             "[htsw] Overwrite warning change failed: expected always, trusted, or off"
         );
         return;
     }
     if (!setOverwriteWarningMode(mode)) {
+        emitBridgeEvent("htsw_setting", {
+            setting: "overwrite_warning",
+            status: "failed",
+            reason: "could not save setting",
+        });
         ChatLib.chat("[htsw] Overwrite warning change failed: could not save setting");
         return;
     }
     ChatLib.chat(`[htsw] Overwrite warning set to ${mode}`);
+    emitBridgeEvent("htsw_setting", {
+        setting: "overwrite_warning",
+        status: "completed",
+        value: mode,
+    });
 }

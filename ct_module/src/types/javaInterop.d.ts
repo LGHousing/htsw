@@ -329,6 +329,7 @@ declare global {
     }
 
     interface HtswJavaSystemClass {
+        clearProperty(key: string): string | null;
         getProperty(name: string): unknown;
         setProperty(name: string, value: string): unknown;
     }

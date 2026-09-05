@@ -1,4 +1,12 @@
 import { TaskManager } from "../tasks/manager";
+import { isTaskCancelled } from "../tasks/cancellation";
+import {
+    beginBridgeRun,
+    emitBridgeEvent,
+    finishBridgeRun,
+    rejectBridgeRun,
+} from "../bridge/status";
+import type { HtswBridgeEventType, HtswOperation } from "../bridge/types";
 import type TaskContext from "../tasks/context";
 import { setTaskRunning } from "../tasks/runningState";
 import {
@@ -18,9 +26,19 @@ import {
 // Cancellation resolves undefined; other errors still reject.
 export async function runHousingSyncTask<T>(
     kind: ActiveTaskKind,
-    task: (ctx: TaskContext) => Promise<T>
+    task: (ctx: TaskContext) => Promise<T>,
+    bridge?: {
+        operation?: HtswOperation;
+        diagnostic?: HtswBridgeEventType;
+        disabled?: boolean;
+    }
 ): Promise<T | undefined> {
+    const operation = bridge?.operation ?? (kind === "queue" ? "import" : kind);
+    if (TaskManager.isBusy() && !bridge?.disabled)
+        rejectBridgeRun(operation, "busy", bridge?.diagnostic);
     return TaskManager.run(async (ctx) => {
+        if (!bridge?.disabled)
+            beginBridgeRun(operation, kind === "queue" ? "queue" : "task");
         setActiveTaskContext(kind, ctx);
         setTaskRunning(true);
         try {
@@ -33,8 +51,19 @@ export async function runHousingSyncTask<T>(
             }
             setPacketCaptureForTask(true);
             const result = await task(ctx);
+            if (kind !== "queue" && !bridge?.disabled)
+                finishBridgeRun(ctx.isCancelled() ? "cancelled" : "completed");
             resetRuntimeDebugRecords();
             return result;
+        } catch (error) {
+            if (kind !== "queue" && !bridge?.disabled) {
+                const status = isTaskCancelled(error) ? "cancelled" : "failed";
+                const reason = error instanceof Error ? error.message : String(error);
+                if (bridge?.diagnostic !== undefined)
+                    emitBridgeEvent(bridge.diagnostic, { status, reason });
+                finishBridgeRun(status, { reason });
+            }
+            throw error;
         } finally {
             const deferredChat = ctx.abandonChatPrompt();
             if (deferredChat !== null && deferredChat > 0) {

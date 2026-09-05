@@ -23,6 +23,7 @@ import { importableIdentity } from "../importables/identity";
 import { pauseQueue } from "../gui/right-panel/import-tab/queueRunner";
 import { readProjectExportDestination } from "../importables/export/projectDestination";
 import { parentDirOf } from "../project/paths";
+import { emitBridgeEvent } from "../bridge/status";
 
 function rowAdded(result: QueueAddResult): boolean {
     return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
@@ -192,6 +193,7 @@ export function commandExport(args: string[]): void {
             captured,
             { name, ...destination }
         ).catch((error: unknown) => {
+            emitBridgeEvent("htsw_export", { status: "failed", reason: String(error) });
             ChatLib.chat(`&c[htsw] Chest export failed: ${String(error)}`);
         });
         return;

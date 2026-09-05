@@ -1,3 +1,4 @@
+import { emitBridgeEvent } from "../bridge/status";
 /// <reference types="../../CTAutocomplete" />
 
 import { getAutoRun, setAutoRun } from "../settings";
@@ -183,6 +184,14 @@ function disableForLoop(keys: readonly string[]): void {
     awaitingSuccessRefresh = false;
     lastSuccessfulImportKeys = null;
     const path = writeLoopAlarm(keys);
+    emitBridgeEvent("htsw_setting", {
+        setting: "auto_run",
+        value: false,
+        status: "completed",
+        reason: "import_loop",
+        path,
+        keys,
+    });
     ChatLib.chat(
         "&c&l[htsw] AUTO-RUN DISABLED — importables read back as modified immediately after importing:"
     );
@@ -252,6 +261,11 @@ export function isAutoRunQueueRunning(): boolean {
 
 export function setAutoRunEnabled(enabled: boolean): void {
     setAutoRun(enabled);
+    emitBridgeEvent("htsw_setting", {
+        setting: "auto_run",
+        value: enabled,
+        status: "completed",
+    });
     if (!enabled) {
         clearDebounce();
         awaitingSuccessRefresh = false;

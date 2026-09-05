@@ -1,3 +1,4 @@
+import { activeBridgeRunId, emitBridgeEvent } from "../../../bridge/status";
 /// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
@@ -264,6 +265,26 @@ export function setQueueRowStatus(
 ): boolean {
     const current = byKey.get(key);
     if (current === undefined) return false;
+    if (
+        activeBridgeRunId() !== null &&
+        current.status !== status &&
+        status === "failed"
+    ) {
+        emitBridgeEvent("htsw_importable", {
+            op: current.op,
+            key,
+            importableType:
+                current.target.kind === "importable"
+                    ? current.target.type
+                    : "IMPORT_JSON",
+            identity:
+                current.target.kind === "importable"
+                    ? current.target.identity
+                    : current.target.label,
+            status,
+            reason: error,
+        });
+    }
     const next: QueueRow = {
         ...current,
         status,
@@ -481,10 +502,7 @@ export function reconcileAutoTrackedQueue(
         const stale = new Set<string>();
         for (const key of autoTrackedKeys) {
             const row = byKey.get(key);
-            if (
-                !desiredKeys.has(key) &&
-                row?.status !== "running"
-            ) {
+            if (!desiredKeys.has(key) && row?.status !== "running") {
                 stale.add(key);
             }
         }

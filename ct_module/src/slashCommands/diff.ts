@@ -5,6 +5,11 @@ import {
     type ImportablesParseResult,
 } from "htsw";
 import type { Importable } from "htsw/types";
+import {
+    emitBridgeEvent,
+    rejectBridgeRun,
+    setBridgeConflictDetails,
+} from "../bridge/status";
 
 import { canonicalPath } from "../gui/parsing/parses";
 import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
@@ -47,6 +52,7 @@ import {
 } from "./diffReport";
 
 function diffFailure(reason: string): void {
+    rejectBridgeRun("diff", reason, "htsw_diff");
     ChatLib.chat(`[htsw] Diff failed: ${reason}`);
 }
 
@@ -283,74 +289,96 @@ export function commandDiff(args: string[]): void {
     }
 
     const progress = createDiffProgressSession(parsed.value, manifest);
-    void runHousingSyncTask("diff", async (ctx) => {
-        progress.start();
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        const live = await readDiffImportables(
-            ctx,
-            manifest,
-            housingUuid,
-            parsed,
-            progress
-        );
-        const matchedLists = matchDiffActionLists(parsed.value, live);
-        const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
-        const existingLock = readHouseLock(manifest);
-        const { report, adoptionLists } = evaluateDiffReport(
-            housingUuid,
-            matchedLists,
-            existingLock,
-            projectItems
-        );
-        for (const line of formatDiffReport(report, manifest)) {
-            ChatLib.chat(line);
-        }
-        try {
-            const detailsPath = writeDiffDetailsFile(
-                report,
+    void runHousingSyncTask(
+        "diff",
+        async (ctx) => {
+            progress.start();
+            const housingUuid = await getCurrentHousingUuid(ctx);
+            const live = await readDiffImportables(
+                ctx,
                 manifest,
-                new Date().toISOString()
+                housingUuid,
+                parsed,
+                progress
             );
-            ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
-        } catch (error) {
-            ChatLib.chat(
-                `[htsw] Diff details not written: ${errorReason(error)}`
+            const matchedLists = matchDiffActionLists(parsed.value, live);
+            const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
+            const existingLock = readHouseLock(manifest);
+            const { report, adoptionLists } = evaluateDiffReport(
+                housingUuid,
+                matchedLists,
+                existingLock,
+                projectItems
             );
-        }
-        if (adoptionLists.length > 0) {
-            const shouldAdopt =
-                adoptWithoutPrompt ||
-                (await confirmDiffAdoption(ctx, adoptionLists));
-            if (shouldAdopt) {
-                try {
-                    adoptDiffLists(
-                        ctx,
-                        manifest,
-                        housingUuid,
-                        adoptionLists,
-                        createItemDependencyIndex(parsed.value, projectItems)
-                    );
-                    ChatLib.chat(
-                        `[htsw] Adopted ${adoptionLists.length} live action list${adoptionLists.length === 1 ? "" : "s"}`
-                    );
-                } catch (error) {
-                    ChatLib.chat(
-                        `[htsw] Adoption failed: ${errorReason(error)}`
-                    );
+            emitBridgeEvent("htsw_diff", {
+                status: "completed",
+                clean: report.clean,
+                conflicts: report.conflicts.length,
+                unknown: report.unknown,
+                manifest,
+            });
+            setBridgeConflictDetails({
+                conflicts: adoptionLists.map((list) => ({
+                    type: list.source.type,
+                    identity: list.identity,
+                    basePath: list.basePath,
+                })),
+            });
+            for (const line of formatDiffReport(report, manifest)) {
+                ChatLib.chat(line);
+            }
+            try {
+                const detailsPath = writeDiffDetailsFile(
+                    report,
+                    manifest,
+                    new Date().toISOString()
+                );
+                ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
+                emitBridgeEvent("htsw_diff", { status: "details", path: detailsPath });
+                setBridgeConflictDetails({
+                    conflicts: adoptionLists.map((list) => ({
+                        type: list.source.type,
+                        identity: list.identity,
+                        basePath: list.basePath,
+                    })),
+                    diffPath: detailsPath,
+                });
+            } catch (error) {
+                ChatLib.chat(`[htsw] Diff details not written: ${errorReason(error)}`);
+            }
+            if (adoptionLists.length > 0) {
+                const shouldAdopt =
+                    adoptWithoutPrompt || (await confirmDiffAdoption(ctx, adoptionLists));
+                if (shouldAdopt) {
+                    try {
+                        adoptDiffLists(
+                            ctx,
+                            manifest,
+                            housingUuid,
+                            adoptionLists,
+                            createItemDependencyIndex(parsed.value, projectItems)
+                        );
+                        ChatLib.chat(
+                            `[htsw] Adopted ${adoptionLists.length} live action list${adoptionLists.length === 1 ? "" : "s"}`
+                        );
+                    } catch (error) {
+                        ChatLib.chat(`[htsw] Adoption failed: ${errorReason(error)}`);
+                    }
                 }
             }
-        }
-        progress.complete(
-            `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
-        );
-        return true;
-    })
+            progress.complete(
+                `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
+            );
+            return true;
+        },
+        { diagnostic: "htsw_diff" }
+    )
         .then((completed) => {
             if (completed === undefined) progress.clear();
         })
         .catch((error: unknown) => {
             const reason = errorReason(error);
             progress.fail(reason);
-            diffFailure(reason);
+            ChatLib.chat(`[htsw] Diff failed: ${reason}`);
         });
 }

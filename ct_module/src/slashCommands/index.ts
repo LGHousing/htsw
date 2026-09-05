@@ -62,6 +62,7 @@ import { commandWorkspace } from "./workspace";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { bridgeStatus, rejectBridgeRun } from "../bridge/status";
 import { appendRawHtslFile } from "../rawHtslImport";
 import { addQueueRow, makeBulkQueueRow } from "../gui/right-panel/import-tab/queue";
 import { startQueue } from "../gui/right-panel/import-tab/queueRunner";
@@ -135,6 +136,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "answer",
         summary: "Answer an active conflict prompt",
         run: answerConflictPrompt,
+        hidden: true,
+    },
+    {
+        name: "status",
+        summary: "Print structured HTSW run status",
+        run: () => ChatLib.chat(JSON.stringify(bridgeStatus())),
         hidden: true,
     },
     {
@@ -757,6 +764,7 @@ function commandEta(args: string[]): void {
 function commandImport(args: string[]) {
     const commandArgs = args;
     if (commandArgs.length === 0) {
+        rejectBridgeRun("import", "expected_import_path");
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
@@ -771,6 +779,7 @@ function commandImport(args: string[]) {
 
     const rawMode = isRawImportToken(commandArgs[0]);
     if (rawMode && commandArgs.length === 1) {
+        rejectBridgeRun("import", "expected_htsl_path", "htsw_raw_import");
         ChatLib.chat("&cUsage: /htsw import raw <actions.htsl>");
         return;
     }
@@ -780,6 +789,11 @@ function commandImport(args: string[]) {
         stripSurroundingQuotes(pathArgs.join(" "))
     );
     if (!FileLib.exists(importPath)) {
+        rejectBridgeRun(
+            "import",
+            `file does not exist '${importPath}'`,
+            rawMode ? "htsw_raw_import" : undefined
+        );
         ChatLib.chat(`&cFile does not exist '${importPath}'`);
         return;
     }
@@ -787,6 +801,7 @@ function commandImport(args: string[]) {
     const lowerPath = importPath.toLowerCase();
     if (rawMode || lowerPath.endsWith(".htsl")) {
         if (!lowerPath.endsWith(".htsl")) {
+            rejectBridgeRun("import", "expected_htsl_path", "htsw_raw_import");
             ChatLib.chat("&cRaw imports require a .htsl file.");
             return;
         }
@@ -807,6 +822,7 @@ function commandImport(args: string[]) {
         })
     );
     if (result.kind === "duplicate" || result.kind === "absorbed") {
+        rejectBridgeRun("import", result.message);
         ChatLib.chat(`&e[htsw] ${result.message}`);
         return;
     }

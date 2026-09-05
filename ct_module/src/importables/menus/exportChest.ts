@@ -1,3 +1,4 @@
+import { emitBridgeEvent } from "../../bridge/status";
 import type { ImportableItem } from "htsw/types";
 
 import { portableItemSnbt, snbtFromItem } from "../../housingSync/items/itemNbt";
@@ -105,8 +106,7 @@ export async function exportCapturedChest(
             ? options.rootDir
             : parentDirOf(importJsonPath);
     const registry = new ItemCaptureRegistry("shell", {
-        existingSnbt: (name) =>
-            readTextFileOrNull(`${rootDir}/items/${name}.snbt`),
+        existingSnbt: (name) => readTextFileOrNull(`${rootDir}/items/${name}.snbt`),
     });
     for (let i = 0; i < options.projectItems.length; i++) {
         registry.seedNbtOnly(options.projectItems[i].name, options.projectItems[i].nbt);
@@ -134,6 +134,14 @@ export async function exportCapturedChest(
     );
 
     const itemCounts = registry.counts();
+    emitBridgeEvent("htsw_export", {
+        status: "completed",
+        count: captured.slots.length,
+        path: importJsonPath,
+        name: options.name,
+        newItemsWritten: itemCounts.fresh,
+        matchedExisting: itemCounts.matched,
+    });
     const hints = registry.takeHints();
     for (let i = 0; i < hints.length; i++) {
         sink.displayMessage(`&e[export] ${hints[i]}`);

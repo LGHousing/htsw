@@ -8,6 +8,7 @@ import type { Importable } from "htsw/types";
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
+import { setBridgeConflictDetails } from "../../bridge/status";
 import { isTaskCancelled } from "../../tasks/manager";
 import { isTaskTraceEnabled, traceNote } from "../../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
@@ -542,6 +543,14 @@ async function runImportSessionInner(
             session.actions.conflicts,
             session.actions.conflictEvidence
         );
+        setBridgeConflictDetails({
+            conflicts: session.actions.conflicts.map(({ type, identity, basePath }) => ({
+                type,
+                identity,
+                basePath,
+            })),
+            ...(diffDetailsPath === null ? {} : { diffPath: diffDetailsPath }),
+        });
         const decision =
             selection.conflictHandling.kind === "proceed"
                 ? "proceed"
@@ -1054,13 +1063,9 @@ async function writeObservedPlanCaches(
         if (observed === null) continue;
         const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
         if (
-            !(await tryWriteImportableCache(
-                ctx,
-                observed,
-                "importer",
-                housingUuid,
-                { itemDependencies }
-            ))
+            !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
+                itemDependencies,
+            }))
         ) {
             continue;
         }

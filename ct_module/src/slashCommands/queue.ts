@@ -1,3 +1,4 @@
+import { rejectBridgeRun } from "../bridge/status";
 import type { Importable } from "htsw/types";
 
 import { autoRunQueueChanged, setAutoRunEnabled } from "../gui/autoRun";
@@ -241,7 +242,10 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         return;
     }
     const result =
-        filter === "all" || filter === "new" || filter === "changed" || filter === "unread"
+        filter === "all" ||
+        filter === "new" ||
+        filter === "changed" ||
+        filter === "unread"
             ? addUserRow(
                   makeBulkQueueRow({
                       op,
@@ -338,6 +342,7 @@ function commandQueueClear(): void {
 
 function commandQueueRun(): void {
     if (getQueue().length === 0) {
+        rejectBridgeRun("import", "empty_queue");
         ChatLib.chat("&c[htsw] Queue is empty");
         return;
     }

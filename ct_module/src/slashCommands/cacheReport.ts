@@ -1,6 +1,7 @@
 import { Diagnostic, parseImportablesResult, SourceMap } from "htsw";
 
 import { runHousingSyncTask } from "../housingSync/taskRunner";
+import { emitBridgeEvent } from "../bridge/status";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
 import { peekImportableCache } from "../importCache/cache";
 import { getCurrentHousingUuid } from "../importCache/housingId";
@@ -52,35 +53,41 @@ export function commandCacheReport(args: string[]): void {
         return;
     }
 
-    runHousingSyncTask("import", async (ctx) => {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        const expansion = expandImportDependencies(
-            parsed,
-            parsed.value,
-            housingUuid
-        );
-        const trustPlan = buildTrustPlan(
-            housingUuid,
-            expansion.importables,
-            true,
-            importJsonPath,
-            expansion.itemDependencies
-        );
-        const rows = buildCacheReportRows(trustPlan, (row) =>
-            peekImportableCache(housingUuid, row.importable.type, row.identity)
-        );
-        const counts = deriveCacheReportCounts(
-            rows,
-            expansion.importables,
-            expansion.itemDependencies,
-            housingUuid,
-            expansion.addedItems.length
-        );
-        const detailPath = writeCacheReport(rows);
-        for (const line of formatCacheReportSummary(counts, detailPath)) {
-            ChatLib.chat(line);
-        }
-    }).catch((error: unknown) => {
+    runHousingSyncTask(
+        "import",
+        async (ctx) => {
+            const housingUuid = await getCurrentHousingUuid(ctx);
+            const expansion = expandImportDependencies(parsed, parsed.value, housingUuid);
+            const trustPlan = buildTrustPlan(
+                housingUuid,
+                expansion.importables,
+                true,
+                importJsonPath,
+                expansion.itemDependencies
+            );
+            const rows = buildCacheReportRows(trustPlan, (row) =>
+                peekImportableCache(housingUuid, row.importable.type, row.identity)
+            );
+            const counts = deriveCacheReportCounts(
+                rows,
+                expansion.importables,
+                expansion.itemDependencies,
+                housingUuid,
+                expansion.addedItems.length
+            );
+            const detailPath = writeCacheReport(rows);
+            emitBridgeEvent("htsw_cache_report", {
+                status: "completed",
+                ...counts,
+                path: detailPath,
+            });
+            for (const line of formatCacheReportSummary(counts, detailPath)) {
+                ChatLib.chat(line);
+            }
+        },
+        { disabled: true }
+    ).catch((error: unknown) => {
+        emitBridgeEvent("htsw_cache_report", { status: "failed", reason: String(error) });
         ChatLib.chat(`&c[htsw] Cache report failed: ${String(error)}`);
     });
 }

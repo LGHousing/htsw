@@ -1,6 +1,12 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
+import {
+    emitBridgeEvent,
+    finishBridgeRun,
+    rejectBridgeRun,
+    setBridgeOperation,
+} from "../../../bridge/status";
 
 import { buildCacheStatusRow } from "../../../importCache/status";
 import { recordHouseScan } from "../../../importCache/cache";
@@ -61,7 +67,7 @@ export type QueueSessionResult = {
 };
 
 type CompletionHook = { remaining: Set<string>; callback: () => void };
-export type QueueRunTally = { completed: number; failed: number };
+export type QueueRunTally = { completed: number; failed: number; reason?: string };
 const completionHooks: CompletionHook[] = [];
 
 export function onQueueRowsCompleted(
@@ -208,6 +214,7 @@ function applySessionResult(
     if (tally !== undefined) {
         tally.completed += completed.size;
         tally.failed += failed.size;
+        if (result.failed.length > 0) tally.reason ??= result.failed[0].error;
     }
     const cancelled = new Set(result.cancelledKeys ?? []);
     for (const key of cancelled) {
@@ -240,6 +247,7 @@ export async function drainQueue(
         ctx.checkCancelled();
         const head = headRunnableQueueRow(currentHouse, options);
         if (head === null) return "idle";
+        setBridgeOperation(head.op);
         if (head.target.kind === "bulk") {
             let children: readonly QueueRowInput[];
             try {
@@ -248,7 +256,10 @@ export async function drainQueue(
                 if (isTaskCancelled(error)) return "paused";
                 const message = error instanceof Error ? error.message : String(error);
                 setQueueRowStatus(head.key, "failed", message);
-                if (tally !== undefined) tally.failed++;
+                if (tally !== undefined) {
+                    tally.failed++;
+                    tally.reason ??= message;
+                }
                 if (head.op === "import") return "idle";
                 ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
                 continue;
@@ -286,7 +297,10 @@ export async function drainQueue(
             }
             const message = error instanceof Error ? error.message : String(error);
             setQueueRowStatus(head.key, "failed", message);
-            if (tally !== undefined) tally.failed++;
+            if (tally !== undefined) {
+                tally.failed++;
+                tally.reason ??= message;
+            }
             for (let i = 1; i < session.length; i++) {
                 setQueueRowStatus(session[i].key, "queued");
             }
@@ -299,6 +313,10 @@ export async function drainQueue(
         }
 
         if (result.cancelled === true) {
+            if (tally !== undefined) {
+                tally.completed += result.completedKeys.length;
+                tally.failed += result.failed.length;
+            }
             resetSessionRows(session);
             if (head.op !== "import") {
                 ChatLib.chat(
@@ -322,24 +340,40 @@ export async function drainQueue(
 }
 
 export function startQueue(options: QueueStartOptions = {}): boolean {
-    if (state === "running" || TaskManager.isBusy()) return false;
-    const eligible = getQueue().some(
+    if (state === "running" || TaskManager.isBusy()) {
+        rejectBridgeRun("import", "busy");
+        return false;
+    }
+    const eligible = getQueue().find(
         (row) =>
             row.status === "queued" && (!options.autoRun || !isRestoredQueueRow(row.key))
     );
-    if (!eligible) return false;
+    if (!eligible) {
+        rejectBridgeRun("import", "empty_queue");
+        return false;
+    }
     state = "running";
     pauseRequested = false;
     const tally: QueueRunTally = { completed: 0, failed: 0 };
-    void runHousingSyncTask("queue", (ctx) =>
-        drainQueue(ctx, defaultDependencies, options, tally)
+    void runHousingSyncTask(
+        "queue",
+        (ctx) => drainQueue(ctx, defaultDependencies, options, tally),
+        { operation: eligible.op }
     )
         .then((next) => {
-            state = next ?? (pauseRequested ? "paused" : "idle");
+            state = next ?? "paused";
             printQueueRunEnd(state, tally);
         })
         .catch((error: unknown) => {
             state = "idle";
+            emitBridgeEvent("htsw_queue", {
+                scope: "queue",
+                phase: "finished",
+                state: "failed",
+                reason: String(error),
+                ...tally,
+            });
+            finishBridgeRun("failed", { reason: String(error), ...tally });
             ChatLib.chat(`&c[htsw] Queue failed: ${String(error)}`);
             showToast(`Queue failed: ${String(error)}`, 0xffe85c5c, 8000);
         })
@@ -354,6 +388,16 @@ export function printQueueRunEnd(runState: QueueRunState, tally: QueueRunTally):
     const queued = getQueue().filter((row) => row.status === "queued").length;
     const label = runState === "paused" ? "paused" : "finished";
     const colour = runState === "paused" ? "&e" : "&a";
+    const status =
+        runState === "paused" ? "paused" : tally.failed > 0 ? "failed" : "completed";
+    emitBridgeEvent("htsw_queue", {
+        scope: "queue",
+        phase: "finished",
+        state: status === "failed" ? "failed" : runState,
+        ...tally,
+        queued,
+    });
+    finishBridgeRun(status, { ...tally, queued });
     ChatLib.chat(
         `${colour}[htsw] Queue ${label} &7· &f${tally.completed}${colour} completed, &f${tally.failed}${colour} failed, &f${queued}&7 queued`
     );
@@ -376,6 +420,7 @@ export function resumeQueue(): boolean {
 export function pauseQueue(): "requested" | "forced" | null {
     if (state !== "running") return null;
     pauseRequested = true;
+    emitBridgeEvent("htsw_queue", { scope: "queue", phase: "pausing" });
     return cancelActiveTask();
 }
 export function cancelQueue(): "requested" | "forced" | null {
