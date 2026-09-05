@@ -113,7 +113,7 @@ export class Parser {
         if (this.eatIdent("true")) value = true;
         else if (this.eatIdent("false")) value = false;
         if (value === undefined) {
-            throw Diagnostic.error("Expected true/false value")
+            throw Diagnostic.error("Expected `true` or `false`")
                 .addPrimarySpan(this.token.span);
         }
         return value;
