@@ -289,16 +289,16 @@ export function getConditionFieldLabel<T extends Condition["type"]>(
 
 export function getConditionScalarLoreFields(
     type: Condition["type"]
-): { prop: string; kind: UiFieldKind }[] {
+): { label: string; prop: string; kind: UiFieldKind }[] {
     const loreFields = CONDITION_MAPPINGS[type].loreFields as Record<
         string,
         { prop: string; kind: UiFieldKind }
     >;
-    const result: { prop: string; kind: UiFieldKind }[] = [];
+    const result: { label: string; prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
         if (!isChildListFieldKind(field.kind)) {
-            result.push({ prop: field.prop, kind: field.kind });
+            result.push({ label, prop: field.prop, kind: field.kind });
         }
     }
     return result;

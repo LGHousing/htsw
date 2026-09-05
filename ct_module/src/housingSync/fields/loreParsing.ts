@@ -48,7 +48,7 @@ function parseBooleanText(value: string): boolean | undefined {
     return undefined;
 }
 
-export function looksTruncated(value: string): boolean {
+function looksTruncated(value: string): boolean {
     const trimmed = removedFormatting(value).trim();
     return trimmed.endsWith("...") || trimmed.endsWith("…");
 }
@@ -57,6 +57,23 @@ export function isTruncatableKind(kind: UiFieldKind): boolean {
     return (
         kind === "value" || kind === "select" || kind === "location" || kind === "item"
     );
+}
+
+export function scalarFieldLooksTruncated(value: unknown, kind: UiFieldKind): boolean {
+    // Item identity is recovered by the item-capture pass, not scalar lore.
+    if (kind === "item") return false;
+    if (typeof value === "object" && value !== null) {
+        const structured = value as { type?: string; value?: string; team?: string };
+        if (kind === "location" && structured.type === "Custom Coordinates") {
+            return (
+                typeof structured.value === "string" && looksTruncated(structured.value)
+            );
+        }
+        if (kind === "cycle" && structured.type === "Team") {
+            return typeof structured.team === "string" && looksTruncated(structured.team);
+        }
+    }
+    return isTruncatableKind(kind) && typeof value === "string" && looksTruncated(value);
 }
 
 export function normalizeLoreValueFormatting(value: string): string {
@@ -121,7 +138,7 @@ export function stripWrapInheritedColor(value: string): string {
 export const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
 export const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
-function stripNumericGroupingCommas(value: string): string {
+export function stripNumericGroupingCommas(value: string): string {
     if (value.indexOf(",") === -1) return value;
     if (
         !INTEGER_DISPLAY_VALUE_PATTERN.test(value) &&

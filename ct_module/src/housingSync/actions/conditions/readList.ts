@@ -17,7 +17,8 @@ import {
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "../../fields/conditionMappings";
-import { isTruncatableKind, looksTruncated } from "../../fields/loreParsing";
+import { scalarFieldLooksTruncated } from "../../fields/loreParsing";
+import { refreshTruncatedScalarFields } from "../../fields/readScalars";
 import type { ObservedConditionSlot } from "../../observedActions";
 import {
     getPaginatedListPageForIndex,
@@ -105,20 +106,13 @@ function canonicalizeObservedConditionSlots(
 const SCALAR_CONDITION_HYDRATION_UNITS = COST.menuClickWait + COST.goBackWait;
 const CONDITION_ITEM_CAPTURE_UNITS = COST.menuClickWait + COST.goBackWait;
 
-function shouldHydrateScalarCondition(condition: Condition): boolean {
-    if (!getConditionIo(condition.type).read) return false;
-    const fields = getConditionScalarLoreFields(condition.type);
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        if (!isTruncatableKind(field.kind)) continue;
-        const value = (condition as Record<string, unknown>)[field.prop];
-        if (typeof value === "string" && looksTruncated(value)) return true;
-    }
-    if (condition.type === "COMPARE_VAR" && condition.holder?.type === "Team") {
-        const team = condition.holder.team;
-        if (typeof team === "string" && looksTruncated(team)) return true;
-    }
-    return false;
+function truncatedConditionFields(condition: Condition) {
+    return getConditionScalarLoreFields(condition.type).filter((field) =>
+        scalarFieldLooksTruncated(
+            (condition as Record<string, unknown>)[field.prop],
+            field.kind
+        )
+    );
 }
 
 async function hydrateScalarConditions(
@@ -129,7 +123,7 @@ async function hydrateScalarConditions(
     const entries: ObservedConditionSlot[] = [];
     for (const entry of observed) {
         if (entry.condition === null) continue;
-        if (shouldHydrateScalarCondition(entry.condition)) entries.push(entry);
+        if (truncatedConditionFields(entry.condition).length > 0) entries.push(entry);
     }
     if (entries.length === 0) return;
 
@@ -166,6 +160,7 @@ async function hydrateScalarCondition(
     listLength: number
 ): Promise<void> {
     if (entry.condition === null) return;
+    const fields = truncatedConditionFields(entry.condition);
     const note = entry.condition.note;
     const inverted = entry.condition.inverted;
     await goToPaginatedListPage(
@@ -183,16 +178,16 @@ async function hydrateScalarCondition(
     entry.slotId = slot.getSlotId();
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
-    const spec = getConditionIo(entry.condition.type);
-    if (!spec.read) {
+    try {
+        const spec = getConditionIo(entry.condition.type);
+        const refreshed = spec.read ? await spec.read(ctx) : entry.condition;
+        refreshTruncatedScalarFields(ctx, refreshed, fields);
+        if (note) refreshed.note = note;
+        if (inverted) refreshed.inverted = true;
+        entry.condition = refreshed;
+    } finally {
         await clickGoBack(ctx);
-        return;
     }
-    const refreshed = await spec.read(ctx);
-    if (note) refreshed.note = note;
-    if (inverted) refreshed.inverted = true;
-    entry.condition = refreshed;
-    await clickGoBack(ctx);
 }
 
 function getConditionItemFieldsForCapture(
