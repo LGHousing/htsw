@@ -244,6 +244,7 @@ function parseActionChangeGlobalVar(p: Parser, note: Note): Action {
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
         setField(p, action, "value", parseValue);
+        maybeRecoverUnquotedCastSuffix(p);
         if (p.checkEol()) return;
         setField(p, action, "unset", p.parseBoolean);
     });
@@ -282,6 +283,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): Action {
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
         setField(p, action, "value", parseValue);
+        maybeRecoverUnquotedCastSuffix(p);
         if (p.checkEol()) return;
         setField(p, action, "unset", p.parseBoolean);
     });
@@ -294,6 +296,7 @@ function parseActionChangeVar(p: Parser, note: Note): Action {
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
         setField(p, action, "value", parseValue);
+        maybeRecoverUnquotedCastSuffix(p);
         if (p.checkEol()) return;
         setField(p, action, "unset", p.parseBoolean);
     });
@@ -542,4 +545,34 @@ function parseActionTitle(p: Parser, note: Note): Action {
         setField(p, action, "stay", () => p.parseBoundedNumber(0, 10));
         setField(p, action, "fadeout", () => p.parseBoundedNumber(0, 5));
     });
+}
+
+function maybeRecoverUnquotedCastSuffix(p: Parser) {    
+    if (p.prev.kind !== "placeholder") return;
+    
+    const placeholder = p.prev;
+
+    const suffix =
+        p.eatIdent("L") ? "L" :
+        p.eatIdent("D") ? "D" :
+        null;
+
+    if (!suffix) return;
+    
+    const editSpan = new Span(placeholder.span.start, p.prev.span.end);
+
+    const err = Diagnostic.error("Expected `true` or `false`")
+        .addPrimarySpan(p.prev.span)
+        .addSubDiagnostic(
+            Diagnostic.help("Surround this cast in quotes")
+                .addEdit(editSpan.startSpan(), '"')
+                .addEdit(editSpan.endSpan(), '"')
+    );
+
+    p.gcx.addDiagnostic(err);
+    
+    // despite the name of the function, there is no need to actually
+    // call `Parser::recover` as we should already be at an acceptable
+    // token to continue parsing this action if we caught the unquoted
+    // placeholder.
 }
