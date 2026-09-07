@@ -415,26 +415,11 @@ export function parseValue(p: Parser): Value {
         return `"${value}"`;
     }
 
-    const start = p.token.span;
-    let value: Value;
     if (p.check("placeholder")) {
-        value = parseBarePlaceholderValue(p);
-    } else {
-        value = parseNumericValue(p);
+        return parseBarePlaceholderValue(p);
     }
 
-    // The in-game value input rejects anything longer than 32 characters, and
-    // the cap applies to the raw text that gets typed with placeholder syntax
-    // included. A shorthand with a quoted fallback (`var k "<template>"`
-    // becomes `%var.player/k "<template>"%`) silently exceeds it otherwise.
-    const typed = value.startsWith('"') && value.endsWith('"')
-        ? value.slice(1, -1)
-        : value;
-    if (typed.length > 32) {
-        p.gcx.addDiagnostic(Diagnostic.error("Value exceeds 32-character limit")
-            .addPrimarySpan(start.to(p.prev.span), `${typed.length} characters`));
-    }
-    return value;
+    return parseNumericValue(p);
 }
 
 export function parseInventorySlot(p: Parser): InventorySlot {
