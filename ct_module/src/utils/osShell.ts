@@ -78,12 +78,12 @@ function asPathList(fullPath: string | string[]): string[] {
     return out;
 }
 
-let _GuiScreen: HtswGuiScreenClass | null = null;
-
 export function setClipboardString(text: string): boolean {
     try {
-        if (_GuiScreen === null) _GuiScreen = javaType("net.minecraft.client.gui.GuiScreen");
-        _GuiScreen.setClipboardString(runtimeString(text));
+        const Toolkit = javaType("java.awt.Toolkit");
+        const StringSelection = javaType("java.awt.datatransfer.StringSelection");
+        const selection = new StringSelection(runtimeString(text));
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
         return true;
     } catch (e) {
         try {

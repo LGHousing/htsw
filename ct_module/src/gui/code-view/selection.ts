@@ -1,6 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { javaType } from "../lib/java";
+import { setClipboardString } from "../../utils/osShell";
 import { chatWidth } from "../../utils/helpers";
 import { joinTokenText } from "./wrap";
 import type { RenderableLine, TokenSpan } from "./lineTypes";
@@ -196,7 +197,7 @@ export function copyActiveSelection(): void {
     }
     if (text.length === 0) return;
 
-    if (setClipboard(text)) {
+    if (setClipboardString(text)) {
         const n = end.ord - start.ord + 1;
         ChatLib.chat(
             `&7[htsw] copied ${n} line${n === 1 ? "" : "s"} (${text.length} chars)`
@@ -258,19 +259,3 @@ function wordBounds(text: string, col: number): [number, number] {
     return [s, Math.min(s + 1, text.length)];
 }
 
-function setClipboard(text: string): boolean {
-    try {
-        const Toolkit = javaType("java.awt.Toolkit");
-        const StringSelection = javaType("java.awt.datatransfer.StringSelection");
-        const selection = new StringSelection(text);
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
-        return true;
-    } catch (e) {
-        try {
-            ChatLib.chat(`&c[htsw] clipboard failed: ${String(e)}`);
-        } catch (_e) {
-            // ignore
-        }
-        return false;
-    }
-}
