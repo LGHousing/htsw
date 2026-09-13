@@ -50,6 +50,7 @@ import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, saveItem, clearInv } from "./debugItems";
+import { commandOpen } from "./openPath";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandCaches } from "./debugCaches";
 import { commandHeap } from "./debugHeap";
@@ -180,6 +181,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Clear main inventory slots 9-35 (debug)",
         run: clearInv,
         hidden: true,
+    },
+    {
+        name: "open",
+        summary: "Reveal a projects-relative path in your file explorer",
+        run: commandOpen,
+        usage: "open [path]",
     },
     {
         name: "projects",
