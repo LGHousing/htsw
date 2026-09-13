@@ -4,7 +4,7 @@ export const HTSW_STATUS_PROPERTY = "htsw.bridge.status";
 export const HTSW_BRIDGE_VERSION = 1;
 export const HTSW_EVENT_CAPACITY = 256;
 
-export type HtswOperation = "import" | "export" | "read" | "diff";
+export type HtswOperation = "import" | "export" | "read" | "diff" | "prune";
 type HtswRunState =
     "running" | "waiting_for_input" | "completed" | "failed" | "cancelled" | "paused";
 type HtswEstimateState = "estimating" | "rough" | "ready" | "unavailable";
