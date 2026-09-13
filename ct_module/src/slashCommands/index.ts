@@ -49,7 +49,7 @@ import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
-import { giveItem, saveItem, clearInv } from "./debugItems";
+import { giveItem, saveItem, clearInv, viewItem } from "./debugItems";
 import { commandOpen } from "./openPath";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandCaches } from "./debugCaches";
@@ -175,6 +175,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Write the item you're holding to a .snbt file",
         run: saveItem,
         usage: "saveitem <path>",
+    },
+    {
+        name: "viewitem",
+        summary: "Print an item's NBT into chat: held, a .snbt file, or a folder listing",
+        run: viewItem,
+        usage: "viewitem [path|@hand]",
     },
     {
         name: "clearinv",
