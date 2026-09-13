@@ -1,13 +1,71 @@
 import { isInCreativeMode } from "../housingSync/sideEffects";
 import { snbtFromItem } from "../housingSync/items/itemNbt";
-import { heldItem, inventorySlotToPacketSlot } from "../housingSync/items/playerInventory";
-import { canonicalSlug, PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
+import {
+    heldItem,
+    inventorySlotToPacketSlot,
+} from "../housingSync/items/playerInventory";
+import {
+    canonicalSlug,
+    PROJECTS_ROOT,
+    resolveModuleRelativePath,
+} from "../project/paths";
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
 import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
 import { atomicWriteText } from "../utils/filesystem";
-import { removedFormatting } from "../utils/helpers";
+import {
+    chatSeparator,
+    normalizeFormattingCodes,
+    removedFormatting,
+} from "../utils/helpers";
 import { javaType, sendPacket } from "../utils/java";
+import { setClipboardString } from "../utils/osShell";
+import { chatLine, colouredComponent, rawComponent } from "../utils/chat";
+import { basename, dirname } from "../gui/lib/pathDisplay";
+
+function chatPath(path: string): string {
+    const norm = path.split("\\").join("/");
+    const dir = dirname(norm);
+    return dir.length === 0 ? `&f${norm}` : `&7${dir}/&f${basename(norm)}`;
+}
+
+const ACTION_COLOUR = {
+    view: "&b",
+    copy: "&a",
+    open: "&e",
+    give: "&d",
+    save: "&d",
+} as const;
+
+type ActionKind = keyof typeof ACTION_COLOUR;
+
+function actionLink(kind: ActionKind, label: string, command: string): TextComponent {
+    const suggests = kind === "give" || kind === "save";
+    return colouredComponent(`${ACTION_COLOUR[kind]}[${label}]`)
+        .setClick(suggests ? "suggest_command" : "run_command", command)
+        .setHover(
+            "show_text",
+            suggests ? `&7Puts &f${command}&7 in your chat box` : `&7Runs &f${command}`
+        );
+}
+
+function openAction(path: string): TextComponent {
+    return actionLink("open", "open", `/htsw open ${pathAsCommandArg(path)}`);
+}
+
+function viewAction(path: string): TextComponent {
+    return actionLink("view", "view", `/htsw viewitem ${pathAsCommandArg(path)}`);
+}
+
+function giveAction(path: string): TextComponent {
+    return actionLink("give", "give", `/htsw giveitem ${pathAsCommandArg(path)}`);
+}
+
+function chatWithActions(text: string, actions: TextComponent[]): void {
+    const parts: (string | TextComponent)[] = [text];
+    for (let i = 0; i < actions.length; i++) parts.push(" ", actions[i]);
+    chatLine(...parts);
+}
 
 function javaPath(path: string): HtswJavaPath {
     return javaType("java.nio.file.Paths").get(path);
@@ -45,7 +103,9 @@ function listSnbtFiles(path: string): string[] {
             }
         }
     } finally {
-        try { stream.close(); } catch (_e) {}
+        try {
+            stream.close();
+        } catch (_e) {}
     }
     out.sort();
     return out;
@@ -61,19 +121,25 @@ function emptyInventorySlots(): number[] {
     return slots;
 }
 
-function giveItemFromFile(path: string, slot: number): boolean {
+function readItemSnbtFile(path: string): string | null {
     let snbt: string;
     try {
         const stored = FileLib.read(path) as unknown as string | null;
         snbt = stored ?? "";
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not read ${path}: ${String(err)}`);
-        return false;
+        chatLine(`&c[htsw] Could not read ${path}: ${String(err)}`);
+        return null;
     }
     if (snbt.trim() === "") {
-        ChatLib.chat(`&c[htsw] File is empty: ${path}`);
-        return false;
+        chatLine(`&c[htsw] File is empty: ${path}`);
+        return null;
     }
+    return snbt;
+}
+
+function giveItemFromFile(path: string, slot: number): boolean {
+    const snbt = readItemSnbtFile(path);
+    if (snbt === null) return false;
 
     try {
         const item = getItemFromSnbt(snbt);
@@ -83,10 +149,13 @@ function giveItemFromFile(path: string, slot: number): boolean {
                 item.getItemStack()
             )
         );
-        ChatLib.chat(`&a[htsw] Gave item from ${path}`);
+        chatWithActions(`&a[htsw] Gave item from ${chatPath(path)}`, [
+            openAction(path),
+            viewAction(path),
+        ]);
         return true;
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not give item from ${path}: ${String(err)}`);
+        chatLine(`&c[htsw] Could not give item from ${path}: ${String(err)}`);
         return false;
     }
 }
@@ -100,15 +169,15 @@ function resolveItemFilePath(rawPath: string): string {
     return path.toLowerCase().endsWith(".snbt") ? path : `${path}.snbt`;
 }
 
-/** Turn a resolved path back into something the user can paste as a `<path>`
- * argument, so paths inside the projects root stay short. */
 function pathAsCommandArg(path: string): string {
     const root = `${PROJECTS_ROOT.split("\\").join("/")}/`;
     const relative = path.indexOf(root) === 0 ? path.substring(root.length) : path;
     return quoteCommandArg(relative);
 }
 
-function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } | null {
+function parseGiveItemFolderArgs(
+    args: string[]
+): { rawPath: string; skip: number; hasSkip: boolean } | null {
     if (args.length === 1) return { rawPath: args[0].trim(), skip: 0, hasSkip: false };
     if (args.length === 2 && /^\d+$/.test(args[1])) {
         return {
@@ -123,7 +192,7 @@ function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: numbe
 function giveSingleItemPath(filePath: string): void {
     const slots = emptyInventorySlots();
     if (slots.length === 0) {
-        ChatLib.chat("&c[htsw] No empty inventory slot.");
+        chatLine("&c[htsw] No empty inventory slot.");
         return;
     }
     giveItemFromFile(filePath, slots[0]);
@@ -131,7 +200,7 @@ function giveSingleItemPath(filePath: string): void {
 
 function giveFolderItems(rawPath: string, skip: number): void {
     if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] giveitem folder path cannot be empty.");
+        chatLine("&c[htsw] giveitem folder path cannot be empty.");
         return;
     }
 
@@ -140,26 +209,30 @@ function giveFolderItems(rawPath: string, skip: number): void {
     try {
         files = listSnbtFiles(dirPath);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not list folder ${dirPath}: ${String(err)}`);
+        chatLine(`&c[htsw] Could not list folder ${dirPath}: ${String(err)}`);
         return;
     }
     if (files.length === 0) {
-        ChatLib.chat(`&c[htsw] No .snbt files found in ${dirPath}`);
+        chatLine(`&c[htsw] No .snbt files found in ${dirPath}`);
         return;
     }
     if (skip >= files.length) {
-        ChatLib.chat(`&c[htsw] Skip ${skip} is past the ${files.length} item${files.length === 1 ? "" : "s"} in ${dirPath}.`);
+        chatLine(
+            `&c[htsw] Skip ${skip} is past the ${files.length} item${files.length === 1 ? "" : "s"} in ${dirPath}.`
+        );
         return;
     }
 
     const slots = emptyInventorySlots();
     if (slots.length === 0) {
-        ChatLib.chat("&c[htsw] No empty inventory slot.");
+        chatLine("&c[htsw] No empty inventory slot.");
         return;
     }
     const remaining = files.length - skip;
     if (slots.length < remaining) {
-        ChatLib.chat(`&e[htsw] Only ${slots.length} empty slot${slots.length === 1 ? "" : "s"}, giving ${slots.length} of ${remaining} remaining items.`);
+        chatLine(
+            `&e[htsw] Only ${slots.length} empty slot${slots.length === 1 ? "" : "s"}, giving ${slots.length} of ${remaining} remaining items.`
+        );
     }
 
     const count = Math.min(slots.length, remaining);
@@ -167,16 +240,20 @@ function giveFolderItems(rawPath: string, skip: number): void {
     for (let i = 0; i < count; i++) {
         if (giveItemFromFile(files[skip + i], slots[i])) gave++;
     }
-    ChatLib.chat(`&7[htsw] Gave ${gave}/${files.length} item${files.length === 1 ? "" : "s"} from ${dirPath}`);
+    chatWithActions(
+        `&7[htsw] Gave ${gave}/${files.length} item${files.length === 1 ? "" : "s"} from ${chatPath(dirPath)}`,
+        [openAction(dirPath)]
+    );
     const nextSkip = skip + count;
     if (nextSkip < files.length) {
-        ChatLib.chat(`&7  Next: &f/htsw giveitem ${quoteCommandArg(rawPath)} ${nextSkip}`);
+        chatLine(`&7  Next: &f/htsw giveitem ${quoteCommandArg(rawPath)} ${nextSkip}`);
     }
 }
 
 function saveItemTargetPath(rawPath: string, item: Item): string {
     const last = rawPath.charAt(rawPath.length - 1);
-    const folderTarget = last === "/" || last === "\\" || isDirectory(resolveItemPath(rawPath));
+    const folderTarget =
+        last === "/" || last === "\\" || isDirectory(resolveItemPath(rawPath));
     if (!folderTarget) return resolveItemFilePath(rawPath);
 
     const dirPath = resolveItemPath(rawPath).replace(/\/+$/, "");
@@ -186,31 +263,31 @@ function saveItemTargetPath(rawPath: string, item: Item): string {
 
 export function saveItem(args: string[]): void {
     if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Writes the item you're holding to a .snbt file, or into a folder.");
+        chatLine("&cUsage: /htsw saveitem <path>");
+        chatLine("&7  Writes the item you're holding to a .snbt file, or into a folder.");
         return;
     }
 
     const parsed = parseCommandArgs(args);
     if (!parsed.ok) {
-        ChatLib.chat(`&c[htsw] ${parsed.error}`);
+        chatLine(`&c[htsw] ${parsed.error}`);
         return;
     }
     if (parsed.args.length !== 1) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Quote paths that contain spaces.");
+        chatLine("&cUsage: /htsw saveitem <path>");
+        chatLine("&7  Quote paths that contain spaces.");
         return;
     }
 
     const rawPath = parsed.args[0].trim();
     if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] saveitem path cannot be empty.");
+        chatLine("&c[htsw] saveitem path cannot be empty.");
         return;
     }
 
     const item = heldItem();
     if (item === null) {
-        ChatLib.chat("&c[htsw] Hold the item you want to save.");
+        chatLine("&c[htsw] Hold the item you want to save.");
         return;
     }
 
@@ -220,22 +297,25 @@ export function saveItem(args: string[]): void {
         target = saveItemTargetPath(rawPath, item);
         snbt = snbtFromItem(item, { pretty: true });
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not read the held item: ${String(err)}`);
+        chatLine(`&c[htsw] Could not read the held item: ${String(err)}`);
         return;
     }
 
     if (!atomicWriteText(target, snbt)) {
-        ChatLib.chat(`&c[htsw] Could not write ${target}`);
+        chatLine(`&c[htsw] Could not write ${target}`);
         return;
     }
 
-    ChatLib.chat(`&a[htsw] Saved held item to ${target}`);
-    ChatLib.chat(`&7  Give it back: &f/htsw giveitem ${pathAsCommandArg(target)}`);
+    chatWithActions(`&a[htsw] Saved held item to ${chatPath(target)}`, [
+        openAction(target),
+        viewAction(target),
+        giveAction(target),
+    ]);
 }
 
 export function clearInv(_args: string[]): void {
     if (!isInCreativeMode()) {
-        ChatLib.chat("&c[htsw] Must be in creative mode to clear inventory.");
+        chatLine("&c[htsw] Must be in creative mode to clear inventory.");
         return;
     }
     let cleared = 0;
@@ -246,44 +326,46 @@ export function clearInv(_args: string[]): void {
         );
         cleared++;
     }
-    ChatLib.chat(`&7[htsw] Cleared ${cleared} main-inventory slot${cleared === 1 ? "" : "s"} (hotbar untouched).`);
+    chatLine(
+        `&7[htsw] Cleared ${cleared} main-inventory slot${cleared === 1 ? "" : "s"} (hotbar untouched).`
+    );
 }
 
 export function giveItem(args: string[]): void {
     if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
-        ChatLib.chat("&7  Spawns an item from a .snbt file, or all .snbt files in a folder.");
+        chatLine("&cUsage: /htsw giveitem <path> [skip]");
+        chatLine("&7  Spawns an item from a .snbt file, or all .snbt files in a folder.");
         return;
     }
 
     if (!isInCreativeMode()) {
-        ChatLib.chat("&c[htsw] Must be in creative mode to give an item.");
+        chatLine("&c[htsw] Must be in creative mode to give an item.");
         return;
     }
 
     const parsed = parseCommandArgs(args);
     if (!parsed.ok) {
-        ChatLib.chat(`&c[htsw] ${parsed.error}`);
+        chatLine(`&c[htsw] ${parsed.error}`);
         return;
     }
 
     const folderArgs = parseGiveItemFolderArgs(parsed.args);
     if (folderArgs === null) {
-        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
-        ChatLib.chat("&7  Quote paths that contain spaces.");
+        chatLine("&cUsage: /htsw giveitem <path> [skip]");
+        chatLine("&7  Quote paths that contain spaces.");
         return;
     }
 
     const rawPath = folderArgs.rawPath;
     if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] giveitem path cannot be empty.");
+        chatLine("&c[htsw] giveitem path cannot be empty.");
         return;
     }
 
     const filePath = resolveItemFilePath(rawPath);
     if (isRegularFile(filePath)) {
         if (folderArgs.hasSkip) {
-            ChatLib.chat("&c[htsw] Skip is only supported for folders, not item files.");
+            chatLine("&c[htsw] Skip is only supported for folders, not item files.");
             return;
         }
         giveSingleItemPath(filePath);
@@ -298,9 +380,171 @@ export function giveItem(args: string[]): void {
 
     const parsedDirPath = resolveItemPath(folderArgs.rawPath);
     if (!isDirectory(parsedDirPath)) {
-        ChatLib.chat(`&c[htsw] File or folder not found: ${literalDirPath}`);
-        ChatLib.chat(`&7  Tried file: ${filePath}`);
+        chatLine(`&c[htsw] File or folder not found: ${literalDirPath}`);
+        chatLine(`&7  Tried file: ${filePath}`);
         return;
     }
     giveFolderItems(folderArgs.rawPath, folderArgs.skip);
+}
+
+const VIEW_ITEM_MAX_LINES = 90;
+
+const HAND_SENTINEL = "@hand";
+
+const VIEW_SNAPSHOT_LIMIT = 24;
+const viewSnapshots: { id: number; snbt: string }[] = [];
+let nextViewSnapshotId = 1;
+
+function rememberViewSnapshot(snbt: string): number {
+    const id = nextViewSnapshotId++;
+    viewSnapshots.push({ id, snbt });
+    while (viewSnapshots.length > VIEW_SNAPSHOT_LIMIT) viewSnapshots.shift();
+    return id;
+}
+
+function viewSnapshot(id: number): string | null {
+    for (let i = 0; i < viewSnapshots.length; i++) {
+        if (viewSnapshots[i].id === id) return viewSnapshots[i].snbt;
+    }
+    return null;
+}
+
+function viewItemUsage(): void {
+    chatLine(`&cUsage: /htsw viewitem [path|${HAND_SENTINEL}]`);
+    chatLine("&7  Prints the held item's NBT, a .snbt file, or lists a folder of them.");
+}
+
+export function viewItem(args: string[]): void {
+    if (args.length === 2 && args[0].toLowerCase() === "copy" && /^\d+$/.test(args[1])) {
+        copyViewSnapshot(Number(args[1]));
+        return;
+    }
+
+    const parsed = parseCommandArgs(args);
+    if (!parsed.ok) {
+        chatLine(`&c[htsw] ${parsed.error}`);
+        return;
+    }
+    if (parsed.args.length > 1) {
+        viewItemUsage();
+        chatLine("&7  Quote paths that contain spaces.");
+        return;
+    }
+
+    const rawPath = (parsed.args[0] ?? HAND_SENTINEL).trim();
+    if (rawPath.length === 0 || rawPath.toLowerCase() === HAND_SENTINEL) {
+        viewHeldItem();
+        return;
+    }
+
+    const filePath = resolveItemFilePath(rawPath);
+    if (isRegularFile(filePath)) {
+        viewItemFile(filePath);
+        return;
+    }
+    const dirPath = resolveItemPath(rawPath);
+    if (isDirectory(dirPath)) {
+        listItemFolder(dirPath);
+        return;
+    }
+    chatLine(`&c[htsw] File or folder not found: ${dirPath}`);
+    chatLine(`&7  Tried file: ${filePath}`);
+}
+
+function viewHeldItem(): void {
+    const item = heldItem();
+    if (item === null) {
+        chatLine("&c[htsw] Hold the item you want to inspect.");
+        return;
+    }
+
+    let snbt: string;
+    try {
+        snbt = snbtFromItem(item, { pretty: true });
+    } catch (err) {
+        chatLine(`&c[htsw] Could not read the held item: ${String(err)}`);
+        return;
+    }
+
+    const name = removedFormatting(item.getName()).trim();
+    printItemDump(`&f${name === "" ? "held item" : name}`, snbt, [
+        actionLink("save", "save…", "/htsw saveitem "),
+    ]);
+}
+
+function viewItemFile(filePath: string): void {
+    const snbt = readItemSnbtFile(filePath);
+    if (snbt === null) return;
+    printItemDump(chatPath(filePath), snbt, [openAction(filePath), giveAction(filePath)]);
+}
+
+function printItemDump(title: string, snbt: string, actions: TextComponent[]): void {
+    const id = rememberViewSnapshot(snbt);
+    const lines = snbt.split("\r\n").join("\n").split("\n");
+    const shown = Math.min(lines.length, VIEW_ITEM_MAX_LINES);
+
+    chatLine(`&7${chatSeparator()}${invisibleNonce()}`);
+    chatWithActions(
+        `&e[htsw] ${title} &7· ${lines.length} line${lines.length === 1 ? "" : "s"}${invisibleNonce()}`,
+        [actionLink("copy", "copy", `/htsw viewitem copy ${id}`), ...actions]
+    );
+    for (let i = 0; i < shown; i++) chatLiteral(lines[i]);
+    if (shown < lines.length) {
+        chatLine(
+            `&7  … ${lines.length - shown} more ` +
+                `line${lines.length - shown === 1 ? "" : "s"}; use &a[copy]&7 or ` +
+                `&f/htsw saveitem <path>&7 for the rest.${invisibleNonce()}`
+        );
+    }
+    chatLine(`&7${chatSeparator()}${invisibleNonce()}`);
+}
+
+function listItemFolder(dirPath: string): void {
+    let files: string[];
+    try {
+        files = listSnbtFiles(dirPath);
+    } catch (err) {
+        chatLine(`&c[htsw] Could not list folder ${dirPath}: ${String(err)}`);
+        return;
+    }
+    if (files.length === 0) {
+        chatLine(`&c[htsw] No .snbt files found in ${dirPath}`);
+        return;
+    }
+
+    chatWithActions(
+        `&e[htsw] ${chatPath(dirPath)} &7· ${files.length} item${files.length === 1 ? "" : "s"}`,
+        [openAction(dirPath)]
+    );
+    for (let i = 0; i < files.length; i++) {
+        chatWithActions(`&7  &f${basename(files[i])}`, [
+            viewAction(files[i]),
+            giveAction(files[i]),
+            openAction(files[i]),
+        ]);
+    }
+}
+
+function chatLiteral(text: string): void {
+    chatLine(rawComponent(normalizeFormattingCodes(text) + invisibleNonce()));
+}
+
+let chatNonce = 0;
+
+function invisibleNonce(): string {
+    const digits = (chatNonce++).toString(16);
+    let out = "";
+    for (let i = 0; i < digits.length; i++) out += "§" + digits[i];
+    return out;
+}
+
+function copyViewSnapshot(id: number): void {
+    const snbt = viewSnapshot(id);
+    if (snbt === null) {
+        chatLine("&c[htsw] That dump is no longer held — run /htsw viewitem again.");
+        return;
+    }
+    if (setClipboardString(snbt)) {
+        chatLine("&a[htsw] Copied the item SNBT to your clipboard.");
+    }
 }
