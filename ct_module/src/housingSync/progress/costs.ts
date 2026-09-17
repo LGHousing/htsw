@@ -71,7 +71,6 @@ import { menuSlotNbtCompareKey } from "../../importables/menus/slotComparison";
  * target band rate to get the new unit value.
  */
 export const COST = {
-    commandInterval: 1,
     commandMenuWait: 2.3,
     commandMessageWait: 2,
 
@@ -104,8 +103,8 @@ export const ITEM_CAPTURE_FIELD_UNITS =
     COST.menuClickWait + COST.itemSelect + COST.goBackWait;
 
 export const REGION_BOUNDS_CHANGE_UNITS =
-    (COST.commandInterval + COST.commandMessageWait) * 4 +
-    (COST.commandInterval + COST.commandMenuWait) * 2 +
+    COST.commandMessageWait * 4 +
+    COST.commandMenuWait * 2 +
     COST.messageClickWait;
 
 // Writing one menu slot's item: RIGHT-click opens the picker, then one pick.
@@ -114,8 +113,8 @@ export const MENU_ITEM_WRITE_UNITS = COST.menuClickWait + COST.itemSelect;
 export const MENU_SLOT_CLEAR_UNITS = COST.menuClickWait * 2;
 // Reaching one slot's action list from anywhere: `/menu edit`, the elements
 // grid, then the slot itself (see `openMenuSlotActions`).
-const MENU_SLOT_VISIT_UNITS =
-    COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 2;
+export const MENU_SLOT_VISIT_UNITS =
+    COST.commandMenuWait + COST.menuClickWait * 2;
 
 const LIST_ITEMS_PER_PAGE = 21;
 
@@ -1089,7 +1088,6 @@ function exactKnownChildListUnits(actions: readonly Action[] | undefined): numbe
 export function estimateImportableReadUnits(importable: Importable): number {
     if (importable.type === "FUNCTION") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1099,7 +1097,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "COMMAND") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1108,7 +1105,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "EVENT") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(importable.actions) +
@@ -1117,7 +1113,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "REGION") {
         return (
-            COST.commandInterval * 4 +
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
             actionListReadCost(importable.onEnterActions ?? []) +
@@ -1131,7 +1126,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
         if (left.length === 0 && right.length === 0) return COST.cacheWrite;
         return (
             COST.itemInject +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(left) +
@@ -1142,7 +1136,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
         );
     }
     if (importable.type === "MENU") {
-        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             total += actionListReadCost(slots[i].actions ?? []);
@@ -1151,7 +1145,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "NPC") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait * 3 +
             COST.chatInput +
@@ -1188,7 +1181,6 @@ export function estimateImportableCost(
 
     if (importable.type === "FUNCTION") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1202,7 +1194,6 @@ export function estimateImportableCost(
     }
     if (importable.type === "COMMAND") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1217,7 +1208,6 @@ export function estimateImportableCost(
     }
     if (importable.type === "EVENT") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1263,7 +1253,6 @@ export function estimateImportableCost(
         return (
             COST.itemInject +
             COST.guaranteedSleep1000 +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1291,12 +1280,11 @@ export function estimateImportableCost(
         // list, and go back (see readLiveMenu). Price that walk per slot;
         // pricing only the click (as this branch once did) undercounts a
         // menu's work by the entire cost of its action lists.
-        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             const actions = slots[i].actions ?? [];
             total +=
-                COST.commandInterval +
                 COST.commandMenuWait +
                 COST.menuClickWait * 2 +
                 pageTurnUnitsForListItemCount(actions.length) +
@@ -1313,7 +1301,6 @@ export function estimateImportableCost(
             importable.leftClickRedirect === undefined ? 0 : COST.menuClickWait;
         const renameUnits = COST.chatInput;
         return (
-            COST.commandInterval * 3 +
             COST.commandMenuWait * 3 +
             COST.menuClickWait * 9 +
             renameUnits +
@@ -1397,7 +1384,7 @@ function estimateCachedMenuUnits(
     // elements grid with the item and action work.
     let applying = 0;
     if (slotWork > 0 || clears > 0 || resize) {
-        applying += COST.commandInterval + COST.commandMenuWait;
+        applying += COST.commandMenuWait;
         if (resize) {
             if (clears > 0) applying += COST.menuClickWait + clears + COST.goBackWait;
             applying += COST.menuClickWait * 2;
@@ -1407,7 +1394,6 @@ function estimateCachedMenuUnits(
         }
     }
     return (
-        COST.commandInterval +
         COST.commandMenuWait +
         COST.menuClickWait +
         reading +

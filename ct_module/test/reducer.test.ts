@@ -518,6 +518,48 @@ describe("progress reducer", () => {
         expect(s.progress).toEqual(locked);
     });
 
+    test("parking a row does not add its observed read work to the total twice", () => {
+        const started = (key: string, rowIndex: number, initialUnits: number): SyncEvent => ({
+            kind: "importableStarted",
+            key,
+            type: "MENU",
+            identity: key,
+            setupUnits: 2,
+            initialUnits,
+            rowIndex,
+            cached: null,
+        });
+        const scanned = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "menu", status: "queued", totalUnits: 100 },
+                    { key: "next", status: "queued", totalUnits: 50 },
+                ],
+                initialTotalUnits: 150,
+            },
+            started("menu", 0, 100),
+            { kind: "setupStep", label: "opened", completed: 1, total: 1 },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 80,
+                    totalUnits: 80,
+                    phaseUnits: { setup: 0, reading: 80, hydrating: 0, applying: 0 },
+                    sync: { completedUnits: 0, totalUnits: 0, parent: null },
+                },
+            },
+            { kind: "importableScanCompleted", key: "menu", needsHydration: false },
+        ]);
+        const parked = reduce(scanned, started("next", 1, 50));
+
+        expect(scanned.progress.totalUnits).toBe(150);
+        expect(parked.progress.totalUnits).toBe(150);
+        expect(parked.progress.completedUnits).toBe(scanned.progress.completedUnits);
+    });
+
     test("sessionStarted seeds rows + total", () => {
         const s = emit([
             {

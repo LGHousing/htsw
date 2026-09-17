@@ -591,13 +591,25 @@ function applyProgress(
     // because the diff isn't yet known. Preserve the prior (initial or
     // scan-seeded) apply estimate so the bar's apply sub-segment
     // does not collapse to zero width before planning completes.
+    //
+    // The initial seed is the whole up-front estimate, read and hydrate work
+    // included. Cap the preserved value at what that estimate has left once
+    // the observed read and hydrate units are taken out, or parking the row
+    // adds the same work to the total twice and the session fraction drops.
     const prevApplying = state.active.currentPhaseUnits.applying;
     const incomingApplying = payload.phaseUnits.applying;
+    const estimateLeft = Math.max(
+        0,
+        state.active.initialUnits -
+            setupUnits -
+            payload.phaseUnits.reading -
+            payload.phaseUnits.hydrating
+    );
     const applying =
         payload.preserveApplyingEstimate !== false &&
         incomingApplying === 0 &&
         prevApplying > 0
-            ? prevApplying
+            ? Math.min(prevApplying, estimateLeft)
             : incomingApplying;
     const next: ActiveBookkeeping = {
         ...state.active,

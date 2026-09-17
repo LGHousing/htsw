@@ -24,19 +24,22 @@ export type ReferencedShellPlan = {
     regions: string[];
 };
 
+// `/pos1` and `/pos2` go out bare and back to back, so each sleeps out the
+// 300ms command cooldown with no timed wait around it.
+const BARE_COMMAND_UNITS = 1.2;
+
 export function referencedShellApplicationUnits(kind: RefShellKind): number {
     if (kind === "function") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.goBackWait +
             COST.cacheWrite
         );
     }
     if (kind === "menu") {
-        return COST.commandInterval + COST.commandMenuWait + COST.goBackWait;
+        return COST.commandMenuWait + COST.goBackWait;
     }
-    return COST.commandInterval * 4 + COST.commandMessageWait * 2;
+    return COST.commandMessageWait * 2 + BARE_COMMAND_UNITS * 2;
 }
 
 export function referencedShellPlanApplicationUnits(plan: ReferencedShellPlan): number {

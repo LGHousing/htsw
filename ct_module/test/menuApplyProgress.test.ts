@@ -54,8 +54,7 @@ describe("menu application progress", () => {
         );
         expect(actionStep?.units).toBeCloseTo(actionsPlan.phaseUnits.applying);
         expect(plan.applicationPlan.totalUnits).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 COST.menuClickWait +
                 actionsPlan.phaseUnits.applying +
@@ -87,7 +86,7 @@ describe("menu application progress", () => {
         expect(applicationPlan.steps[0]).toEqual({
             key: "menu",
             kind: "work",
-            units: COST.commandInterval + COST.commandMenuWait,
+            units: COST.commandMenuWait,
         });
     });
 

@@ -19,6 +19,7 @@ import {
     COST,
     MENU_ITEM_WRITE_UNITS,
     MENU_SLOT_CLEAR_UNITS,
+    MENU_SLOT_VISIT_UNITS,
 } from "../../housingSync/progress/costs";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
@@ -181,7 +182,10 @@ export async function scanImportableMenu(
                 identity: importableIdentity(importable),
                 basePath,
             },
-            open: () => openMenuSlotActions(ctx, importable.name, desired.slot),
+            open: async () => {
+                await openMenuSlotActions(ctx, importable.name, desired.slot);
+                progress.visited(i, MENU_SLOT_VISIT_UNITS);
+            },
             progress: progress.part(i),
         });
         slots.push({ desiredIndex: i, slot: desired.slot, label, actions });
@@ -559,8 +563,7 @@ export function menuApplicationPlan(
     steps.push(
         workStep(
             "menu",
-            COST.commandInterval +
-                (exists ? COST.commandMenuWait : COST.commandMessageWait)
+            (exists ? COST.commandMenuWait : COST.commandMessageWait)
         )
     );
 

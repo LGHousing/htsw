@@ -320,7 +320,6 @@ describe("progress cost estimates", () => {
         const expectedWithoutActionList =
             COST.itemInject +
             COST.guaranteedSleep1000 * 2 +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             COST.nbtCapture +
@@ -433,7 +432,7 @@ describe("progress cost estimates", () => {
                 lists: {},
             }) as ImportableCacheEntry;
         const snapshot =
-            COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+            COST.commandMenuWait + COST.menuClickWait;
         const editOneMessage = actionListDiffApplyUnits(
             diffActionList(baselineActionListFromActions([message("old")]), [
                 message("new"),
@@ -448,7 +447,7 @@ describe("progress cost estimates", () => {
             estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true)
         ).toBeCloseTo(
             snapshot * 2 +
-                (COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 2) +
+                (COST.commandMenuWait + COST.menuClickWait * 2) +
                 COST.menuClickWait +
                 editOneMessage +
                 COST.goBackWait +
@@ -463,15 +462,14 @@ describe("progress cost estimates", () => {
         );
     });
 
-    test("unrelated function action pricing only gains its command interval", () => {
+    test("function estimate prices its editor open, its actions and the cache write", () => {
         const importable: ImportableFunction = {
             type: "FUNCTION",
             name: "f",
             actions: [message("hi")],
         };
         expect(estimateImportableCost(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 actionListDiffApplyUnits(
                     diffActionList(
                         baselineActionListFromActions([]),
@@ -492,8 +490,7 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 (COST.menuClickWait +
                     COST.goBackWait +
@@ -593,8 +590,7 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 COST.goBackWait +
                 COST.menuClickWait +

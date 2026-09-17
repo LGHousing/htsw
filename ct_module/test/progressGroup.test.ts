@@ -47,4 +47,24 @@ describe("progress group", () => {
             parent: null,
         });
     });
+
+    test("books the navigation to a part before the part reports anything", () => {
+        const emitted: SyncEvent[] = [];
+        const group = createProgressGroup({ emit: (event) => emitted.push(event) }, 2);
+
+        group.visited(0, 5);
+        group.visited(1, 5);
+        group.visited(1, 5);
+
+        const latest = emitted[emitted.length - 1];
+        if (latest.kind !== "progress") throw new Error("expected progress");
+        expect(latest.progress.phase).toBe("hydrating");
+        expect(latest.progress.completedUnits).toBe(15);
+        expect(latest.progress.phaseUnits).toEqual({
+            setup: 0,
+            reading: 10,
+            hydrating: 5,
+            applying: 0,
+        });
+    });
 });

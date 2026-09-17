@@ -151,7 +151,7 @@ export function itemApplicationPlan(plan: ItemImportPlan): ApplicationPlan {
     const steps: ApplicationStep[] = [workStep("placeItem", COST.itemInject)];
     if (plan.leftPlan !== null || plan.rightPlan !== null) {
         steps.push(
-            workStep("openItemEditor", COST.commandInterval + COST.commandMenuWait),
+            workStep("openItemEditor", COST.commandMenuWait),
             workStep("openActionsEditor", COST.menuClickWait)
         );
         if (plan.leftPlan !== null) {

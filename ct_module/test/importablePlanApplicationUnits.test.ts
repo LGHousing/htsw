@@ -42,11 +42,9 @@ describe("planned importable application units", () => {
                 },
             } as never)
         ).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 COST.signInput +
-                COST.commandInterval +
                 COST.commandMenuWait +
                 actionsPlan.phaseUnits.applying +
                 COST.goBackWait +
@@ -78,8 +76,7 @@ describe("planned importable application units", () => {
         } as never);
 
         expect(plan.applicationPlan.totalUnits).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMessageWait +
+            COST.commandMessageWait +
                 COST.menuClickWait * 2 +
                 COST.cacheWrite
         );

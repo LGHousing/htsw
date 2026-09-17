@@ -138,7 +138,7 @@ describe("secondary importable application plans", () => {
 
         const application = npcApplicationPlan(plan);
         const openUnits =
-            COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 4;
+            COST.commandMenuWait + COST.menuClickWait * 4;
 
         expect(application.steps.map((step) => step.key)).toEqual([
             "rename",
