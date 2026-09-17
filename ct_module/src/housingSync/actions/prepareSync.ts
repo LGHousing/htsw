@@ -128,9 +128,13 @@ export async function scanActionListSync(
             target.trustPlan
         );
     }
-    return scan.kind === "planned"
-        ? planned(scan.plan, target)
-        : { kind: "hydrate", pending: scan, target };
+    if (scan.kind === "planned") return planned(scan.plan, target);
+    // Nothing in the scanned list needs a second read, so finish the plan while
+    // the list is open instead of reopening it later to hydrate nothing.
+    if (scan.scan.plan.size === 0) {
+        return planned(await hydrateActionListForPlan(ctx, scan), target);
+    }
+    return { kind: "hydrate", pending: scan, target };
 }
 
 export async function hydrateActionListSync(

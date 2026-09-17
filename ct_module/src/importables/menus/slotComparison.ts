@@ -7,7 +7,7 @@ import { stableStringify } from "../../utils/helpers";
 
 const MENU_SLOT_PARSE_PATH_KEYS = new Set(["sourcePath", "actionsPath", "nbtPath"]);
 
-function menuSlotNbtCompareKey(nbt: unknown): string {
+export function menuSlotNbtCompareKey(nbt: unknown): string {
     if (
         nbt === null ||
         typeof nbt !== "object" ||

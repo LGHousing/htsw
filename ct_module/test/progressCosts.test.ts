@@ -415,6 +415,54 @@ describe("progress cost estimates", () => {
         ).toBeCloseTo(COST.signInput);
     });
 
+    test("trusted menu prices only the slots that differ from the cache", () => {
+        const nbt = { type: "compound", value: {} } as never;
+        const menuWith = (sell: string): ImportableMenu => ({
+            type: "MENU",
+            name: "m",
+            slots: [
+                { slot: 0, nbt },
+                { slot: 1, nbt },
+                { slot: 4, nbt, actions: [message("buy")] },
+                { slot: 5, nbt, actions: [message(sell)] },
+            ],
+        });
+        const cache = (importable: ImportableMenu): ImportableCacheEntry =>
+            ({
+                importable,
+                lists: {},
+            }) as ImportableCacheEntry;
+        const snapshot =
+            COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+        const editOneMessage = actionListDiffApplyUnits(
+            diffActionList(baselineActionListFromActions([message("old")]), [
+                message("new"),
+            ]),
+            editUnitsWithChildLists,
+            1
+        );
+
+        // One grid snapshot, the changed slot's lock check, reopen for the
+        // apply, one slot's edit. No unchanged slot is opened.
+        expect(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true)
+        ).toBeCloseTo(
+            snapshot * 2 +
+                (COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 2) +
+                COST.menuClickWait +
+                editOneMessage +
+                COST.goBackWait +
+                COST.cacheWrite
+        );
+        // Trust off opens all four cached slots to read them.
+        expect(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), false)
+        ).toBeGreaterThan(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true) +
+                4 * COST.commandMenuWait
+        );
+    });
+
     test("unrelated function action pricing only gains its command interval", () => {
         const importable: ImportableFunction = {
             type: "FUNCTION",

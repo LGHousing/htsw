@@ -15,7 +15,11 @@ import {
     scanActionListSync,
     type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
-import { COST } from "../../housingSync/progress/costs";
+import {
+    COST,
+    MENU_ITEM_WRITE_UNITS,
+    MENU_SLOT_CLEAR_UNITS,
+} from "../../housingSync/progress/costs";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
@@ -63,11 +67,6 @@ type MenuSlotOp = {
     itemLabel?: string | null;
     actionsPlan?: ActionListPlan;
 };
-
-// Writing one slot's item: RIGHT-click opens the picker, then one pick.
-const ITEM_WRITE_UNITS = COST.menuClickWait + COST.itemSelect;
-// Emptying one slot: RIGHT-click opens the picker, then click "Clear Item".
-const SLOT_CLEAR_UNITS = COST.menuClickWait * 2;
 
 function menuItemLabel(item: Item | null | undefined): string | null {
     if (item === null || item === undefined) return null;
@@ -570,7 +569,7 @@ export function menuApplicationPlan(
     if (plan.diff.setSize !== null && clearOps.length > 0) {
         steps.push(workStep("clear:prepare", COST.menuClickWait));
         for (const op of clearOps) {
-            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+            steps.push(workStep(clearStepKey(op.slot), MENU_SLOT_CLEAR_UNITS));
         }
         steps.push(workStep("clear:back", COST.goBackWait));
         remainingOps = plan.diff.ops.filter((op) => op.clear !== true);
@@ -584,9 +583,9 @@ export function menuApplicationPlan(
 
     for (const op of remainingOps) {
         if (op.clear === true) {
-            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+            steps.push(workStep(clearStepKey(op.slot), MENU_SLOT_CLEAR_UNITS));
         } else if (op.setItem !== undefined) {
-            steps.push(workStep(itemStepKey(op.slot), ITEM_WRITE_UNITS));
+            steps.push(workStep(itemStepKey(op.slot), MENU_ITEM_WRITE_UNITS));
         }
     }
     for (const op of remainingOps) {
