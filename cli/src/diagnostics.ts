@@ -15,7 +15,7 @@ export function printDiagnostic(sourceMap: htsw.SourceMap, diagnostic: htsw.Diag
 }
 
 /** Format a diagnostic and its suggestions without writing to the terminal. */
-export function formatDiagnostic(sourceMap: htsw.SourceMap, diagnostic: htsw.Diagnostic): string {
+function formatDiagnostic(sourceMap: htsw.SourceMap, diagnostic: htsw.Diagnostic): string {
     const lines: string[] = [];
     appendDiagnostic(lines, sourceMap, diagnostic);
     return lines.join("\n");
