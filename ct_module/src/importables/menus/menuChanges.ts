@@ -17,7 +17,7 @@ export type MenuSlotSnapshot = {
 /** One slot the trusted import must write, and what part of it changed. */
 type MenuSlotChange = {
     slot: number;
-    /** Index into the desired slot list, for `slots[i].actions` paths. */
+    /** Index into the desired slot list. */
     desiredIndex: number;
     setItem: boolean;
     setActions: boolean;

@@ -51,17 +51,8 @@ function liveActionsFor(
     liveListsByPath: ReadonlyMap<string, readonly Action[]>
 ): readonly Action[] | undefined {
     if (source.type !== live.type) return undefined;
-    if (source.type === "MENU" && live.type === "MENU") {
-        const match = /^slots\[(\d+)\]\.actions$/.exec(sourceList.basePath);
-        if (match === null) return undefined;
-        const sourceSlot = source.slots[Number(match[1])];
-        for (let i = 0; i < live.slots.length; i++) {
-            const liveSlot = live.slots[i];
-            if (liveSlot.slot === sourceSlot.slot) {
-                return liveListsByPath.get(`slots[${i}].actions`) ?? [];
-            }
-        }
-        return [];
+    if (source.type === "MENU") {
+        return liveListsByPath.get(sourceList.basePath) ?? [];
     }
     return liveListsByPath.get(sourceList.basePath);
 }

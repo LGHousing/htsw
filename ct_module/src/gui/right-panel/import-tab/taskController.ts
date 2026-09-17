@@ -90,7 +90,7 @@ function conflictListLabel(basePath: string): string {
     if (basePath === "onExitActions") return "exit actions";
     if (basePath === "leftClickActions") return "left-click actions";
     if (basePath === "rightClickActions") return "right-click actions";
-    const slot = basePath.match(/^slots\[(\d+)\]\.actions$/);
+    const slot = basePath.match(/^slot#(\d+)\.actions$/);
     if (slot !== null) return `slot ${slot[1]} actions`;
     return basePath;
 }

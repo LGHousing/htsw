@@ -22,6 +22,7 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/itemPicker";
 import { canonicalItemShellKey, snbtFromItem } from "../../housingSync/items/itemNbt";
 import type { ImportableTrustPlan } from "../../importCache";
+import { menuSlotActionsPath } from "../../importCache/actionLists";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { createProgressGroup } from "../../housingSync/progress/group";
 import TaskContext from "../../tasks/context";
@@ -54,8 +55,6 @@ type MenuSlotOp = {
     slot: number;
     setItem?: Item;
     syncActions?: Action[];
-    /** Trust/baseline path for `syncActions` (e.g. `slots[3].actions`). */
-    actionsPath?: string;
     clear?: boolean;
     /** Diagnostic only: read-back vs desired item SNBT when the item differs,
      * so a residual can show exactly what changed instead of just "item differs". */
@@ -171,7 +170,7 @@ export async function scanImportableMenu(
             index: i + 1,
             count: importable.slots.length,
         });
-        const basePath = `slots[${i}].actions`;
+        const basePath = menuSlotActionsPath(desired.slot);
         const actions = await scanActionListSync(ctx, {
             desired: desired.actions ?? [],
             sync: session.actions,
@@ -246,7 +245,6 @@ export function menuActionBaseline(
     actionPlan: ActionListPlan | null,
     cached: Action[] | undefined,
     menuName: string,
-    path: string,
     slot: number,
     declared: boolean
 ): { actions: Action[]; actionsKnown: boolean } {
@@ -261,7 +259,7 @@ export function menuActionBaseline(
             return { actions: [], actionsKnown: true };
         }
         throw new Error(
-            `Menu "${menuName}" has no usable baseline for ${path} ` +
+            `Menu "${menuName}" has no usable baseline for ${menuSlotActionsPath(slot)} ` +
                 `(Housing slot ${slot}; unhydrated action indexes/types: ` +
                 "unavailable because no action plan exists)."
         );
@@ -294,18 +292,12 @@ export function planImportableMenu(
         const actionPlan =
             actionRead === undefined ? null : actionListPlanFromRead(actionRead);
         const cached = cachedBySlot.get(slot.slot);
-        const desiredIndex = actionReadBySlot.get(slot.slot)?.desiredIndex;
-        const path =
-            desiredIndex === undefined
-                ? "slots[unknown].actions"
-                : `slots[${desiredIndex}].actions`;
         const actionBaseline = menuActionBaseline(
             actionPlan,
             cached,
             read.importable.name,
-            path,
             slot.slot,
-            desiredIndex !== undefined
+            actionReadBySlot.has(slot.slot)
         );
         return {
             slot: slot.slot,
@@ -321,12 +313,9 @@ export function planImportableMenu(
         session.items,
         session.actions.itemDiff
     );
-    const readsByPath = new Map(
-        read.slots.map((slot) => [`slots[${slot.desiredIndex}].actions`, slot])
-    );
     for (const op of diff.ops) {
         const actionRead =
-            op.actionsPath === undefined ? undefined : readsByPath.get(op.actionsPath);
+            op.syncActions === undefined ? undefined : actionReadBySlot.get(op.slot);
         if (actionRead !== undefined) {
             const actionPlan = actionListPlanFromRead(actionRead.actions);
             if (actionPlan !== null) {
@@ -396,7 +385,6 @@ function buildMenuDiff(
         }
         if (change.setActions) {
             op.syncActions = slot.actions ?? [];
-            op.actionsPath = `slots[${change.desiredIndex}].actions`;
         }
         ops.push(op);
     }

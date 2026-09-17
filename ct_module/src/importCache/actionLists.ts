@@ -5,6 +5,15 @@ export type ImportableActionList = {
     actions: readonly Action[];
 };
 
+/**
+ * A menu slot's action-list path, keyed by Housing slot number. A menu has no
+ * inherent slot order, so array position would hand a slot its neighbor's
+ * cached list and lock hash whenever the source inserts or reorders slots.
+ */
+export function menuSlotActionsPath(slot: number): string {
+    return `slot#${slot}.actions`;
+}
+
 export function actionListsOfImportable(importable: Importable): ImportableActionList[] {
     const lists: ImportableActionList[] = [];
     switch (importable.type) {
@@ -43,10 +52,12 @@ export function actionListsOfImportable(importable: Importable): ImportableActio
             }
             break;
         case "MENU":
-            for (let i = 0; i < importable.slots.length; i++) {
-                const actions = importable.slots[i].actions;
-                if (actions !== undefined && actions.length > 0) {
-                    lists.push({ basePath: `slots[${i}].actions`, actions });
+            for (const slot of importable.slots) {
+                if (slot.actions !== undefined && slot.actions.length > 0) {
+                    lists.push({
+                        basePath: menuSlotActionsPath(slot.slot),
+                        actions: slot.actions,
+                    });
                 }
             }
             break;
@@ -79,11 +90,12 @@ export function readCachedActionList(
         if (basePath === "rightClickActions") return importable.rightClickActions;
     }
     if (importable.type === "MENU") {
-        const match = basePath.match(/^slots\[(\d+)\]\.actions$/);
-        if (match !== null) {
-            const idx = Number(match[1]);
-            if (idx < 0 || idx >= importable.slots.length) return undefined;
-            return importable.slots[idx].actions;
+        // A declared slot without `actions` has an empty action list. Walk
+        // backwards so a duplicated slot number resolves to its last entry,
+        // the same one the `lists` hashes keep.
+        for (let i = importable.slots.length - 1; i >= 0; i--) {
+            const slot = importable.slots[i];
+            if (menuSlotActionsPath(slot.slot) === basePath) return slot.actions ?? [];
         }
     }
     return undefined;

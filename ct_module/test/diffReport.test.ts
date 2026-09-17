@@ -368,7 +368,7 @@ describe("diff report", () => {
                         {
                             type: "MENU",
                             identity: "Shop",
-                            basePath: "slots[3].actions",
+                            basePath: "slot#3.actions",
                             differences: [difference],
                             moreCount: 2,
                             canonicalDifferences: [difference],
@@ -392,7 +392,7 @@ describe("diff report", () => {
             )
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
-            '[htsw] Conflict: MENU "Shop" · slots[3].actions',
+            '[htsw] Conflict: MENU "Shop" · slot#3.actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
             "[htsw]   …and 2 more differences",
             "[htsw] Pending changes: 1",
