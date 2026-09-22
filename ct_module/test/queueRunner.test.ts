@@ -376,6 +376,31 @@ describe("queued held-item export", () => {
     });
 });
 
+describe("queued NPC export", () => {
+    it("passes only the selected NPC to the position-keyed exporter", async () => {
+        const npc = makeImportableQueueRow({
+            op: "export",
+            house: "house-a",
+            path: "/npcs/import.json",
+            type: "NPC",
+            identity: "12,64,-8",
+            label: "Guide",
+        });
+        let names: readonly string[] | undefined;
+        let entries: unknown;
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            names = batches[0].names;
+            entries = batches[0].npcEntries;
+            return { total: 1, succeeded: 1, failed: 0 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(ctx, [npc], "house-a", fakeSession);
+
+        expect(names).toBeUndefined();
+        expect(entries).toEqual([{ name: "Guide", pos: { x: 12, y: 64, z: -8 } }]);
+    });
+});
+
 describe("queued export destination", () => {
     it("reads the new-export target when the session starts", async () => {
         const queued = row("exported", "export", "/project/import.json");
@@ -484,6 +509,30 @@ describe("queued export progress", () => {
         );
         sink.start(["exported"]);
         sink.item(0, "exported");
+        sink.itemFinished?.(0);
+        sink.done();
+
+        expect(getTaskProgress()?.rows[0].key).toBe(queued.key);
+        expect(finished).toEqual([queued.key]);
+    });
+
+    it("completes an NPC queue row when its display label differs from its identity", () => {
+        const queued = makeImportableQueueRow({
+            op: "export",
+            house: "house-a",
+            path: "/npcs/import.json",
+            type: "NPC",
+            identity: "12,64,-8",
+            label: "Guide",
+        });
+        const finished: string[] = [];
+        const sink = createExportProgressSink("NPC", queued.path, "export", undefined, {
+            queueRows: [queued],
+            onFinished: (key) => finished.push(key),
+        });
+
+        sink.start(["Guide @ 12,64,-8"], ["12,64,-8"]);
+        sink.item(0, "Guide @ 12,64,-8");
         sink.itemFinished?.(0);
         sink.done();
 

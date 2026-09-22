@@ -139,7 +139,10 @@ async function exportAllNpcsInner(
         );
     }
     const labels = exportEntries.map((entry) => npcLabel(entry));
-    options.progress?.start(labels);
+    options.progress?.start(
+        labels,
+        exportEntries.map((entry) => npcPosIdentity(entry.pos))
+    );
 
     let succeeded = 0;
     let failed = 0;

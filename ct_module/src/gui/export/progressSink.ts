@@ -46,6 +46,7 @@ export function createExportProgressSink(
     }
 ): ExportProgressSink {
     let names: readonly string[] = [];
+    let identities: readonly string[] = [];
     let units: number[] = [];
     let state = initialReducerState();
     let currentIndex: number | null = null;
@@ -71,8 +72,9 @@ export function createExportProgressSink(
         }
         return null;
     };
-    const keyFor = (name: string): string =>
-        queueKeyFor(name) ?? queueRowKey(type, name, canonicalImportJsonPath);
+    const keyFor = (identity: string): string =>
+        queueKeyFor(identity) ?? queueRowKey(type, identity, canonicalImportJsonPath);
+    const identityAt = (index: number): string => identities[index] ?? names[index];
 
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
@@ -95,7 +97,7 @@ export function createExportProgressSink(
         livePreview.finish(currentIndex);
         emit({
             kind: "importableFinished",
-            key: keyFor(names[currentIndex]),
+            key: keyFor(identityAt(currentIndex)),
             status,
             ...(error !== undefined ? { error } : {}),
         });
@@ -146,15 +148,16 @@ export function createExportProgressSink(
     return {
         events: livePreview.events,
         eventsForList: livePreview.eventsForList,
-        start(ns) {
+        start(ns, stableIdentities = ns) {
             names = ns;
+            identities = stableIdentities;
             if (ns.length === 0) return;
-            const resolved = resolveUnits(ns);
+            const resolved = resolveUnits(stableIdentities);
             units = resolved.units;
             let total = 0;
             for (const u of units) total += u;
-            const rows = ns.map((n, i) => ({
-                key: keyFor(n),
+            const rows = ns.map((_n, i) => ({
+                key: keyFor(identityAt(i)),
                 status: "queued" as const,
                 totalUnits: units[i],
             }));
@@ -185,7 +188,7 @@ export function createExportProgressSink(
             if (!stagedScanActive) lockTotals();
             emit({
                 kind: "importableStarted",
-                key: keyFor(name),
+                key: keyFor(identityAt(index)),
                 type,
                 identity: name,
                 setupUnits: 0,
@@ -211,7 +214,7 @@ export function createExportProgressSink(
         itemFinished(index) {
             if (index === currentIndex) {
                 finishCurrent("imported");
-                const key = queueKeyFor(names[index]);
+                const key = queueKeyFor(identityAt(index));
                 if (key !== null) queue?.onFinished?.(key);
             }
         },
@@ -237,7 +240,7 @@ export function createExportProgressSink(
         itemFailed(index, error) {
             if (index !== currentIndex) return;
             finishCurrent("failed", error);
-            const key = queueKeyFor(names[index]);
+            const key = queueKeyFor(identityAt(index));
             if (key !== null) queue?.onFinished?.(key, error);
         },
         done() {
