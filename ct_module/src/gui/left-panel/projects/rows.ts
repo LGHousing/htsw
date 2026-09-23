@@ -1818,6 +1818,18 @@ function diagnosticBadge(counts: SeverityCounts): Element {
 }
 
 /**
+ * Badge for diagnostics in a child row's own file. Inline data (no own file)
+ * gets no badge: its file is the import.json, whose count covers every
+ * importable declared there.
+ */
+function fileDiagnosticBadge(parent: ResultImport, path: string | undefined): Element[] {
+    if (path === undefined) return [];
+    const counts = diagnosticCountsForFile(parent.parse, path);
+    if (counts.errors === 0 && counts.warnings === 0) return [];
+    return [rowSlot(INNER_GAP), diagnosticBadge(counts)];
+}
+
+/**
  * Toggle an importable's queue membership from a Projects row. Adding (an
  * unchecked importable → checked) is always allowed, even mid-import — the
  * queue session tracks late adds as "pending" and they survive the run.
@@ -1961,6 +1973,7 @@ export function childListRow(
                 color: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
+            ...fileDiagnosticBadge(parent, importableChildListPath(imp, kind)),
         ],
     });
 }
@@ -2213,6 +2226,9 @@ export function metadataRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            ...(fileTarget === null
+                ? []
+                : fileDiagnosticBadge(parent, importableSourcePath(imp))),
         ],
     });
 }
