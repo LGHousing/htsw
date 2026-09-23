@@ -1,5 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
+import type { Importable } from "htsw/types";
 import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Scroll, Text } from "../../lib/components";
 import { Icons, IconName } from "../../lib/icons.generated";
@@ -43,7 +44,7 @@ import {
     COLOR_TOGGLE_ON_HOVER,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { typeBrowserSection } from "./contentBrowser";
+import { revealHouseRow, typeBrowserSection } from "./contentBrowser";
 import { exportDestinationButton } from "../../export/destinationControl";
 
 // Trust glyph tint: green when trusted, faint otherwise.
@@ -162,6 +163,16 @@ let viewedHouse: string | null = null;
 
 function viewedUuid(): string | null {
     return viewedHouse ?? getHousingUuid();
+}
+
+/** Show `house` in the browser, on `type`'s tab, scrolled to `name` if given. */
+export function revealInHousesView(
+    house: string,
+    type: Importable["type"],
+    name: string | null
+): void {
+    viewedHouse = house === getHousingUuid() ? null : house;
+    revealHouseRow(type, name);
 }
 
 function houseLabel(uuid: string | null): string {

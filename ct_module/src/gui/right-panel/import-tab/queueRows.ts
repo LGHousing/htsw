@@ -29,6 +29,7 @@ import { isHouseTrusted } from "../../state/trust";
 import { canonicalPath, requestParse } from "../../parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
+import { revealInHousesView } from "../../left-panel/houses";
 import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 import {
@@ -345,6 +346,19 @@ function statusIcon(row: QueueRow, runState: QueueRowRunState): Element {
 
 function revealQueueRow(row: QueueRow, info: ClickInfo): void {
     if (info.button !== 0 || info.isDoubleClickSecond) return;
+    if (row.op === "export" && row.house !== null) {
+        const target = row.target;
+        if (target.kind === "importable") {
+            setActiveLeftTab("houses");
+            revealInHousesView(row.house, target.type, target.identity);
+            return;
+        }
+        if (target.scope.kind === "houseType") {
+            setActiveLeftTab("houses");
+            revealInHousesView(row.house, target.scope.type, null);
+            return;
+        }
+    }
     setActiveLeftTab("projects");
     if (row.op === "import" && row.target.kind === "importable") {
         revealInProjectsTree({
