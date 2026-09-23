@@ -4,7 +4,7 @@ import type { Importable } from "htsw/types";
 
 import type { ClickInfo, Element } from "../../lib/layout";
 import { Container, Icon, Text } from "../../lib/components";
-import { Icons } from "../../lib/icons.generated";
+import { Icons, type IconName } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
@@ -35,11 +35,14 @@ import {
     type QueueRowRunState,
 } from "./taskProgress";
 import {
+    canMoveQueueRow,
     dismissQueueRow,
     getQueue,
     getQueueRowBadge,
+    moveQueueRow,
     removeQueueRow,
     retryQueueRow,
+    type QueueMove,
     type QueueRow,
 } from "./queue";
 import { cancelQueue } from "./queueRunner";
@@ -206,27 +209,46 @@ function rowHasRunningWork(row: QueueRow): boolean {
         : queueBulkChildren(row).some((child) => child.status === "running");
 }
 
-function rowMenuActions(row: QueueRow): MenuAction[] {
+function moveActions(row: QueueRow): MenuAction[] {
+    const house = getHousingUuid();
+    const action = (label: string, icon: IconName, move: QueueMove): MenuAction => ({
+        label,
+        icon,
+        disabled: !canMoveQueueRow(row.key, move, house),
+        onClick: () => moveQueueRow(row.key, move, getHousingUuid()),
+    });
+    return [
+        action("Move up", Icons.arrowUp, "up"),
+        action("Move down", Icons.arrowDown, "down"),
+        action("Move to top", Icons.arrowUpToLine, "top"),
+        action("Move to bottom", Icons.arrowDownToLine, "bottom"),
+        { kind: "separator" },
+    ];
+}
+
+function rowMenuActions(row: QueueRow, child: boolean): MenuAction[] {
+    if (rowHasRunningWork(row)) {
+        return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
+    }
+    // Bulk children run with their group, so only top-level rows move.
+    const moves = child ? [] : moveActions(row);
     if (row.status === "failed" || row.status === "cancelled") {
-        return [
+        return moves.concat([
             {
                 label: "Retry",
                 icon: Icons.rotateCcw,
                 onClick: () => retryQueueRow(row.key),
             },
             { label: "Dismiss", icon: Icons.x, onClick: () => dismissQueueRow(row.key) },
-        ];
+        ]);
     }
-    if (rowHasRunningWork(row)) {
-        return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
-    }
-    return [
+    return moves.concat([
         {
             label: row.target.kind === "bulk" ? "Remove group" : "Remove",
             icon: Icons.x,
             onClick: () => removeQueueRow(row.key),
         },
-    ];
+    ]);
 }
 
 function rowControls(row: QueueRow): Element {
@@ -407,7 +429,7 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
         },
         onClick: (_rect, info) => {
             if (info.button === 1) {
-                openMenu(info.x, info.y, rowMenuActions(row));
+                openMenu(info.x, info.y, rowMenuActions(row, child));
                 return;
             }
             revealQueueRow(row, info);

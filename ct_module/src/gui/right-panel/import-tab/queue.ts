@@ -389,6 +389,11 @@ export function expandBulkQueueRow(
     queueChanged();
     return inserted;
 }
+/**
+ * A row already queued further down is moved up to the insertion point
+ * instead of being skipped, so a dependency the session pulls in joins that
+ * session rather than importing a second time later.
+ */
 export function insertQueueRowsAfter(
     afterKey: string,
     rows: readonly QueueRowInput[]
@@ -398,15 +403,18 @@ export function insertQueueRowsAfter(
     const inserted: QueueRow[] = [];
     for (let i = 0; i < rows.length; i++) {
         const result = addToQueue(rows[i]);
-        if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection") {
-            continue;
-        }
-        const added = byKey.get(result.row.key);
-        if (added === undefined) continue;
-        const appendedIndex = items.findIndex((row) => row.key === added.key);
-        if (appendedIndex >= 0) items.splice(appendedIndex, 1);
-        items.splice(++insertAt, 0, added);
-        inserted.push(added);
+        const row =
+            result.kind === "added" || result.kind === "alsoQueuedOtherDirection"
+                ? result.row
+                : result.kind === "duplicate" && result.existing.status === "queued"
+                  ? result.existing
+                  : null;
+        if (row === null) continue;
+        const index = items.findIndex((candidate) => candidate.key === row.key);
+        items.splice(index, 1);
+        if (index <= insertAt) insertAt--;
+        items.splice(++insertAt, 0, row);
+        inserted.push(row);
     }
     if (inserted.length > 0) {
         rebuildLookup();
@@ -434,6 +442,76 @@ export function insertQueueRowsBefore(
     }
     return inserted;
 }
+export type QueueMove = "up" | "down" | "top" | "bottom";
+
+/** Top-level rows, each followed by its bulk children, in queue order. */
+function queueUnits(): QueueRow[][] {
+    const units: QueueRow[][] = [];
+    const unitByKey = new Map<string, QueueRow[]>();
+    for (const row of items) {
+        if (row.parentKey !== null && byKey.has(row.parentKey)) continue;
+        const unit = [row];
+        units.push(unit);
+        unitByKey.set(row.key, unit);
+    }
+    for (const row of items) {
+        if (row.parentKey !== null) unitByKey.get(row.parentKey)?.push(row);
+    }
+    return units;
+}
+
+function planQueueMove(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): { units: QueueRow[][]; unit: QueueRow[]; anchor: QueueRow[]; after: boolean } | null {
+    const units = queueUnits();
+    const unit = units.find((candidate) => candidate[0].key === key);
+    if (
+        unit === undefined ||
+        unit.some((row) => row.target.kind === "importable" && row.status === "running")
+    ) {
+        return null;
+    }
+    // Rows only move among the rows shown in the same house group.
+    const group = (row: QueueRow): string | null =>
+        row.house === null || row.house === currentHouse ? null : row.house;
+    const peers = units.filter((candidate) => group(candidate[0]) === group(unit[0]));
+    const from = peers.indexOf(unit);
+    const to =
+        move === "top"
+            ? 0
+            : move === "bottom"
+              ? peers.length - 1
+              : from + (move === "up" ? -1 : 1);
+    if (to < 0 || to >= peers.length || to === from) return null;
+    return { units, unit, anchor: peers[to], after: to > from };
+}
+
+export function canMoveQueueRow(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): boolean {
+    return planQueueMove(key, move, currentHouse) !== null;
+}
+
+export function moveQueueRow(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): boolean {
+    const plan = planQueueMove(key, move, currentHouse);
+    if (plan === null) return false;
+    const units = plan.units.filter((unit) => unit !== plan.unit);
+    const anchorIndex = units.indexOf(plan.anchor);
+    units.splice(plan.after ? anchorIndex + 1 : anchorIndex, 0, plan.unit);
+    items = [];
+    for (const unit of units) for (const row of unit) items.push(row);
+    queueChanged();
+    return true;
+}
+
 export function isBulkQueueRowExpanded(key: string): boolean {
     const parent = byKey.get(key);
     if (parent?.target.kind !== "bulk") return false;

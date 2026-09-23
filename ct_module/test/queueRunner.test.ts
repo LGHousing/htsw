@@ -7,6 +7,7 @@ import {
     addToQueue,
     clearQueue,
     getQueue,
+    insertQueueRowsAfter,
     insertQueueRowsBefore,
     makeBulkQueueRow,
     makeImportableQueueRow,
@@ -89,6 +90,70 @@ afterEach(() => {
 });
 
 describe("operation queue drain", () => {
+    it("does not requeue completed rows that are still waiting for removal", async () => {
+        enqueue(row("import-a"));
+        enqueue(row("read-a", "read", "/read/import.json"));
+        enqueue(row("import-b"));
+        const calls: string[] = [];
+        const removals: Array<() => void> = [];
+        const deps = dependencies({
+            runImport: async (_ctx, rows) => {
+                calls.push(rows.map((r) => r.target.label).join(","));
+                if (calls.length > 2) throw new Error("a completed row ran again");
+                return complete(rows);
+            },
+            scheduleDone: (callback) => removals.push(callback),
+        });
+
+        await expect(drainQueue(ctx, deps)).resolves.toBe("idle");
+        for (const remove of removals) remove();
+        expect(calls).toEqual(["import-a", "import-b"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("leaves a row queued again before the old completion's removal alone", async () => {
+        const a = row("import-a");
+        enqueue(a);
+        const removals: Array<() => void> = [];
+        await drainQueue(
+            ctx,
+            dependencies({ scheduleDone: (callback) => removals.push(callback) })
+        );
+
+        clearQueue();
+        enqueue(a);
+        for (const remove of removals) remove();
+        expect(getQueue().map((queued) => queued.status)).toEqual(["queued"]);
+    });
+
+    it("returns a pulled-in dependency to queued when the session fails", async () => {
+        const uses = row("uses sword");
+        const unrelated = row("unrelated", "read", "/read/import.json");
+        const sword = row("sword");
+        enqueue(uses);
+        enqueue(unrelated);
+        enqueue(sword);
+        const deps = dependencies({
+            runImport: async (_ctx, rows) => {
+                for (const pulled of insertQueueRowsAfter(rows[0].key, [sword])) {
+                    setQueueRowStatus(pulled.key, "running");
+                }
+                return {
+                    completedKeys: [],
+                    failed: [{ key: rows[0].key, error: "Import dependency has errors" }],
+                    parseError: true,
+                };
+            },
+        });
+
+        await expect(drainQueue(ctx, deps)).resolves.toBe("idle");
+        expect(getQueue().map((queued) => [queued.target.label, queued.status])).toEqual([
+            ["uses sword", "failed"],
+            ["sword", "queued"],
+            ["unrelated", "queued"],
+        ]);
+    });
+
     it("preserves mixed order and groups only consecutive op/path/house rows", async () => {
         enqueue(row("import-a"));
         enqueue(row("import-b"));

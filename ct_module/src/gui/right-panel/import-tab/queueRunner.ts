@@ -48,6 +48,7 @@ import {
     completeQueueRows,
     expandBulkQueueRow,
     getQueue,
+    getQueueRow,
     isBulkQueueRowExpanded,
     isRestoredQueueRow,
     makeImportableQueueRow,
@@ -191,18 +192,29 @@ export function queueSessionFromHead(
     return rows;
 }
 
-function resetSessionRows(rows: readonly QueueRow[]): void {
+// Completed rows stay "running" until scheduleDone removes them, so the
+// done state stays visible briefly. They are no longer part of any session.
+// Held by row object: a row removed and queued again under the same key is
+// a new object, so it is neither skipped nor removed by the old completion.
+const awaitingRemoval = new WeakSet<QueueRow>();
+
+/** The session's rows plus any dependency rows it added or pulled in. */
+function runningSessionRows(rows: readonly QueueRow[]): QueueRow[] {
     const head = rows[0];
-    for (const current of getQueue()) {
-        if (
+    return getQueue().filter(
+        (current) =>
             current.target.kind === "importable" &&
             current.op === head.op &&
             current.path === head.path &&
             current.house === head.house &&
-            current.status === "running"
-        ) {
-            setQueueRowStatus(current.key, "queued");
-        }
+            current.status === "running" &&
+            !awaitingRemoval.has(current)
+    );
+}
+
+function resetSessionRows(rows: readonly QueueRow[]): void {
+    for (const current of runningSessionRows(rows)) {
+        setQueueRowStatus(current.key, "queued");
     }
 }
 
@@ -224,17 +236,24 @@ function applySessionResult(
     for (const key of cancelled) {
         setQueueRowStatus(key, "cancelled", "Cancelled for conflict review");
     }
-    for (const row of rows) {
-        if (!failed.has(row.key) && !completed.has(row.key) && !cancelled.has(row.key)) {
-            setQueueRowStatus(row.key, "queued");
-        }
+    const done: QueueRow[] = [];
+    for (const key of completed) {
+        const row = getQueueRow(key);
+        if (row === null) continue;
+        awaitingRemoval.add(row);
+        done.push(row);
     }
+    resetSessionRows(rows);
     for (const hook of result.completionHooks ?? []) {
         onQueueRowsCompleted(hook.keys, hook.callback);
     }
     fireQueueRowsCompleted(completed);
-    if (completed.size > 0) {
-        scheduleDone(() => completeQueueRows(Array.from(completed)));
+    if (done.length > 0) {
+        scheduleDone(() =>
+            completeQueueRows(
+                done.filter((row) => getQueueRow(row.key) === row).map((row) => row.key)
+            )
+        );
     }
     return failed.size > 0;
 }
@@ -300,13 +319,11 @@ export async function drainQueue(
                 return "paused";
             }
             const message = error instanceof Error ? error.message : String(error);
+            resetSessionRows(session);
             setQueueRowStatus(head.key, "failed", message);
             if (tally !== undefined) {
                 tally.failed++;
                 tally.reason ??= message;
-            }
-            for (let i = 1; i < session.length; i++) {
-                setQueueRowStatus(session[i].key, "queued");
             }
             if (head.op === "import") {
                 ChatLib.chat(`&c[htsw] Import failed: ${String(error)}`);

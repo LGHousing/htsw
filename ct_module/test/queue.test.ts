@@ -3,9 +3,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
     addToQueue,
     clearQueue,
+    expandBulkQueueRow,
     getQueue,
+    insertQueueRowsAfter,
     isQueueItemQueued,
+    makeBulkQueueRow,
     makeImportableQueueRow,
+    moveQueueRow,
+    setQueueRowStatus,
     toggleQueue,
     type QueueRow,
 } from "../src/gui/right-panel/import-tab/queue";
@@ -49,5 +54,57 @@ describe("import queue work identity", () => {
         ).toBe("added");
 
         expect(getQueue()).toHaveLength(2);
+    });
+});
+
+describe("queue reordering", () => {
+    const order = (): string[] =>
+        getQueue().map((row) =>
+            row.target.kind === "importable" ? row.target.identity : row.target.label
+        );
+
+    it("moves a bulk group with its children and skips other houses' rows", () => {
+        const path = "C:/projects/root/import.json";
+        const bulk = makeBulkQueueRow({
+            op: "import",
+            house: "here",
+            path,
+            scope: { kind: "file", path },
+            filter: "all",
+            label: "bulk",
+        });
+        addToQueue(functionItem(path, "first"));
+        addToQueue({ ...functionItem(path, "elsewhere"), house: "there" });
+        addToQueue(bulk);
+        expandBulkQueueRow(bulk.key, [functionItem(path, "child")]);
+
+        expect(moveQueueRow(bulk.key, "up", "here")).toBe(true);
+        expect(order()).toEqual(["bulk", "child", "first", "elsewhere"]);
+        expect(moveQueueRow(bulk.key, "up", "here")).toBe(false);
+
+        const first = getQueue()[2];
+        setQueueRowStatus(first.key, "running");
+        expect(moveQueueRow(first.key, "top", "here")).toBe(false);
+    });
+
+    it("pulls an already queued dependency into the session instead of skipping it", () => {
+        const path = "C:/projects/root/import.json";
+        const fn = functionItem(path, "uses item");
+        const other = functionItem(path, "other");
+        const item = makeImportableQueueRow({
+            op: "import",
+            house: null,
+            path,
+            type: "ITEM",
+            identity: "Sword",
+        });
+        addToQueue(fn);
+        addToQueue(other);
+        addToQueue(item);
+
+        const inserted = insertQueueRowsAfter(fn.key, [item]);
+
+        expect(inserted.map((row) => row.key)).toEqual([item.key]);
+        expect(order()).toEqual(["uses item", "Sword", "other"]);
     });
 });
