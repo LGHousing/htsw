@@ -95,6 +95,10 @@ import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
+    endQueueDrag,
+    tickQueueDragAutoScroll,
+} from "./right-panel/import-tab/queueDrag";
+import {
     dispatchWheel,
     isDraggingScrollbar,
     updateScrollbarDrag,
@@ -767,6 +771,7 @@ export function initHtswGui(): void {
         pollWheel();
         pollLockBanners();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
+        tickQueueDragAutoScroll(mcToOverlay(mouseY));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
         if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
@@ -777,6 +782,7 @@ export function initHtswGui(): void {
     register("guiMouseRelease", () => {
         endScrollbarDrag();
         endTabDrag();
+        endQueueDrag();
     });
 
     // Clear focus when the user clicks anywhere outside every visible panel.

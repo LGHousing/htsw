@@ -10,6 +10,7 @@ import {
     makeBulkQueueRow,
     makeImportableQueueRow,
     moveQueueRow,
+    moveQueueRowsOnto,
     setQueueRowStatus,
     toggleQueue,
     type QueueRow,
@@ -85,6 +86,17 @@ describe("queue reordering", () => {
         const first = getQueue()[2];
         setQueueRowStatus(first.key, "running");
         expect(moveQueueRow(first.key, "top", "here")).toBe(false);
+    });
+
+    it("moves a selected batch as one block past the target row", () => {
+        const path = "C:/projects/root/import.json";
+        const [a, b, c, d] = ["a", "b", "c", "d"].map((name) => functionItem(path, name));
+        for (const row of [a, b, c, d]) addToQueue(row);
+
+        expect(moveQueueRowsOnto([a.key, b.key], c.key, null)).toBe(true);
+        expect(order()).toEqual(["c", "a", "b", "d"]);
+        expect(moveQueueRowsOnto([a.key, b.key], c.key, null)).toBe(true);
+        expect(order()).toEqual(["a", "b", "c", "d"]);
     });
 
     it("pulls an already queued dependency into the session instead of skipping it", () => {

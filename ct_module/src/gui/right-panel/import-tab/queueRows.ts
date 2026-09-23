@@ -12,6 +12,8 @@ import {
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
     COLOR_ROW_HOVER,
+    COLOR_ROW_SELECTED,
+    COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
@@ -46,6 +48,12 @@ import {
     type QueueRow,
 } from "./queue";
 import { cancelQueue } from "./queueRunner";
+import {
+    isQueueRowDragging,
+    isQueueRowSelected,
+    pressQueueRow,
+    updateQueueDrag,
+} from "./queueDrag";
 
 const collapsedBulkRows = new Set<string>();
 
@@ -410,6 +418,7 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
                 ? phaseColor(runState.phase)
                 : undefined;
     const labelColor = dimmed ? COLOR_TEXT_FAINT : skip ? ACCENT_TEAL : undefined;
+    const picked = isQueueRowSelected(row.key) || isQueueRowDragging(row.key);
     // The rail, status icon and controls sit beside the text strip so they
     // span the full row height. Only the text strip stacks on the 2px mini
     // bar; a control centered inside that strip would sit 1px high and its
@@ -424,16 +433,27 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
             ],
             gap: 4,
             height: { kind: "px", value: SIZE_ROW_H },
-            background: isCurrentQueueRow(row) ? COLOR_ROW_HOVER : COLOR_ROW,
-            hoverBackground: COLOR_ROW_HOVER,
+            background: picked
+                ? COLOR_ROW_SELECTED
+                : isCurrentQueueRow(row)
+                  ? COLOR_ROW_HOVER
+                  : COLOR_ROW,
+            hoverBackground: picked ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
         onClick: (_rect, info) => {
             if (info.button === 1) {
                 openMenu(info.x, info.y, rowMenuActions(row, child));
                 return;
             }
-            revealQueueRow(row, info);
+            if (info.button === 0 && !child) {
+                pressQueueRow(row.key, info.x, info.y, () => revealQueueRow(row, info));
+            } else {
+                revealQueueRow(row, info);
+            }
         },
+        // A child row stands in for its bulk group while another row is dragged.
+        onHover: (_rect, mouseX, mouseY) =>
+            updateQueueDrag(child ? (row.parentKey ?? row.key) : row.key, mouseX, mouseY),
         children: [
             queueStateRail(stateColor),
             child &&

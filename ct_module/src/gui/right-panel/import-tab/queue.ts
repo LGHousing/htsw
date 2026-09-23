@@ -460,32 +460,74 @@ function queueUnits(): QueueRow[][] {
     return units;
 }
 
-function planQueueMove(
-    key: string,
-    move: QueueMove,
-    currentHouse: string | null
-): { units: QueueRow[][]; unit: QueueRow[]; anchor: QueueRow[]; after: boolean } | null {
-    const units = queueUnits();
-    const unit = units.find((candidate) => candidate[0].key === key);
-    if (
-        unit === undefined ||
-        unit.some((row) => row.target.kind === "importable" && row.status === "running")
-    ) {
-        return null;
-    }
-    // Rows only move among the rows shown in the same house group.
-    const group = (row: QueueRow): string | null =>
-        row.house === null || row.house === currentHouse ? null : row.house;
-    const peers = units.filter((candidate) => group(candidate[0]) === group(unit[0]));
-    const from = peers.indexOf(unit);
+// Rows only move among the rows shown in the same house group.
+function houseGroup(row: QueueRow, currentHouse: string | null): string | null {
+    return row.house === null || row.house === currentHouse ? null : row.house;
+}
+
+/** Keys of the top-level rows in the same house group as `key`, in queue order. */
+export function queuePeerKeys(key: string, currentHouse: string | null): string[] {
+    const row = byKey.get(key);
+    if (row === undefined) return [];
+    const group = houseGroup(row, currentHouse);
+    return queueUnits()
+        .filter((unit) => houseGroup(unit[0], currentHouse) === group)
+        .map((unit) => unit[0].key);
+}
+
+function stepTarget(key: string, move: QueueMove, currentHouse: string | null): string | null {
+    const peers = queuePeerKeys(key, currentHouse);
+    const from = peers.indexOf(key);
     const to =
         move === "top"
             ? 0
             : move === "bottom"
               ? peers.length - 1
               : from + (move === "up" ? -1 : 1);
-    if (to < 0 || to >= peers.length || to === from) return null;
-    return { units, unit, anchor: peers[to], after: to > from };
+    return from < 0 || to < 0 || to >= peers.length || to === from ? null : peers[to];
+}
+
+/**
+ * The queue with the top-level rows `keys` (and their bulk children) moved as
+ * one block into the slot of `targetKey`: after it when it sits below the
+ * block, before it otherwise. Null when the move is not allowed.
+ */
+function planRowsOnto(
+    keys: readonly string[],
+    targetKey: string,
+    currentHouse: string | null
+): QueueRow[][] | null {
+    const units = queueUnits();
+    const moving = units.filter((unit) => keys.indexOf(unit[0].key) >= 0);
+    const target = units.find((unit) => unit[0].key === targetKey);
+    if (moving.length === 0 || target === undefined || moving.indexOf(target) >= 0) {
+        return null;
+    }
+    const group = houseGroup(target[0], currentHouse);
+    for (const unit of moving) {
+        if (houseGroup(unit[0], currentHouse) !== group) return null;
+        if (unit.some((row) => row.target.kind === "importable" && row.status === "running")) {
+            return null;
+        }
+    }
+    const after = units.indexOf(target) > units.indexOf(moving[0]);
+    const rest = units.filter((unit) => moving.indexOf(unit) < 0);
+    const at = rest.indexOf(target);
+    rest.splice(after ? at + 1 : at, 0, ...moving);
+    return rest;
+}
+
+export function moveQueueRowsOnto(
+    keys: readonly string[],
+    targetKey: string,
+    currentHouse: string | null
+): boolean {
+    const units = planRowsOnto(keys, targetKey, currentHouse);
+    if (units === null) return false;
+    items = [];
+    for (const unit of units) for (const row of unit) items.push(row);
+    queueChanged();
+    return true;
 }
 
 export function canMoveQueueRow(
@@ -493,7 +535,8 @@ export function canMoveQueueRow(
     move: QueueMove,
     currentHouse: string | null
 ): boolean {
-    return planQueueMove(key, move, currentHouse) !== null;
+    const target = stepTarget(key, move, currentHouse);
+    return target !== null && planRowsOnto([key], target, currentHouse) !== null;
 }
 
 export function moveQueueRow(
@@ -501,15 +544,8 @@ export function moveQueueRow(
     move: QueueMove,
     currentHouse: string | null
 ): boolean {
-    const plan = planQueueMove(key, move, currentHouse);
-    if (plan === null) return false;
-    const units = plan.units.filter((unit) => unit !== plan.unit);
-    const anchorIndex = units.indexOf(plan.anchor);
-    units.splice(plan.after ? anchorIndex + 1 : anchorIndex, 0, plan.unit);
-    items = [];
-    for (const unit of units) for (const row of unit) items.push(row);
-    queueChanged();
-    return true;
+    const target = stepTarget(key, move, currentHouse);
+    return target !== null && moveQueueRowsOnto([key], target, currentHouse);
 }
 
 export function isBulkQueueRowExpanded(key: string): boolean {
