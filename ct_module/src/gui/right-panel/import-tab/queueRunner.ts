@@ -41,6 +41,7 @@ import { setHousingUuid } from "../../state";
 import { getNewExportTarget } from "../../state/newExportTarget";
 import { isHouseTrusted } from "../../state/trust";
 import { holdAutoRunUntilReparse } from "../../autoRun";
+import { openAnswerableConflictPrompt } from "../../popovers/conflictPrompt";
 import { showToast } from "../../toast";
 import { runImportQueueSession } from "./taskController";
 import { formatElapsedSeconds } from "./elapsed";
@@ -376,9 +377,17 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
     state = "running";
     pauseRequested = false;
     const tally: QueueRunTally = { completed: 0, failed: 0 };
+    const approvedOverwritePaths = new Set<string>();
+    const dependencies: QueueRunnerDependencies = {
+        ...defaultDependencies,
+        runExport: async (ctx, rows, currentHouse) =>
+            (await confirmExportOverwrites(ctx, rows, approvedOverwritePaths))
+                ? runQueuedExportSession(ctx, rows, currentHouse)
+                : { completedKeys: [], failed: [], cancelled: true },
+    };
     void runHousingSyncTask(
         "queue",
-        (ctx) => drainQueue(ctx, defaultDependencies, options, tally),
+        (ctx) => drainQueue(ctx, dependencies, options, tally),
         { operation: eligible.op }
     )
         .then((next) => {
@@ -698,6 +707,48 @@ export async function runQueuedExportSession(
         `&a[htsw] ${queueOpLabel(first.op)} complete in ${elapsed} &7· &f${completedKeys.length}&a ${queueOpVerb(first.op)}, &f${failed.length}&c failed`
     );
     return { completedKeys, failed };
+}
+
+// An export replaces local entries with the house versions, so a session that
+// would overwrite declared entries asks first. "Export anyway" covers that file
+// for the rest of the run, so a whole-house export asks once, not once per type.
+async function confirmExportOverwrites(
+    ctx: TaskContext,
+    rows: readonly QueueRow[],
+    approvedPaths: Set<string>
+): Promise<boolean> {
+    const path = rows[0].path;
+    if (rows[0].op !== "export" || approvedPaths.has(path)) return true;
+    const declared = new Set(
+        ((await parseImportJsonCurrent(path)).parsed?.value ?? []).map(
+            (importable) => `${importable.type}:${importableIdentity(importable)}`
+        )
+    );
+    const names: string[] = [];
+    for (const row of rows) {
+        if (row.target.kind !== "importable") continue;
+        if (declared.has(`${row.target.type}:${row.target.identity}`)) {
+            names.push(`${row.target.type} ${row.target.label}`);
+        }
+    }
+    if (names.length === 0) return true;
+    const entries = names.length === 1 ? "entry" : "entries";
+    const lines = names.slice(0, 5).map((name) => `• ${name}`);
+    if (names.length > 5) lines.push(`…and ${names.length - 5} more`);
+    lines.push("Export replaces the local versions with the house versions.");
+    const proceed = await openAnswerableConflictPrompt(ctx, {
+        chatMessage:
+            `[htsw] Export would overwrite ${names.length} local ${entries} — awaiting confirmation\n` +
+            names.map((name) => `[htsw] Overwrite: ${name}`).join("\n"),
+        chatConfirmAction: "export anyway",
+        chatRefuseAction: "cancel the export",
+        title: `Overwrite existing ${entries} (${names.length})?`,
+        lines,
+        confirmLabel: "Export anyway",
+        danger: true,
+    });
+    if (proceed) approvedPaths.add(path);
+    return proceed;
 }
 
 function directoryOf(path: string): string {

@@ -71,11 +71,3 @@ export function queueNamesForRow(
 ): string[] {
     return selectedNames.length > 0 ? selectedNames.slice() : [rowName];
 }
-
-export function declaredOverwriteNames(
-    candidateNames: readonly string[],
-    declaredNames: ReadonlySet<string> | null
-): string[] | null {
-    if (declaredNames === null) return null;
-    return candidateNames.filter((name) => declaredNames.has(name));
-}

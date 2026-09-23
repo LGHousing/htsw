@@ -15,7 +15,6 @@ import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
 import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "../../state";
 import { requestParse } from "../../parsing/parses";
-import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
 import { getExportDestinationStatus } from "../../export/destinationStatus";
@@ -79,12 +78,10 @@ import {
 } from "./queueActions";
 import {
     buildHouseQueueMenu,
-    declaredOverwriteNames,
     queueNamesForRow,
     type HouseQueueCounts,
     type HouseQueueMenuActionId,
 } from "./queueMenu";
-import { buildOverwriteConfirmation } from "./overwriteConfirmation";
 import { TaskManager } from "../../../tasks/manager";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
@@ -474,21 +471,15 @@ function itemRowMenu(
         icon: Icons.fileUp,
         disabled: destinationPath === null,
         onClick: () => {
-            confirmDestructiveExport(
-                t.label.toLowerCase(),
-                namesAlreadyInDestination(t, queuedNames),
-                () => {
-                    if (destinationPath === null) return;
-                    queueConcrete(
-                        t,
-                        uuid,
-                        destinationPath,
-                        items,
-                        queuedNames,
-                        "export",
-                        clearSelection
-                    );
-                }
+            if (destinationPath === null) return;
+            queueConcrete(
+                t,
+                uuid,
+                destinationPath,
+                items,
+                queuedNames,
+                "export",
+                clearSelection
             );
         },
     });
@@ -759,52 +750,8 @@ function itemRow(
     });
 }
 
-function namesAlreadyInDestination(
-    t: HouseContentType,
-    names: readonly string[]
-): string[] | null {
-    const sourceMap = loadedSourceImportablesByType(t.type);
-    return declaredOverwriteNames(
-        names,
-        sourceMap === null ? null : new Set(sourceMap.keys())
-    );
-}
-
-function confirmDestructiveExport(
-    noun: string,
-    existingNames: readonly string[] | null,
-    runOverwrite: () => void
-): void {
-    const confirmation = buildOverwriteConfirmation(noun, existingNames);
-    if (confirmation === null) {
-        runOverwrite();
-        return;
-    }
-    openConfirmPopover({
-        title: confirmation.title,
-        lines: confirmation.lines,
-        confirmLabel: "Export anyway",
-        danger: true,
-        onConfirm: runOverwrite,
-    });
-}
-
 function queueableTypes(): QueueableHouseContentType[] {
     return HOUSE_CONTENT_TYPES.filter(isQueueableType);
-}
-
-function wholeHouseOverwriteNames(uuid: string): string[] | null {
-    const existing: string[] = [];
-    for (const type of queueableTypes()) {
-        const source = loadedSourceImportablesByType(type.type);
-        if (source === null) return null;
-        for (const item of type.items(uuid)) {
-            if (source.has(item.name)) {
-                existing.push(`${type.label}: ${item.label ?? item.name}`);
-            }
-        }
-    }
-    return existing;
 }
 
 function queueBulk(
@@ -824,14 +771,10 @@ function runQueueMenuAction(
     uuid: string,
     path: string,
     items: readonly HouseImportable[],
-    allRows: readonly HouseRow[],
     shownRows: readonly HouseRow[]
 ): void {
     const noun = t.label.toLowerCase();
     const shownNames = shownRows.map((row) => row.item.name);
-    const changedNames = allRows
-        .filter((row) => row.state === "differs-from-knowledge")
-        .map((row) => row.item.name);
     switch (id) {
         case "read-all":
             queueBulk(t, uuid, path, "read", "all", `Read all ${noun}`);
@@ -843,53 +786,26 @@ function runQueueMenuAction(
             queueConcrete(t, uuid, path, items, shownNames, "read", false);
             return;
         case "export-all":
-            confirmDestructiveExport(
-                noun,
-                namesAlreadyInDestination(
-                    t,
-                    allRows.map((row) => row.item.name)
-                ),
-                () => queueBulk(t, uuid, path, "export", "all", `Export all ${noun}`)
-            );
+            queueBulk(t, uuid, path, "export", "all", `Export all ${noun}`);
             return;
         case "export-new":
             queueBulk(t, uuid, path, "export", "new", `Export new ${noun}`);
             return;
         case "export-changed":
-            confirmDestructiveExport(
-                noun,
-                namesAlreadyInDestination(t, changedNames),
-                () =>
-                    queueBulk(
-                        t,
-                        uuid,
-                        path,
-                        "export",
-                        "changed",
-                        `Export changed ${noun}`
-                    )
-            );
+            queueBulk(t, uuid, path, "export", "changed", `Export changed ${noun}`);
             return;
         case "export-shown":
-            confirmDestructiveExport(noun, namesAlreadyInDestination(t, shownNames), () =>
-                queueConcrete(t, uuid, path, items, shownNames, "export", false)
-            );
+            queueConcrete(t, uuid, path, items, shownNames, "export", false);
             return;
-        case "export-house": {
-            confirmDestructiveExport(
-                "local entries",
-                wholeHouseOverwriteNames(uuid),
-                () =>
-                    enqueueWholeHouse({
-                        house: uuid,
-                        path,
-                        types: queueableTypes().map((type) => ({
-                            type: type.type,
-                            pluralLabel: type.label,
-                        })),
-                    })
-            );
-        }
+        case "export-house":
+            enqueueWholeHouse({
+                house: uuid,
+                path,
+                types: queueableTypes().map((type) => ({
+                    type: type.type,
+                    pluralLabel: type.label,
+                })),
+            });
     }
 }
 
@@ -917,7 +833,6 @@ function queueAllMenuActions(
                           uuid,
                           destinationPath,
                           items,
-                          allRows,
                           shownRows
                       ),
               }
@@ -1011,23 +926,18 @@ function queueActionBar(
                 },
                 tooltip: destinationTooltip ?? "Queue the selected entries to export",
                 tooltipColor: destinationReady ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
-                onClick: () =>
-                    confirmDestructiveExport(
-                        t.label.toLowerCase(),
-                        namesAlreadyInDestination(t, selectedNames),
-                        () => {
-                            if (destinationPath === null) return;
-                            queueConcrete(
-                                t,
-                                uuid,
-                                destinationPath,
-                                items,
-                                selectedNames,
-                                "export",
-                                true
-                            );
-                        }
-                    ),
+                onClick: () => {
+                    if (destinationPath === null) return;
+                    queueConcrete(
+                        t,
+                        uuid,
+                        destinationPath,
+                        items,
+                        selectedNames,
+                        "export",
+                        true
+                    );
+                },
             })
         );
     } else {
