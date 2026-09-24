@@ -20,6 +20,13 @@ import { cloneActionsWithItemFieldContent } from "../src/housingSync/items/field
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import type { TagLike } from "../src/housingSync/items/itemTag";
 
+vi.mock("../src/utils/filesystem", () => ({
+    atomicWriteText: (path: string, content: string) => {
+        FileLib.write(path, content, true);
+        return true;
+    },
+}));
+
 const importJsonPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";
 

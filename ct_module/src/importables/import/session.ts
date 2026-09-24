@@ -621,6 +621,8 @@ async function runImportSessionInner(
     );
 
     let activePlanIndex: number | null = null;
+    let activeBaselineDropped = false;
+    let lockedAppliedCount = 0;
     try {
         events?.emit({
             kind: "sessionTotalsLocked",
@@ -725,6 +727,12 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 phase: "applying",
             });
+            // Housing is about to diverge from this importable's cache and
+            // lock entry. A session that dies mid-import (crash, closed game,
+            // /ct reload) runs no handler, so a surviving baseline would make
+            // the next import blame Housing for this session's own writes.
+            // With no baseline the next import reads it fresh.
+            activeBaselineDropped = dropVerifiedState(selection, row);
             try {
                 const application = new ApplicationProgress(plan.applicationPlan, events);
                 await plan.apply(ctx, session, application);
@@ -741,12 +749,24 @@ async function runImportSessionInner(
                 );
                 application.assertComplete();
                 if (cacheSaved) {
-                    setPendingHouseLockEntry(pendingHouseLockEntries, {
+                    const entry = {
                         importable: row.importable,
                         itemDependencies: itemDependencies.snapshotOf(row.importable),
                         itemContent: itemDiff.fieldContent,
-                    });
+                    };
+                    if (
+                        await upsertHouseLockImportablesOffThread(
+                            selection.sourcePath,
+                            selection.housingUuid,
+                            [entry]
+                        )
+                    ) {
+                        lockedAppliedCount++;
+                    } else {
+                        setPendingHouseLockEntry(pendingHouseLockEntries, entry);
+                    }
                 }
+                activePlanIndex = null;
                 events?.emit({
                     kind: "importableFinished",
                     key: row.key,
@@ -762,21 +782,6 @@ async function runImportSessionInner(
                     pendingHouseLockEntries,
                     verifiedDependencyContext
                 );
-                if (!partialSaved) {
-                    removePendingHouseLockEntry(
-                        pendingHouseLockEntries,
-                        row.importable.type,
-                        row.identity
-                    );
-                    deleteImportableCache(
-                        selection.housingUuid,
-                        row.importable.type,
-                        row.identity
-                    );
-                    removeHouseLockImportables(selection.sourcePath, [
-                        { type: row.importable.type, identity: row.identity },
-                    ]);
-                }
                 const diag = toImportDiagnostic(error, "import", row.importable.type);
                 events?.emit({
                     kind: "importableFinished",
@@ -810,10 +815,8 @@ async function runImportSessionInner(
         await session.itemPlacement.restore(ctx);
     } catch (error) {
         if (!isTaskCancelled(error)) {
-            // Importables applied above already hold their post-apply lock
-            // entries in the pending map. Dropping them here would leave the
-            // house ahead of its baseline, so the next import blames Housing
-            // for the actions this session wrote.
+            // Applied importables wrote their lock entries as they finished;
+            // the pending map holds unchanged rows and any retried writes.
             await flushHouseLockEntries(
                 selection.sourcePath,
                 selection.housingUuid,
@@ -835,28 +838,12 @@ async function runImportSessionInner(
                 verifiedDependencyContext
             );
             if (!partialSaved) {
-                removePendingHouseLockEntry(
-                    pendingHouseLockEntries,
-                    active.row.importable.type,
-                    active.row.identity
-                );
-                const invalidated = deleteImportableCache(
-                    selection.housingUuid,
-                    active.row.importable.type,
-                    active.row.identity
-                );
-                removeHouseLockImportables(selection.sourcePath, [
-                    {
-                        type: active.row.importable.type,
-                        identity: active.row.identity,
-                    },
-                ]);
-                invalidatedCurrent = invalidated;
-                invalidationFailed = !invalidated;
+                invalidatedCurrent = activeBaselineDropped;
+                invalidationFailed = !activeBaselineDropped;
             }
         }
 
-        const savedCount = pendingHouseLockEntries.size;
+        const savedCount = lockedAppliedCount + pendingHouseLockEntries.size;
         const lockUpdated = await flushHouseLockEntries(
             selection.sourcePath,
             selection.housingUuid,
@@ -1115,12 +1102,19 @@ function setPendingHouseLockEntry(
     );
 }
 
-function removePendingHouseLockEntry(
-    entries: PendingHouseLockEntries,
-    type: Importable["type"],
-    identity: string
-): void {
-    entries.delete(importableKey(type, identity));
+function dropVerifiedState(
+    selection: ImportSessionRequest,
+    row: { importable: Importable; identity: string }
+): boolean {
+    const type = row.importable.type;
+    // A lock entry without a cache is safe (trust refuses it); a cache without
+    // a lock entry is trusted. Keep the lock entry if the cache survived.
+    return (
+        deleteImportableCache(selection.housingUuid, type, row.identity) &&
+        removeHouseLockImportables(selection.sourcePath, [
+            { type, identity: row.identity },
+        ])
+    );
 }
 
 type CancellationCacheOutcome = {

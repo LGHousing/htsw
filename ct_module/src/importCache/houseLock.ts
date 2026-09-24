@@ -1,6 +1,6 @@
 import type { Importable } from "htsw/types";
 
-import { ensureParentDirs } from "../utils/filesystem";
+import { atomicWriteText } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { importableIdentity, importableKey } from "../importables/identity";
@@ -259,17 +259,11 @@ export function removeHouseLockImportables(
 }
 
 function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
-    try {
-        ensureParentDirs(lockPath);
-        FileLib.write(lockPath, JSON.stringify(lock, null, 4), true);
-        return true;
-    } catch (error) {
-        recordRuntimeDebug("houseLockWriteFailed", {
-            path: lockPath,
-            error: formatHouseLockError(error),
-        });
-        return false;
-    }
+    // Atomic: a crash mid-write must not leave truncated JSON, which reads as
+    // no lock at all and silently drops every baseline.
+    if (atomicWriteText(lockPath, JSON.stringify(lock, null, 4))) return true;
+    recordRuntimeDebug("houseLockWriteFailed", { path: lockPath });
+    return false;
 }
 
 export type HouseLockImportableUpdate = {
