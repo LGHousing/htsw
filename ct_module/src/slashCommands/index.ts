@@ -62,7 +62,6 @@ import { commandTrust } from "./trust";
 import { commandWorkspace } from "./workspace";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
-import { commandPrune } from "./prune";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
 import { bridgeStatus, rejectBridgeRun } from "../bridge/status";
 import { appendRawHtslFile } from "../rawHtslImport";
@@ -108,12 +107,6 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Scan a manifest for live Housing divergence",
         run: commandDiff,
         usage: "diff <manifest-path> [--adopt]",
-    },
-    {
-        name: "prune",
-        summary: "Remove house content an armed manifest does not declare",
-        run: commandPrune,
-        usage: "prune <import.json> [--apply] [--rescue] [--forget-consent]",
     },
     {
         name: "warnmode",

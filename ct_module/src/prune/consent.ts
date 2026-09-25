@@ -38,13 +38,3 @@ export function grantPruneConsent(manifestPath: string, housingUuid: string): bo
     next.add(key);
     return consentedProjects.set(next);
 }
-
-export function revokePruneConsent(manifestPath: string, housingUuid: string): boolean {
-    if (!consentedProjects.healthy()) return false;
-    const current = consentedProjects.get();
-    const key = consentKey(manifestPath, housingUuid);
-    if (!current.has(key)) return true;
-    const next = new Set<string>(current);
-    next.delete(key);
-    return consentedProjects.set(next);
-}
