@@ -88,6 +88,7 @@ function rowAdded(result: QueueAddResult): boolean {
 function addUserRow(row: QueueRow): QueueAddResult {
     const result = addQueueRow(row);
     if (rowAdded(result)) autoRunQueueChanged();
+    if (result.kind === "refused") ChatLib.chat(`&c[htsw] ${result.message}`);
     return result;
 }
 
@@ -122,6 +123,7 @@ async function commandQueueAdd(args: string[]): Promise<void> {
                 label: `Import ${compactFileLabel(cached.canonicalPath)}`,
             })
         );
+        if (result.kind === "refused") return;
         ChatLib.chat(
             `&a[htsw] ${rowAdded(result) ? "Queued" : "Already queued"} IMPORT_JSON ${compactFileLabel(cached.canonicalPath)}`
         );
@@ -175,6 +177,7 @@ async function commandQueueAdd(args: string[]): Promise<void> {
             label: match.type === "EVENT" ? match.event : match.name,
         })
     );
+    if (result.kind === "refused") return;
     ChatLib.chat(
         `&a[htsw] ${rowAdded(result) ? "Queued" : "Already queued"} ${type} ${identity} from ${compactFileLabel(cached.canonicalPath)}`
     );
@@ -193,7 +196,7 @@ function commandQueueModified(args: string[]): void {
         );
         return;
     }
-    addUserRow(
+    const result = addUserRow(
         makeBulkQueueRow({
             op: "import",
             house: cached.parsed.importJson.houseUuid,
@@ -203,6 +206,7 @@ function commandQueueModified(args: string[]): void {
             label: `Import modified in ${compactFileLabel(cached.canonicalPath)}`,
         })
     );
+    if (result.kind === "refused") return;
     ChatLib.chat(`&a[htsw] Queue now contains ${getQueue().length} item(s)`);
 }
 
