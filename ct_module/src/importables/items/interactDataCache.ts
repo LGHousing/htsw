@@ -3,7 +3,7 @@ import type { ImportableItem } from "htsw/types";
 
 import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
 import { IMPORT_CACHE_ROOT } from "../../importCache/paths";
-import { atomicWriteText } from "../../utils/filesystem";
+import { atomicWriteText, getFileMtimeMs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { runtimeString } from "../../utils/java";
 import type { ItemDependencyIndex } from "./dependencyIndex";
@@ -46,12 +46,24 @@ export function readInteractDataCache(
     }
 }
 
+// Whether each blob parsed as interact data, keyed by path and checked against
+// its mtime. Status rows and the lock banner ask for every item on the render
+// path, where re-reading and parsing each blob stalls the client for seconds.
+const blobValidity = new Map<string, { mtime: number; valid: boolean }>();
+
 export function hasInteractDataCache(
     item: ImportableItem,
     dependencies: ItemDependencyIndex,
     housingUuid: string
 ): boolean {
-    return readInteractDataCache(item, dependencies, housingUuid) !== undefined;
+    const path = cachePath(item, dependencies, housingUuid);
+    const mtime = getFileMtimeMs(path);
+    if (mtime === 0) return false;
+    const known = blobValidity.get(path);
+    if (known !== undefined && known.mtime === mtime) return known.valid;
+    const valid = readInteractDataCache(item, dependencies, housingUuid) !== undefined;
+    blobValidity.set(path, { mtime, valid });
+    return valid;
 }
 
 export function hasRequiredInteractDataCache(

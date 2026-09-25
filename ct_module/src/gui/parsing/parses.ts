@@ -79,7 +79,10 @@ export type CachedParse = {
 // already warns is "not free". The result is a pure function of the input
 // string (the process CWD is stable for the session), so memoize by input.
 let _Paths: HtswJavaPathsClass | null = null;
-const canonicalPathCache = new BoundedMap<string, string>(2048);
+// Sized for several large projects' worth of referenced files. Once the
+// working set outgrows it, per-frame lookups (queue rows matching files to
+// importables) evict each other and every miss is a `toRealPath` disk call.
+const canonicalPathCache = new BoundedMap<string, string>(16384);
 
 export function canonicalPath(p: string): string {
     if (!p) return p;

@@ -67,6 +67,34 @@ const readCache = new Map<string, ReadCacheMemo>();
 // resolver is only called on the main thread, including before worker plans.
 const legacyMigrationChecked = new Set<string>();
 
+// File names in each cache directory, listed once per session. The legacy-layout
+// check below runs on the render path, where a stat per importable froze the
+// client on a big project's first draw. Null when listing failed (falls back to
+// the filesystem).
+const cacheDirListings = new Map<string, Set<string> | null>();
+
+function cacheDirListing(dir: string): Set<string> | null {
+    const known = cacheDirListings.get(dir);
+    if (known !== undefined) return known;
+    let names: Set<string> | null = null;
+    try {
+        const File = javaType("java.io.File");
+        const listed = new File(dir).list();
+        names = new Set<string>();
+        if (listed !== null) {
+            for (let i = 0; i < listed.length; i++) names.add(String(listed[i]));
+        }
+    } catch (_e) {
+        names = null;
+    }
+    cacheDirListings.set(dir, names);
+    return names;
+}
+
+function fileName(path: string): string {
+    return path.substring(path.lastIndexOf("/") + 1);
+}
+
 function resolvedCachePath(
     housingUuid: string,
     type: Importable["type"],
@@ -76,6 +104,10 @@ function resolvedCachePath(
     if (legacyMigrationChecked.has(path)) return path;
     legacyMigrationChecked.add(path);
     const legacyPath = legacyCachePathForId(housingUuid, type, identity);
+    // A listing taken before this session's writes can only miss new files, never
+    // legacy ones, so "no legacy file" is safe to trust.
+    const listing = cacheDirListing(cacheTypeDir(housingUuid, type));
+    if (listing !== null && !listing.has(fileName(legacyPath))) return path;
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
