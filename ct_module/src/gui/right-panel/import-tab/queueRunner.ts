@@ -112,12 +112,7 @@ export type QueueRunnerDependencies = {
      * Runs once every importable of a project row is done. Throwing fails the
      * row and stops the queue, like a failed import.
      */
-    finishProject(
-        ctx: TaskContext,
-        row: QueueRow,
-        currentHouse: string,
-        options: QueueStartOptions
-    ): Promise<void>;
+    finishProject(ctx: TaskContext, row: QueueRow, currentHouse: string): Promise<void>;
     runImport(
         ctx: TaskContext,
         rows: readonly QueueRow[],
@@ -236,12 +231,11 @@ async function finishProjectRow(
     dependencies: QueueRunnerDependencies,
     row: QueueRow,
     currentHouse: string,
-    options: QueueStartOptions,
     tally?: QueueRunTally
 ): Promise<boolean> {
     setBridgeOperation(row.op);
     try {
-        await dependencies.finishProject(ctx, row, currentHouse, options);
+        await dependencies.finishProject(ctx, row, currentHouse);
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
@@ -341,7 +335,6 @@ export async function drainQueue(
                     dependencies,
                     finishing,
                     currentHouse,
-                    options,
                     tally
                 );
                 if (!proceed) return "idle";
@@ -861,10 +854,7 @@ const defaultDependencies: QueueRunnerDependencies = {
     },
     expandBulk: expandBulkDefault,
     beginProject: beginProjectRun,
-    // Only a run you start walks the whole house. Auto-run acts on what a
-    // save stopped declaring, which house.lock answers without Housing.
-    finishProject: (ctx, row, currentHouse, options) =>
-        finishProjectRun(ctx, row, currentHouse, options.autoRun !== true),
+    finishProject: finishProjectRun,
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {

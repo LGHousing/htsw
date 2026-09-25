@@ -4,7 +4,6 @@ import { emitBridgeEvent } from "../bridge/status";
 import { getAutoRun, setAutoRun } from "../settings";
 import { ensureParentDirs } from "../utils/filesystem";
 import { cancelActiveTask } from "../tasks/activeTask";
-import { TaskManager } from "../tasks/manager";
 import {
     getQueue,
     getQueueRow,
@@ -16,17 +15,10 @@ import {
     onQueueRunEnded,
     startQueue,
 } from "./right-panel/import-tab/queueRunner";
-import { getActiveAutoTrackSources } from "./autoTrackScope";
 import { dismissToast, showToast } from "./toast";
 import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
-import {
-    clearPruneNotice,
-    getPruneNotice,
-    isWatchPruneRunning,
-    watchPruneOnReparse,
-    watchPruneSweep,
-} from "../prune/watch";
+import { resetArmingScans } from "../prune/projectRun";
 
 const AUTO_RUN_COLOR = 0xffe85c5c;
 const AUTO_RUN_PAUSED_COLOR = 0xffe8b45c;
@@ -35,6 +27,9 @@ let detectionLive = false;
 let debounceRevision = 0;
 let startedByAutoRun = false;
 let blockedUntilNextParse = false;
+// Importable keys, not queue keys: auto-track queues a whole project as one
+// row, and a loop is the same importables reading back as modified.
+let lastDetectedWorkKeys: string[] = [];
 let lastSuccessfulImportKeys: string[] | null = null;
 let awaitingSuccessRefresh = false;
 let runEndedListenerInstalled = false;
@@ -75,19 +70,6 @@ registerBadge(() => {
             color: AUTO_RUN_PAUSED_COLOR,
         };
     }
-    if (isWatchPruneRunning()) {
-        return { text: "AUTO-RUN: pruning…", color: AUTO_RUN_COLOR, pulse: true };
-    }
-    // The house is known not to match the file and auto-run will not retry on
-    // its own, so it outranks the idle badge.
-    const notice = getPruneNotice();
-    if (notice !== null && !startedByAutoRun) {
-        return {
-            text: `AUTO-RUN: ${notice.text} — /htsw prune`,
-            color: AUTO_RUN_COLOR,
-            pulse: true,
-        };
-    }
     return {
         text: startedByAutoRun ? "AUTO-RUN: running…" : "AUTO-RUN",
         color: AUTO_RUN_COLOR,
@@ -97,42 +79,6 @@ registerBadge(() => {
 
 function clearDebounce(): void {
     debounceRevision++;
-}
-
-function trackedImportQueue(trackedSources: ReadonlySet<string>): QueueRow[] {
-    const rows: QueueRow[] = [];
-    for (const row of getQueue()) {
-        if (row.op !== "import" || row.status !== "queued") continue;
-        if (row.target.kind !== "importable") continue;
-        if (!trackedSources.has(row.path)) continue;
-        // A row restored from the saved workspace is not evidence of changed
-        // work — it is only evidence of what was queued last session.
-        if (isRestoredQueueRow(row.key)) continue;
-        rows.push(row);
-    }
-    return rows;
-}
-
-// Sits just behind the queue debounce, so a save that both changes and removes
-// declarations imports first and prunes on the next idle window.
-const PRUNE_DEBOUNCE_MS = 2500;
-let pruneDebounceRevision = 0;
-
-/**
- * Queues the cheap "what did this save delete" check for the next idle moment.
- * Queued work outranks it: removing content while its replacement is still
- * queued would leave the house missing things the manifest declares.
- */
-function scheduleAutoRunPrune(): void {
-    const revision = ++pruneDebounceRevision;
-    setTimeout(() => {
-        if (revision !== pruneDebounceRevision) return;
-        if (!getAutoRun() || !onMultiplayerServer()) return;
-        if (TaskManager.isBusy() || isQueueRunning()) return;
-        const tracked = getActiveAutoTrackSources();
-        if (trackedImportQueue(tracked).length > 0) return;
-        watchPruneOnReparse(tracked);
-    }, PRUNE_DEBOUNCE_MS);
 }
 
 function sortedUnique(keys: readonly string[]): string[] {
@@ -167,10 +113,10 @@ function autoRunEligibleRows(): QueueRow[] {
     return rows;
 }
 
-function monitorAutoRun(importKeys: readonly string[]): void {
+function monitorAutoRun(importKeys: readonly string[], workKeys: readonly string[]): void {
     setTimeout(() => {
         if (isQueueRunning()) {
-            monitorAutoRun(importKeys);
+            monitorAutoRun(importKeys, workKeys);
             return;
         }
         startedByAutoRun = false;
@@ -185,10 +131,7 @@ function monitorAutoRun(importKeys: readonly string[]): void {
                 }
             }
             awaitingSuccessRefresh = successful;
-            lastSuccessfulImportKeys = successful ? importKeys.slice() : null;
-            // Prune after apply, so a failed import never costs content it was
-            // replacing.
-            if (successful) scheduleAutoRunPrune();
+            lastSuccessfulImportKeys = successful ? workKeys.slice() : null;
         }, 1600);
     }, 100);
 }
@@ -198,6 +141,7 @@ function runAutoQueue(): void {
     const eligible = autoRunEligibleRows();
     if (eligible.length === 0) return;
     const importKeys = queuedImportKeys(eligible);
+    const workKeys = lastDetectedWorkKeys;
     if (!startQueue({ autoRun: true })) return;
     startedByAutoRun = true;
     showToast(
@@ -205,7 +149,7 @@ function runAutoQueue(): void {
         0xff5c9ded,
         4000
     );
-    monitorAutoRun(importKeys);
+    monitorAutoRun(importKeys, workKeys);
 }
 
 /** Debounce Auto-run after any producer changes the queue. */
@@ -242,7 +186,6 @@ function writeLoopAlarm(keys: readonly string[]): string {
 function disableForLoop(keys: readonly string[]): void {
     setAutoRun(false);
     clearDebounce();
-    pruneDebounceRevision++;
     awaitingSuccessRefresh = false;
     lastSuccessfulImportKeys = null;
     const path = writeLoopAlarm(keys);
@@ -277,13 +220,13 @@ export function autoRunRefresh(
     trigger: AutoTrackRefreshTrigger,
     changed: number,
     newlyQueuedChanged: number,
-    detectedWorkKeys: readonly string[],
-    trackedSources: ReadonlySet<string>
+    detectedWorkKeys: readonly string[]
 ): void {
     if (!getAutoRun()) return;
     if (trigger === "reparse") blockedUntilNextParse = false;
 
     const detected = sortedUnique(detectedWorkKeys);
+    lastDetectedWorkKeys = detected;
     if (awaitingSuccessRefresh) {
         awaitingSuccessRefresh = false;
         if (
@@ -314,15 +257,6 @@ export function autoRunRefresh(
             return;
         }
     }
-    // Nothing to import, but the save may still have removed a declaration.
-    // Reparse only, or the cache-warm tick re-reads house.lock for nothing.
-    if (
-        trigger === "reparse" &&
-        newlyQueuedChanged === 0 &&
-        trackedImportQueue(trackedSources).length === 0
-    ) {
-        scheduleAutoRunPrune();
-    }
     autoRunQueueChanged();
 }
 
@@ -339,10 +273,8 @@ export function setAutoRunEnabled(enabled: boolean): void {
     });
     if (!enabled) {
         clearDebounce();
-        pruneDebounceRevision++;
         awaitingSuccessRefresh = false;
         lastSuccessfulImportKeys = null;
-        clearPruneNotice();
         showToast("Auto-run off", 0xff5c9ded, 4000);
         ChatLib.chat("&7[htsw] Auto-run disabled.");
         return;
@@ -356,7 +288,7 @@ export function setAutoRunEnabled(enabled: boolean): void {
         "&c&l[htsw] AUTO-RUN ON &c— queued Housing work will run automatically. &f/htsw watch off &cto disable."
     );
     autoRunQueueChanged();
-    // The one full house scan of an auto-run session, and the only chance to
-    // remove content htsw did not create — the lock cannot describe any of it.
-    watchPruneSweep(getActiveAutoTrackSources());
+    // Each project that claims its whole house is owed one full scan: the only
+    // way to find content htsw did not create, which house.lock cannot list.
+    resetArmingScans();
 }

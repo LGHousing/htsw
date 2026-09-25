@@ -49,17 +49,7 @@ vi.mock("../src/tasks/activeTask", () => ({
     },
 }));
 vi.mock("../src/utils/filesystem", () => ({ ensureParentDirs: () => {} }));
-vi.mock("../src/tasks/manager", () => ({ TaskManager: { isBusy: () => false } }));
-vi.mock("../src/gui/autoTrackScope", () => ({
-    getActiveAutoTrackSources: () => new Set<string>(),
-}));
-vi.mock("../src/prune/watch", () => ({
-    clearPruneNotice: () => {},
-    getPruneNotice: () => null,
-    isWatchPruneRunning: () => false,
-    watchPruneOnReparse: () => {},
-    watchPruneSweep: () => {},
-}));
+vi.mock("../src/prune/projectRun", () => ({ resetArmingScans: () => {} }));
 
 describe("queue Auto-run safeguards", () => {
     beforeEach(() => {
@@ -120,11 +110,11 @@ describe("queue Auto-run safeguards", () => {
         await vi.advanceTimersByTimeAsync(2000);
         expect(state.starts).toEqual([]);
 
-        autoRunRefresh("cacheWarm", 1, 1, ["k"], new Set());
+        autoRunRefresh("cacheWarm", 1, 1, ["k"]);
         await vi.advanceTimersByTimeAsync(2000);
         expect(state.starts).toEqual([]);
 
-        autoRunRefresh("reparse", 0, 0, ["k"], new Set());
+        autoRunRefresh("reparse", 0, 0, ["k"]);
         await vi.advanceTimersByTimeAsync(2000);
         expect(state.starts).toEqual([{ autoRun: true }]);
     });
@@ -136,7 +126,7 @@ describe("queue Auto-run safeguards", () => {
         await vi.advanceTimersByTimeAsync(2000);
         state.rows[0].status = "running";
 
-        autoRunRefresh("reparse", 1, 1, ["k"], new Set());
+        autoRunRefresh("reparse", 1, 1, ["k"]);
 
         expect(state.cancelled).toBe(1);
     });
@@ -148,7 +138,7 @@ describe("queue Auto-run safeguards", () => {
         await vi.advanceTimersByTimeAsync(2000);
         state.rows[0].status = "running";
 
-        autoRunRefresh("reparse", 1, 1, ["another-key"], new Set());
+        autoRunRefresh("reparse", 1, 1, ["another-key"]);
 
         expect(state.cancelled).toBe(0);
     });
@@ -168,15 +158,17 @@ describe("queue Auto-run safeguards", () => {
     });
 
     test("disables Auto-run when completed imports immediately reappear", async () => {
-        const { autoRunQueueChanged, autoRunRefresh } =
-            await import("../src/gui/autoRun");
-        autoRunQueueChanged();
+        // Auto-track queues a whole project as one row, so the loop is judged
+        // by the importables it detected, not by the queue row.
+        state.rows[0].key = "project";
+        const { autoRunRefresh } = await import("../src/gui/autoRun");
+        autoRunRefresh("reparse", 1, 1, ["k"]);
         await vi.advanceTimersByTimeAsync(2000);
         state.running = false;
         state.rows = [];
         await vi.advanceTimersByTimeAsync(1700);
 
-        autoRunRefresh("cacheWarm", 1, 1, ["k"], new Set());
+        autoRunRefresh("cacheWarm", 1, 1, ["k"]);
 
         expect(state.enabled).toBe(false);
         expect(state.writes).toHaveLength(1);

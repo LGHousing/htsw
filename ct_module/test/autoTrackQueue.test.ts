@@ -8,6 +8,9 @@ const fixture = vi.hoisted<{
         name: string;
         actions: never[];
     };
+    armed: boolean;
+    pendingRemovals: boolean;
+    queueRunning: boolean;
 }>(() => ({
     status: "modified",
     importable: {
@@ -15,6 +18,9 @@ const fixture = vi.hoisted<{
         name: "Spawn Raycast",
         actions: [],
     },
+    armed: false,
+    pendingRemovals: false,
+    queueRunning: false,
 }));
 
 vi.mock("../src/gui/state", () => ({
@@ -65,8 +71,17 @@ vi.mock("../src/importables/import/dependencyExpansion", () => ({
     ) => ({ importables: modified, addedImportables: [] }),
 }));
 
-vi.mock("../src/gui/toast", () => ({ showToast: () => {} }));
 vi.mock("../src/gui/autoRun", () => ({ autoRunRefresh: () => {} }));
+vi.mock("../src/settings", () => ({ getAutoRun: () => false }));
+vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
+    isQueueRunning: () => fixture.queueRunning,
+}));
+vi.mock("../src/prune/projectRun", () => ({
+    isArmedForPrune: () => fixture.armed,
+    hasPendingRemovals: () => fixture.pendingRemovals,
+    needsArmingScan: () => false,
+    setOnArmingScansReset: () => {},
+}));
 
 import { autoTrackRefresh } from "../src/gui/autoTrack";
 import {
@@ -74,11 +89,15 @@ import {
     clearQueue,
     getQueue,
     makeImportableQueueRow,
+    setQueueRowStatus,
 } from "../src/gui/right-panel/import-tab/queue";
 
 beforeEach(() => {
     clearQueue();
     fixture.status = "modified";
+    fixture.armed = false;
+    fixture.pendingRemovals = false;
+    fixture.queueRunning = false;
 });
 
 afterEach(clearQueue);
@@ -92,6 +111,45 @@ describe("Auto-Track queue reconciliation", () => {
         autoTrackRefresh("reparse");
 
         expect(getQueue()).toHaveLength(0);
+    });
+
+    test("queues the whole project as one row", () => {
+        autoTrackRefresh("reparse");
+
+        expect(getQueue()).toHaveLength(1);
+        expect(getQueue()[0].target).toMatchObject({
+            kind: "bulk",
+            scope: { kind: "file", path: SOURCE_PATH },
+            filter: "modified",
+        });
+    });
+
+    test("queues a project that claims its house when a save only removed things", () => {
+        fixture.status = "current";
+        autoTrackRefresh("reparse");
+        expect(getQueue()).toHaveLength(0);
+
+        fixture.armed = true;
+        fixture.pendingRemovals = true;
+        autoTrackRefresh("reparse");
+        expect(getQueue()).toHaveLength(1);
+    });
+
+    test("a save retries a project that failed, but a cache tick does not", () => {
+        autoTrackRefresh("reparse");
+        const project = getQueue()[0];
+        setQueueRowStatus(project.key, "failed", "boom");
+
+        autoTrackRefresh("cacheWarm");
+        expect(getQueue()[0].status).toBe("failed");
+
+        fixture.queueRunning = true;
+        autoTrackRefresh("reparse");
+        expect(getQueue()[0].status).toBe("failed");
+
+        fixture.queueRunning = false;
+        autoTrackRefresh("reparse");
+        expect(getQueue()[0].status).toBe("queued");
     });
 
     test("leaves a manually queued current function alone", () => {
