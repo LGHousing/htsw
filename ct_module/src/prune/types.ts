@@ -14,20 +14,14 @@ export type PruneTarget = {
 };
 
 export type PrunePlan = {
-    /** Objects that can be removed, in scan order. */
+    /** Objects to remove, in scan order. */
     targets: PruneTarget[];
-    /** Undeclared objects with no removal path — NPCs today. Reported, never removed. */
-    unsupported: PruneTarget[];
     /** Types whose scan failed, so the plan is known to be incomplete. */
     scanFailures: { type: Importable["type"]; reason: string }[];
 };
 
 export function emptyPrunePlan(): PrunePlan {
-    return { targets: [], unsupported: [], scanFailures: [] };
-}
-
-export function prunePlanIsEmpty(plan: PrunePlan): boolean {
-    return plan.targets.length === 0 && plan.unsupported.length === 0;
+    return { targets: [], scanFailures: [] };
 }
 
 export function ownedTargets(plan: PrunePlan): PruneTarget[] {

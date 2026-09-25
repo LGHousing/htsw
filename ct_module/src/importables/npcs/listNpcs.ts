@@ -169,6 +169,13 @@ export async function openNpcEditorForPos(
     return found.entry;
 }
 
+/** Removes the NPC standing at `pos`. Housing removes on the click, no confirm. */
+export async function deleteNpcAtPos(ctx: TaskContext, pos: Pos): Promise<void> {
+    await openNpcEditorForPos(ctx, pos);
+    ctx.getMenuItemSlot("Remove NPC").click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+}
+
 // The NPC's position is its identity, so teleport straight there with /tp
 // rather than opening the browser and right-clicking its slot. The slot's
 // right-click teleport emits no chat line to confirm on, while /tp does (the

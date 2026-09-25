@@ -68,22 +68,10 @@ describe("formatPrunePlan", () => {
         );
     });
 
-    it("names undeclared content it cannot remove without promising to", () => {
-        const plan: PrunePlan = {
-            ...emptyPrunePlan(),
-            unsupported: [
-                target("1,2,3", { type: "NPC", method: "report", owned: false }),
-            ],
-        };
-        const lines = formatPrunePlan(plan, "import.json").join("\n");
-
-        expect(lines).toContain("htsw can't remove them yet");
-        expect(lines).toContain("0 to remove");
-    });
 });
 
 describe("prunePlanPopoverLines", () => {
-    // a sweep confirms only the owned half
+    // an unconfirmed rename adds to the targets without being in the plan
     it("lists only the targets being removed, not the whole plan", () => {
         const plan = planWith([
             target("Mine"),
@@ -107,15 +95,11 @@ describe("prunePlanPopoverLines", () => {
     it("still carries the plan's context lines", () => {
         const plan: PrunePlan = {
             ...planWith([target("Mine")]),
-            unsupported: [
-                target("1,2,3", { type: "NPC", method: "report", owned: false }),
-            ],
             scanFailures: [{ type: "MENU", reason: "list did not open" }],
         };
 
         const lines = prunePlanPopoverLines([target("Mine")], plan).join("\n");
 
-        expect(lines).toContain("Undeclared but not removable: 1 NPC");
         expect(lines).toContain("Scan of menus failed");
     });
 });

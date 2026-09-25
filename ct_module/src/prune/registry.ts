@@ -5,20 +5,18 @@ import { listAllCommandNames } from "../importables/commands/listCommands";
 import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import { listAllGroupNames, deleteGroup } from "../importables/groups/listGroups";
 import { listAllMenuNames } from "../importables/menus/listMenus";
-import { listAllNpcs } from "../importables/npcs/listNpcs";
+import { deleteNpcAtPos, listAllNpcs } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import { listAllTeamNames, deleteTeam } from "../importables/teams/listTeams";
 import { knownEventNames } from "../importables/events/listEvents";
-import { npcPosIdentity } from "../importables/identity";
+import { npcPosIdentity, parseNpcPosIdentity } from "../importables/identity";
 
 /**
  * How an undeclared house object stops existing. `clearActions` is for events:
  * Housing has all eighteen in every house and deletes none of them, so the most
  * an armed manifest can say about an undeclared one is that it runs nothing.
- * `report` is for types with no removal path yet — named in the plan, never
- * acted on.
  */
-export type PruneMethod = "delete" | "clearActions" | "report";
+export type PruneMethod = "delete" | "clearActions";
 
 export type PruneType = {
     type: Importable["type"];
@@ -29,7 +27,7 @@ export type PruneType = {
     method: PruneMethod;
     /** Identities present in the live house, in list order. */
     list: (ctx: TaskContext) => Promise<string[]>;
-    /** Removes one object. Absent for the methods with no per-identity call. */
+    /** Removes one object. Absent for `clearActions`, which imports instead. */
     remove?: (ctx: TaskContext, identity: string) => Promise<void>;
     /** Identities Housing will not delete. Matched case-insensitively. */
     protectedIdentities?: readonly string[];
@@ -112,13 +110,16 @@ const PRUNE_TYPES = {
         remove: deleteGroup,
     },
     NPC: {
-        // Position-keyed, and no delete walker exists yet.
+        // Position-keyed: the identity is "x,y,z", never the name.
         type: "NPC",
         label: "NPC",
         pluralLabel: "NPCs",
-        method: "report",
+        method: "delete",
         list: async (ctx) =>
             (await listAllNpcs(ctx)).map((entry) => npcPosIdentity(entry.pos)),
+        remove: async (ctx, identity) => {
+            await deleteNpcAtPos(ctx, parseNpcPosIdentity(identity));
+        },
     },
     ITEM: null,
 } satisfies Record<Importable["type"], PruneType | null>;

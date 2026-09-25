@@ -217,13 +217,19 @@ describe("scanHousePrunePlan", () => {
         expect(plan.targets.map((target) => target.identity)).toContain("Player Quit");
     });
 
-    it("reports undeclared NPCs instead of targeting them", async () => {
+    it("targets undeclared NPCs by position", async () => {
         mocks.npcs = [{ name: "Guide", pos: { x: 1, y: 2, z: 3 } }];
 
         const plan = await scan([], ["NPC"]);
 
-        expect(plan.targets).toEqual([]);
-        expect(plan.unsupported.map((target) => target.identity)).toEqual(["1,2,3"]);
+        expect(plan.targets).toEqual([
+            expect.objectContaining({
+                type: "NPC",
+                identity: "1,2,3",
+                label: "NPC @ 1,2,3",
+                method: "delete",
+            }),
+        ]);
     });
 
     it("records a failed scan and prunes nothing of that type", async () => {
@@ -262,10 +268,12 @@ describe("vanishedWork", () => {
         expect(vanishedWork([], importJsonPath).plan.targets).toEqual([]);
     });
 
-    it("does not report NPCs, which it cannot remove", () => {
+    it("removes an NPC the save stopped declaring", () => {
         stubLock([{ type: "NPC", identity: "1,2,3" }]);
 
-        expect(vanishedWork([], importJsonPath).plan.targets).toEqual([]);
+        expect(vanishedWork([], importJsonPath).plan.targets).toEqual([
+            expect.objectContaining({ type: "NPC", identity: "1,2,3", owned: true }),
+        ]);
     });
 
     it("reads one name out and one name in as a rename", () => {

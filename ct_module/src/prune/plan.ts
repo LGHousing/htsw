@@ -84,8 +84,7 @@ export async function scanHousePrunePlan(
                 method: spec.method,
                 owned: owned.has(ownershipKey(type, identity)),
             };
-            if (spec.method === "report") plan.unsupported.push(target);
-            else plan.targets.push(target);
+            plan.targets.push(target);
         }
         request.onTypeScanned?.(type, identities.length, undeclared);
     }
@@ -203,7 +202,6 @@ export function vanishedWork(
         const type = entry.type;
         if (!isPrunableType(type)) continue;
         const spec = pruneTypeOf(type);
-        if (spec.method === "report") continue;
         let locked = lockedByType.get(type);
         if (locked === undefined) {
             locked = new Set<string>();

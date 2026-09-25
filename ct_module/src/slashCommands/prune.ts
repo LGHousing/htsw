@@ -18,7 +18,6 @@ import {
     loadPruneManifest,
     type PruneManifest,
 } from "../prune/session";
-import { prunePlanIsEmpty } from "../prune/types";
 
 function pruneFailure(reason: string): void {
     ChatLib.chat(`&c[htsw] Prune failed: ${reason}`);
@@ -97,7 +96,7 @@ export function commandPrune(args: string[]): void {
         }
 
         if (!apply) {
-            if (!prunePlanIsEmpty(plan)) {
+            if (plan.targets.length > 0) {
                 ChatLib.chat(
                     "&7[htsw] This was a dry run. Re-run with &f--apply&7 to remove them."
                 );
