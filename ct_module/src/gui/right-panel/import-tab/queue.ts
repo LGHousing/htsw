@@ -1,11 +1,13 @@
 import { activeBridgeRunId, emitBridgeEvent } from "../../../bridge/status";
 /// <reference types="../../../../CTAutocomplete" />
 
+import type { ImportablesParseResult, ImportJsonFileNode } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { HouseReadableType } from "../../../importables/export/readers";
 import { importableIdentity } from "../../../importables/identity";
 import { markGuiDirty } from "../../lib/dirty";
+import { shortPath } from "../../lib/pathDisplay";
 import { importableFilePaths } from "../../parsing/importablePaths";
 import {
     canonicalPath,
@@ -50,7 +52,8 @@ export type QueueAddResult =
           row: QueueRow;
           existing: QueueRow;
           message: string;
-      };
+      }
+    | { kind: "refused"; row: QueueRow; message: string };
 export type QueueRowBadge = { op: "import" | "export"; tooltip: string };
 export type QueueHouseGroup = {
     house: string | null;
@@ -123,6 +126,52 @@ export function isUnfinishedProjectRow(
 ): boolean {
     if (row.status !== "running" || !isProjectQueueRow(row)) return false;
     return !rows.some((child) => child.parentKey === row.key);
+}
+
+const includedFilesByParse = new WeakMap<ImportablesParseResult, Set<string>>();
+
+/** Canonical paths of the import.json files a project includes, not itself. */
+function includedFiles(parsed: ImportablesParseResult): Set<string> {
+    const cached = includedFilesByParse.get(parsed);
+    if (cached !== undefined) return cached;
+    const paths = new Set<string>();
+    const visit = (node: ImportJsonFileNode): void => {
+        for (const child of node.includes) {
+            paths.add(canonicalPath(child.path));
+            visit(child);
+        }
+    };
+    const root = parsed.importJson.fileTree;
+    if (root !== null) visit(root);
+    includedFilesByParse.set(parsed, paths);
+    return paths;
+}
+
+/**
+ * Why `row` may not be queued: it imports only part of a project that sets
+ * `dangerouslyDeleteEverythingNotInThisFile`. Such a project imports as a
+ * whole or not at all, so its removal step always follows a full import.
+ * Rows a run adds for itself (its importables and their dependencies) pass.
+ */
+export function partialImportRefusal(row: QueueRow): string | null {
+    if (row.op !== "import" || row.parentKey !== null) return null;
+    if (row.origin === "expansion" || row.origin === "dependency") return null;
+    let refusal: string | null = null;
+    forEachCachedParse((entry) => {
+        if (refusal !== null) return;
+        if (entry.parsed?.importJson.dangerouslyDeleteEverythingNotInThisFile !== true) return;
+        const project = shortPath(entry.canonicalPath);
+        if (entry.canonicalPath === row.path) {
+            if (!isProjectQueueRow(row)) {
+                refusal = `${project} claims its whole house, so it only imports as a whole`;
+            }
+        } else if (includedFiles(entry.parsed).has(row.path)) {
+            refusal =
+                `${shortPath(row.path)} is part of ${project}, which claims its whole ` +
+                "house; import that instead";
+        }
+    });
+    return refusal;
 }
 
 export function makeImportableQueueRow(args: {
@@ -223,6 +272,8 @@ function findOtherDirection(row: QueueRow): QueueRow | null {
 
 export function addToQueue(input: QueueRowInput | QueueRow): QueueAddResult {
     const row = normalizeQueueRow(input);
+    const refusal = partialImportRefusal(row);
+    if (refusal !== null) return { kind: "refused", row, message: refusal };
     const duplicate = byKey.get(row.key);
     if (duplicate !== undefined) {
         return {

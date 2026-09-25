@@ -10,6 +10,7 @@ import {
 import {
     addToQueue,
     isQueueItemQueued,
+    partialImportRefusal,
     queueItemsForPath,
     removeFromQueue,
 } from "../right-panel/import-tab/queue";
@@ -41,8 +42,11 @@ function queueActionForPath(filePath: string, importJsonPath?: string | null): M
             : allQueued
               ? `Remove ${items.length} from queue`
               : `Add ${items.length} to queue`;
+    const refusal = allQueued ? null : partialImportRefusal(items[0]);
     return {
         label,
+        disabled: refusal !== null,
+        tooltip: refusal ?? "",
         onClick: () => {
             if (allQueued) {
                 for (const it of items) removeFromQueue(it);
