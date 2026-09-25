@@ -1,3 +1,4 @@
+import type { ImportablesParseResult } from "htsw";
 import type { Importable, ImportableItem } from "htsw/types";
 
 import type TaskContext from "../../tasks/context";
@@ -40,6 +41,10 @@ export type ReadOptions = {
     // registry so identical captures reuse project names instead of minting
     // duplicates. Callers with a warm parse should always pass this.
     projectItems?: readonly ImportableItem[];
+    // A parse of `importJsonPath` the caller already holds. Without it the
+    // item capture registry parses the project synchronously, which stalls
+    // the client long enough on a large project for the server to drop it.
+    parsed?: ImportablesParseResult;
     // Fires when the batch listed the house's names itself (no `names`
     // supplied), so the caller can record the scan.
     onNamesListed?: (names: readonly string[]) => void;

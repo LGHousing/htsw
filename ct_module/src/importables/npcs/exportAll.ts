@@ -1,3 +1,4 @@
+import type { ImportablesParseResult } from "htsw";
 import type { ImportableItem } from "htsw/types";
 
 import {
@@ -38,6 +39,8 @@ export type ExportAllNpcsOptions = {
     entries?: readonly NpcExportEntry[];
     progress?: ExportProgressSink;
     projectItems?: readonly ImportableItem[];
+    /** See `ReadOptions.parsed`. */
+    parsed?: ImportablesParseResult;
     skipExisting?: boolean;
     output: ReadOutput;
     quiet?: boolean;
@@ -105,7 +108,8 @@ async function exportAllNpcsInner(
         lockHousingUuid,
         rootDir,
         options.newExportTargetImportJson,
-        options.projectItems
+        options.projectItems,
+        options.parsed
     );
     const npcLookup = createNpcLookupCache();
 

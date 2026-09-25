@@ -77,7 +77,8 @@ export function createExportItemCaptureRegistry(
     housingUuid: string,
     rootDir: string,
     newExportTargetImportJson?: string,
-    fallbackItems: readonly ImportableItem[] = []
+    fallbackItems: readonly ImportableItem[] = [],
+    warmParse?: ImportablesParseResult
 ): ItemCaptureRegistry {
     const captures = new ItemCaptureRegistry("live", {
         existingSnbt: (name) => {
@@ -95,7 +96,7 @@ export function createExportItemCaptureRegistry(
             }
         },
     });
-    const parsed = readParsedImportablesForExport(importJsonPath);
+    const parsed = warmParse ?? readParsedImportablesForExport(importJsonPath);
     if (parsed !== null) {
         const items = createProjectItemIndex(parsed.value, parsed.gcx);
         const dependencies = createItemDependencyIndex(parsed.value, items);

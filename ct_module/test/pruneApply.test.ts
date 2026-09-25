@@ -70,16 +70,20 @@ vi.mock("../src/importables/export/readers", () => ({
                     _ctx: unknown,
                     options: {
                         names?: readonly string[];
+                        parsed?: unknown;
                         output: {
                             accept: (importable: Importable, content: unknown) => void;
                         };
                     }
                 ) => {
-                    const name = options.names?.[0] ?? "";
-                    mocks.readCalls.push(`${type}:${name}`);
-                    const live = mocks.liveReads.get(`${type}:${name}`);
-                    if (live !== undefined) options.output.accept(live, {});
-                    return { total: 1, succeeded: 1, failed: 0 };
+                    const names = options.names ?? [];
+                    mocks.readCalls.push(`${type}:${names.join(",")}`);
+                    if (options.parsed !== parsed) mocks.readCalls.push("reparsed");
+                    for (const name of names) {
+                        const live = mocks.liveReads.get(`${type}:${name}`);
+                        if (live !== undefined) options.output.accept(live, {});
+                    }
+                    return { total: names.length, succeeded: names.length, failed: 0 };
                 },
         }
     ),
@@ -273,6 +277,24 @@ describe("applyPrunePlan", () => {
         );
         expect(records.length).toBe(2);
         expect(recordFile().recoveredContentCount).toBe(1);
+    });
+
+    it("rescues each type in one read, reusing the run's parse", async () => {
+        mocks.liveReads.set("FUNCTION:A", { type: "FUNCTION", name: "A", actions: [] });
+        mocks.liveReads.set("FUNCTION:B", { type: "FUNCTION", name: "B", actions: [] });
+
+        await applyPrunePlan(
+            commandRecordingCtx(),
+            [
+                target({ identity: "A", label: "A" }),
+                target({ type: "MENU", identity: "M", label: "M" }),
+                target({ identity: "B", label: "B" }),
+            ],
+            { manifestPath, housingUuid: HOUSE, parsed, rescue: true }
+        );
+
+        expect(mocks.readCalls).toEqual(["FUNCTION:A,B", "MENU:M"]);
+        expect(recordFile().recoveredContentCount).toBe(2);
     });
 
     it("keeps going after one removal fails and reports it", async () => {

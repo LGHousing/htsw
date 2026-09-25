@@ -217,7 +217,8 @@ export function defineHouseExporter<
                 lockHousingUuid,
                 options.rootDir,
                 options.newExportTargetImportJson,
-                options.projectItems
+                options.projectItems,
+                options.parsed
             ),
             menuSlotItemCaptures: new ItemCaptureRegistry("shell", {
                 existingSnbt: (name) => {

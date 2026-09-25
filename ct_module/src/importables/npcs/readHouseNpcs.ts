@@ -38,6 +38,7 @@ export const readNpcs: ReadFn = async (ctx, options) => {
         newExportTargetImportJson: options.newExportTargetImportJson,
         rootDir: options.rootDir,
         projectItems: options.projectItems,
+        parsed: options.parsed,
         entries,
         skipExisting: options.skipExisting,
         progress: options.progress,
