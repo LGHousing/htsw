@@ -53,14 +53,6 @@ export function formatPrunePlan(plan: PrunePlan, manifest: string): string[] {
         "&c[htsw] Not made by htsw — can't be undone:"
     );
 
-    if (plan.unsupported.length > 0) {
-        lines.push(
-            `&6[htsw] ${summarizeTargets(plan.unsupported)} aren't declared, ` +
-                "but htsw can't remove them yet:"
-        );
-        appendIdentities(lines, plan.unsupported);
-    }
-
     for (const failure of plan.scanFailures) {
         lines.push(
             `&c[htsw] Couldn't scan ${failure.type.toLowerCase()}s, so this plan is ` +
@@ -68,7 +60,7 @@ export function formatPrunePlan(plan: PrunePlan, manifest: string): string[] {
         );
     }
 
-    if (plan.targets.length === 0 && plan.unsupported.length === 0) {
+    if (plan.targets.length === 0) {
         lines.push("&a[htsw] Nothing in this house is missing from the manifest.");
     }
     return lines;
@@ -96,8 +88,8 @@ function appendIdentities(lines: string[], targets: readonly PruneTarget[]): voi
 
 /**
  * Plan lines for a popover, which has its own heading and no chat prefixes.
- * Driven by the targets about to be removed rather than the whole plan, since a
- * sweep confirms only the owned half. The plan still supplies the context lines.
+ * Driven by the targets about to be removed rather than the whole plan, since an
+ * unconfirmed rename adds to them. The plan still supplies the context lines.
  */
 export function prunePlanPopoverLines(
     targets: readonly PruneTarget[],
@@ -116,9 +108,6 @@ export function prunePlanPopoverLines(
         unowned,
         `Not made by htsw (${unowned.length}) — can't be undone:`
     );
-    if (plan.unsupported.length > 0) {
-        lines.push(`Undeclared but not removable: ${summarizeTargets(plan.unsupported)}`);
-    }
     for (const failure of plan.scanFailures) {
         lines.push(`Scan of ${failure.type.toLowerCase()}s failed, so the plan is incomplete`);
     }
