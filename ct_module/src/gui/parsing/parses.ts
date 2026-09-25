@@ -37,6 +37,7 @@ import {
 } from "./offThreadParse";
 import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
 import { BoundedMap } from "../lib/boundedLruMap";
+import { span } from "../../perf/spans";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -235,7 +236,9 @@ function commitParseEntry(
         }
     }
     if (parsed !== null && !fromSnapshot && !snapshotAlreadySaved) {
-        const snapshotMetrics = saveSnapshot(canon, parsed, committedFingerprint);
+        const snapshotMetrics = span("parse.snapshotSave", () =>
+            saveSnapshot(canon, parsed, committedFingerprint)
+        );
         if (fullParseProfile !== null) {
             fullParseProfile.phases.importableHashMs = snapshotMetrics.hashMs;
             fullParseProfile.phases.snapshotBuildMs = snapshotMetrics.buildMs;
@@ -264,9 +267,11 @@ function commitParseEntry(
     markGuiDirty();
     if (parsed !== null) {
         const derivedIndexStartedAt = Date.now();
-        createItemDependencyIndex(
-            parsed.value,
-            createProjectItemIndex(parsed.value, parsed.gcx)
+        span("parse.derivedIndex", () =>
+            createItemDependencyIndex(
+                parsed.value,
+                createProjectItemIndex(parsed.value, parsed.gcx)
+            )
         );
         if (fullParseProfile !== null) {
             fullParseProfile.phases.mainThreadDerivedIndexMs =
@@ -274,7 +279,7 @@ function commitParseEntry(
         }
         recordHouseBinding(parsed.importJson.houseUuid, canon);
     }
-    notifyParseCacheEntryChanged(entry);
+    span("parse.notifyListeners", () => notifyParseCacheEntryChanged(entry));
     const durationMs = Date.now() - startedAt;
     if (fullParseProfile !== null) {
         const phases = fullParseProfile.phases;
@@ -318,11 +323,13 @@ function snapshotEntryIfFresh(
     mtime: number,
     startedAt: number
 ): CachedParse | null {
-    const snapshot = loadSnapshot(canon);
+    const snapshot = span("parse.snapshotLoad", () => loadSnapshot(canon));
     if (snapshot === null) return null;
-    const changed = diffSnapshotFingerprint(snapshot);
+    const changed = span("parse.snapshotDiff", () => diffSnapshotFingerprint(snapshot));
     if (changed.length !== 0) return null;
-    const parsed = restoreParseFromSnapshot(snapshot);
+    const parsed = span("parse.snapshotRestore", () =>
+        restoreParseFromSnapshot(snapshot)
+    );
     return commitParseEntry(
         canon,
         rawPath,
@@ -369,7 +376,7 @@ function parseImportJsonFromDisk(
         // path comparison against the root node (e.g. rehomeFileTree's
         // directory-containment check, which can never match a `./`
         // root against absolute children).
-        parsed = parseImportablesResult(sm, canon);
+        parsed = span("parse.blocking", () => parseImportablesResult(sm, canon));
     } catch (e) {
         const msg =
             e && (e as { message?: string }).message
@@ -671,92 +678,123 @@ function pumpPendingParses(): void {
     if (revalidation) pendingRevalidationPaths.delete(parseCanon);
     else pendingParsePaths.delete(parseCanon);
     parseInFlight = { path: parseCanon, revalidation };
-    setTimeout(() => {
-        const startedAt = Date.now();
-        const mtime = getMtimeMs(parseCanon);
-        const previousEntry = cache.get(parseCanon);
-        let settledMtimes: { [path: string]: number } | null = null;
-        if (
-            !requireCurrent &&
-            previousEntry !== undefined &&
-            previousEntry.mtime === mtime
-        ) {
-            const pendingBeforeSettle = previousEntry.freshness.pending;
-            if (!settledChange(previousEntry.fingerprint, previousEntry.freshness)) {
-                recordParsePerf(parseCanon, Date.now() - startedAt, "memory");
-                finishPendingParse(parseCanon, nextRaw, previousEntry, previousEntry);
-                return;
-            }
-            settledMtimes = pendingBeforeSettle;
-        }
-        if (previousEntry === undefined) {
-            const snapshot = loadSnapshot(parseCanon);
-            if (snapshot !== null) {
-                const snapshotChanges = diffSnapshotFingerprint(snapshot);
-                if (snapshotChanges.length === 0) {
-                    const parsed = restoreParseFromSnapshot(snapshot);
-                    const snapshotEntry = commitParseEntry(
-                        parseCanon,
-                        nextRaw,
-                        mtime,
-                        parsed,
-                        null,
-                        "snapshot",
-                        snapshot.fingerprint,
-                        true,
-                        true,
-                        startedAt
+    setTimeout(
+        () =>
+            span("parse.pump", () => {
+                const startedAt = Date.now();
+                const mtime = getMtimeMs(parseCanon);
+                const previousEntry = cache.get(parseCanon);
+                let settledMtimes: { [path: string]: number } | null = null;
+                if (
+                    !requireCurrent &&
+                    previousEntry !== undefined &&
+                    previousEntry.mtime === mtime
+                ) {
+                    const pendingBeforeSettle = previousEntry.freshness.pending;
+                    if (
+                        !settledChange(previousEntry.fingerprint, previousEntry.freshness)
+                    ) {
+                        recordParsePerf(parseCanon, Date.now() - startedAt, "memory");
+                        finishPendingParse(
+                            parseCanon,
+                            nextRaw,
+                            previousEntry,
+                            previousEntry
+                        );
+                        return;
+                    }
+                    settledMtimes = pendingBeforeSettle;
+                }
+                if (previousEntry === undefined) {
+                    const snapshot = span("parse.snapshotLoad", () =>
+                        loadSnapshot(parseCanon)
                     );
-                    finishPendingParse(parseCanon, nextRaw, previousEntry, snapshotEntry);
-                    return;
+                    if (snapshot !== null) {
+                        const snapshotChanges = span("parse.snapshotDiff", () =>
+                            diffSnapshotFingerprint(snapshot)
+                        );
+                        if (snapshotChanges.length === 0) {
+                            const parsed = span("parse.snapshotRestore", () =>
+                                restoreParseFromSnapshot(snapshot)
+                            );
+                            const snapshotEntry = commitParseEntry(
+                                parseCanon,
+                                nextRaw,
+                                mtime,
+                                parsed,
+                                null,
+                                "snapshot",
+                                snapshot.fingerprint,
+                                true,
+                                true,
+                                startedAt
+                            );
+                            finishPendingParse(
+                                parseCanon,
+                                nextRaw,
+                                previousEntry,
+                                snapshotEntry
+                            );
+                            return;
+                        }
+                        recordFullParseReason(
+                            parseCanon,
+                            "saved parse is stale",
+                            snapshotChanges.map((change) => change.path)
+                        );
+                    }
+                } else {
+                    const observedMtimes: { [path: string]: number } =
+                        settledMtimes ?? {};
+                    const fingerprintPaths = Object.keys(previousEntry.fingerprint);
+                    if (settledMtimes === null) {
+                        for (let i = 0; i < fingerprintPaths.length; i++) {
+                            const path = fingerprintPaths[i];
+                            observedMtimes[path] = getMtimeMs(path);
+                        }
+                    }
+                    const changedPaths: string[] = [];
+                    for (let i = 0; i < fingerprintPaths.length; i++) {
+                        const path = fingerprintPaths[i];
+                        if (previousEntry.fingerprint[path] !== observedMtimes[path]) {
+                            changedPaths.push(path);
+                        }
+                    }
+                    if (changedPaths.length !== 0) {
+                        recordFullParseReason(
+                            parseCanon,
+                            "source files changed",
+                            changedPaths
+                        );
+                    }
                 }
-                recordFullParseReason(
-                    parseCanon,
-                    "saved parse is stale",
-                    snapshotChanges.map((change) => change.path)
+                getMtimeMs(parseCanon);
+                parseImportJsonOffThread(parseCanon, mtime, (result) =>
+                    span("parse.commit", () => {
+                        if (getMtimeMs(parseCanon) !== mtime) {
+                            pendingParsePaths.set(parseCanon, {
+                                rawPath: nextRaw,
+                                requireCurrent,
+                            });
+                            parseInFlight = null;
+                            pumpPendingParses();
+                            return;
+                        }
+                        const entry = commitOffThreadResult(
+                            parseCanon,
+                            nextRaw,
+                            mtime,
+                            startedAt,
+                            result
+                        );
+                        span("parse.onParsed", () =>
+                            finishPendingParse(parseCanon, nextRaw, previousEntry, entry)
+                        );
+                    })
                 );
-            }
-        } else {
-            const observedMtimes: { [path: string]: number } = settledMtimes ?? {};
-            const fingerprintPaths = Object.keys(previousEntry.fingerprint);
-            if (settledMtimes === null) {
-                for (let i = 0; i < fingerprintPaths.length; i++) {
-                    const path = fingerprintPaths[i];
-                    observedMtimes[path] = getMtimeMs(path);
-                }
-            }
-            const changedPaths: string[] = [];
-            for (let i = 0; i < fingerprintPaths.length; i++) {
-                const path = fingerprintPaths[i];
-                if (previousEntry.fingerprint[path] !== observedMtimes[path]) {
-                    changedPaths.push(path);
-                }
-            }
-            if (changedPaths.length !== 0) {
-                recordFullParseReason(parseCanon, "source files changed", changedPaths);
-            }
-        }
-        getMtimeMs(parseCanon);
-        parseImportJsonOffThread(parseCanon, mtime, (result) => {
-            if (getMtimeMs(parseCanon) !== mtime) {
-                pendingParsePaths.set(parseCanon, {
-                    rawPath: nextRaw,
-                    requireCurrent,
-                });
-                parseInFlight = null;
-                pumpPendingParses();
-                return;
-            }
-            const entry = commitOffThreadResult(
-                parseCanon,
-                nextRaw,
-                mtime,
-                startedAt,
-                result
-            );
-            finishPendingParse(parseCanon, nextRaw, previousEntry, entry);
-        });
-    }, 0);
+            }),
+        0
+    );
 }
 
 /**

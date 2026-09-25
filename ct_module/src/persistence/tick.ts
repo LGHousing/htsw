@@ -2,6 +2,7 @@
 
 import { flushPersistence } from "./store";
 import { tickWorkspace } from "./workspace";
+import { span } from "../perf/spans";
 
 /**
  * Drives workspace restore/capture and the debounced writer from the client
@@ -16,8 +17,8 @@ import { tickWorkspace } from "./workspace";
 export function initPersistence(): void {
     register("tick", () => {
         try {
-            tickWorkspace();
-            flushPersistence();
+            span("persistence.workspace", tickWorkspace);
+            span("persistence.flush", flushPersistence);
         } catch (_e) {
             // A throw here would unregister the trigger and silently stop all
             // persistence for the rest of the session.

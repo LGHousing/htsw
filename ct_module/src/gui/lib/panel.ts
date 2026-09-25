@@ -15,17 +15,11 @@ import { getGuiRevision, markGuiDirty } from "./dirty";
 import { warmIconTextures } from "./images";
 import { debugLogError } from "./debugLog";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
-import {
-    mouseIsOverHoverCard,
-    tryDispatchHoverCardClick,
-} from "./hoverCards";
+import { mouseIsOverHoverCard, tryDispatchHoverCardClick } from "./hoverCards";
 import { mcToOverlay } from "./overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
-import {
-    isFramePerfEnabled,
-    recordPanelFrame,
-    recordPhase,
-} from "./framePerf";
+import { span } from "../../perf/spans";
+import { isFramePerfEnabled, recordPanelFrame, recordPhase } from "./framePerf";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
@@ -170,7 +164,9 @@ export class Panel {
             if (!rebuild && !this.advanceCachedScrolls()) rebuild = true;
             if (rebuild) {
                 const layoutStart = perfEnabled ? Date.now() : 0;
-                this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+                this.cachedLaid = span("panel.layout", () =>
+                    layoutElement(this.root, b.x, b.y, b.w, b.h)
+                );
                 if (perfEnabled) {
                     recordPhase("layout-total", Date.now() - layoutStart);
                 }
@@ -179,7 +175,9 @@ export class Panel {
                 this.captureScrollOffsets();
             }
             const drawStart = perfEnabled && rebuild ? Date.now() : 0;
-            drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
+            span("panel.draw", () =>
+                drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive)
+            );
             if (perfEnabled && rebuild) {
                 recordPhase("draw-rebuild", Date.now() - drawStart);
             }

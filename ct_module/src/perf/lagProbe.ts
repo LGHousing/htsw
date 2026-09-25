@@ -6,6 +6,7 @@ import { getParsePerfStats } from "../gui/parsing/parses";
 import { debugLog, debugLogError, flushGuiDebug } from "../gui/lib/debugLog";
 import { TaskManager } from "../tasks/manager";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
+import { activeSpanPath, clearSlowSpans, setSpanThreshold } from "./spans";
 
 type RhinoString = string | { toString(): string };
 
@@ -39,7 +40,10 @@ interface RhinoStackTraceElement {
 }
 
 interface RhinoThread {
-    getStackTrace(): { readonly length: unknown; [index: number]: RhinoStackTraceElement };
+    getStackTrace(): {
+        readonly length: unknown;
+        [index: number]: RhinoStackTraceElement;
+    };
     interrupt(): void;
     setDaemon(daemon: boolean): void;
     start(): void;
@@ -102,8 +106,13 @@ type LagSample = {
     lastParse: string;
 };
 
-const STALL_MS = 250;
+export const DEFAULT_STALL_MS = 250;
+// The heartbeat runs at 50/s, so a normal gap is ~20ms and anything much
+// shorter than this can't be told apart from frame jitter.
+const MIN_STALL_MS = 50;
 const MAX_SAMPLES = 16;
+// Read by the watchdog thread; only written while the probe is off.
+let stallMs = DEFAULT_STALL_MS;
 const probeEnabled = new java.util.concurrent.atomic.AtomicBoolean(false);
 const watchdogRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -124,8 +133,7 @@ function gcTotals(): { count: number; ms: number } | null {
     if (gcFailures >= 3) return null;
     try {
         if (gcBeans === null) {
-            gcBeans = java.lang.management.ManagementFactory
-                .getGarbageCollectorMXBeans();
+            gcBeans = java.lang.management.ManagementFactory.getGarbageCollectorMXBeans();
         }
         let count = 0;
         let ms = 0;
@@ -160,9 +168,9 @@ function screenName(): string {
         const screen = (
             Client as unknown as {
                 getMinecraft(): {
-                field_71462_r: {
-                    getClass(): { getName(): RhinoString };
-                } | null;
+                    field_71462_r: {
+                        getClass(): { getName(): RhinoString };
+                    } | null;
                 };
             }
         ).getMinecraft().field_71462_r;
@@ -197,7 +205,7 @@ function record(
     heapBeforeMB: number,
     heapAfterMB: number
 ): void {
-    samples.push({
+    const sample: LagSample = {
         at: Date.now(),
         gapMs,
         gcCount,
@@ -209,8 +217,14 @@ function record(
         taskRunning: TaskManager.isBusy(),
         waiters: getEventContainerCounts(),
         lastParse: lastParseSummary(),
-    });
+    };
+    samples.push(sample);
     if (samples.length > MAX_SAMPLES) samples.shift();
+    debugLog(
+        `[lagprobe] gap ${gapMs}ms gc +${gcCount}/${gcMs}ms ` +
+            `heap ${heapBeforeMB}->${heapAfterMB}MB screen=${sample.screen} ` +
+            `task=${sample.taskRunning ? "yes" : "no"} last parse: ${sample.lastParse}`
+    );
 }
 
 // ── Mid-stall stack capture ──────────────────────────────────────────────
@@ -246,19 +260,24 @@ function startWatchdog(): void {
                         if (!Boolean(probeEnabled.get())) break;
                         const stalledSince = lastStepAt;
                         const stalledForMs = Date.now() - stalledSince;
-                        if (stalledForMs < STALL_MS) continue;
+                        if (stalledForMs < stallMs) continue;
                         if (capturedForStepAt !== stalledSince) {
                             capturedForStepAt = stalledSince;
                             capturesThisStall = 0;
                         }
                         // Snapshot the start of the stall, then again each further
                         // ~300ms of the same stall — long stalls get phase samples.
-                        if (stalledForMs < STALL_MS + 300 * capturesThisStall) continue;
+                        if (stalledForMs < stallMs + 300 * capturesThisStall) continue;
                         capturesThisStall++;
                         const trace = observedClientThread.getStackTrace();
-                        const lines: string[] = [`stack ${stalledForMs}ms into stall:`];
+                        const spans = activeSpanPath();
+                        const lines: string[] = [
+                            `stack ${stalledForMs}ms into stall` +
+                                (spans === "" ? ":" : ` in ${spans}:`),
+                        ];
                         const n = Math.min(Number(trace.length), 30);
-                        for (let i = 0; i < n; i++) lines.push(String(trace[i].toString()));
+                        for (let i = 0; i < n; i++)
+                            lines.push(String(trace[i].toString()));
                         queue.add(lines.join("\n"));
                     } catch (_e) {
                         // never let the watchdog die; next loop retries
@@ -302,6 +321,8 @@ function drainStallStacks(): void {
     }
 }
 
+let lastFlushAt = 0;
+
 const probeStepTrigger = register("step", () => {
     const now = Date.now();
     const gap = now - lastStepAt;
@@ -324,9 +345,13 @@ const probeStepTrigger = register("step", () => {
         lastGcMs = gc.ms;
     }
     const heapNow = heapUsedMB();
-    if (gap >= STALL_MS) record(gap, gcCount, gcMs, lastHeapUsedMB, heapNow);
+    if (gap >= stallMs) record(gap, gcCount, gcMs, lastHeapUsedMB, heapNow);
     lastHeapUsedMB = heapNow;
-}).setFps(10);
+    if (now - lastFlushAt >= 1000) {
+        lastFlushAt = now;
+        flushGuiDebug();
+    }
+}).setFps(50);
 probeStepTrigger.unregister();
 
 register("gameUnload", () => {
@@ -338,10 +363,22 @@ export function isLagProbeEnabled(): boolean {
     return Boolean(probeEnabled.get());
 }
 
-export function setLagProbeEnabled(enabled: boolean): void {
+export function getLagProbeThresholdMs(): number {
+    return stallMs;
+}
+
+/** `thresholdMs` is clamped to MIN_STALL_MS and ignored when turning off. */
+export function setLagProbeEnabled(
+    enabled: boolean,
+    thresholdMs: number = DEFAULT_STALL_MS
+): void {
+    if (enabled && isLagProbeEnabled()) setLagProbeEnabled(false);
     if (enabled === isLagProbeEnabled()) return;
+    if (enabled) stallMs = Math.max(MIN_STALL_MS, Math.round(thresholdMs));
+    setSpanThreshold(enabled ? stallMs : null);
     probeEnabled.set(enabled);
     if (enabled) {
+        debugLog(`[lagprobe] on, threshold ${stallMs}ms`);
         lastStepAt = Date.now();
         const gc = gcTotals();
         if (gc !== null) {
@@ -367,5 +404,6 @@ export function getStallStacks(): string[][] {
 export function clearLagProbeSamples(): void {
     samples.length = 0;
     stallStacks.length = 0;
+    clearSlowSpans();
     lastStepAt = Date.now();
 }

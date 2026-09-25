@@ -10,6 +10,7 @@ import { isTaskTotalEtaReady } from "../housingSync/progress/types";
 import { javaType } from "../utils/java";
 import { connectBridge, disconnectBridge, publishBridgeStatus } from "./status";
 import { HTSW_STATUS_PROPERTY, type HtswRunStatus } from "./types";
+import { span } from "../perf/spans";
 
 export function sampleBridgeProgress(): Partial<HtswRunStatus> {
     const progress = getTaskProgress();
@@ -48,7 +49,7 @@ export function initStatusBridge(): void {
     connectBridge((json) => {
         system.setProperty(HTSW_STATUS_PROPERTY, json);
     }, sampleBridgeProgress);
-    register("step", publishBridgeStatus).setFps(4);
+    register("step", () => span("bridge.publish", publishBridgeStatus)).setFps(4);
     register("gameUnload", () => {
         disconnectBridge();
         system.clearProperty(HTSW_STATUS_PROPERTY);

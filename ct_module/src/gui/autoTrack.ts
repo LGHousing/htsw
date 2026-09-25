@@ -27,6 +27,7 @@ import {
     setOnArmingScansReset,
 } from "../prune/projectRun";
 import { autoRunRefresh } from "./autoRun";
+import { span } from "../perf/spans";
 
 /**
  * One tracked project's pending work. It queues as a single project row; the
@@ -75,10 +76,12 @@ function planProject(sourcePath: string, parsed: ImportablesParseResult): Projec
     const expansion =
         housingUuid === null
             ? null
-            : expandImportDependencies(parsed, modified, housingUuid, {
-                  trustMode: isCurrentHouseTrusted(),
-                  importJsonPath: canonicalSourcePath,
-              });
+            : span("autoTrack.dependencies", () =>
+                  expandImportDependencies(parsed, modified, housingUuid, {
+                      trustMode: isCurrentHouseTrusted(),
+                      importJsonPath: canonicalSourcePath,
+                  })
+              );
     const work = expansion?.importables ?? modified;
     const workKeys = work.map(
         (importable) =>
@@ -96,7 +99,9 @@ function planProject(sourcePath: string, parsed: ImportablesParseResult): Projec
     const removals =
         isArmedForPrune(parsed) &&
         ((getAutoRun() && needsArmingScan(canonicalSourcePath)) ||
-            hasPendingRemovals(canonicalSourcePath, parsed));
+            span("autoTrack.pendingRemovals", () =>
+                hasPendingRemovals(canonicalSourcePath, parsed)
+            ));
     const row =
         work.length > 0 || removals
             ? makeBulkQueueRow({
@@ -115,6 +120,10 @@ function planProject(sourcePath: string, parsed: ImportablesParseResult): Projec
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
 
 export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm"): void {
+    span(`autoTrack.refresh(${trigger})`, () => refresh(trigger));
+}
+
+function refresh(trigger: AutoTrackRefreshTrigger): void {
     if (!isAnyAutoTrackEnabled()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
@@ -132,7 +141,10 @@ export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm")
             reconciliationComplete = false;
             return;
         }
-        const plan = planProject(entry.canonicalPath, entry.parsed);
+        const parsed = entry.parsed;
+        const plan = span("autoTrack.plan", () =>
+            planProject(entry.canonicalPath, parsed)
+        );
         plans.push(plan);
         if (!plan.complete) reconciliationComplete = false;
         changed += plan.changed;
