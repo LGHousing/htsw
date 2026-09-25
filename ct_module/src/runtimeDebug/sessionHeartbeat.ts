@@ -10,6 +10,7 @@ import { ensureParentDirs } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
 import { runtimeDebugStats } from "./runtimeDebugBuffer";
+import { span } from "../perf/spans";
 
 const HEARTBEAT_INTERVAL_SECONDS = 30 * 60;
 const HEARTBEAT_PATH = "./htsw/import-errors/session-heartbeat.json";
@@ -131,5 +132,7 @@ let initialized = false;
 export function initSessionHeartbeat(): void {
     if (initialized) return;
     initialized = true;
-    register("step", uploadSessionHeartbeat).setDelay(HEARTBEAT_INTERVAL_SECONDS);
+    register("step", () => span("heartbeat.upload", uploadSessionHeartbeat)).setDelay(
+        HEARTBEAT_INTERVAL_SECONDS
+    );
 }

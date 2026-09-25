@@ -33,12 +33,15 @@ import {
     setProgressTraceEnabled,
 } from "../housingSync/trace/progressTrace";
 import {
+    DEFAULT_STALL_MS,
     clearLagProbeSamples,
     getLagProbeSamples,
+    getLagProbeThresholdMs,
     getStallStacks,
     isLagProbeEnabled,
     setLagProbeEnabled,
 } from "../perf/lagProbe";
+import { getSlowSpans } from "../perf/spans";
 import { commandTest } from "../inGameTests/command";
 import {
     canonicalPath,
@@ -288,7 +291,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         name: "lagprobe",
         summary: "Recent main-thread stall samples",
         run: commandLagProbe,
-        usage: "lagprobe [on|off|clear]",
+        usage: "lagprobe [on [ms]|off|clear]",
     },
     {
         name: "eta",
@@ -699,9 +702,17 @@ function shortPerfPath(path: string): string {
 
 function commandLagProbe(args: string[]): void {
     if (args[0] === "on") {
+        const requested = args.length < 2 ? DEFAULT_STALL_MS : Number(args[1]);
+        if (!Number.isFinite(requested)) {
+            ChatLib.chat("&cUsage: /htsw lagprobe on [ms]");
+            return;
+        }
         clearLagProbeSamples();
-        setLagProbeEnabled(true);
-        ChatLib.chat("&a[lagprobe] enabled; samples cleared.");
+        setLagProbeEnabled(true, requested);
+        ChatLib.chat(
+            `&a[lagprobe] enabled at ${getLagProbeThresholdMs()}ms; samples cleared. ` +
+                "Stalls and slow spans go to gui-debug.log."
+        );
         return;
     }
     if (args[0] === "off") {
@@ -714,13 +725,24 @@ function commandLagProbe(args: string[]): void {
         ChatLib.chat("&a[lagprobe] cleared samples.");
         return;
     }
-    ChatLib.chat(`&7[lagprobe] ${isLagProbeEnabled() ? "&aenabled" : "&8disabled"}&7.`);
+    const threshold = getLagProbeThresholdMs();
+    ChatLib.chat(
+        `&7[lagprobe] ${isLagProbeEnabled() ? `&aenabled &7at ${threshold}ms` : "&8disabled"}&7.`
+    );
+    const spans = getSlowSpans();
+    if (spans.length > 0) {
+        ChatLib.chat("&7[lagprobe] slowest recent spans:");
+        const slowest = spans.slice().sort((a, b) => b.ms - a.ms);
+        for (let i = 0; i < Math.min(slowest.length, 6); i++) {
+            ChatLib.chat(`&7  &f${slowest[i].ms}ms&7 ${slowest[i].path}`);
+        }
+    }
     const samples = getLagProbeSamples();
     if (samples.length === 0) {
-        ChatLib.chat("&7[lagprobe] no >250ms main-thread gaps recorded.");
+        ChatLib.chat(`&7[lagprobe] no >${threshold}ms main-thread gaps recorded.`);
         return;
     }
-    ChatLib.chat("&7[lagprobe] recent >250ms main-thread gaps:");
+    ChatLib.chat(`&7[lagprobe] recent >${threshold}ms main-thread gaps:`);
     for (let i = 0; i < samples.length; i++) {
         const s = samples[i];
         const age = Math.max(0, Math.round((Date.now() - s.at) / 1000));

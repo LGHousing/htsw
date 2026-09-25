@@ -79,10 +79,7 @@ import {
     getImportCachePresenceRevision,
     getImportCacheWriteRevision,
 } from "../importCache/cache";
-import {
-    getHousingPresence,
-    resetHousingPresence,
-} from "../importCache/housingPresence";
+import { getHousingPresence, resetHousingPresence } from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
@@ -130,6 +127,7 @@ import { processImportableCacheWarm } from "./cache-status/cacheWarm";
 import { pollLockBanners } from "./left-panel/projects/lockBanner";
 import { clearQueue } from "./right-panel/import-tab/queue";
 import { cancelActiveTask } from "../tasks/activeTask";
+import { span } from "../perf/spans";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -764,21 +762,23 @@ export function initHtswGui(): void {
         lastCacheRevision = rev;
         markGuiDirty();
     };
-    register("guiRender", (mouseX: number, mouseY: number) => {
-        const visible = frameVisible();
-        syncHtswGuiProperties({ enabled, visible });
-        trackCacheRevision();
-        pollWheel();
-        pollLockBanners();
-        tickTabDragAutoScroll(mcToOverlay(mouseX));
-        tickQueueDragAutoScroll(mcToOverlay(mouseY));
-        const dragging = isDraggingScrollbar();
-        if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
-        if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
-        // Rebuild every frame while the thumb is dragged so scrolled content
-        // tracks at the refresh rate.
-        if (dragging) markGuiDirty();
-    });
+    register("guiRender", (mouseX: number, mouseY: number) =>
+        span("overlay.guiRender", () => {
+            const visible = frameVisible();
+            syncHtswGuiProperties({ enabled, visible });
+            trackCacheRevision();
+            pollWheel();
+            span("lockBanner.poll", pollLockBanners);
+            tickTabDragAutoScroll(mcToOverlay(mouseX));
+            tickQueueDragAutoScroll(mcToOverlay(mouseY));
+            const dragging = isDraggingScrollbar();
+            if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
+            if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
+            // Rebuild every frame while the thumb is dragged so scrolled content
+            // tracks at the refresh rate.
+            if (dragging) markGuiDirty();
+        })
+    );
     register("guiMouseRelease", () => {
         endScrollbarDrag();
         endTabDrag();
@@ -909,61 +909,65 @@ export function initHtswGui(): void {
     // Keep GuiTextField cursor blink animated and external focus state in sync. Also drop
     // popovers + focus whenever the underlying inventory GUI is no longer open, so they don't
     // linger across opens/closes.
-    register("tick", () => {
-        const visible = frameVisible();
-        syncHtswGuiProperties({ enabled, visible });
-        tickAllFields();
-        applyFocus(getFocusedInput());
-        setAutoRunDetectionLive(visible);
-        noteOverlayVisibility(visible);
-        // Reparse polling stats the import.json every tick and (throttled)
-        // every referenced file; the parse itself runs off-thread. It stays
-        // paused during tasks — except Auto-run, which needs save
-        // detection live so a mid-run save can cancel the stale run.
-        if (visible && (!isTaskRunning() || isAutoRunQueueRunning())) {
-            tickReparse();
-            // Drain one off-frame parse queued by requestParse() (export pane,
-            // Projects tree, queue rows) so a cold parse never blocks render.
-            processPendingParses(handleCompletedParse);
-            // Cache warming stays off during tasks so it never interleaves
-            // with the session's own cache writes.
-            if (!isTaskRunning()) processImportableCacheWarm();
-        }
-        // First-open consent comes before the walkthrough so two onboarding
-        // popovers never compete for the same screen.
-        if (visible && !isTaskRunning()) {
-            if (!maybeOpenDiagnosticsConsent()) maybeAutoStartTour();
-        }
-        // If the import ended while our placeholder is still up (Hypixel
-        // didn't reopen a menu — e.g. the import finished naturally on
-        // the last menu close), dismiss it so the player isn't trapped
-        // in a phantom GUI. Going placeholder → null calls
-        // `grabMouseCursor` which doesn't move the cursor, so this is
-        // snap-free even at import end.
-        if (!isTaskRunning()) {
-            const mc = getMinecraft();
-            if (isPlaceholderScreen(mc.field_71462_r)) {
-                mc.func_147108_a(null);
+    register("tick", () =>
+        span("overlay.tick", () => {
+            const visible = frameVisible();
+            syncHtswGuiProperties({ enabled, visible });
+            tickAllFields();
+            applyFocus(getFocusedInput());
+            setAutoRunDetectionLive(visible);
+            noteOverlayVisibility(visible);
+            // Reparse polling stats the import.json every tick and (throttled)
+            // every referenced file; the parse itself runs off-thread. It stays
+            // paused during tasks, except Auto-run, which needs save detection
+            // live so a mid-run save can cancel the stale run.
+            if (visible && (!isTaskRunning() || isAutoRunQueueRunning())) {
+                span("tick.reparse", tickReparse);
+                // Drain one off-frame parse queued by requestParse() (export pane,
+                // Projects tree, queue rows) so a cold parse never blocks render.
+                span("tick.pendingParses", () =>
+                    processPendingParses(handleCompletedParse)
+                );
+                // Cache warming stays off during tasks so it never interleaves
+                // with the session's own cache writes.
+                if (!isTaskRunning()) span("tick.cacheWarm", processImportableCacheWarm);
             }
-        }
-        // Check live Housing presence whenever a container is open, even before
-        // the idle overlay appears. If the check depended on frameVisible(), an
-        // unknown verdict could never become "in".
-        if (getOpenContainerBounds() !== null) {
-            maybeAutoFetchHousingUuid();
-        }
-        // Only tear down popovers + focus when the overlay isn't showing at all.
-        // frameVisible() stays true during an import gap (cached bounds), even
-        // though getContainerBounds() flickers null between menu operations —
-        // keying the teardown on getContainerBounds() here would drop overlay
-        // popover/focus state on every one of those flickers.
-        if (!anyHtswPanelVisible()) {
-            if (popoverIsOpen()) closeAllPopovers();
-            closeHoverCard();
-            if (getFocusedInput() !== null) setFocusedInput(null);
-            clearSelection();
-        }
-    });
+            // First-open consent comes before the walkthrough so two onboarding
+            // popovers never compete for the same screen.
+            if (visible && !isTaskRunning()) {
+                if (!maybeOpenDiagnosticsConsent()) maybeAutoStartTour();
+            }
+            // If the import ended while our placeholder is still up (Hypixel
+            // didn't reopen a menu, e.g. the import finished naturally on
+            // the last menu close), dismiss it so the player isn't trapped
+            // in a phantom GUI. Going placeholder → null calls
+            // `grabMouseCursor` which doesn't move the cursor, so this is
+            // snap-free even at import end.
+            if (!isTaskRunning()) {
+                const mc = getMinecraft();
+                if (isPlaceholderScreen(mc.field_71462_r)) {
+                    mc.func_147108_a(null);
+                }
+            }
+            // Check live Housing presence whenever a container is open, even before
+            // the idle overlay appears. If the check depended on frameVisible(), an
+            // unknown verdict could never become "in".
+            if (getOpenContainerBounds() !== null) {
+                span("tick.housingPresence", maybeAutoFetchHousingUuid);
+            }
+            // Only tear down popovers + focus when the overlay isn't showing at all.
+            // frameVisible() stays true during an import gap (cached bounds), even
+            // though getContainerBounds() flickers null between menu operations.
+            // Keying the teardown on getContainerBounds() would drop overlay
+            // popover/focus state on every one of those flickers.
+            if (!anyHtswPanelVisible()) {
+                if (popoverIsOpen()) closeAllPopovers();
+                closeHoverCard();
+                if (getFocusedInput() !== null) setFocusedInput(null);
+                clearSelection();
+            }
+        })
+    );
 
     // Register popover rendering LAST so it paints on top of all panels.
     initPopoverRendering();
