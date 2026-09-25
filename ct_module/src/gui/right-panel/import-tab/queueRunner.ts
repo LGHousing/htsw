@@ -51,7 +51,9 @@ import {
     getQueue,
     getQueueRow,
     isBulkQueueRowExpanded,
+    isProjectQueueRow,
     isRestoredQueueRow,
+    isUnfinishedProjectRow,
     makeImportableQueueRow,
     setQueueRowStatus,
     type QueueRow,
@@ -103,6 +105,18 @@ export type QueueRunnerDependencies = {
         row: QueueRow,
         currentHouse: string
     ): Promise<readonly QueueRowInput[]>;
+    /** Runs before a project row is expanded into its importables. */
+    beginProject(ctx: TaskContext, row: QueueRow, currentHouse: string): Promise<void>;
+    /**
+     * Runs once every importable of a project row is done. Throwing fails the
+     * row and stops the queue, like a failed import.
+     */
+    finishProject(
+        ctx: TaskContext,
+        row: QueueRow,
+        currentHouse: string,
+        options: QueueStartOptions
+    ): Promise<void>;
     runImport(
         ctx: TaskContext,
         rows: readonly QueueRow[],
@@ -199,6 +213,55 @@ export function queueSessionFromHead(
 // a new object, so it is neither skipped nor removed by the old completion.
 const awaitingRemoval = new WeakSet<QueueRow>();
 
+/** A project row for this house whose importables are all done. */
+function projectRowToFinish(currentHouse: string): QueueRow | null {
+    const queue = getQueue();
+    for (const row of queue) {
+        if (row.status !== "running" || !isProjectQueueRow(row)) continue;
+        if (awaitingRemoval.has(row)) continue;
+        if (row.house !== null && row.house !== currentHouse) continue;
+        // Children waiting for removal are done too.
+        const pending = queue.some(
+            (child) => child.parentKey === row.key && !awaitingRemoval.has(child)
+        );
+        if (!pending) return row;
+    }
+    return null;
+}
+
+/** False when the queue should stop. */
+async function finishProjectRow(
+    ctx: TaskContext,
+    dependencies: QueueRunnerDependencies,
+    row: QueueRow,
+    currentHouse: string,
+    options: QueueStartOptions,
+    tally?: QueueRunTally
+): Promise<boolean> {
+    setBridgeOperation(row.op);
+    try {
+        await dependencies.finishProject(ctx, row, currentHouse, options);
+    } catch (error) {
+        if (isTaskCancelled(error)) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        setQueueRowStatus(row.key, "failed", message);
+        if (tally !== undefined) {
+            tally.failed++;
+            tally.reason ??= message;
+        }
+        ChatLib.chat(`&c[htsw] ${row.target.label} failed: ${message}`);
+        return false;
+    }
+    const finished = getQueueRow(row.key);
+    if (finished !== null) {
+        awaitingRemoval.add(finished);
+        dependencies.scheduleDone(() => {
+            if (getQueueRow(finished.key) === finished) completeQueueRows([finished.key]);
+        });
+    }
+    return true;
+}
+
 /** The session's rows plus any dependency rows it added or pulled in. */
 function runningSessionRows(rows: readonly QueueRow[]): QueueRow[] {
     const head = rows[0];
@@ -269,12 +332,33 @@ export async function drainQueue(
     let preparedImport = false;
     for (;;) {
         ctx.checkCancelled();
+        const finishing = projectRowToFinish(currentHouse);
+        if (finishing !== null) {
+            try {
+                const proceed = await finishProjectRow(
+                    ctx,
+                    dependencies,
+                    finishing,
+                    currentHouse,
+                    options,
+                    tally
+                );
+                if (!proceed) return "idle";
+            } catch (error) {
+                if (isTaskCancelled(error)) return "paused";
+                throw error;
+            }
+            continue;
+        }
         const head = headRunnableQueueRow(currentHouse, options);
         if (head === null) return "idle";
         setBridgeOperation(head.op);
         if (head.target.kind === "bulk") {
             let children: readonly QueueRowInput[];
             try {
+                if (isProjectQueueRow(head)) {
+                    await dependencies.beginProject(ctx, head, currentHouse);
+                }
                 children = await dependencies.expandBulk(ctx, head, currentHouse);
             } catch (error) {
                 if (isTaskCancelled(error)) return "paused";
@@ -289,7 +373,7 @@ export async function drainQueue(
                 continue;
             }
             const inserted = expandBulkQueueRow(head.key, children);
-            if (inserted.length === 0) {
+            if (inserted.length === 0 && !isProjectQueueRow(head)) {
                 showToast(`${head.target.label}: nothing to do`, 0xffe5bc4b);
             }
             continue;
@@ -366,9 +450,12 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
         rejectBridgeRun("import", "busy");
         return false;
     }
-    const eligible = getQueue().find(
+    const queue = getQueue();
+    const eligible = queue.find(
         (row) =>
-            row.status === "queued" && (!options.autoRun || !isRestoredQueueRow(row.key))
+            (row.status === "queued" &&
+                (!options.autoRun || !isRestoredQueueRow(row.key))) ||
+            (!awaitingRemoval.has(row) && isUnfinishedProjectRow(row, queue))
     );
     if (!eligible) {
         rejectBridgeRun("import", "empty_queue");
@@ -772,6 +859,8 @@ const defaultDependencies: QueueRunnerDependencies = {
         }
     },
     expandBulk: expandBulkDefault,
+    beginProject: async () => undefined,
+    finishProject: async () => undefined,
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {
