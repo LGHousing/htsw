@@ -18,12 +18,15 @@ type FakePlan = {
         method: string;
         owned: boolean;
     }[];
-    unsupported: unknown[];
     scanFailures: unknown[];
 };
 
 function emptyFakePlan(): FakePlan {
-    return { targets: [], unsupported: [], scanFailures: [] };
+    return { targets: [], scanFailures: [] };
+}
+
+function fakeTarget(identity: string, owned: boolean): FakePlan["targets"][number] {
+    return { type: "FUNCTION", identity, label: identity, method: "delete", owned };
 }
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +36,8 @@ const mocks = vi.hoisted(() => ({
     taskBusy: false,
     tasksRun: 0,
     applied: [] as string[],
+    /** Identities whose removal Housing refuses. */
+    applyFails: [] as string[],
     consented: true,
     confirmAnswer: true,
     confirmCalls: 0,
@@ -75,8 +80,17 @@ vi.mock("../src/prune/apply", () => ({
         _ctx: unknown,
         targets: { identity: string }[]
     ) => {
-        for (const target of targets) mocks.applied.push(target.identity);
-        return { removed: targets, failures: [], recordPath: null, recordError: null };
+        const removed: { identity: string }[] = [];
+        const failures: { target: { identity: string }; reason: string }[] = [];
+        for (const target of targets) {
+            if (mocks.applyFails.includes(target.identity)) {
+                failures.push({ target, reason: "refused" });
+                continue;
+            }
+            mocks.applied.push(target.identity);
+            removed.push(target);
+        }
+        return { removed, failures, recordPath: null, recordError: null };
     },
     formatPruneApplyResult: () => [],
 }));
@@ -119,7 +133,6 @@ vi.mock("../src/prune/plan", () => ({
                         method: "delete",
                         owned: true,
                     })),
-                unsupported: [],
                 scanFailures: [],
             },
             renames: mocks.renames,
@@ -158,6 +171,7 @@ beforeEach(() => {
     mocks.taskBusy = false;
     mocks.tasksRun = 0;
     mocks.applied = [];
+    mocks.applyFails = [];
     mocks.consented = true;
     mocks.confirmAnswer = true;
     mocks.confirmCalls = 0;
@@ -168,6 +182,7 @@ beforeEach(() => {
     mocks.renamed = [];
     mocks.renameFails = false;
     mocks.sweepPlan = emptyFakePlan();
+    clearPruneNotice();
     vi.stubGlobal("ChatLib", { chat: (line: string) => mocks.chats.push(line) });
 });
 
@@ -262,25 +277,62 @@ describe("watchPruneOnReparse renames", () => {
 });
 
 describe("watchPruneSweep", () => {
-    it("removes owned content but only raises a notice for the rest", async () => {
+    it("removes everything undeclared, whether or not htsw made it", async () => {
         mocks.sweepPlan = {
-            targets: [
-                {
-                    type: "FUNCTION",
-                    identity: "Mine",
-                    label: "Mine",
-                    method: "delete",
-                    owned: true,
-                },
-                {
-                    type: "FUNCTION",
-                    identity: "Theirs",
-                    label: "Theirs",
-                    method: "delete",
-                    owned: false,
-                },
-            ],
-            unsupported: [],
+            targets: [fakeTarget("Mine", true), fakeTarget("Theirs", false)],
+            scanFailures: [],
+        };
+
+        watchPruneSweep(tracked);
+
+        await vi.waitFor(() => expect(mocks.applied).toEqual(["Mine", "Theirs"]));
+        expect(getPruneNotice()).toBe(null);
+    });
+
+    it("removes htsw's own work without asking once the project has consented", async () => {
+        mocks.sweepPlan = { targets: [fakeTarget("Mine", true)], scanFailures: [] };
+
+        watchPruneSweep(tracked);
+
+        await vi.waitFor(() => expect(mocks.applied).toEqual(["Mine"]));
+        expect(mocks.confirmCalls).toBe(0);
+    });
+
+    // The lock vouches only for htsw's own work; the rest is someone's work
+    // htsw has never read, so consent does not carry over to it.
+    it("asks every time before removing content htsw did not make", async () => {
+        mocks.sweepPlan = {
+            targets: [fakeTarget("Mine", true), fakeTarget("Theirs", false)],
+            scanFailures: [],
+        };
+
+        watchPruneSweep(tracked);
+
+        await vi.waitFor(() => expect(mocks.applied).toEqual(["Mine", "Theirs"]));
+        expect(mocks.confirmCalls).toBe(1);
+    });
+
+    it("leaves the house alone and raises a notice when that is declined", async () => {
+        mocks.confirmAnswer = false;
+        mocks.sweepPlan = {
+            targets: [fakeTarget("Mine", true), fakeTarget("Theirs", false)],
+            scanFailures: [],
+        };
+
+        watchPruneSweep(tracked);
+
+        await vi.waitFor(() => expect(mocks.confirmCalls).toBe(1));
+        expect(mocks.applied).toEqual([]);
+        expect(getPruneNotice()).toEqual({
+            manifestPath: manifest,
+            text: "2 undeclared left",
+        });
+    });
+
+    it("raises a notice when Housing refuses a removal", async () => {
+        mocks.applyFails = ["Stuck"];
+        mocks.sweepPlan = {
+            targets: [fakeTarget("Mine", true), fakeTarget("Stuck", true)],
             scanFailures: [],
         };
 
@@ -289,29 +341,46 @@ describe("watchPruneSweep", () => {
         await vi.waitFor(() => expect(mocks.applied).toEqual(["Mine"]));
         expect(getPruneNotice()).toEqual({
             manifestPath: manifest,
-            unownedCount: 1,
+            text: "1 not removed",
         });
-        clearPruneNotice();
     });
 
-    it("raises no notice when everything undeclared was made by htsw", async () => {
+    it("still removes what it found when part of the scan failed, but says so", async () => {
         mocks.sweepPlan = {
-            targets: [
-                {
-                    type: "FUNCTION",
-                    identity: "Mine",
-                    label: "Mine",
-                    method: "delete",
-                    owned: true,
-                },
-            ],
-            unsupported: [],
-            scanFailures: [],
+            targets: [fakeTarget("Mine", true)],
+            scanFailures: [{ type: "MENU", reason: "list did not open" }],
         };
 
         watchPruneSweep(tracked);
 
         await vi.waitFor(() => expect(mocks.applied).toEqual(["Mine"]));
-        expect(getPruneNotice()).toBe(null);
+        expect(getPruneNotice()).toEqual({
+            manifestPath: manifest,
+            text: "sweep incomplete",
+        });
+    });
+
+    it("says nothing was swept when armed outside the project's house", () => {
+        mocks.currentHouse = "house-2";
+        mocks.sweepPlan = { targets: [fakeTarget("Theirs", false)], scanFailures: [] };
+
+        watchPruneSweep(tracked);
+
+        expect(mocks.tasksRun).toBe(0);
+        expect(mocks.chats.join("\n")).toContain("nothing was swept");
+    });
+
+    it("is silent when no tracked project is armed", () => {
+        mocks.currentHouse = "house-2";
+        mocks.parses = [
+            armedParse({
+                importJson: { dangerouslyDeleteEverythingNotInThisFile: false },
+            }),
+        ];
+
+        watchPruneSweep(tracked);
+
+        expect(mocks.tasksRun).toBe(0);
+        expect(mocks.chats).toEqual([]);
     });
 });
