@@ -50,7 +50,7 @@ export function formatPrunePlan(plan: PrunePlan, manifest: string): string[] {
     appendGroup(
         lines,
         unowned,
-        "&c[htsw] Not made by htsw — can't be undone:"
+        "&c[htsw] Not made by htsw, read into the removal record first:"
     );
 
     for (const failure of plan.scanFailures) {
@@ -106,7 +106,7 @@ export function prunePlanPopoverLines(
     appendPopoverGroup(
         lines,
         unowned,
-        `Not made by htsw (${unowned.length}) — can't be undone:`
+        `Not made by htsw (${unowned.length}), read into the removal record first:`
     );
     for (const failure of plan.scanFailures) {
         lines.push(`Scan of ${failure.type.toLowerCase()}s failed, so the plan is incomplete`);

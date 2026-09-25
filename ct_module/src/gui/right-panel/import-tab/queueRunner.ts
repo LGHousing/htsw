@@ -31,6 +31,7 @@ import { readProjectExportDestination } from "../../../importables/export/projec
 import { listAllRegionNames } from "../../../importables/regions/listRegions";
 import { listAllTeamNames } from "../../../importables/teams/listTeams";
 import { exportHeldItem } from "../../../importables/items/export";
+import { beginProjectRun, finishProjectRun } from "../../../prune/projectRun";
 import { isTaskCancelled, TaskManager } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
 import { cancelActiveTask } from "../../../tasks/activeTask";
@@ -859,8 +860,11 @@ const defaultDependencies: QueueRunnerDependencies = {
         }
     },
     expandBulk: expandBulkDefault,
-    beginProject: async () => undefined,
-    finishProject: async () => undefined,
+    beginProject: beginProjectRun,
+    // Only a run you start walks the whole house. Auto-run acts on what a
+    // save stopped declaring, which house.lock answers without Housing.
+    finishProject: (ctx, row, currentHouse, options) =>
+        finishProjectRun(ctx, row, currentHouse, options.autoRun !== true),
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {
