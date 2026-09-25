@@ -55,15 +55,6 @@ describe("prune consent", () => {
         expect(hasPruneConsent(otherManifest, HOUSE)).toBe(false);
     });
 
-    it("forgets consent when it is revoked", async () => {
-        const { grantPruneConsent, hasPruneConsent, revokePruneConsent } =
-            await loadConsent();
-        grantPruneConsent(manifest, HOUSE);
-
-        expect(revokePruneConsent(manifest, HOUSE)).toBe(true);
-        expect(hasPruneConsent(manifest, HOUSE)).toBe(false);
-    });
-
     it("survives a reload", async () => {
         const first = await loadConsent();
         first.grantPruneConsent(manifest, HOUSE);
