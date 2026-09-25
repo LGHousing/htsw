@@ -709,6 +709,7 @@ function reExportImportableAction(
         label: "Queue export",
         icon: Icons.refreshCw,
         disabled: () => getHousingUuid() === null,
+        tooltip: joinHouseFirstTooltip,
         onClick: () => {
             openConfirmPopover({
                 title: "Re-export 1 declared from the house?",
@@ -846,12 +847,18 @@ function runProjectDeepRead(
     autoRunQueueChanged();
 }
 
+// For menu entries that need a joined house: the grey state alone doesn't say
+// why. An empty tooltip draws nothing, so the enabled state has no chip.
+const joinHouseFirstTooltip = (): string =>
+    getHousingUuid() === null ? "Join a house first" : "";
+
 function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
     if (HOUSE_READERS[imp.type] === null) return null;
     return {
         label: "Queue read",
         icon: Icons.scanEye,
         disabled: () => getHousingUuid() === null,
+        tooltip: joinHouseFirstTooltip,
         onClick: () => {
             const housingUuid = getHousingUuid();
             if (housingUuid === null) return;
@@ -1479,6 +1486,7 @@ export function resultRow(
                       label: `Queue export from house (${exportCount})`,
                       icon: Icons.refreshCw,
                       disabled: () => getHousingUuid() === null,
+                      tooltip: joinHouseFirstTooltip,
                       onClick: () =>
                           confirmProjectReExport(
                               r,
@@ -1491,6 +1499,7 @@ export function resultRow(
                       label: `Queue read from house (${deepReadableCount(filteredImportables)})`,
                       icon: Icons.scanEye,
                       disabled: () => getHousingUuid() === null,
+                      tooltip: joinHouseFirstTooltip,
                       onClick: () =>
                           runProjectDeepRead(r, r.fullPath, filteredImportables, narrowed),
                   },
@@ -1644,6 +1653,7 @@ export function includeGroupRow(
                 label: `Queue export from house (${count})`,
                 icon: Icons.refreshCw,
                 disabled: () => getHousingUuid() === null,
+                tooltip: joinHouseFirstTooltip,
                 onClick: () =>
                     confirmProjectReExport(parent, fullPath, declaredImportables, narrowed),
             },
@@ -1651,6 +1661,7 @@ export function includeGroupRow(
                 label: `Queue read from house (${deepReadableCount(declaredImportables)})`,
                 icon: Icons.scanEye,
                 disabled: () => getHousingUuid() === null,
+                tooltip: joinHouseFirstTooltip,
                 onClick: () =>
                     runProjectDeepRead(parent, fullPath, declaredImportables, narrowed),
             },

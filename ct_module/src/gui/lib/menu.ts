@@ -3,7 +3,7 @@
 import { Element, Rect } from "./layout";
 import { Button, Col, Container } from "./components";
 import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
-import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
+import { COLOR_PANEL, COLOR_PANEL_BORDER, COLOR_TEXT_FAINT } from "./theme";
 import type { IconName } from "./icons.generated";
 import type { Extractable } from "./extractable";
 
@@ -14,6 +14,8 @@ export type MenuAction =
           onClick: () => void;
           icon?: IconName;
           disabled?: Extractable<boolean>;
+          // Hover chip, mainly to explain why an entry is disabled.
+          tooltip?: Extractable<string>;
       }
     | { kind: "separator" };
 
@@ -38,6 +40,7 @@ function isAction(
     onClick: () => void;
     icon?: IconName;
     disabled?: Extractable<boolean>;
+    tooltip?: Extractable<string>;
 } {
     return a.kind !== "separator";
 }
@@ -69,6 +72,8 @@ function actionElement(
         text: a.label,
         icon: a.icon,
         disabled: a.disabled,
+        tooltip: a.tooltip,
+        tooltipColor: COLOR_TEXT_FAINT,
         // Idle items match the menu panel (only hover lights up): with the
         // default button gray, the item rectangle reads as the menu's box and
         // the panel's own padding looks like a lopsided border instead.
