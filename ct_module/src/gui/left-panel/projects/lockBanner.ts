@@ -40,6 +40,11 @@ import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./row
 // mtime; the mtime is polled once a second from the overlay's render tick so
 // a `git pull` shows up without a reload or any other interaction.
 //
+// The status context moves on every cache write, warm batch and seeded hash,
+// so a project's first frames can see it change several times. Only a new
+// parse or lock evaluates inside the tree build; a context change keeps the
+// last count and re-evaluates from the poll, at most once a second.
+//
 // While a task runs the banner is hidden outright: an import rewrites
 // house.lock.json entry by entry while the cache catches up, so the lock is
 // briefly "ahead" of the cache on every step and the banner would flash in
@@ -49,6 +54,7 @@ import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./row
 export type LockBannerState = { count: number; lockMtime: number };
 
 type Evaluated = {
+    project: ResultImport;
     parse: object;
     statusKey: string;
     lockMtime: number;
@@ -56,8 +62,12 @@ type Evaluated = {
 };
 
 const LOCK_POLL_MS = 1000;
+const REEVALUATE_MS = 1000;
 
 const evaluatedByProject = new Map<string, Evaluated>();
+// Projects whose status context moved since they were last evaluated.
+const staleProjects = new Set<string>();
+let lastReevaluatedAt = 0;
 const lockMtimeByProject = new Map<string, number>();
 const dismissedByProject = new Map<string, number>();
 let revision = 0;
@@ -85,9 +95,28 @@ export function pollLockBanners(): void {
             if (!busy) changed++;
         });
     }
+    if (!busy && staleProjects.size > 0 && now - lastReevaluatedAt >= REEVALUATE_MS) {
+        lastReevaluatedAt = now;
+        changed += reevaluateStale();
+    }
     if (changed === 0) return;
     revision++;
     markGuiDirty();
+}
+
+function reevaluateStale(): number {
+    const housingUuid = getHousingUuid();
+    let changed = 0;
+    staleProjects.forEach((key) => {
+        const cached = evaluatedByProject.get(key);
+        if (cached === undefined || housingUuid === null) return;
+        const statusKey = importableLinkStatusContextKey();
+        const state = evaluate(cached.project, housingUuid, cached.lockMtime);
+        if (state?.count !== cached.state?.count) changed++;
+        evaluatedByProject.set(key, { ...cached, statusKey, state });
+    });
+    staleProjects.clear();
+    return changed;
 }
 
 export function getLockBannerRevision(): number {
@@ -129,16 +158,13 @@ export function lockBannerFor(r: ResultImport): LockBannerState | null {
     if (dismissedByProject.get(key) === lockMtime) return null;
     const statusKey = importableLinkStatusContextKey();
     const cached = evaluatedByProject.get(key);
-    if (
-        cached !== undefined &&
-        cached.parse === r.parse &&
-        cached.statusKey === statusKey &&
-        cached.lockMtime === lockMtime
-    ) {
+    if (cached !== undefined && cached.parse === r.parse && cached.lockMtime === lockMtime) {
+        if (cached.statusKey !== statusKey) staleProjects.add(key);
         return cached.state;
     }
     const state = evaluate(r, current, lockMtime);
-    evaluatedByProject.set(key, { parse: r.parse, statusKey, lockMtime, state });
+    staleProjects.delete(key);
+    evaluatedByProject.set(key, { project: r, parse: r.parse, statusKey, lockMtime, state });
     return state;
 }
 

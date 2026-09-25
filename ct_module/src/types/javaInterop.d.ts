@@ -338,6 +338,8 @@ declare global {
         getAbsolutePath(): unknown;
         getParentFile(): HtswJavaFile | null;
         length(): unknown;
+        /** Entry names, or null when the path is not a readable directory. */
+        list(): ArrayLike<unknown> | null;
         mkdirs(): boolean;
     }
 

@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { debugLog } from "../gui/lib/debugLog";
+import { getMinecraft } from "../utils/java";
 
 /**
  * Named slices of client-thread work for `/htsw lagprobe`. When scripts run
@@ -38,8 +39,19 @@ export function clearSlowSpans(): void {
     slowSpans.length = 0;
 }
 
+// CT's setTimeout runs callbacks on a fresh Java thread, so some spanned work
+// runs off the client thread. It can't stall the game, and sharing one stack
+// with the client thread would scramble both threads' nesting.
+function onClientThread(): boolean {
+    try {
+        return getMinecraft().func_152345_ab();
+    } catch (_e) {
+        return true;
+    }
+}
+
 export function span<T>(name: string, fn: () => T): T {
-    if (thresholdMs < 0) return fn();
+    if (thresholdMs < 0 || !onClientThread()) return fn();
     stack.push(name);
     activePath = stack.join(" > ");
     const startedAt = Date.now();

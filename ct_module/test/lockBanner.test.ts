@@ -148,18 +148,39 @@ describe("lockBannerFor", () => {
         expect(reloaded.lockBannerFor(project([behind]))).toBeNull();
     });
 
-    it("memoizes on the status context and re-evaluates when it changes", async () => {
+    it("re-evaluates a changed status context from the poll, not the tree build", async () => {
         const behind = fn("Behind", "same");
         writeLock(files, [behind]);
         state.statuses.set("Behind", "modified");
-        const { lockBannerFor } = await import("../src/gui/left-panel/projects/lockBanner");
+        const banner = await import("../src/gui/left-panel/projects/lockBanner");
         const r = project([behind]);
 
-        expect(lockBannerFor(r)?.count).toBe(1);
+        expect(banner.lockBannerFor(r)?.count).toBe(1);
         state.statuses.set("Behind", "current");
-        expect(lockBannerFor(r)?.count).toBe(1);
-        state.statusKey = "ctx-2";
-        expect(lockBannerFor(r)).toBeNull();
+        expect(banner.lockBannerFor(r)?.count).toBe(1);
+
+        vi.useFakeTimers();
+        try {
+            state.statusKey = "ctx-2";
+            expect(banner.lockBannerFor(r)?.count).toBe(1);
+
+            banner.pollLockBanners();
+            expect(state.dirtyMarks).toBe(1);
+            expect(banner.lockBannerFor(r)).toBeNull();
+
+            // Another move within the second waits for the next window.
+            state.statuses.set("Behind", "modified");
+            state.statusKey = "ctx-3";
+            expect(banner.lockBannerFor(r)).toBeNull();
+            banner.pollLockBanners();
+            expect(banner.lockBannerFor(r)).toBeNull();
+            vi.advanceTimersByTime(1500);
+            banner.pollLockBanners();
+            expect(state.dirtyMarks).toBe(2);
+            expect(banner.lockBannerFor(r)?.count).toBe(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("notices a rewritten lock from the render-tick poll and dirties the GUI", async () => {
