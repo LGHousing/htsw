@@ -317,7 +317,7 @@ async function runImportSessionInner(
             rowIndex,
             trustPlan: tp,
             units:
-                tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
+                tp?.wholeImportableTrusted === true
                     ? 1
                     : estimateImportableUnits(
                           importable,
@@ -382,7 +382,10 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
+            // A trusted ITEM has nothing left to do in the house; handing the
+            // player a copy is the projects panel's Give action, not an import
+            // side effect.
+            if (row.trustPlan?.wholeImportableTrusted) {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
                 events?.emit({
                     kind: "importableScanCompleted",
