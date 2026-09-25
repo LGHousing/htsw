@@ -71,6 +71,7 @@ import {
 } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
+import { giveAllItemsMenuAction, giveItemMenuAction } from "../../menus/giveItemMenu";
 import { autoTrackRefresh, needsModifiedQueue } from "../../autoTrack";
 import { autoRunQueueChanged } from "../../autoRun";
 import { autoTrackBlock, autoTrackBoundHouse } from "../../autoTrackScope";
@@ -906,6 +907,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                 if (toggleQueue(item)) autoRunQueueChanged();
             },
         },
+        ...(imp.type === "ITEM" ? [giveItemMenuAction(imp)] : []),
         ...(reExport !== null ? [reExport] : []),
         ...(deepRead !== null ? [deepRead] : []),
         { kind: "separator" },
@@ -1503,6 +1505,7 @@ export function resultRow(
                       onClick: () =>
                           runProjectDeepRead(r, r.fullPath, filteredImportables, narrowed),
                   },
+                  ...giveAllItemsMenuAction(filteredImportables),
                   { kind: "separator" },
                   openInViewAction(r.fullPath, importJsonPath),
                   { kind: "separator" },
@@ -1665,6 +1668,7 @@ export function includeGroupRow(
                 onClick: () =>
                     runProjectDeepRead(parent, fullPath, declaredImportables, narrowed),
             },
+            ...giveAllItemsMenuAction(declaredImportables),
             { kind: "separator" },
             openInViewAction(fullPath, parent.fullPath),
             { kind: "separator" },

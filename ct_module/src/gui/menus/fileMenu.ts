@@ -14,6 +14,7 @@ import {
     removeFromQueue,
 } from "../right-panel/import-tab/queue";
 import { appendRawHtslFile } from "../../rawHtslImport";
+import { giveRawSnbtMenuAction } from "./giveItemMenu";
 
 function isImportJsonPath(filePath: string): boolean {
     const normalized = filePath.split("\\").join("/").toLowerCase();
@@ -74,6 +75,9 @@ function genericFileActions(filePath: string, importJsonPath?: string | null): M
             label: "Append to open action list",
             onClick: () => appendRawHtslFile(filePath),
         });
+    }
+    if (filePath.toLowerCase().endsWith(".snbt")) {
+        actions.unshift(giveRawSnbtMenuAction(filePath));
     }
     if (queueAction !== null) actions.unshift(queueAction);
     return actions;
