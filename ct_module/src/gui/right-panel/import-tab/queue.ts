@@ -102,6 +102,29 @@ function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueRow {
     return row;
 }
 
+/**
+ * A whole project queued for import: the entry import.json, scoped to itself.
+ * Unlike other bulk rows it outlives its children, because its run ends with a
+ * finishing step once every child is done.
+ */
+export function isProjectQueueRow(row: QueueRow): boolean {
+    return (
+        row.op === "import" &&
+        row.target.kind === "bulk" &&
+        row.target.scope.kind === "file" &&
+        row.target.scope.path === row.path
+    );
+}
+
+/** A project row whose children are all done but whose finishing step is not. */
+export function isUnfinishedProjectRow(
+    row: QueueRow,
+    rows: readonly QueueRow[]
+): boolean {
+    if (row.status !== "running" || !isProjectQueueRow(row)) return false;
+    return !rows.some((child) => child.parentKey === row.key);
+}
+
 export function makeImportableQueueRow(args: {
     op: QueueOp;
     house: string | null;
@@ -328,6 +351,7 @@ function removeEmptyParents(): void {
             if (
                 row.target.kind === "bulk" &&
                 row.status === "running" &&
+                !isProjectQueueRow(row) &&
                 !parentsWithChildren.has(row.key)
             ) {
                 emptyParents.add(row.key);
@@ -373,7 +397,7 @@ export function expandBulkQueueRow(
         seen.add(child.key);
         inserted.push(child);
     }
-    if (inserted.length === 0) {
+    if (inserted.length === 0 && !isProjectQueueRow(parent)) {
         completeQueueRows([parentKey]);
         return [];
     }
@@ -685,12 +709,8 @@ export function runnableQueueRowCount(
 ): number {
     let count = 0;
     for (const row of rows) {
-        if (
-            row.status === "queued" &&
-            (row.house === null || row.house === currentHouse)
-        ) {
-            count++;
-        }
+        if (row.house !== null && row.house !== currentHouse) continue;
+        if (row.status === "queued" || isUnfinishedProjectRow(row, rows)) count++;
     }
     return count;
 }

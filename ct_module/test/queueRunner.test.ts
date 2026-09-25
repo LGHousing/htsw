@@ -60,6 +60,17 @@ function row(
     });
 }
 
+function projectRow(path: string): QueueRow {
+    return makeBulkQueueRow({
+        op: "import",
+        house: "house-a",
+        path,
+        scope: { kind: "file", path },
+        filter: "modified",
+        label: "project",
+    });
+}
+
 function enqueue(queueRow: QueueRow): void {
     const result = addToQueue(queueRow);
     expect(["added", "alsoQueuedOtherDirection"]).toContain(result.kind);
@@ -76,6 +87,8 @@ function dependencies(
         currentHouse: async () => "house-a",
         beforeFirstImport: async () => undefined,
         expandBulk: async () => [],
+        beginProject: async () => undefined,
+        finishProject: async () => undefined,
         runImport: async (_ctx, rows) => complete(rows),
         runExport: async (_ctx, rows) => complete(rows),
         scheduleDone: (callback) => callback(),
@@ -238,6 +251,99 @@ describe("operation queue drain", () => {
             "fresh-new",
             "fresh-changed",
             "fresh-unread",
+        ]);
+    });
+
+    it("finishes a project row after its importables, and only then", async () => {
+        const path = "/project/import.json";
+        const project = projectRow(path);
+        enqueue(project);
+        const calls: string[] = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                beginProject: async () => {
+                    calls.push("begin");
+                },
+                expandBulk: async (_ctx, parent) => {
+                    calls.push("expand");
+                    return [{ ...row("child", "import", path), parentKey: parent.key }];
+                },
+                runImport: async (_ctx, rows) => {
+                    calls.push(`import ${rows.map((r) => r.target.label).join(",")}`);
+                    return complete(rows);
+                },
+                finishProject: async (_ctx, finished) => {
+                    calls.push(`finish ${finished.target.label}`);
+                },
+            })
+        );
+        expect(calls).toEqual(["begin", "expand", "import child", "finish project"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("still finishes a project row that has nothing to import", async () => {
+        enqueue(projectRow("/project/import.json"));
+        const finished: string[] = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                finishProject: async (_ctx, finishing) => {
+                    finished.push(finishing.target.label);
+                },
+            })
+        );
+        expect(finished).toEqual(["project"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("does not finish a project row whose import failed", async () => {
+        const path = "/project/import.json";
+        const project = projectRow(path);
+        enqueue(project);
+        const child = { ...row("child", "import", path), parentKey: project.key };
+        let finished = 0;
+        await drainQueue(
+            ctx,
+            dependencies({
+                expandBulk: async () => [child],
+                runImport: async (_ctx, rows) => ({
+                    completedKeys: [],
+                    failed: [{ key: rows[0].key, error: "boom" }],
+                }),
+                finishProject: async () => {
+                    finished++;
+                },
+            })
+        );
+        expect(finished).toBe(0);
+        expect(getQueue().map((r) => [r.target.label, r.status])).toEqual([
+            ["project", "running"],
+            ["child", "failed"],
+        ]);
+    });
+
+    it("fails the project row and stops when finishing throws", async () => {
+        const later = row("later", "import", "/later/import.json");
+        enqueue(projectRow("/project/import.json"));
+        enqueue(later);
+        let imports = 0;
+        await drainQueue(
+            ctx,
+            dependencies({
+                runImport: async (_ctx, rows) => {
+                    imports++;
+                    return complete(rows);
+                },
+                finishProject: async () => {
+                    throw new Error("scan broke");
+                },
+            })
+        );
+        expect(imports).toBe(0);
+        expect(getQueue().map((r) => [r.target.label, r.status, r.error])).toEqual([
+            ["project", "failed", "scan broke"],
+            ["later", "queued", null],
         ]);
     });
 
