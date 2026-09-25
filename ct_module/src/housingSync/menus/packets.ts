@@ -1,6 +1,13 @@
 import TaskContext from "../../tasks/context";
-import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../../utils/packets";
+import {
+    C10PacketCreativeInventoryAction,
+    S2FPacketSetSlot,
+    setSlotPacketSlot,
+    setSlotPacketStack,
+    setSlotPacketWindowId,
+} from "../../utils/packets";
 import { getPlayer, sendPacket } from "../../utils/java";
+import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -12,6 +19,28 @@ export const SET_SLOT_ACK_MAX_TICKS = 40;
 
 export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
     return ctx.waitFor("packetReceived", (packet) => packet instanceof S2FPacketSetSlot);
+}
+
+/**
+ * Waiter for the player-inventory S2FPacketSetSlot that acknowledges a
+ * creative edit of `packetSlot`. Register it BEFORE sending the edit: the
+ * house can overwrite the slot within the same tick the ack lands (a loop
+ * that swaps the item, say), and a once-per-tick inventory poll then never
+ * sees the accepted stack. Callers must `cleanupWaiter` it.
+ */
+export function waitForSetSlotAck(
+    ctx: TaskContext,
+    packetSlot: number,
+    accepts: (stack: HtswMinecraftItemStack | null) => boolean
+): WaitForPromise<[Packet]> {
+    return ctx.waitFor(
+        "packetReceived",
+        (packet) =>
+            packet instanceof S2FPacketSetSlot &&
+            setSlotPacketWindowId(packet) === 0 &&
+            setSlotPacketSlot(packet) === packetSlot &&
+            accepts(setSlotPacketStack(packet))
+    );
 }
 
 export function sendCreativeInventoryAction(

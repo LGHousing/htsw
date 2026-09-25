@@ -18,6 +18,7 @@ import {
     itemWithInteractData,
 } from "../../utils/nbt";
 import { heldItem } from "../../housingSync/items/playerInventory";
+import { assertHeldStackIs } from "../../housingSync/items/heldItem";
 import type { ImportContext } from "../import/context";
 import type { ItemDependencyIndex } from "./dependencyIndex";
 import { itemEditorOpened } from "../waiters";
@@ -198,9 +199,10 @@ export async function applyImportableItemPlan(
 
     await application.run("placeItem", () => session.itemPlacement.place(ctx, plan.item));
 
-    await application.run("openItemEditor", () =>
-        ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened())
-    );
+    await application.run("openItemEditor", () => {
+        assertHeldStackIs(plan.item, importable.name);
+        return ctx.expectAfter(() => ctx.runCommand("/edit"), itemEditorOpened());
+    });
 
     await application.run("openActionsEditor", async () => {
         ctx.getItemSlot("Edit Actions").click();

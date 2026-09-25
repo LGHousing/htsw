@@ -6,9 +6,10 @@ import {
     SET_SLOT_ACK_MAX_TICKS,
     selectedHotbarSlot,
     sendCreativeInventoryAction,
+    waitForSetSlotAck,
 } from "../menus/packets";
 import {
-    clearInventorySlot,
+    heldItem,
     inventorySlotToPacketSlot,
     readInventorySlot,
     restoreInventorySlots,
@@ -51,8 +52,9 @@ export function createImportedItemPlacementSession(): ImportedItemPlacementSessi
                 );
             }
 
+            // No clear first: a creative set replaces the slot outright, and a
+            // clear that must stay empty aborts whenever the server refills it.
             try {
-                await clearInventorySlot(ctx, 0, "player");
                 await placeInHotbarSlot(ctx, 0, stack);
             } catch (error) {
                 await restoreBorrowedSlot(ctx, borrowed);
@@ -90,10 +92,7 @@ export async function temporarilyHoldItem(
         selectedHotbarSlot: selectedHotbarSlot(),
     };
     try {
-        if (held.slot.nbt !== null) {
-            await clearInventorySlot(ctx, slotId, "player");
-        }
-        await injectIntoHotbarSlot(ctx, slotId, stack);
+        await injectIntoInventorySlot(ctx, slotId, stack);
         await selectHotbarSlotAndWait(ctx, slotId);
         return held;
     } catch (error) {
@@ -121,20 +120,82 @@ function findEmptyHotbarSlot(): number | undefined {
     return undefined;
 }
 
-async function injectIntoHotbarSlot(
+/**
+ * Creative-set `stack` into inventory slot `slotId` (0-8 hotbar, 9-35 main)
+ * and wait for Hypixel to confirm it. The S2FPacketSetSlot ack counts as
+ * acceptance whatever the slot holds afterwards: a house loop or event can
+ * swap the item out within the same tick, which an inventory poll alone
+ * would misreport as rejected SNBT.
+ */
+export async function injectIntoInventorySlot(
     ctx: TaskContext,
     slotId: number,
     stack: MCItemStack
 ): Promise<void> {
-    sendCreativeInventoryAction(ctx, inventorySlotToPacketSlot(slotId), stack);
-    if (!(await waitForStack(ctx, slotId, stack))) {
-        const observed = Player.getInventory()?.getStackInSlot(slotId)?.getItemStack();
-        throw new Error(
-            `Hypixel did not accept this item into your hotbar. Check that its SNBT is formatted correctly ` +
-                `(slot ${slotId} holds: ${JSON.stringify(summarizeItemStack(observed))}).`
+    const packetSlot = inventorySlotToPacketSlot(slotId);
+    // Latched inside the predicate, which runs as the packet arrives; the
+    // promise itself is only held so the waiter can be cleaned up.
+    let acked = false;
+    const ack = waitForSetSlotAck(ctx, packetSlot, (received) => {
+        if (received === null || !stacksMatch(received, stack)) return false;
+        acked = true;
+        return true;
+    });
+    ack.catch(() => {});
+    let accepted: boolean;
+    try {
+        sendCreativeInventoryAction(ctx, packetSlot, stack);
+        accepted = await pollTicks(
+            ctx,
+            SET_SLOT_ACK_MAX_TICKS,
+            () => acked || slotHolds(slotId, stack)
         );
+    } finally {
+        ack.cleanupWaiter?.();
+    }
+    if (!accepted) {
+        throw new Error(describeRejectedStack(slotId));
     }
     await ctx.waitFor("tick");
+}
+
+function describeRejectedStack(slotId: number): string {
+    const observed = Player.getInventory()?.getStackInSlot(slotId)?.getItemStack() as
+        MCItemStack | null | undefined;
+    const holds = JSON.stringify(summarizeItemStack(observed));
+    if (observed !== null && observed !== undefined) {
+        return (
+            `Hypixel never confirmed this item in your inventory, and slot ${slotId} now holds ${holds}. ` +
+                `Either something in the house (a loop or event reacting to the item) replaced it, ` +
+                `or the SNBT was rejected.`
+        );
+    }
+    return (
+        `Hypixel did not accept this item into your inventory. Check that its SNBT is formatted correctly ` +
+            `(slot ${slotId} holds: ${holds}).`
+    );
+}
+
+/**
+ * The placed item must still be in hand before `/edit`. Editing whatever the
+ * house swapped in would attach the click actions to the wrong item.
+ */
+export function assertHeldStackIs(item: Item, label: string): void {
+    const expected = item.getItemStack() as MCItemStack | null;
+    const current = heldItem()?.getItemStack() as MCItemStack | null | undefined;
+    if (
+        expected !== null &&
+        current !== null &&
+        current !== undefined &&
+        stacksMatch(current, expected)
+    ) {
+        return;
+    }
+    throw new Error(
+        `The house replaced '${label}' in your hotbar before it could be edited ` +
+            `(slot ${selectedHotbarSlot()} now holds ${JSON.stringify(summarizeItemStack(current))}). ` +
+            `A loop or event in the house reacts to this item; pause it and retry.`
+    );
 }
 
 async function placeInHotbarSlot(
@@ -142,22 +203,14 @@ async function placeInHotbarSlot(
     slotId: number,
     stack: MCItemStack
 ): Promise<void> {
-    await injectIntoHotbarSlot(ctx, slotId, stack);
+    await injectIntoInventorySlot(ctx, slotId, stack);
     await selectHotbarSlotAndWait(ctx, slotId);
 }
 
-async function waitForStack(
-    ctx: TaskContext,
-    slotId: number,
-    expected: MCItemStack
-): Promise<boolean> {
-    return pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => {
-        const current = Player.getInventory()?.getStackInSlot(slotId)?.getItemStack() as
-            MCItemStack | null | undefined;
-        return (
-            current !== null && current !== undefined && stacksMatch(current, expected)
-        );
-    });
+function slotHolds(slotId: number, expected: MCItemStack): boolean {
+    const current = Player.getInventory()?.getStackInSlot(slotId)?.getItemStack() as
+        MCItemStack | null | undefined;
+    return current !== null && current !== undefined && stacksMatch(current, expected);
 }
 
 function stacksMatch(current: MCItemStack, expected: MCItemStack): boolean {
