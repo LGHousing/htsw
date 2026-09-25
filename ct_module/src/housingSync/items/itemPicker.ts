@@ -144,8 +144,12 @@ export async function selectItemFromOpenInventory(
             (candidate) => candidate.getSlotId() === targetSlotInContainer
         );
         if (slot === null) {
+            // The item landed (checked above) and was gone a tick later, so
+            // something server-side took it out of the inventory.
+            const itemName = removedFormatting(item.getName());
             throw new Error(
-                `Could not find injected item for "${label}" selection at container slot ${targetSlotInContainer}.`
+                `"${itemName}" was removed from your inventory right after htsw spawned it for "${label}". ` +
+                    `A house script might have taken it.`
             );
         }
         slot.click();
