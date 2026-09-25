@@ -6,6 +6,7 @@ import { isTaskCancelled } from "../tasks/manager";
 import { deleteImportableCache, readImportableCache } from "../importCache/cache";
 import { removeHouseLockImportables } from "../importCache/houseLock";
 import { HOUSE_READERS } from "../importables/export/readers";
+import { importableIdentity } from "../importables/identity";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { runImportSession } from "../importables/import/session";
 import { pruneTypeOf } from "./registry";
@@ -52,17 +53,14 @@ export async function applyPrunePlan(
     };
     if (targets.length === 0) return result;
 
-    const entries: PruneRecordEntry[] = [];
-    for (const target of targets) {
-        ctx.checkCancelled();
-        entries.push({
-            type: target.type,
-            identity: target.identity,
-            method: target.method,
-            previouslyImported: target.owned,
-            content: await knownContent(ctx, target, request),
-        });
-    }
+    const contents = await knownContents(ctx, targets, request);
+    const entries: PruneRecordEntry[] = targets.map((target) => ({
+        type: target.type,
+        identity: target.identity,
+        method: target.method,
+        previouslyImported: target.owned,
+        content: contents.get(contentKey(target.type, target.identity)) ?? null,
+    }));
 
     try {
         result.recordPath = writePruneRecord(
@@ -144,50 +142,76 @@ async function clearEventActions(
     }
 }
 
-/** Content for the record: free from the cache, or a full house read on rescue. */
-async function knownContent(
-    ctx: TaskContext,
-    target: PruneTarget,
-    request: PruneApplyRequest
-): Promise<Importable | null> {
-    const cached = readImportableCache(
-        request.housingUuid,
-        target.type,
-        target.identity
-    );
-    if (cached !== null && cached.verified === true) return cached.importable;
-    if (request.rescue !== true) return null;
-    return readLiveContent(ctx, target, request);
+function contentKey(type: Importable["type"], identity: string): string {
+    return `${type}:${identity.trim().toLowerCase()}`;
 }
 
-async function readLiveContent(
+/**
+ * Content for the record: free from the cache, or read from the house on rescue.
+ * Rescue reads each type in one batch, since every reader call pays for its
+ * own setup.
+ */
+async function knownContents(
     ctx: TaskContext,
-    target: PruneTarget,
+    targets: readonly PruneTarget[],
     request: PruneApplyRequest
-): Promise<Importable | null> {
+): Promise<Map<string, Importable>> {
+    const contents = new Map<string, Importable>();
+    const unread = new Map<PruneTarget["type"], string[]>();
+    for (const target of targets) {
+        const cached = readImportableCache(
+            request.housingUuid,
+            target.type,
+            target.identity
+        );
+        if (cached !== null && cached.verified === true) {
+            contents.set(contentKey(target.type, target.identity), cached.importable);
+            continue;
+        }
+        const names = unread.get(target.type);
+        if (names === undefined) unread.set(target.type, [target.identity]);
+        else names.push(target.identity);
+    }
+    if (request.rescue !== true) return contents;
+    for (const [type, names] of unread) {
+        ctx.checkCancelled();
+        await readLiveContents(ctx, type, names, request, contents);
+    }
+    return contents;
+}
+
+async function readLiveContents(
+    ctx: TaskContext,
+    type: PruneTarget["type"],
+    names: readonly string[],
+    request: PruneApplyRequest,
+    contents: Map<string, Importable>
+): Promise<void> {
     // ITEM is the only type without a reader, and also the only unprunable one.
-    const reader = HOUSE_READERS[target.type];
-    let read: Importable | null = null;
+    const reader = HOUSE_READERS[type];
     try {
         await reader(ctx, {
             importJsonPath: request.manifestPath,
             rootDir: "",
             projectItems: projectItemsFromParsedImportJson(request.parsed),
-            names: [target.identity],
+            parsed: request.parsed,
+            names,
             quiet: true,
             output: {
                 kind: "memory",
                 housingUuid: request.housingUuid,
                 accept: (importable) => {
-                    read = importable;
+                    contents.set(
+                        contentKey(importable.type, importableIdentity(importable)),
+                        importable
+                    );
                 },
             },
         });
     } catch (error) {
+        // What was read before the failure still makes the record.
         if (isTaskCancelled(error)) throw error;
-        return null;
     }
-    return read;
 }
 
 /**
