@@ -78,11 +78,12 @@ registerBadge(() => {
     if (isWatchPruneRunning()) {
         return { text: "AUTO-RUN: pruning…", color: AUTO_RUN_COLOR, pulse: true };
     }
-    // Auto-run found this and will not act on it, so it outranks the idle badge.
+    // The house is known not to match the file and auto-run will not retry on
+    // its own, so it outranks the idle badge.
     const notice = getPruneNotice();
     if (notice !== null && !startedByAutoRun) {
         return {
-            text: `AUTO-RUN: ${notice.unownedCount} undeclared — /htsw prune`,
+            text: `AUTO-RUN: ${notice.text} — /htsw prune`,
             color: AUTO_RUN_COLOR,
             pulse: true,
         };
@@ -356,6 +357,6 @@ export function setAutoRunEnabled(enabled: boolean): void {
     );
     autoRunQueueChanged();
     // The one full house scan of an auto-run session, and the only chance to
-    // notice content htsw did not create — the lock cannot describe any of it.
+    // remove content htsw did not create — the lock cannot describe any of it.
     watchPruneSweep(getActiveAutoTrackSources());
 }

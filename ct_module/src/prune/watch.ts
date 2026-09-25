@@ -13,29 +13,22 @@ import { scanHousePrunePlan, vanishedWork } from "./plan";
 import { applyRenames, type PruneRename } from "./rename";
 import { formatPrunePlan, summarizeTargets } from "./report";
 import { confirmPrune } from "./session";
-import {
-    ownedTargets,
-    prunePlanIsEmpty,
-    unownedTargets,
-    type PrunePlan,
-    type PruneTarget,
-} from "./types";
+import type { PrunePlan, PruneTarget } from "./types";
 
 const PRUNE_COLOR = 0xffe85c5c;
 
 /**
- * An armed, tracked project whose house we are standing in. Armed comes from the
- * parse rather than a setting, so removing the key from the file disarms it
- * immediately.
+ * An armed, tracked project. Armed comes from the parse rather than a setting,
+ * so removing the key from the file disarms it immediately.
  */
 type ArmedProject = {
     path: string;
     parsed: ImportablesParseResult;
+    /** The house the project is bound to; armed manifests always have one. */
+    houseUuid: string | null;
 };
 
 function armedTrackedProjects(trackedSources: ReadonlySet<string>): ArmedProject[] {
-    const uuid = getHousingUuid();
-    if (uuid === null) return [];
     const projects: ArmedProject[] = [];
     forEachCachedParse((entry) => {
         if (!trackedSources.has(entry.canonicalPath)) return;
@@ -44,10 +37,22 @@ function armedTrackedProjects(trackedSources: ReadonlySet<string>): ArmedProject
         if (!parsed.importJson.dangerouslyDeleteEverythingNotInThisFile) return;
         // A parse with hard errors declares less than the project really has.
         if (hasBlockingDiagnostics(parsed)) return;
-        if (autoTrackBoundHouse(entry.canonicalPath) !== uuid) return;
-        projects.push({ path: entry.canonicalPath, parsed });
+        projects.push({
+            path: entry.canonicalPath,
+            parsed,
+            houseUuid: autoTrackBoundHouse(entry.canonicalPath),
+        });
     });
     return projects;
+}
+
+/** Armed projects bound to the house we are standing in. */
+function armedProjectsHere(trackedSources: ReadonlySet<string>): ArmedProject[] {
+    const uuid = getHousingUuid();
+    if (uuid === null) return [];
+    return armedTrackedProjects(trackedSources).filter(
+        (project) => project.houseUuid === uuid
+    );
 }
 
 function hasBlockingDiagnostics(parsed: ImportablesParseResult): boolean {
@@ -58,13 +63,15 @@ function hasBlockingDiagnostics(parsed: ImportablesParseResult): boolean {
 }
 
 /**
- * Something undeclared is in the house that watch will not remove on its own.
- * Not a stored plan — the house may have moved on by the time anyone reviews it,
- * so reviewing re-scans.
+ * The house was left not matching the file, and watch will not retry on its
+ * own: a declined confirmation, a removal Housing refused, or a scan that could
+ * not finish. Not a stored plan — the house may have moved on by the time anyone
+ * reviews it, so reviewing re-scans.
  */
 type PruneNotice = {
     manifestPath: string;
-    unownedCount: number;
+    /** Short badge text, e.g. "3 undeclared left". */
+    text: string;
 };
 
 let notice: PruneNotice | null = null;
@@ -82,22 +89,11 @@ export function clearPruneNotice(): void {
     notice = null;
 }
 
-function raiseNotice(manifestPath: string, targets: readonly PruneTarget[]): void {
-    if (targets.length === 0) return;
-    notice = { manifestPath, unownedCount: targets.length };
-    showToast(
-        `${summarizeTargets(targets)} aren't in your file, and htsw didn't make ` +
-            "them — /htsw prune to review",
-        PRUNE_COLOR,
-        10000,
-        "prune-review"
-    );
+function raiseNotice(manifestPath: string, text: string): void {
+    notice = { manifestPath, text };
+    showToast(`${text} — /htsw prune to review`, PRUNE_COLOR, 10000, "prune-review");
     ChatLib.chat(
-        `&c[htsw] ${summarizeTargets(targets)} aren't declared by ${manifestPath}, ` +
-            "and htsw has no record of making them."
-    );
-    ChatLib.chat(
-        `&7[htsw] Nothing was removed. Run &f/htsw prune ${manifestPath} --apply&7 to review.`
+        `&7[htsw] Run &f/htsw prune ${manifestPath} --apply&7 to finish by hand.`
     );
 }
 
@@ -108,7 +104,7 @@ function raiseNotice(manifestPath: string, targets: readonly PruneTarget[]): voi
  */
 export function watchPruneOnReparse(trackedSources: ReadonlySet<string>): void {
     if (pruneRunning || TaskManager.isBusy()) return;
-    for (const project of armedTrackedProjects(trackedSources)) {
+    for (const project of armedProjectsHere(trackedSources)) {
         const work = vanishedWork(project.parsed.value, project.path);
         if (work.renames.length === 0 && work.plan.targets.length === 0) continue;
         runPrune(project, work.plan, work.renames, "vanished");
@@ -117,14 +113,30 @@ export function watchPruneOnReparse(trackedSources: ReadonlySet<string>): void {
 }
 
 /**
- * The slow path, run once when watch is armed. The only place unowned content
- * surfaces, since the lock knows nothing htsw did not create.
+ * The slow path, run once when watch is armed. The only place content htsw did
+ * not create surfaces, since the lock knows nothing about it — so it is also the
+ * only place the file's claim to the whole house is actually enforced.
  */
 export function watchPruneSweep(trackedSources: ReadonlySet<string>): void {
     if (pruneRunning || TaskManager.isBusy()) return;
-    const projects = armedTrackedProjects(trackedSources);
-    if (projects.length === 0) return;
-    const project = projects[0];
+    const armed = armedTrackedProjects(trackedSources);
+    if (armed.length === 0) return;
+    const uuid = getHousingUuid();
+    const project = armed.find((candidate) => candidate.houseUuid === uuid) ?? null;
+    if (project === null) {
+        // The sweep runs once per arm and does not wait for a house, so say so
+        // now rather than let the file's claim look enforced.
+        const path = armed[0].path;
+        ChatLib.chat(
+            `&e[htsw] ${path} claims its whole house, but you aren't in it, so ` +
+                "nothing was swept."
+        );
+        ChatLib.chat(
+            `&7[htsw] Arm watch from inside the house, or run ` +
+                `&f/htsw prune ${path} --apply&7 there.`
+        );
+        return;
+    }
 
     pruneRunning = true;
     void runHousingSyncTask("prune", async (ctx) => {
@@ -134,14 +146,15 @@ export function watchPruneSweep(trackedSources: ReadonlySet<string>): void {
             housingUuid,
             importJsonPath: project.path,
         });
-        if (prunePlanIsEmpty(plan)) return;
-        for (const line of formatPrunePlan(plan, project.path)) ChatLib.chat(line);
-
-        const unowned = unownedTargets(plan);
-        const owned = ownedTargets(plan);
-        if (unowned.length > 0) raiseNotice(project.path, unowned);
-        if (owned.length === 0) return;
-        await prune(ctx, project, plan, owned, housingUuid, "sweep");
+        if (plan.targets.length > 0) {
+            for (const line of formatPrunePlan(plan, project.path)) ChatLib.chat(line);
+            await prune(ctx, project, plan, plan.targets, housingUuid, "sweep");
+        }
+        // A partial scan only under-removes, so what did scan still goes; the
+        // badge stays up because the house is not known to match the file.
+        if (plan.scanFailures.length > 0) {
+            raiseNotice(project.path, "sweep incomplete");
+        }
     })
         .catch((error: unknown) => {
             ChatLib.chat(`&c[htsw] Prune sweep failed: ${errorMessage(error)}`);
@@ -213,9 +226,11 @@ export function setOnPruneFinished(callback: () => void): void {
 }
 
 /**
- * Removes targets, asking once per project and house before the first time. The
- * targets are all htsw's own work, but the key authorising their removal can
- * arrive from a clone, so the first removal is still confirmed.
+ * Removes targets. htsw's own work goes unasked after the project's first
+ * confirmation — the key authorising it can arrive from a clone, so even that
+ * is confirmed once. Content the lock has no record of is confirmed every time:
+ * it is someone's work htsw has never read, and a sweep is the only place it
+ * surfaces, so the prompt is rare.
  */
 async function prune(
     ctx: Parameters<typeof applyPrunePlan>[0],
@@ -226,16 +241,20 @@ async function prune(
     origin: "vanished" | "sweep"
 ): Promise<void> {
     if (targets.length === 0) return;
-    if (!hasPruneConsent(project.path, housingUuid)) {
-        if (!(await confirmPrune(ctx, targets, plan, project.path, true))) {
+    notice = null;
+    const firstTime = !hasPruneConsent(project.path, housingUuid);
+    const unowned = targets.some((target) => !target.owned);
+    if (firstTime || unowned) {
+        if (!(await confirmPrune(ctx, targets, plan, project.path, firstTime))) {
             ChatLib.chat("&7[htsw] Prune declined — nothing was removed.");
+            raiseNotice(project.path, `${targets.length} undeclared left`);
             return;
         }
-        grantPruneConsent(project.path, housingUuid);
+        if (firstTime) grantPruneConsent(project.path, housingUuid);
     }
 
     showToast(
-        `Watch: removing ${summarizeTargets(targets)} no longer in your file`,
+        `Watch: removing ${summarizeTargets(targets)} not in your file`,
         PRUNE_COLOR,
         6000
     );
@@ -245,7 +264,11 @@ async function prune(
         parsed: project.parsed,
     });
     for (const line of formatPruneApplyResult(result)) ChatLib.chat(line);
-    if (origin === "vanished" && result.failures.length === 0) {
+    if (result.failures.length > 0) {
+        raiseNotice(project.path, `${result.failures.length} not removed`);
+        return;
+    }
+    if (origin === "vanished") {
         showToast(`Watch: removed ${summarizeTargets(result.removed)}`, PRUNE_COLOR, 4000);
     }
 }
