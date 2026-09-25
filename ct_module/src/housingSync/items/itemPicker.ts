@@ -143,13 +143,28 @@ export async function selectItemFromOpenInventory(
         const slot = ctx.tryGetItemSlot(
             (candidate) => candidate.getSlotId() === targetSlotInContainer
         );
+        // The item landed (checked above), so if it is gone or different a
+        // tick later, something server-side changed the inventory. Clicking
+        // anyway would select the wrong item without any error.
+        const itemName = removedFormatting(item.getName());
         if (slot === null) {
-            // The item landed (checked above) and was gone a tick later, so
-            // something server-side took it out of the inventory.
-            const itemName = removedFormatting(item.getName());
             throw new Error(
                 `"${itemName}" was removed from your inventory right after htsw spawned it for "${label}". ` +
                     `A house script might have taken it.`
+            );
+        }
+        if (!match(slot.getItem().getItemStack(), desiredStack)) {
+            const observed = summarizeItemStack(slot.getItem().getItemStack());
+            recordRuntimeDebug("itemInjection", {
+                stage: "replacedBeforeSelect",
+                label,
+                targetSlot: targetSlotInContainer,
+                desired: desiredSummary,
+                observed,
+            });
+            throw new Error(
+                `"${itemName}" was replaced by "${observed?.cleanName ?? "another item"}" right after htsw spawned it for "${label}". ` +
+                    `A house script might have swapped it.`
             );
         }
         slot.click();
