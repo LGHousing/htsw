@@ -17,6 +17,10 @@ type FakeTarget = {
 
 type FakePlan = { targets: FakeTarget[]; scanFailures: { type: string; reason: string }[] };
 
+function emptyPlan(): FakePlan {
+    return { targets: [], scanFailures: [] };
+}
+
 function fakeTarget(identity: string, owned: boolean): FakeTarget {
     return { type: "FUNCTION", identity, label: identity, method: "delete", owned };
 }
@@ -25,8 +29,8 @@ const mocks = vi.hoisted(() => ({
     parsed: null as FakeParsed | null,
     tracked: new Set<string>(),
     boundHouses: new Map<string, string>(),
-    lockPlan: { targets: [], scanFailures: [] },
-    scanPlan: { targets: [], scanFailures: [] },
+    lockPlan: emptyPlan(),
+    scanPlan: emptyPlan(),
     scans: 0,
     renames: [] as { type: string; from: string; to: string }[],
     renamed: [] as string[],
@@ -130,8 +134,8 @@ beforeEach(() => {
     mocks.parsed = armed();
     mocks.tracked = new Set([manifest]);
     mocks.boundHouses = new Map([[manifest, house]]);
-    mocks.lockPlan = { targets: [], scanFailures: [] };
-    mocks.scanPlan = { targets: [], scanFailures: [] };
+    mocks.lockPlan = emptyPlan();
+    mocks.scanPlan = emptyPlan();
     mocks.scans = 0;
     mocks.renames = [];
     mocks.renamed = [];
