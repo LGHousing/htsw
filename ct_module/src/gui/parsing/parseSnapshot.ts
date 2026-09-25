@@ -58,11 +58,12 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // 19: import.json entry-level diagnostics no longer discard the rest of an
 // included file's parsed importables.
 // 20: `dangerouslyDeleteEverythingNotInThisFile` is a recognized top-level key.
-// The fingerprint only covers file mtimes, so a v19 snapshot taken before this
-// branch keeps replaying its "Unknown key" warning for a file that never
-// changed. Bump whenever the parser's OUTPUT for unchanged input changes, not
-// just when this file's format does.
-const SNAPSHOT_VERSION = 20;
+// The fingerprint only covers mtimes, so a v19 snapshot would keep replaying its
+// "Unknown key" warning. Bump whenever the parser's output for unchanged input
+// changes, not only when this file's format does.
+// 21: `dangerouslyDeleteEverythingNotInThisFile` round-trips (v20 restored it as
+// false). Also drops v20 snapshots a house rebind resaved with stale diagnostics.
+const SNAPSHOT_VERSION = 21;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -110,6 +111,10 @@ type Snapshot = {
     // binding. Must round-trip, or a snapshot-served session sees every
     // bound file as unbound.
     houseUuid: string | null;
+    // importJson.dangerouslyDeleteEverythingNotInThisFile, as the parser left
+    // it (false when the key is unset or refused for lack of a houseUuid).
+    // Must round-trip, or a snapshot-served session never arms prune.
+    dangerouslyDeleteEverythingNotInThisFile: boolean;
     // importJson.fileTree. Must round-trip, or a snapshot-served session renders
     // the Projects include tree as one flat list.
     fileTree: SerializedFileNode | null;
@@ -178,6 +183,8 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         if (!Array.isArray(snapshot.hashes)) return null;
         if (snapshot.hashes.length !== snapshot.importables.length) return null;
         if (snapshot.houseUuid !== null && typeof snapshot.houseUuid !== "string")
+            return null;
+        if (typeof snapshot.dangerouslyDeleteEverythingNotInThisFile !== "boolean")
             return null;
         if (
             snapshot.fingerprint === null ||
@@ -314,6 +321,8 @@ export function saveSnapshot(
         importables: result.value,
         hashes,
         houseUuid: result.importJson.houseUuid,
+        dangerouslyDeleteEverythingNotInThisFile:
+            result.importJson.dangerouslyDeleteEverythingNotInThisFile,
         fileTree: serializeFileTree(result.importJson.fileTree, result.value),
         diagnostics: result.diagnostics.map((d) =>
             serializeDiagnostic(result.gcx.sourceMap, d)
@@ -443,6 +452,8 @@ export function restoreParseFromSnapshot(snapshot: Snapshot): ImportablesParseRe
     const gcx = new GlobalCtxt(sm, snapshot.importJsonPath);
     const importJson = new ImportJsonParseMetadata();
     importJson.houseUuid = snapshot.houseUuid;
+    importJson.dangerouslyDeleteEverythingNotInThisFile =
+        snapshot.dangerouslyDeleteEverythingNotInThisFile;
     for (const stored of snapshot.diagnostics) {
         gcx.addDiagnostic(restoreDiagnostic(sm, stored));
     }
