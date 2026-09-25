@@ -105,7 +105,13 @@ vi.mock("../src/prune/plan", () => ({
 }));
 vi.mock("../src/prune/report", () => ({ formatPrunePlan: () => [] }));
 
-import { beginProjectRun, finishProjectRun } from "../src/prune/projectRun";
+import {
+    beginProjectRun,
+    finishProjectRun,
+    hasPendingRemovals,
+    needsArmingScan,
+    resetArmingScans,
+} from "../src/prune/projectRun";
 import { makeBulkQueueRow } from "../src/gui/right-panel/import-tab/queue";
 import type TaskContext from "../src/tasks/context";
 
@@ -120,6 +126,8 @@ const row = makeBulkQueueRow({
     filter: "modified",
     label: "demo",
 });
+
+const autoTrackedRow = { ...row, origin: "autotrack" as const };
 
 function armed(overrides: Partial<FakeParsed> = {}): FakeParsed {
     return {
@@ -145,6 +153,7 @@ beforeEach(() => {
     mocks.consented = true;
     mocks.confirmAnswer = true;
     mocks.confirmCalls = 0;
+    resetArmingScans();
     vi.stubGlobal("ChatLib", { chat: () => undefined });
 });
 
@@ -155,7 +164,7 @@ describe("finishing a project run", () => {
         });
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await finishProjectRun(ctx, row, house, true);
+        await finishProjectRun(ctx, row, house);
 
         expect(mocks.scans).toBe(0);
         expect(mocks.applied).toEqual([]);
@@ -164,28 +173,41 @@ describe("finishing a project run", () => {
     it("scans the whole house when you started the run", async () => {
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await finishProjectRun(ctx, row, house, true);
+        await finishProjectRun(ctx, row, house);
 
         expect(mocks.scans).toBe(1);
         expect(mocks.applied).toEqual(["Stray"]);
         expect(mocks.rescue).toEqual([true]);
     });
 
-    it("only removes what a save stopped declaring otherwise", async () => {
-        mocks.lockPlan = { targets: [fakeTarget("Gone", true)], scanFailures: [] };
+    it("scans an auto-tracked project once per auto-run session", async () => {
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
+        await finishProjectRun(ctx, autoTrackedRow, house);
+        expect(mocks.scans).toBe(1);
+        expect(mocks.applied).toEqual(["Stray"]);
 
-        await finishProjectRun(ctx, row, house, false);
+        // Later saves only remove what they stopped declaring.
+        mocks.lockPlan = { targets: [fakeTarget("Gone", true)], scanFailures: [] };
+        await finishProjectRun(ctx, autoTrackedRow, house);
+        expect(mocks.scans).toBe(1);
+        expect(mocks.applied).toEqual(["Stray", "Gone"]);
 
-        expect(mocks.scans).toBe(0);
-        expect(mocks.applied).toEqual(["Gone"]);
+        resetArmingScans();
+        await finishProjectRun(ctx, autoTrackedRow, house);
+        expect(mocks.scans).toBe(2);
+    });
+
+    it("scans again after an auto-tracked scan came back incomplete", async () => {
+        mocks.scanPlan = { targets: [], scanFailures: [{ type: "MENU", reason: "timed out" }] };
+        await expect(finishProjectRun(ctx, autoTrackedRow, house)).rejects.toThrow();
+        expect(needsArmingScan(manifest)).toBe(true);
     });
 
     it("refuses a project that has errors", async () => {
         mocks.parsed = armed({ diagnostics: [{ level: "error" }] });
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await expect(finishProjectRun(ctx, row, house, true)).rejects.toThrow(
+        await expect(finishProjectRun(ctx, row, house)).rejects.toThrow(
             /has 1 error/
         );
         expect(mocks.applied).toEqual([]);
@@ -197,7 +219,7 @@ describe("finishing a project run", () => {
         mocks.boundHouses.set(other, house);
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await expect(finishProjectRun(ctx, row, house, true)).rejects.toThrow(
+        await expect(finishProjectRun(ctx, row, house)).rejects.toThrow(
             /also tracked for this house/
         );
         expect(mocks.applied).toEqual([]);
@@ -208,7 +230,7 @@ describe("finishing a project run", () => {
         mocks.confirmAnswer = false;
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await expect(finishProjectRun(ctx, row, house, true)).rejects.toThrow(/declined/);
+        await expect(finishProjectRun(ctx, row, house)).rejects.toThrow(/declined/);
         expect(mocks.confirmCalls).toBe(1);
         expect(mocks.applied).toEqual([]);
     });
@@ -216,7 +238,7 @@ describe("finishing a project run", () => {
     it("does not ask again once the project has been confirmed", async () => {
         mocks.scanPlan = { targets: [fakeTarget("Stray", false)], scanFailures: [] };
 
-        await finishProjectRun(ctx, row, house, true);
+        await finishProjectRun(ctx, row, house);
 
         expect(mocks.confirmCalls).toBe(0);
         expect(mocks.applied).toEqual(["Stray"]);
@@ -229,7 +251,7 @@ describe("finishing a project run", () => {
             scanFailures: [],
         };
 
-        await expect(finishProjectRun(ctx, row, house, true)).rejects.toThrow(
+        await expect(finishProjectRun(ctx, row, house)).rejects.toThrow(
             /1 undeclared thing couldn't be removed/
         );
         expect(mocks.applied).toEqual(["Stray"]);
@@ -241,7 +263,7 @@ describe("finishing a project run", () => {
             scanFailures: [{ type: "MENU", reason: "timed out" }],
         };
 
-        await expect(finishProjectRun(ctx, row, house, true)).rejects.toThrow(
+        await expect(finishProjectRun(ctx, row, house)).rejects.toThrow(
             /couldn't scan menu/
         );
         expect(mocks.applied).toEqual(["Stray"]);
@@ -264,5 +286,24 @@ describe("beginning a project run", () => {
         await beginProjectRun(ctx, row, house);
 
         expect(mocks.renamed).toEqual([]);
+    });
+});
+
+describe("pending removals", () => {
+    it("reads house.lock once per parse until a run changes it", async () => {
+        const parsed = armed();
+        mocks.lockPlan = { targets: [fakeTarget("Gone", true)], scanFailures: [] };
+        expect(hasPendingRemovals(manifest, parsed as never)).toBe(true);
+
+        mocks.lockPlan = emptyPlan();
+        expect(hasPendingRemovals(manifest, parsed as never)).toBe(true);
+
+        mocks.parsed = parsed;
+        mocks.scanPlan = emptyPlan();
+        await finishProjectRun(ctx, autoTrackedRow, house);
+        mocks.lockPlan = { targets: [fakeTarget("Gone", true)], scanFailures: [] };
+        await finishProjectRun(ctx, autoTrackedRow, house);
+        mocks.lockPlan = emptyPlan();
+        expect(hasPendingRemovals(manifest, parsed as never)).toBe(false);
     });
 });

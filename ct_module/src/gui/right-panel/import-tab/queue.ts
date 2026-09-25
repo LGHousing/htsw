@@ -628,9 +628,44 @@ export function restoreQueueItems(saved: readonly QueueRowInput[]): void {
         }
     }
 }
+/**
+ * A project row whose last run stopped short: it failed, or an importable under
+ * it did. Only meaningful while the queue is not running.
+ */
+function isStoppedProjectRow(row: QueueRow): boolean {
+    if (!isProjectQueueRow(row)) return false;
+    if (row.status === "failed" || row.status === "cancelled") return true;
+    return (
+        row.status === "running" &&
+        items.some(
+            (child) =>
+                child.parentKey === row.key &&
+                (child.status === "failed" || child.status === "cancelled")
+        )
+    );
+}
+
+/** Back to queued, without what its last run left under it. */
+function requeueProjectRow(row: QueueRow): void {
+    const children = new Set<string>();
+    for (const child of items) {
+        if (child.parentKey === row.key) children.add(child.key);
+    }
+    removeRows(children);
+    const next: QueueRow = { ...row, status: "queued", error: null };
+    items = items.map((current) => (current.key === row.key ? next : current));
+    rebuildLookup();
+    queueChanged();
+}
+
+/**
+ * `retryStopped` requeues auto-tracked project rows that stopped short; pass it
+ * only while the queue is not running.
+ */
 export function reconcileAutoTrackedQueue(
     desiredItems: readonly QueueRow[],
-    removeStale = true
+    removeStale = true,
+    retryStopped = false
 ): ReadonlySet<string> {
     const desired = desiredItems.map((row) =>
         normalizeQueueRow({ ...row, origin: "autotrack" })
@@ -653,6 +688,16 @@ export function reconcileAutoTrackedQueue(
     for (let i = 0; i < desired.length; i++) {
         const row = desired[i];
         if (restoredKeys.delete(row.key)) autoTrackedKeys.add(row.key);
+        const existing = byKey.get(row.key);
+        if (
+            retryStopped &&
+            existing !== undefined &&
+            autoTrackedKeys.has(row.key) &&
+            isStoppedProjectRow(existing)
+        ) {
+            requeueProjectRow(existing);
+            continue;
+        }
         const result = addToQueue(row);
         if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection")
             continue;

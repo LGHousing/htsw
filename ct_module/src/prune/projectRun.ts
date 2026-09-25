@@ -60,6 +60,64 @@ function otherTrackedProjectsOn(house: string, path: string): string[] {
     return others;
 }
 
+/**
+ * Whether auto-track should queue this project for removal work alone: it
+ * sets the key and parses cleanly. The finishing step re-checks the rest.
+ */
+export function isArmedForPrune(parsed: ImportablesParseResult): boolean {
+    return (
+        parsed.importJson.dangerouslyDeleteEverythingNotInThisFile &&
+        countBlockingDiagnostics(parsed.diagnostics) === 0
+    );
+}
+
+// Projects whose house was walked in full since auto-run was switched on. A
+// project missing here gets one full scan on its next auto-tracked run.
+const scannedSinceArming = new Set<string>();
+// Bumped whenever this module changes house.lock, which is what the memoised
+// removal check below reads.
+let lockRevision = 0;
+const removalMemo = new WeakMap<
+    ImportablesParseResult,
+    { path: string; revision: number; pending: boolean }
+>();
+
+let onArmingScansReset: (() => void) | null = null;
+
+/**
+ * Called after the scans are reset, so auto-track can queue the projects that
+ * now owe one. Injected rather than imported, to avoid a cycle.
+ */
+export function setOnArmingScansReset(callback: () => void): void {
+    onArmingScansReset = callback;
+}
+
+/** Auto-run was switched on: every armed project gets one full scan again. */
+export function resetArmingScans(): void {
+    scannedSinceArming.clear();
+    onArmingScansReset?.();
+}
+
+export function needsArmingScan(path: string): boolean {
+    return !scannedSinceArming.has(path);
+}
+
+/**
+ * Whether house.lock records something this parse no longer declares.
+ * Memoised per parse, because auto-track asks on every cache-warm tick and the
+ * answer only changes with a reparse or a lock this module rewrote.
+ */
+export function hasPendingRemovals(path: string, parsed: ImportablesParseResult): boolean {
+    const memo = removalMemo.get(parsed);
+    if (memo !== undefined && memo.path === path && memo.revision === lockRevision) {
+        return memo.pending;
+    }
+    const work = vanishedWork(parsed.value, path);
+    const pending = work.plan.targets.length > 0 || work.renames.length > 0;
+    removalMemo.set(parsed, { path, revision: lockRevision, pending });
+    return pending;
+}
+
 function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
     let count = 0;
     for (const diagnostic of diagnostics) {
@@ -85,6 +143,7 @@ export async function beginProjectRun(
     const { renames } = vanishedWork(project.parsed.value, project.path);
     if (renames.length === 0) return;
     const outcome = await applyRenames(ctx, project.path, renames);
+    lockRevision++;
     for (const rename of outcome.renamed) {
         ChatLib.chat(
             `&7[htsw] Renamed ${rename.type.toLowerCase()} ${rename.from} to ` +
@@ -95,19 +154,21 @@ export async function beginProjectRun(
 
 /**
  * After a project imported everything: removes what the file does not declare.
- * `fullScan` walks the whole house, the only way to find content htsw never
- * made; otherwise only what house.lock says a save stopped declaring goes.
+ * A row you queued walks the whole house, the only way to find content htsw
+ * never made. A row auto-track queued does that once per auto-run session and
+ * otherwise only removes what house.lock says a save stopped declaring.
  */
 export async function finishProjectRun(
     ctx: TaskContext,
     row: QueueRow,
-    house: string,
-    fullScan: boolean
+    house: string
 ): Promise<void> {
     const project = await readArmedProject(row);
     if (project === null) return;
     const refusal = pruneRefusal(project, house);
     if (refusal !== null) throw new Error(refusal);
+
+    const fullScan = row.origin !== "autotrack" || needsArmingScan(project.path);
 
     if (fullScan) {
         ChatLib.chat(`&7[htsw] Checking the house for anything ${project.path} doesn't declare…`);
@@ -143,6 +204,7 @@ export async function finishProjectRun(
             parsed: project.parsed,
             rescue: true,
         });
+        lockRevision++;
         for (const line of formatPruneApplyResult(result)) ChatLib.chat(line);
         if (result.failures.length > 0) {
             const count = result.failures.length;
@@ -156,4 +218,5 @@ export async function finishProjectRun(
         const types = plan.scanFailures.map((failure) => failure.type.toLowerCase());
         throw new Error(`couldn't scan ${types.join(", ")}; the house may hold more undeclared content`);
     }
+    if (fullScan) scannedSinceArming.add(project.path);
 }
