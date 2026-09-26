@@ -10,6 +10,7 @@ import type { Action, Condition } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import { setBridgeConflictDetails } from "../../bridge/status";
 import { isTaskCancelled } from "../../tasks/manager";
+import { setTaskActivity } from "../../tasks/activity";
 import { isTaskTraceEnabled, traceNote } from "../../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
@@ -169,6 +170,7 @@ export async function runImportSession(
     try {
         await runImportSessionInner(ctx, selection);
     } catch (error) {
+        setTaskActivity(null);
         if (isTaskCancelled(error)) {
             reportCancellationCache(ctx, error, {
                 savedCount: 0,
@@ -190,12 +192,14 @@ async function runImportSessionInner(
     resetMenuNameSession();
     resetCommandNameSession();
 
+    setTaskActivity("Reading the project");
     const parsed =
         selection.parsed ??
         parseImportablesResult(
             new SourceMap(new FileSystemFileLoader()),
             selection.sourcePath
         );
+    setTaskActivity("Working out what the import needs");
     const expansion = expandImportDependencies(
         parsed,
         selection.importables,
@@ -228,8 +232,10 @@ async function runImportSessionInner(
     }
 
     const orderedImportables = expansion.importables;
+    setTaskActivity("Loading what htsw knows about this house");
     await warmImportableCaches(selection.housingUuid, orderedImportables);
     await ctx.sleep(1);
+    setTaskActivity("Checking what is already up to date");
     // Building a trust plan hashes every importable and all of its actions,
     // which is slow. Pass only the ones we're importing this run, not the
     // whole project, so we don't hash things we aren't going to touch.
@@ -241,6 +247,7 @@ async function runImportSessionInner(
         itemDependencies
     );
 
+    setTaskActivity("Matching item references");
     const itemFieldObservations = selection.trustMode
         ? undefined
         : createItemFieldObservationRecorder();
@@ -262,6 +269,7 @@ async function runImportSessionInner(
         itemVerification
     );
 
+    setTaskActivity("Listing functions, menus and regions in the house");
     const referencedShellPlan = await planMissingReferencedShells(
         ctx,
         orderedImportables
@@ -307,6 +315,7 @@ async function runImportSessionInner(
             ),
         },
     };
+    setTaskActivity("Estimating the work");
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
@@ -338,6 +347,8 @@ async function runImportSessionInner(
         status: "queued",
         totalUnits: row.units,
     }));
+    // Per-importable progress rows take over from here.
+    setTaskActivity(null);
     let initialTotalUnits = 0;
     for (const row of rowsMeta) initialTotalUnits += row.units;
     if (initialTotalUnits === 0) initialTotalUnits = 1;
@@ -528,6 +539,7 @@ async function runImportSessionInner(
         }
     }
 
+    setTaskActivity("Planning changes");
     for (const { row, read } of reads) {
         const plan = read.plan(session);
         plannedApplicationUnits.set(row.key, plan.applicationUnits);
@@ -554,6 +566,7 @@ async function runImportSessionInner(
             })),
             ...(diffDetailsPath === null ? {} : { diffPath: diffDetailsPath }),
         });
+        setTaskActivity("Waiting for your answer on conflicts");
         const decision =
             selection.conflictHandling.kind === "proceed"
                 ? "proceed"
@@ -615,6 +628,7 @@ async function runImportSessionInner(
     // interrupted — a crash, disconnect or Housing kick skips every handler
     // that would have corrected it — so the next import reports this import's
     // own writes as someone else's Housing edits.
+    setTaskActivity("Saving what was read");
     await writeObservedPlanCaches(
         ctx,
         observedPlans,
@@ -622,6 +636,7 @@ async function runImportSessionInner(
         new Map(),
         verifiedDependencyContext
     );
+    setTaskActivity(null);
 
     let activePlanIndex: number | null = null;
     let activeBaselineDropped = false;

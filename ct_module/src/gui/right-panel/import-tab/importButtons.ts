@@ -20,6 +20,31 @@ import { appendRawHtslFile } from "../../../rawHtslImport";
 import { startOpenActionListExport } from "../../export/openActionListExport";
 import { getAutoRun } from "../../../settings";
 import { setAutoRunEnabled } from "../../autoRun";
+import { getTaskActivity, observeTaskActivity } from "../../../tasks/activity";
+import { markGuiDirty } from "../../lib/dirty";
+import { getTaskProgress } from "./taskProgress";
+
+observeTaskActivity(markGuiDirty);
+
+const PHASE_VERBS: { [phase: string]: string | undefined } = {
+    setup: "Reading",
+    reading: "Reading",
+    hydrating: "Hydrating",
+    applying: "Applying",
+};
+
+/**
+ * The step a running queue named itself, else the phase of the importable it
+ * is on, so the button doesn't just read "Running" through a long setup.
+ */
+function runningText(): string {
+    const activity = getTaskActivity();
+    if (activity !== null) return activity;
+    const active = getTaskProgress()?.active ?? null;
+    const verb = active === null ? undefined : PHASE_VERBS[active.phase];
+    if (active !== null && verb !== undefined) return `${verb} ${active.identity}`;
+    return "Running";
+}
 
 export function queueControl(): Element {
     const runnable = (): number => runnableQueueRowCount(getQueue(), getHousingUuid());
@@ -27,7 +52,9 @@ export function queueControl(): Element {
         queueRunState() === "idle" && (TaskManager.isBusy() || runnable() === 0);
     const runTooltip = (): string => {
         const state = queueRunState();
-        if (state === "running") return "Cancel from the progress panel above.";
+        if (state === "running") {
+            return `${runningText()}. Cancel from the progress panel above.`;
+        }
         if (state === "paused") return "Resume queued Housing work.";
         if (TaskManager.isBusy()) return "Another task is already running.";
         if (runnable() === 0) return "Nothing is queued for this house.";
@@ -36,10 +63,11 @@ export function queueControl(): Element {
 
     const runButton = Button({
         icon: () => (queueRunState() === "running" ? Icons.loaderCircle : Icons.play),
+        iconSpin: () => queueRunState() === "running",
         text: () => {
             const n = runnable();
             const state = queueRunState();
-            if (state === "running") return "Running";
+            if (state === "running") return runningText();
             if (state === "paused") return `Resume (${n})`;
             return `Run (${n})`;
         },
@@ -67,7 +95,8 @@ export function queueControl(): Element {
             width: { kind: "px", value: 88 },
             height: { kind: "grow" },
             background: () => (getAutoRun() ? COLOR_TOGGLE_ON : COLOR_BUTTON),
-            hoverBackground: () => (getAutoRun() ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER),
+            hoverBackground: () =>
+                getAutoRun() ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
         },
         onClick: () => setAutoRunEnabled(!getAutoRun()),
     });
@@ -85,7 +114,8 @@ export function queueControl(): Element {
 
     const exportHtslButton = Button({
         icon: Icons.download,
-        tooltip: "Export HTSL: save the open Housing action list as a standalone .htsl file.",
+        tooltip:
+            "Export HTSL: save the open Housing action list as a standalone .htsl file.",
         style: {
             width: { kind: "px", value: 24 },
             height: { kind: "grow" },

@@ -23,6 +23,8 @@ export type ButtonProps = {
     text?: Extractable<string>;
     textColor?: Extractable<number | undefined>;
     icon?: Extractable<IconName>;
+    // Spins the shorthand icon while true.
+    iconSpin?: Extractable<boolean>;
     children?: Extractable<Child[]>;
     tooltip?: Extractable<string>;
     tooltipColor?: Extractable<number>;
@@ -60,7 +62,13 @@ export function Button(props: ButtonProps): Element {
     const builtChildren: Child[] | undefined =
         props.children !== undefined
             ? undefined
-            : buildShorthandChildren(props.icon, props.text, textColor, iconColor);
+            : buildShorthandChildren(
+                  props.icon,
+                  props.text,
+                  textColor,
+                  iconColor,
+                  props.iconSpin
+              );
     const children: Extractable<Child[]> =
         props.children !== undefined ? props.children : (builtChildren as Child[]);
 
@@ -92,10 +100,13 @@ function buildShorthandChildren(
     icon: Extractable<IconName> | undefined,
     text: Extractable<string> | undefined,
     textColor: Extractable<number | undefined> | undefined,
-    iconColor: Extractable<number | undefined> | undefined
+    iconColor: Extractable<number | undefined> | undefined,
+    iconSpin: Extractable<boolean> | undefined
 ): Child[] {
     const out: Child[] = [];
-    if (icon !== undefined) out.push(Icon({ name: icon, color: iconColor }));
+    if (icon !== undefined) {
+        out.push(Icon({ name: icon, color: iconColor, spin: iconSpin }));
+    }
     if (text !== undefined) out.push(Text({ text, color: textColor, truncate: true }));
     return out;
 }

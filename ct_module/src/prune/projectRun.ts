@@ -11,6 +11,9 @@ import { scanHousePrunePlan, vanishedWork } from "./plan";
 import { applyRenames } from "./rename";
 import { formatPrunePlan } from "./report";
 import { confirmPrune } from "./session";
+import { pruneTypeOf } from "./registry";
+import { setTaskActivity } from "../tasks/activity";
+import { shortPath } from "../gui/lib/pathDisplay";
 
 /**
  * A project that sets `dangerouslyDeleteEverythingNotInThisFile`, parsed as it
@@ -107,7 +110,10 @@ export function needsArmingScan(path: string): boolean {
  * Memoised per parse, because auto-track asks on every cache-warm tick and the
  * answer only changes with a reparse or a lock this module rewrote.
  */
-export function hasPendingRemovals(path: string, parsed: ImportablesParseResult): boolean {
+export function hasPendingRemovals(
+    path: string,
+    parsed: ImportablesParseResult
+): boolean {
     const memo = removalMemo.get(parsed);
     if (memo !== undefined && memo.path === path && memo.revision === lockRevision) {
         return memo.pending;
@@ -140,8 +146,14 @@ export async function beginProjectRun(
     // Renames also act on the file's claim to the house, so they wait for the
     // same conditions; the finishing step reports the refusal.
     if (project === null || pruneRefusal(project, house) !== null) return;
+    setTaskActivity(`Checking ${shortPath(project.path)} for renames`);
     const { renames } = vanishedWork(project.parsed.value, project.path);
     if (renames.length === 0) return;
+    setTaskActivity(
+        renames.length === 1
+            ? `Renaming ${renames[0].type.toLowerCase()} ${renames[0].from} to ${renames[0].to}`
+            : `Renaming ${renames.length} things a save renamed`
+    );
     const outcome = await applyRenames(ctx, project.path, renames);
     lockRevision++;
     for (const rename of outcome.renamed) {
@@ -171,19 +183,29 @@ export async function finishProjectRun(
     const fullScan = row.origin !== "autotrack" || needsArmingScan(project.path);
 
     if (fullScan) {
-        ChatLib.chat(`&7[htsw] Checking the house for anything ${project.path} doesn't declare…`);
+        ChatLib.chat(
+            `&7[htsw] Checking the house for anything ${project.path} doesn't declare…`
+        );
+    } else {
+        setTaskActivity("Checking what a save removed");
     }
     const plan = fullScan
         ? await scanHousePrunePlan(ctx, {
               declared: project.parsed.value,
               housingUuid: house,
               importJsonPath: project.path,
+              onTypeStarted: (type) => {
+                  setTaskActivity(
+                      `Looking for undeclared ${pruneTypeOf(type).pluralLabel} in the house`
+                  );
+              },
           })
         : vanishedWork(project.parsed.value, project.path).plan;
 
     if (plan.targets.length > 0) {
         for (const line of formatPrunePlan(plan, project.path)) ChatLib.chat(line);
         if (!hasPruneConsent(project.path, house)) {
+            setTaskActivity("Waiting for you to confirm the removal");
             const confirmed = await confirmPrune(
                 ctx,
                 plan.targets,
@@ -193,22 +215,30 @@ export async function finishProjectRun(
             );
             if (!confirmed) throw new Error("removal declined; nothing was removed");
             if (!grantPruneConsent(project.path, house)) {
-                ChatLib.chat("&c[htsw] Couldn't save your confirmation; it'll ask again.");
+                ChatLib.chat(
+                    "&c[htsw] Couldn't save your confirmation; it'll ask again."
+                );
             }
         }
         // Rescue reads anything htsw holds no verified copy of into the removal
         // record first, so content it never made can still be rebuilt.
+        setTaskActivity("Saving undeclared content to the removal record");
         const result = await applyPrunePlan(ctx, plan.targets, {
             manifestPath: project.path,
             housingUuid: house,
             parsed: project.parsed,
             rescue: true,
+            onProgress: (done, total, target) => {
+                setTaskActivity(`Removing ${done + 1}/${total}: ${target.label}`);
+            },
         });
         lockRevision++;
         for (const line of formatPruneApplyResult(result)) ChatLib.chat(line);
         if (result.failures.length > 0) {
             const count = result.failures.length;
-            throw new Error(`${count} undeclared thing${count === 1 ? "" : "s"} couldn't be removed`);
+            throw new Error(
+                `${count} undeclared thing${count === 1 ? "" : "s"} couldn't be removed`
+            );
         }
     }
 
@@ -216,7 +246,9 @@ export async function finishProjectRun(
     // known to match the file.
     if (plan.scanFailures.length > 0) {
         const types = plan.scanFailures.map((failure) => failure.type.toLowerCase());
-        throw new Error(`couldn't scan ${types.join(", ")}; the house may hold more undeclared content`);
+        throw new Error(
+            `couldn't scan ${types.join(", ")}; the house may hold more undeclared content`
+        );
     }
     if (fullScan) scannedSinceArming.add(project.path);
 }

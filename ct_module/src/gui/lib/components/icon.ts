@@ -11,6 +11,8 @@ export type IconProps = {
     // Optional ARGB tint for the (white) icon, e.g. ACCENT_DANGER. `undefined`
     // leaves the icon untinted (white), so a caller can tint conditionally.
     color?: Extractable<number | undefined>;
+    // Spins the icon while true.
+    spin?: Extractable<boolean>;
     // Optional hover chip.
     tooltip?: Extractable<string>;
     tooltipColor?: Extractable<number>;
@@ -27,6 +29,7 @@ export function Icon(props: IconProps): Element {
         style: props.style ?? DEFAULT_SIZE,
         name: props.name,
         color: props.color,
+        spin: props.spin,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,
     };

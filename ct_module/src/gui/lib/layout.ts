@@ -119,6 +119,9 @@ export type Element =
           // The icon set is monochrome white, so this recolors it. `undefined`
           // (extracted) leaves it white — the renderer skips the tint.
           color?: Extractable<number | undefined>;
+          // Rotates the icon about its center, one turn a second, while true.
+          // Evaluated at draw time, so it animates without rebuilding.
+          spin?: Extractable<boolean>;
           // Hover chip, same semantics as the text element's tooltip.
           tooltip?: Extractable<string>;
           tooltipColor?: Extractable<number>;

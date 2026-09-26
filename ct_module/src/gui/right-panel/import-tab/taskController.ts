@@ -29,6 +29,7 @@ import { expandImportDependencies } from "../../../importables/import/dependency
 import { importableIdentity, importableKey } from "../../../importables/identity";
 import { HOUSE_READERS } from "../../../importables/export/readers";
 import { isTaskCancelled } from "../../../tasks/manager";
+import { setTaskActivity } from "../../../tasks/activity";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
@@ -578,6 +579,7 @@ export async function runImportQueueSession(
     );
     if (importRows.length === 0) return { completedKeys: [], failed: [] };
 
+    setTaskActivity("Reading the project");
     const batches = await buildBatches(importRows);
     if (batches === null) {
         const message = "Nothing matched the queued import selection.";
@@ -608,6 +610,7 @@ export async function runImportQueueSession(
 
     const batch = batches[0];
     const trustMode = isCurrentHouseTrusted();
+    setTaskActivity("Working out what the import needs");
     const expansion = expandImportDependencies(
         batch.parsed,
         batch.importables,

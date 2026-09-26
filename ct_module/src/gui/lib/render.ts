@@ -21,8 +21,10 @@ import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { getIconImage, renderMcItem } from "./images";
-import { getMinecraft, javaType } from "./java";
+import { GL11, getMinecraft, javaType } from "./java";
 import { TextLayoutWrap } from "../../diagnostics/textLayout";
+
+const SPIN_PERIOD_MS = 1000;
 
 const Gui = javaType("net.minecraft.client.gui.Gui" as never) as unknown as {
     func_73734_a(
@@ -532,6 +534,18 @@ function renderItem(
                 // nulls `colorized` for us, so untinted draws stay clean.
                 Renderer.colorize(rr, gg, bb, a);
             }
+            // CT's finishDraw() pops and re-pushes the matrix after every
+            // draw, so a push/rotate here and a pop after stays balanced.
+            const spinning = e.spin !== undefined && extract(e.spin);
+            if (spinning) {
+                const cx = r.x + r.w / 2;
+                const cy = r.y + r.h / 2;
+                const degrees = ((Date.now() % SPIN_PERIOD_MS) / SPIN_PERIOD_MS) * 360;
+                GL11.glPushMatrix();
+                GL11.glTranslated(cx, cy, 0);
+                GL11.glRotatef(degrees, 0, 0, 1);
+                GL11.glTranslated(-cx, -cy, 0);
+            }
             try {
                 Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
             } catch (err) {
@@ -548,6 +562,8 @@ function renderItem(
                     /* nothing else to do */
                 }
                 debugLogError(`drawImage icon '${name}'`, err);
+            } finally {
+                if (spinning) GL11.glPopMatrix();
             }
         }
         if (hovered && e.tooltip !== undefined) {

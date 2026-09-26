@@ -28,6 +28,7 @@ import {
     type QueueSessionResult,
 } from "../src/gui/right-panel/import-tab/queueRunner";
 import { exportHeldItem } from "../src/importables/items/export";
+import { getTaskActivity } from "../src/tasks/activity";
 import type { runExportSession } from "../src/importables/export/session";
 import { createExportProgressSink } from "../src/gui/export/progressSink";
 import {
@@ -280,6 +281,33 @@ describe("operation queue drain", () => {
         );
         expect(calls).toEqual(["begin", "expand", "import child", "finish project"]);
         expect(getQueue()).toEqual([]);
+    });
+
+    it("says what it is doing while it works, and clears it when done", async () => {
+        const path = "/project/import.json";
+        enqueue(projectRow(path));
+        const seen: Array<string | null> = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                beginProject: async () => {
+                    seen.push(getTaskActivity());
+                },
+                expandBulk: async () => {
+                    seen.push(getTaskActivity());
+                    return [];
+                },
+                finishProject: async () => {
+                    seen.push(getTaskActivity());
+                },
+            })
+        );
+        expect(seen).toEqual([
+            "Preparing /project",
+            "Working out what to import from /project",
+            "Finishing /project",
+        ]);
+        expect(getTaskActivity()).toBeNull();
     });
 
     it("still finishes a project row that has nothing to import", async () => {

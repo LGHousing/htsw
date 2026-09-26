@@ -32,6 +32,8 @@ import { listAllRegionNames } from "../../../importables/regions/listRegions";
 import { listAllTeamNames } from "../../../importables/teams/listTeams";
 import { exportHeldItem } from "../../../importables/items/export";
 import { beginProjectRun, finishProjectRun } from "../../../prune/projectRun";
+import { setTaskActivity } from "../../../tasks/activity";
+import { shortPath } from "../../lib/pathDisplay";
 import { isTaskCancelled, TaskManager } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
 import { cancelActiveTask } from "../../../tasks/activeTask";
@@ -209,6 +211,12 @@ export function queueSessionFromHead(
 // a new object, so it is neither skipped nor removed by the old completion.
 const awaitingRemoval = new WeakSet<QueueRow>();
 
+/** Where a bulk row's work comes from, for the activity line. */
+function bulkSource(row: QueueRow): string {
+    if (row.target.kind !== "bulk") return row.target.label;
+    return row.target.scope.kind === "file" ? shortPath(row.target.scope.path) : "the house";
+}
+
 /** A project row for this house whose importables are all done. */
 function projectRowToFinish(currentHouse: string): QueueRow | null {
     const queue = getQueue();
@@ -234,6 +242,7 @@ async function finishProjectRow(
     tally?: QueueRunTally
 ): Promise<boolean> {
     setBridgeOperation(row.op);
+    setTaskActivity(`Finishing ${shortPath(row.path)}`);
     try {
         await dependencies.finishProject(ctx, row, currentHouse);
     } catch (error) {
@@ -323,10 +332,25 @@ export async function drainQueue(
     options: QueueStartOptions = {},
     tally?: QueueRunTally
 ): Promise<QueueRunState> {
+    try {
+        return await drainQueueInner(ctx, dependencies, options, tally);
+    } finally {
+        setTaskActivity(null);
+    }
+}
+
+async function drainQueueInner(
+    ctx: TaskContext,
+    dependencies: QueueRunnerDependencies,
+    options: QueueStartOptions,
+    tally?: QueueRunTally
+): Promise<QueueRunState> {
+    setTaskActivity("Checking which house you're in");
     const currentHouse = await dependencies.currentHouse(ctx);
     let preparedImport = false;
     for (;;) {
         ctx.checkCancelled();
+        setTaskActivity(null);
         const finishing = projectRowToFinish(currentHouse);
         if (finishing !== null) {
             try {
@@ -351,8 +375,12 @@ export async function drainQueue(
             let children: readonly QueueRowInput[];
             try {
                 if (isProjectQueueRow(head)) {
+                    setTaskActivity(`Preparing ${shortPath(head.path)}`);
                     await dependencies.beginProject(ctx, head, currentHouse);
                 }
+                setTaskActivity(
+                    `Working out what to ${head.op} from ${bulkSource(head)}`
+                );
                 children = await dependencies.expandBulk(ctx, head, currentHouse);
             } catch (error) {
                 if (isTaskCancelled(error)) return "paused";
@@ -376,9 +404,11 @@ export async function drainQueue(
         const session = queueSessionFromHead(head, currentHouse, options);
         if (session.length === 0) return "idle";
         if (head.op === "import" && !preparedImport) {
+            setTaskActivity("Switching to creative mode");
             await dependencies.beforeFirstImport(ctx);
             preparedImport = true;
         }
+        setTaskActivity(null);
 
         for (const row of session) setQueueRowStatus(row.key, "running");
         let result: QueueSessionResult;
