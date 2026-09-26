@@ -9,7 +9,6 @@ import type TaskContext from "../../tasks/context";
 import { TaskManager } from "../../tasks/manager";
 import { readTextFileOrNull } from "../../utils/filesystem";
 import { getItemFromNbt, getItemFromSnbt, itemWithInteractData } from "../../utils/nbt";
-import { closeOpenScreen } from "../sideEffects";
 import { runHousingSyncTask } from "../taskRunner";
 import { injectIntoInventorySlot } from "./heldItem";
 import { readInventorySlot } from "./playerInventory";
@@ -116,7 +115,10 @@ export async function giveItems(
     ctx: TaskContext,
     items: readonly GiveableItem[]
 ): Promise<GiveSummary> {
-    await closeOpenScreen(ctx);
+    // Leave the open screen open: creative set-slot packets land regardless
+    // (measured with Housing chest menus), and closing it would close the
+    // panel the Give was clicked in, or the player's inventory.
+    //
     // `used` covers slots this batch filled: the client inventory catches up a
     // tick after the ack, so a rescan could hand two items the same slot.
     const used = new Set<number>();
@@ -156,7 +158,9 @@ export async function giveItems(
 function firstEmptyInventorySlot(used: ReadonlySet<number>): number | null {
     for (let slotId = 0; slotId < INVENTORY_SIZE; slotId++) {
         if (used.has(slotId)) continue;
-        if (readInventorySlot(slotId, "player").nbt === null) return slotId;
+        // "openContainer" also covers the no-container case, where it falls
+        // back to the player inventory.
+        if (readInventorySlot(slotId, "openContainer").nbt === null) return slotId;
     }
     return null;
 }

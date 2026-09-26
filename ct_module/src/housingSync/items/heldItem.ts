@@ -1,5 +1,6 @@
 import TaskContext from "../../tasks/context";
 import { pollTicks } from "../../tasks/poll";
+import { getOpenContainerWindowId } from "../../tasks/specifics/slots";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { closeOpenScreen } from "../sideEffects";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../menus/packets";
 import {
     heldItem,
+    inventorySlotToOpenContainerSlot,
     inventorySlotToPacketSlot,
     readInventorySlot,
     restoreInventorySlots,
@@ -133,11 +135,22 @@ export async function injectIntoInventorySlot(
     stack: MCItemStack
 ): Promise<void> {
     const packetSlot = inventorySlotToPacketSlot(slotId);
+    // With no container open the server echoes on window 0 at the packet
+    // slot. An open container (a Housing menu, the inventory) covers the
+    // player inventory too, so the echo comes on its window at its slot index.
+    const containerSlot = inventorySlotToOpenContainerSlot(slotId);
+    const containerWindowId = getOpenContainerWindowId();
     // Latched inside the predicate, which runs as the packet arrives; the
     // promise itself is only held so the waiter can be cleaned up.
     let acked = false;
-    const ack = waitForSetSlotAck(ctx, packetSlot, (received) => {
+    const ack = waitForSetSlotAck(ctx, (windowId, slot, received) => {
         if (received === null || !stacksMatch(received, stack)) return false;
+        const forThisSlot =
+            (windowId === 0 && slot === packetSlot) ||
+            (containerSlot !== null &&
+                windowId === containerWindowId &&
+                slot === containerSlot);
+        if (!forThisSlot) return false;
         acked = true;
         return true;
     });

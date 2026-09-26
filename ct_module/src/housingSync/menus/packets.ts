@@ -22,24 +22,29 @@ export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
 }
 
 /**
- * Waiter for the player-inventory S2FPacketSetSlot that acknowledges a
- * creative edit of `packetSlot`. Register it BEFORE sending the edit: the
- * house can overwrite the slot within the same tick the ack lands (a loop
- * that swaps the item, say), and a once-per-tick inventory poll then never
- * sees the accepted stack. Callers must `cleanupWaiter` it.
+ * Waiter for the S2FPacketSetSlot acknowledging a creative inventory edit.
+ * Register it BEFORE sending the edit: a house loop can overwrite the slot in
+ * the same tick the ack lands, so a once-per-tick inventory poll may never see
+ * the accepted stack. The ack's window depends on what is open, hence the
+ * caller's predicate. Callers must `cleanupWaiter` it.
  */
 export function waitForSetSlotAck(
     ctx: TaskContext,
-    packetSlot: number,
-    accepts: (stack: HtswMinecraftItemStack | null) => boolean
+    accepts: (
+        windowId: number | null,
+        slot: number | null,
+        stack: HtswMinecraftItemStack | null
+    ) => boolean
 ): WaitForPromise<[Packet]> {
     return ctx.waitFor(
         "packetReceived",
         (packet) =>
             packet instanceof S2FPacketSetSlot &&
-            setSlotPacketWindowId(packet) === 0 &&
-            setSlotPacketSlot(packet) === packetSlot &&
-            accepts(setSlotPacketStack(packet))
+            accepts(
+                setSlotPacketWindowId(packet),
+                setSlotPacketSlot(packet),
+                setSlotPacketStack(packet)
+            )
     );
 }
 
