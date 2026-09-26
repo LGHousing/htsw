@@ -445,6 +445,7 @@ declare global {
         glMatrixMode(mode: number): void;
         glPopMatrix(): void;
         glPushMatrix(): void;
+        glRotatef(angle: number, x: number, y: number, z: number): void;
         glScalef(x: number, y: number, z: number): void;
         glScissor(x: number, y: number, width: number, height: number): void;
         glTranslated(x: number, y: number, z: number): void;

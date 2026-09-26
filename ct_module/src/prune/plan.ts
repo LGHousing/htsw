@@ -33,6 +33,7 @@ export type PruneScanRequest = {
     importJsonPath: string;
     /** Limits the scan to these types; defaults to every prunable type. */
     types?: readonly PrunableType[];
+    onTypeStarted?: (type: PrunableType) => void;
     onTypeScanned?: (type: PrunableType, found: number, undeclared: number) => void;
 };
 
@@ -52,6 +53,7 @@ export async function scanHousePrunePlan(
     for (const type of types) {
         ctx.checkCancelled();
         const spec = pruneTypeOf(type);
+        request.onTypeStarted?.(type);
 
         let identities: string[];
         try {
@@ -209,7 +211,9 @@ export function vanishedWork(
         }
         locked.add(normalizeIdentity(entry.identity));
         if (isProtectedIdentity(spec, entry.identity)) continue;
-        if ((declaredByType.get(type) ?? new Set()).has(normalizeIdentity(entry.identity))) {
+        if (
+            (declaredByType.get(type) ?? new Set()).has(normalizeIdentity(entry.identity))
+        ) {
             continue;
         }
         const vanished = vanishedByType.get(type);
@@ -234,7 +238,9 @@ export function vanishedWork(
 
     const renames = detectRenames(vanishedByType, appearedByType);
     const renamedFrom = new Set(
-        renames.map((rename) => importableKey(rename.type, normalizeIdentity(rename.from)))
+        renames.map((rename) =>
+            importableKey(rename.type, normalizeIdentity(rename.from))
+        )
     );
 
     for (const [type, identities] of vanishedByType) {
