@@ -9,6 +9,11 @@ type MockStack = {
     func_82833_r(): string;
 };
 
+// A 45-slot container (the vanilla player container layout): hotbar last.
+function containerSlotOf(slotId: number): number {
+    return slotId < 9 ? 45 - 9 + slotId : 45 - 36 + (slotId - 9);
+}
+
 const mocks = vi.hoisted(() => ({
     selectedSlot: 4,
     slots: [] as Array<MockStack | null>,
@@ -19,10 +24,12 @@ const mocks = vi.hoisted(() => ({
         | null
         | ((packetSlot: number, value: unknown) => { ack: unknown; slot: unknown }),
     ackWaiters: [] as Array<{
-        packetSlot: number;
-        accepts: (stack: unknown) => boolean;
+        accepts: (windowId: number, slot: number, stack: unknown) => boolean;
         resolve: () => void;
     }>,
+    // Window the server echoes the edit on: 0 with nothing open, the open
+    // container's own id (with its own slot index) when a menu is up.
+    ackWindowId: 0,
     cleanedWaiters: 0,
     sentCreative: [] as Array<{ packetSlot: number; value: unknown }>,
 }));
@@ -59,8 +66,10 @@ vi.mock("../src/housingSync/menus/packets", () => ({
             return;
         }
         const outcome = script(packetSlot, value);
+        const ackSlot =
+            mocks.ackWindowId === 0 ? packetSlot : containerSlotOf(packetSlot - 36);
         for (const waiter of mocks.ackWaiters) {
-            if (waiter.packetSlot === packetSlot && waiter.accepts(outcome.ack)) {
+            if (waiter.accepts(mocks.ackWindowId, ackSlot, outcome.ack)) {
                 waiter.resolve();
             }
         }
@@ -68,14 +77,13 @@ vi.mock("../src/housingSync/menus/packets", () => ({
     },
     waitForSetSlotAck: (
         _ctx: unknown,
-        packetSlot: number,
-        accepts: (stack: unknown) => boolean
+        accepts: (windowId: number, slot: number, stack: unknown) => boolean
     ) => {
         let resolve: () => void = () => undefined;
         const promise = new Promise<void>((r) => {
             resolve = r;
         }) as Promise<void> & { cleanupWaiter?: () => void };
-        mocks.ackWaiters.push({ packetSlot, accepts, resolve });
+        mocks.ackWaiters.push({ accepts, resolve });
         promise.cleanupWaiter = () => {
             mocks.cleanedWaiters++;
         };
@@ -83,8 +91,13 @@ vi.mock("../src/housingSync/menus/packets", () => ({
     },
 }));
 
+vi.mock("../src/tasks/specifics/slots", () => ({
+    getOpenContainerWindowId: () => mocks.ackWindowId,
+}));
+
 vi.mock("../src/housingSync/items/playerInventory", () => ({
     inventorySlotToPacketSlot: (slotId: number) => slotId + 36,
+    inventorySlotToOpenContainerSlot: (slotId: number) => containerSlotOf(slotId),
     heldItem: () => {
         const value = mocks.slots[mocks.selectedSlot];
         return value === null ? null : { getItemStack: () => value };
@@ -141,6 +154,7 @@ describe("held item placement", () => {
         mocks.onCreativeAction = null;
         mocks.ackWaiters = [];
         mocks.cleanedWaiters = 0;
+        mocks.ackWindowId = 0;
         mocks.sentCreative = [];
         vi.stubGlobal("Player", {
             getInventory: () => ({
@@ -289,4 +303,17 @@ describe("held item placement", () => {
         ).toThrow(/replaced 'Plain Fish'.*healing fish/);
     });
 
+    test("accepts the ack echoed on an open container's own window", async () => {
+        mocks.slots[3] = null;
+        mocks.ackWindowId = 97;
+        const injected = stack("plain fish");
+        // The house also swaps the item, so only the container-window ack
+        // proves Hypixel took it.
+        mocks.onCreativeAction = () => ({ ack: injected, slot: stack("healing fish") });
+        const placement = createImportedItemPlacementSession();
+
+        await placement.place(ctx as never, { getItemStack: () => injected } as never);
+
+        expect((mocks.slots[3] as MockStack | null)?.name).toBe("healing fish");
+    });
 });

@@ -9,9 +9,8 @@ const mocks = vi.hoisted(() => ({
     failOn: null as string | null,
 }));
 
-vi.mock("../src/housingSync/sideEffects", () => ({
-    closeOpenScreen: vi.fn(async () => undefined),
-}));
+const closeOpenScreen = vi.fn(async () => undefined);
+vi.mock("../src/housingSync/sideEffects", () => ({ closeOpenScreen }));
 
 vi.mock("../src/housingSync/items/heldItem", () => ({
     injectIntoInventorySlot: vi.fn(
@@ -53,6 +52,13 @@ describe("giveItems", () => {
         mocks.lagInjectedSlots = false;
         mocks.injected = [];
         mocks.failOn = null;
+        closeOpenScreen.mockClear();
+    });
+
+    test("leaves the open screen alone", async () => {
+        await giveItems(ctx, [giveable("a")]);
+
+        expect(closeOpenScreen).not.toHaveBeenCalled();
     });
 
     test("fills the first empty slots in inventory order", async () => {
