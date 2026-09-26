@@ -58,6 +58,8 @@ declare global {
         field_74310_D: HtswMinecraftKeyBinding | null;
         field_74314_A: HtswMinecraftKeyBinding | null;
         field_151445_Q: HtswMinecraftKeyBinding | null;
+        // advancedItemTooltips (F3+H)
+        field_82882_x: boolean;
     }
 
     interface HtswMinecraftPlayerController {

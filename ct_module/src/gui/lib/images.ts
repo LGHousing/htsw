@@ -1,6 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import type { Tag } from "htsw/nbt";
 import { GL11, getMinecraft, javaType } from "./java";
+import { mcItemStackFromNbt } from "../../utils/nbt";
 
 const RenderHelper = javaType("net.minecraft.client.renderer.RenderHelper");
 const GlStateManager = javaType("net.minecraft.client.renderer.GlStateManager");
@@ -32,14 +34,49 @@ function getCachedItemStack(
     }
 }
 
+// Stacks built from full NBT, keyed by the parsed tag object, which stays the
+// same across frames until a reparse. Building the Minecraft NBT is too slow to
+// repeat per frame. Cleared at the cap so tags from old parses can't pile up.
+const NBT_STACK_CACHE_CAP = 1024;
+const nbtStackCache = new Map<Tag, HtswMinecraftItemStack | null>();
+
+function getNbtItemStack(nbt: Tag): HtswMinecraftItemStack | null {
+    const cached = nbtStackCache.get(nbt);
+    if (cached !== undefined) return cached;
+    let stack: HtswMinecraftItemStack | null = null;
+    try {
+        stack = mcItemStackFromNbt(nbt);
+    } catch (_e) {
+        stack = null;
+    }
+    if (nbtStackCache.size >= NBT_STACK_CACHE_CAP) nbtStackCache.clear();
+    nbtStackCache.set(nbt, stack);
+    return stack;
+}
+
+export function resolveMcItemStack(
+    itemId: string,
+    count: number,
+    metadata: number,
+    nbt?: Tag
+): HtswMinecraftItemStack | null {
+    // NBT that Minecraft can't load (bad id, malformed) falls back to the bare
+    // id so the row still gets an icon.
+    return (
+        (nbt !== undefined ? getNbtItemStack(nbt) : null) ??
+        getCachedItemStack(itemId, count, metadata)
+    );
+}
+
 export function renderMcItem(
     itemId: string,
     count: number,
     metadata: number,
     x: number,
-    y: number
+    y: number,
+    nbt?: Tag
 ): void {
-    const stack = getCachedItemStack(itemId, count, metadata);
+    const stack = resolveMcItemStack(itemId, count, metadata, nbt);
     if (stack === null) return;
     try {
         const mc = getMinecraft();
@@ -84,7 +121,7 @@ const iconCache: { [name: string]: unknown } = {};
 
 export function imageCacheSizes(): { mcItems: number; icons: number } {
     return {
-        mcItems: Object.keys(mcItemCache).length,
+        mcItems: Object.keys(mcItemCache).length + nbtStackCache.size,
         icons: Object.keys(iconCache).length,
     };
 }

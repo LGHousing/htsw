@@ -4,6 +4,7 @@ import type {
     Importable,
     ImportableEvent,
 } from "htsw/types";
+import type { Tag } from "htsw/nbt";
 
 import type { Element, Style } from "./lib/layout";
 import { Icon, McItem } from "./lib/components";
@@ -76,7 +77,9 @@ const TEAM_GROUP_COLORS: { [K in Color]: number } = {
     Yellow: 0xffffff55 | 0,
 };
 
-function itemVisual(importable: Importable): { item: string; metadata?: number } | null {
+function itemVisual(
+    importable: Importable
+): { item: string; metadata?: number; nbt: Tag } | null {
     if (importable.type !== "ITEM" || importable.nbt.type !== "compound") return null;
     const fields = importable.nbt.value as Record<
         string,
@@ -88,7 +91,46 @@ function itemVisual(importable: Importable): { item: string; metadata?: number }
     return {
         item: id.value,
         metadata: typeof damage?.value === "number" ? damage.value : undefined,
+        nbt: importable.nbt,
     };
+}
+
+// Enchanted function icons render from NBT carrying a placeholder enchantment,
+// since the glint is all `enchanted` means. One tag per icon, reused so the
+// renderer's per-tag stack cache hits across rebuilds.
+const enchantedIconNbt: { [key: string]: Tag | undefined } = {};
+
+function enchantedFunctionIconNbt(item: string, count: number): Tag {
+    const key = item + ":" + count;
+    const cached = enchantedIconNbt[key];
+    if (cached !== undefined) return cached;
+    const tag: Tag = {
+        type: "compound",
+        value: {
+            id: { type: "string", value: item },
+            Count: { type: "byte", value: count },
+            Damage: { type: "short", value: 0 },
+            tag: {
+                type: "compound",
+                value: {
+                    ench: {
+                        type: "list",
+                        value: {
+                            type: "compound",
+                            value: [
+                                {
+                                    id: { type: "short", value: 0 },
+                                    lvl: { type: "short", value: 1 },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+    };
+    enchantedIconNbt[key] = tag;
+    return tag;
 }
 
 export function ImportableIcon(props: {
@@ -103,9 +145,14 @@ export function ImportableIcon(props: {
         props.functionIcon ??
         (props.importable?.type === "FUNCTION" ? props.importable.icon : undefined);
     if (props.type === "FUNCTION") {
+        const item = functionIcon?.item ?? DEFAULT_FUNCTION_ICON_ITEM;
+        const count = functionIcon?.count ?? 1;
         return McItem({
-            item: functionIcon?.item ?? DEFAULT_FUNCTION_ICON_ITEM,
-            count: functionIcon?.count ?? 1,
+            item,
+            count,
+            nbt: functionIcon?.enchanted === true
+                ? enchantedFunctionIconNbt(item, count)
+                : undefined,
             style: props.style,
         });
     }
@@ -114,7 +161,13 @@ export function ImportableIcon(props: {
         const visual = itemVisual(props.importable);
         return visual === null
             ? false
-            : McItem({ item: visual.item, metadata: visual.metadata, style: props.style });
+            : McItem({
+                  item: visual.item,
+                  metadata: visual.metadata,
+                  nbt: visual.nbt,
+                  tooltip: true,
+                  style: props.style,
+              });
     }
 
     if (props.type === "EVENT") {

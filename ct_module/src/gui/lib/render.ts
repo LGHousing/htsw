@@ -20,7 +20,8 @@ import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
-import { getIconImage, renderMcItem } from "./images";
+import { getIconImage, renderMcItem, resolveMcItemStack } from "./images";
+import { drawItemTooltip, mcItemTooltipLines } from "./itemTooltip";
 import { GL11, getMinecraft, javaType } from "./java";
 import { TextLayoutWrap } from "../../diagnostics/textLayout";
 
@@ -131,7 +132,11 @@ function truncateToWidthUncached(text: string, maxW: number): string {
 // `inPlace` tooltips paint over the anchor itself (text aligned exactly on the
 // original glyphs) instead of below it — used to reveal a truncated label's
 // full text where it sits, spilling over the siblings to its right.
-type QueuedTooltip = { text: string; color: number; anchor: Rect; inPlace?: boolean };
+// `item` tooltips are a hovered item's own inventory tooltip, drawn vanilla-style
+// by the mouse.
+type QueuedTooltip =
+    | { kind: "text"; text: string; color: number; anchor: Rect; inPlace?: boolean }
+    | { kind: "item"; stack: HtswMinecraftItemStack; mouseX: number; mouseY: number };
 let queuedTooltip: QueuedTooltip | null = null;
 
 function takeQueuedTooltip(): QueuedTooltip | null {
@@ -251,7 +256,22 @@ export function drawLaid(
 // Longer tooltip text wraps instead of running off the screen.
 const TOOLTIP_MAX_W = 320;
 
+const loggedItemTooltipErrors = new Set<string>();
+
 function drawTooltip(t: QueuedTooltip): void {
+    if (t.kind === "item") {
+        try {
+            drawItemTooltip(mcItemTooltipLines(t.stack), t.mouseX, t.mouseY);
+        } catch (err) {
+            // Runs every hovered frame, so log each distinct failure once.
+            const key = String(err);
+            if (!loggedItemTooltipErrors.has(key)) {
+                loggedItemTooltipErrors.add(key);
+                debugLogError("item tooltip", err);
+            }
+        }
+        return;
+    }
     const padX = 3;
     const padY = 2;
     const screenW = getOverlayScreenW();
@@ -302,6 +322,7 @@ function queueTooltip(
 ): void {
     if (tooltip.length === 0) return;
     queuedTooltip = {
+        kind: "text",
         text: tooltip,
         color: tooltipColor !== undefined ? tooltipColor : 0xffffffff | 0,
         anchor,
@@ -452,6 +473,7 @@ function renderItem(
             // Truncated label with no explicit tooltip: reveal the full text in
             // place, in the label's own color.
             queuedTooltip = {
+                kind: "text",
                 text: raw,
                 color: color !== undefined ? color : 0xffffffff | 0,
                 anchor: r,
@@ -578,7 +600,13 @@ function renderItem(
             );
         }
     } else {
-        renderMcItem(e.item, e.count, e.metadata, r.x, r.y);
+        renderMcItem(e.item, e.count, e.metadata, r.x, r.y, e.nbt);
+        if (hovered && e.tooltip === true) {
+            const stack = resolveMcItemStack(e.item, e.count, e.metadata, e.nbt);
+            if (stack !== null) {
+                queuedTooltip = { kind: "item", stack, mouseX, mouseY };
+            }
+        }
     }
 }
 

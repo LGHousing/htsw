@@ -185,6 +185,17 @@ export function getItemFromNbt(nbt: Tag): Item {
 }
 
 /**
+ * Build the raw Minecraft stack for an item's full NBT, so damage, skull
+ * owners, leather colors and enchant glint all come through. Null when
+ * Minecraft doesn't know the id.
+ */
+export function mcItemStackFromNbt(nbt: Tag): HtswMinecraftItemStack | null {
+    const normalized = normalizeItemNbtForMinecraft(nbt);
+    if (normalized.type !== "compound") return null;
+    return ItemStack.func_77949_a(/*loadItemStackFromNBT*/ toMinecraftTag(normalized));
+}
+
+/**
  * Parse a Minecraft SNBT string (the format `Item.getRawNBT()` returns) into
  * a spawnable Item.
  */

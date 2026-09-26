@@ -464,6 +464,29 @@ declare global {
         func_179131_c(red: number, green: number, blue: number, alpha: number): void;
         func_179140_f(): void;
         func_179147_l(): void;
+        func_179090_x(): void;
+        func_179084_k(): void;
+        func_179118_c(): void;
+        func_179141_d(): void;
+        func_179103_j(mode: number): void;
+    }
+
+    interface HtswWorldRenderer {
+        func_181668_a(mode: number, format: unknown): void;
+        func_181662_b(x: number, y: number, z: number): HtswWorldRenderer;
+        func_181666_a(red: number, green: number, blue: number, alpha: number): HtswWorldRenderer;
+        func_181675_d(): void;
+    }
+
+    interface HtswTessellatorClass {
+        func_178181_a(): {
+            func_178180_c(): HtswWorldRenderer;
+            func_78381_a(): void;
+        };
+    }
+
+    interface HtswDefaultVertexFormatsClass {
+        readonly field_181706_f: unknown;
     }
 
     interface HtswRenderHelperClass {
@@ -590,6 +613,11 @@ declare global {
         func_77955_b(compound: HtswMinecraftNbtCompound): HtswMinecraftNbtCompound;
         func_77978_p(): HtswMinecraftNbtCompound | null;
         func_82833_r(): unknown;
+        // getTooltip(player, advanced): the lines an inventory hover shows.
+        // A List in Java, but CT 1.8.9 can surface it as an Object[].
+        func_82840_a(player: unknown, advanced: boolean): unknown;
+        // getRarity(); rarityColor's toString is its `§x` code.
+        func_77953_t(): { field_77937_e: unknown };
     }
 
     interface HtswMinecraftItemStackClass {
@@ -744,6 +772,8 @@ declare global {
         "net.minecraft.client.settings.KeyBinding": HtswMinecraftKeyBindingClass;
         "net.minecraft.client.renderer.GlStateManager": HtswGlStateManagerClass;
         "net.minecraft.client.renderer.RenderHelper": HtswRenderHelperClass;
+        "net.minecraft.client.renderer.Tessellator": HtswTessellatorClass;
+        "net.minecraft.client.renderer.vertex.DefaultVertexFormats": HtswDefaultVertexFormatsClass;
         "net.minecraft.item.Item": HtswMinecraftItemClass;
         "net.minecraft.item.ItemStack": HtswMinecraftItemStackClass;
         "net.minecraft.nbt.JsonToNBT": HtswMinecraftJsonToNbtClass;

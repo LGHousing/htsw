@@ -1,5 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import type { Tag } from "htsw/nbt";
 import { Extractable, extract } from "./extractable";
 import { getMinecraft } from "./java";
 
@@ -132,6 +133,11 @@ export type Element =
           item: string;
           count: number;
           metadata: number;
+          // The item's full NBT. When set it wins over item/metadata, so
+          // skull textures, glass colors and glint render as in-game.
+          nbt?: Tag;
+          // Show the item's inventory tooltip on hover.
+          tooltip?: boolean;
       };
 
 function extractChildren(c: Extractable<Child[]>): Element[] {

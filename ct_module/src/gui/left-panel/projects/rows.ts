@@ -2128,7 +2128,7 @@ export function menuSlotRow(
         onDoubleClick: () => confirmSelect(target, parent.fullPath),
         children: [
             itemId !== undefined
-                ? McItem({ item: itemId, count: 1 })
+                ? McItem({ item: itemId, count: 1, nbt: slot.nbt, tooltip: true })
                 : Icon({
                       name: Icons.fileCode,
                       color: IMPORTABLE_TYPE_COLORS[imp.type],
