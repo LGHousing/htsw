@@ -92,6 +92,10 @@ test("profiles the worker phases and main-thread callback delay", async () => {
             "/project/import.json": 1,
             "/project/actions.htsl": 2,
         },
+        canonicalPaths: {
+            "/project/import.json": "/project/import.json",
+            "/project/actions.htsl": "/project/actions.htsl",
+        },
         hashes: ["hash"],
         profile: {
             phases: {
