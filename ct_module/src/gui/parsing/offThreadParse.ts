@@ -5,6 +5,7 @@ import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw"
 import { importableHash } from "../../importCache/hash";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { runOnMainThread } from "../../utils/mainThread";
+import { resolveCanonicalPaths } from "./realPath";
 import { getMtimeMs, javaType } from "../lib/java";
 import { allReferencedPaths } from "./importablePaths";
 import { saveSnapshot } from "./parseSnapshot";
@@ -13,6 +14,8 @@ export type OffThreadParseResult = {
     parsed: ImportablesParseResult | null;
     error: string | null;
     fingerprint: { [path: string]: number };
+    /** Every fingerprint path resolved to its canonical form, for the memo. */
+    canonicalPaths?: { [path: string]: string };
     hashes: string[];
     profile: OffThreadParseProfile | null;
 };
@@ -80,6 +83,7 @@ export function parseImportJsonOffThread(
                     let fingerprint: { [path: string]: number } = {};
                     fingerprint[canonicalImportJsonPath] = importJsonMtime;
                     let hashes: string[] = [];
+                    let canonicalPaths: { [path: string]: string } | undefined;
                     const phases: ParsePhaseTimings = {
                         sourceParseMs: 0,
                         referencedPathFingerprintMs: 0,
@@ -108,6 +112,7 @@ export function parseImportJsonOffThread(
                             importJsonMtime,
                             parsed
                         );
+                        canonicalPaths = resolveCanonicalPaths(fingerprint);
                         phases.referencedPathFingerprintMs =
                             Date.now() - fingerprintStartedAt;
                         const hashStartedAt = Date.now();
@@ -144,7 +149,14 @@ export function parseImportJsonOffThread(
                         workerStartDelayMs: workerStartedAt - submittedAt,
                         mainThreadCallbackDelayMs: 0,
                     };
-                    const result = { parsed, error, fingerprint, hashes, profile };
+                    const result = {
+                        parsed,
+                        error,
+                        fingerprint,
+                        canonicalPaths,
+                        hashes,
+                        profile,
+                    };
                     runOnMainThread(() => {
                         result.profile.mainThreadCallbackDelayMs =
                             Date.now() - workerFinishedAt;

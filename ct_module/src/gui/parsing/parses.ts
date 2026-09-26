@@ -12,7 +12,7 @@ import {
     invalidateItemDependencyIndex,
 } from "../../importables/items/dependencyIndex";
 import { recordHouseBinding } from "../../importCache/houseBindings";
-import { getMtimeMs, javaType } from "../lib/java";
+import { getMtimeMs } from "../lib/java";
 import {
     diffSnapshotFingerprint,
     loadSnapshot,
@@ -38,6 +38,8 @@ import {
 import { uploadSlowParseDiagnostics } from "../../runtimeDebug/slowParseUpload";
 import { BoundedMap } from "../lib/boundedLruMap";
 import { span } from "../../perf/spans";
+import { runOnMainThread } from "../../utils/mainThread";
+import { resolveCanonicalPath, resolveCanonicalPaths } from "./realPath";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -74,44 +76,35 @@ export type CachedParse = {
 };
 
 // `canonicalPath` is called all over the render paths (per file tab, per
-// queue item, per importable in the cache scans) — and each call did a fresh
-// `Java.type("java.nio.file.Paths")` lookup plus NIO path ops, which `java.ts`
-// already warns is "not free". The result is a pure function of the input
-// string (the process CWD is stable for the session), so memoize by input.
-let _Paths: HtswJavaPathsClass | null = null;
-// Sized for several large projects' worth of referenced files. Once the
-// working set outgrows it, per-frame lookups (queue rows matching files to
-// importables) evict each other and every miss is a `toRealPath` disk call.
+// queue item, per importable in the cache scans), and each miss is a
+// `toRealPath` disk call. The result is a pure function of the input string
+// (the process CWD is stable for the session), so memoize by input.
+// Sized for several large projects' referenced files: past that, per-frame
+// lookups evict each other and every miss goes back to disk.
 const canonicalPathCache = new BoundedMap<string, string>(16384);
 
 export function canonicalPath(p: string): string {
     if (!p) return p;
     const hit = canonicalPathCache.get(p);
     if (hit !== undefined) return hit;
-    let result: string;
-    try {
-        if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
-        const abs = _Paths.get(p).toAbsolutePath();
-        let resolved: HtswJavaPath;
-        try {
-            // The one identity function for paths: everything that compares,
-            // caches, or dedups by path goes through here, and on Windows the
-            // same file is reachable under differently-cased / relative /
-            // absolute spellings (a `./htsw/...` open vs the absolute path in
-            // housing-bindings.json once opened the same project as two
-            // sources with two parse-cache entries). `toRealPath` collapses
-            // every spelling of an existing file to the filesystem's own one.
-            resolved = abs.toRealPath();
-        } catch (_e) {
-            // File doesn't exist (yet) — fall back to lexical normalization.
-            resolved = abs.normalize();
-        }
-        result = String(resolved.toString()).split("\\").join("/");
-    } catch (_e) {
-        result = p.split("\\").join("/");
-    }
+    const result = resolveCanonicalPath(p);
     canonicalPathCache.set(p, result);
     return result;
+}
+
+/**
+ * Pre-fills the memo with paths a worker already resolved, so a project's first
+ * draw doesn't resolve every referenced file on the client thread. Client
+ * thread only: the memo is not safe for concurrent writes.
+ */
+function seedCanonicalPaths(resolved: { [path: string]: string } | undefined): void {
+    if (resolved === undefined) return;
+    for (const path in resolved) {
+        if (!Object.prototype.hasOwnProperty.call(resolved, path)) continue;
+        if (canonicalPathCache.get(path) === undefined) {
+            canonicalPathCache.set(path, resolved[path]);
+        }
+    }
 }
 
 const cache = new Map<string, CachedParse>();
@@ -635,6 +628,7 @@ function commitOffThreadResult(
             seedImportableHash(result.parsed.value[i], result.hashes[i]);
         }
     }
+    seedCanonicalPaths(result.canonicalPaths);
     return commitParseEntry(
         canon,
         rawPath,
@@ -720,6 +714,11 @@ function pumpPendingParses(): void {
                             const parsed = span("parse.snapshotRestore", () =>
                                 restoreParseFromSnapshot(snapshot)
                             );
+                            // This timeout runs on a CT timer thread, so the
+                            // disk work stays here and only the memo writes
+                            // hop over.
+                            const resolved = resolveCanonicalPaths(snapshot.fingerprint);
+                            runOnMainThread(() => seedCanonicalPaths(resolved));
                             const snapshotEntry = commitParseEntry(
                                 parseCanon,
                                 nextRaw,
