@@ -856,11 +856,7 @@ function commandImport(args: string[]) {
             label: `Import ${compactFileLabel(canon)}`,
         })
     );
-    if (
-        result.kind === "duplicate" ||
-        result.kind === "absorbed" ||
-        result.kind === "refused"
-    ) {
+    if (result.kind === "duplicate" || result.kind === "absorbed") {
         rejectBridgeRun("import", result.message);
         ChatLib.chat(`&e[htsw] ${result.message}`);
         return;

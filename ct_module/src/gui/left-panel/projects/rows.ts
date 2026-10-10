@@ -382,17 +382,6 @@ function importableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
-/**
- * Why part of this project can't be queued on its own, or "" when it can. A
- * project that claims its whole house imports as a whole, so its removal step
- * always follows a full import. "" doubles as a tooltip that draws nothing.
- */
-function wholeProjectOnly(parent: ResultImport): string {
-    return parent.parse?.importJson.dangerouslyDeleteEverythingNotInThisFile === true
-        ? "This project claims its whole house, so it only imports as a whole."
-        : "";
-}
-
 function projectImportQueueRow(parent: ResultImport, imp: Importable) {
     return makeImportableQueueRow({
         op: "import",
@@ -764,16 +753,13 @@ function hasModifiedForQueue(importables: readonly Importable[]): boolean {
 
 function queueModifiedAction(
     importables: readonly Importable[],
-    onClick: () => void,
-    blocked = ""
+    onClick: () => void
 ): MenuAction[] {
     if (!hasModifiedForQueue(importables)) return [];
     return [
         {
             label: `Queue modified for import (${modifiedQueueCount(importables)})`,
             icon: Icons.listChecks,
-            disabled: blocked !== "",
-            tooltip: blocked,
             onClick,
         },
     ];
@@ -917,8 +903,6 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
         {
             label: isQueueItemQueued(item) ? "Remove from queue" : "Queue import",
             icon: Icons.listPlus,
-            disabled: () => !isQueueItemQueued(item) && wholeProjectOnly(parent) !== "",
-            tooltip: () => (isQueueItemQueued(item) ? "" : wholeProjectOnly(parent)),
             onClick: () => {
                 if (toggleQueue(item)) autoRunQueueChanged();
             },
@@ -1107,11 +1091,7 @@ function queueImportables(
             label: `Import ${shortPath(scopePath)}`,
         })
     );
-    if (
-        result.kind === "duplicate" ||
-        result.kind === "absorbed" ||
-        result.kind === "refused"
-    ) {
+    if (result.kind === "duplicate" || result.kind === "absorbed") {
         showToast(result.message, ACCENT_WARN);
         return;
     }
@@ -1135,11 +1115,7 @@ function queueModifiedSubtree(
             label: `Import modified in ${shortPath(scopePath)}`,
         })
     );
-    if (
-        result.kind === "duplicate" ||
-        result.kind === "absorbed" ||
-        result.kind === "refused"
-    ) {
+    if (result.kind === "duplicate" || result.kind === "absorbed") {
         showToast(result.message, ACCENT_WARN);
         return;
     }
@@ -1179,10 +1155,8 @@ function fileIconFor(r: Result): Element {
 
 function queueCheckbox(
     checked: () => boolean,
-    onToggle: (checked: boolean) => void,
-    blocked: () => string = () => ""
+    onToggle: (checked: boolean) => void
 ): Element {
-    const unavailable = (): boolean => !checked() && blocked() !== "";
     return Container({
         style: {
             direction: "row",
@@ -1195,10 +1169,9 @@ function queueCheckbox(
         onClick: (_rect, info) => {
             if (info.isDoubleClickSecond) return;
             if (info.button !== 0) return;
-            if (unavailable()) return;
             onToggle(checked());
         },
-        tooltip: () => (checked() ? "Queued" : unavailable() ? blocked() : "Add to queue"),
+        tooltip: () => (checked() ? "Queued" : "Add to queue"),
         tooltipColor: () => (checked() ? ACCENT_SUCCESS : COLOR_TEXT_DIM),
         children: [
             Icon({
@@ -1505,12 +1478,6 @@ export function resultRow(
                   {
                       label: `Queue all for import (${filteredImportables.length})`,
                       icon: Icons.listPlus,
-                      // A search narrows the rows to part of the project.
-                      disabled: narrowed && wholeProjectOnly(r) !== "",
-                      tooltip:
-                          narrowed && wholeProjectOnly(r) !== ""
-                              ? `Clear the search first. ${wholeProjectOnly(r)}`
-                              : "",
                       onClick: () =>
                           queueImportables(r, r.fullPath, filteredImportables, narrowed),
                   },
@@ -1679,15 +1646,11 @@ export function includeGroupRow(
             {
                 label: `Queue all for import (${declaredImportables.length})`,
                 icon: Icons.listPlus,
-                disabled: wholeProjectOnly(parent) !== "",
-                tooltip: wholeProjectOnly(parent),
                 onClick: () =>
                     queueImportables(parent, fullPath, declaredImportables, narrowed),
             },
-            ...queueModifiedAction(
-                declaredImportables,
-                () => queueModifiedSubtree(parent, fullPath, declaredImportables),
-                wholeProjectOnly(parent)
+            ...queueModifiedAction(declaredImportables, () =>
+                queueModifiedSubtree(parent, fullPath, declaredImportables)
             ),
             {
                 label: `Queue export from house (${count})`,
@@ -1937,10 +1900,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
         onClick: rowHandler(actions, () => previewSelect(previewPath, parent.fullPath)),
         onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
         children: [
-            queueCheckbox(
-                checked,
-                (isChecked) => toggleImportableInQueue(parent, imp, isChecked),
-                () => wholeProjectOnly(parent)
+            queueCheckbox(checked, (isChecked) =>
+                toggleImportableInQueue(parent, imp, isChecked)
             ),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
             rowSlot(INNER_GAP),
