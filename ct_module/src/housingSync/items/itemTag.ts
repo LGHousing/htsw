@@ -143,6 +143,48 @@ function normalizeItemDefaults(tag: TagLike): TagLike {
     return { type: "compound", value };
 }
 
+const ENCHANTMENT_LIST_KEYS = ["ench", "StoredEnchantments"];
+
+function enchantmentSortKey(
+    entry: Partial<Record<string, TagLike>>,
+    key: string
+): number {
+    const value = entry[key]?.value;
+    return typeof value === "number" ? value : 0;
+}
+
+// The server appears to reorder an item's enchantment list when it
+// round-trips: Diamond Boots spawned with four `ench` entries echoed back with
+// the same tag text length but a different hash. Enchantment order has no
+// gameplay effect, so it can't be part of an item's identity. Entries sort by
+// id, then level.
+function sortEnchantmentLists(tag: TagLike): TagLike {
+    const inner = tagChild(tag, "tag");
+    if (inner === undefined || inner.type !== "compound") return tag;
+    const value: Record<string, TagLike> = { ...compoundEntries(inner) };
+    let changed = false;
+    for (const key of ENCHANTMENT_LIST_KEYS) {
+        const list = value[key] as TagLike | undefined;
+        if (list?.type !== "list") continue;
+        const entries = list.value as { type: string; value: unknown[] };
+        if (entries.type !== "compound") continue;
+        const sorted = (entries.value as Record<string, TagLike>[])
+            .slice()
+            .sort(
+                (a, b) =>
+                    enchantmentSortKey(a, "id") - enchantmentSortKey(b, "id") ||
+                    enchantmentSortKey(a, "lvl") - enchantmentSortKey(b, "lvl")
+            );
+        value[key] = { type: "list", value: { type: "compound", value: sorted } };
+        changed = true;
+    }
+    if (!changed) return tag;
+    return {
+        type: "compound",
+        value: { ...compoundEntries(tag), tag: { type: "compound", value } },
+    };
+}
+
 export function canonicalItemShellTag(tag: TagLike): TagLike {
     return canonicalizeItemTag(tag, false);
 }
@@ -156,6 +198,8 @@ function canonicalizeItemTag(tag: TagLike, preserveInteractData: boolean): TagLi
         preserveInteractData ? tag : stripInteractData(tag)
     );
     return stripEmptyServerShells(
-        normalizeItemDefaults(normalizeIntegralTypes(withoutServerFields))
+        sortEnchantmentLists(
+            normalizeItemDefaults(normalizeIntegralTypes(withoutServerFields))
+        )
     );
 }

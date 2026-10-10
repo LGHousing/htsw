@@ -133,6 +133,50 @@ describe("canonicalItemShellTag", () => {
         expect(canonicalItemShellTag(source)).toEqual(canonicalItemShellTag(retyped));
     });
 
+    test("enchantment order is not part of an item's identity", () => {
+        const ench = (pairs: [number, number][]): TagLike => ({
+            type: "list",
+            value: {
+                type: "compound",
+                value: pairs.map(([id, lvl]) => ({ lvl: short(lvl), id: short(id) })),
+            },
+        });
+        const boots = (key: string, pairs: [number, number][]): TagLike =>
+            compound({
+                id: str("minecraft:diamond_boots"),
+                tag: compound({ [key]: ench(pairs) }),
+            });
+        const authored: [number, number][] = [
+            [0, 5],
+            [34, 3],
+            [2, 4],
+            [8, 3],
+        ];
+        const reordered: [number, number][] = [
+            [8, 3],
+            [2, 4],
+            [0, 5],
+            [34, 3],
+        ];
+        for (const key of ["ench", "StoredEnchantments"]) {
+            expect(canonicalLiveItemTag(boots(key, authored))).toEqual(
+                canonicalLiveItemTag(boots(key, reordered))
+            );
+        }
+
+        // Levels still matter.
+        expect(canonicalItemShellTag(boots("ench", authored))).not.toEqual(
+            canonicalItemShellTag(
+                boots("ench", [
+                    [0, 4],
+                    [34, 3],
+                    [2, 4],
+                    [8, 3],
+                ])
+            )
+        );
+    });
+
     test('blank lore separators "" and "§7" are DISTINCT identities', () => {
         // Housing preserves whichever blank-separator form was authored, and
         // its Metadata check distinguishes them, so two items differing only
@@ -207,9 +251,11 @@ describe("canonicalItemShellTag", () => {
         // The exported snbt is ground truth: rewriting "" to "§7" on the way
         // out made the two variants byte-identical on disk, so you could not
         // tell which one a project had captured.
-        expect(normalizeItemSnbtForExport('{id:"minecraft:stone",tag:{display:{Lore:["a","","b"]}}}')).toContain(
-            '""'
-        );
+        expect(
+            normalizeItemSnbtForExport(
+                '{id:"minecraft:stone",tag:{display:{Lore:["a","","b"]}}}'
+            )
+        ).toContain('""');
     });
 
     test("Drop Item's empty ExtraAttributes remains part of exact metadata identity", () => {
