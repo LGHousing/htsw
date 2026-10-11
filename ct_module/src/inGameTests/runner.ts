@@ -824,13 +824,18 @@ async function cleanupFixture(
         });
     }
 
+    const functionNames = importables.some((importable) => importable.type === "FUNCTION")
+        ? (await readFreshFunctionNames(ctx)).map((name) => name.toLowerCase())
+        : [];
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         if (importable.type === "FUNCTION") {
-            await ctx.expectAfter(
-                () => ctx.runCommand(`/function delete ${importable.name}`),
-                chatMessage(`Deleted the function ${importable.name}`)
-            );
+            if (functionNames.indexOf(importable.name.toLowerCase()) >= 0) {
+                await ctx.expectAfter(
+                    () => ctx.runCommand(`/function delete ${importable.name}`),
+                    chatMessage(`Deleted the function ${importable.name}`)
+                );
+            }
         } else if (importable.type === "COMMAND") {
             await ctx.runCommand(`/command delete ${importable.name}`);
             await ctx.sleep(300);
@@ -933,14 +938,18 @@ async function readHouseState(ctx: TaskContext): Promise<{
     menus: string[];
     commands: string[];
 }> {
-    // Deleting a function leaves an open Functions menu unchanged on Housing.
-    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
     return {
-        functions: await listAllFunctionNames(ctx),
+        functions: await readFreshFunctionNames(ctx),
         regions: await listAllRegionNames(ctx),
         menus: await listAllMenuNames(ctx),
         commands: withoutDefaultCommands(await listAllCommandNames(ctx)),
     };
+}
+
+async function readFreshFunctionNames(ctx: TaskContext): Promise<string[]> {
+    // Deleting a function leaves an open Functions menu unchanged on Housing.
+    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
+    return listAllFunctionNames(ctx);
 }
 
 function createSuiteEventHandler(failures: string[]): SyncEventHandler {
