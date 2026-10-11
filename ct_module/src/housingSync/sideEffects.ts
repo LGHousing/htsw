@@ -15,8 +15,8 @@ const KeyBinding = javaType("net.minecraft.client.settings.KeyBinding");
  * checked directly by the caller instead of the in-task sound interceptor.
  */
 
-export function gmcOnImportStart(): void {
-    ChatLib.command("gmc");
+export async function gmcOnImportStart(ctx: TaskContext): Promise<void> {
+    await ctx.runCommand("/gmc");
 }
 
 export function isInCreativeMode(): boolean {
