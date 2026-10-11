@@ -875,7 +875,7 @@ const defaultDependencies: QueueRunnerDependencies = {
         return uuid;
     },
     async beforeFirstImport(ctx) {
-        gmcOnImportStart();
+        await gmcOnImportStart(ctx);
         if (!(await waitForCreativeMode(ctx))) {
             ChatLib.chat(
                 "&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot."

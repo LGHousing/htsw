@@ -25,21 +25,14 @@ import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
 import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
-import { getMinecraft, javaType, sendPacket } from "../../utils/java";
+import { getMinecraft, javaType } from "../../utils/java";
 import { itemLore } from "../../utils/itemLore";
 
 const GuiEditSign = javaType("net.minecraft.client.gui.inventory.GuiEditSign");
-const C12PacketUpdateSign = javaType(
-    "net.minecraft.network.play.client.C12PacketUpdateSign"
-);
 
 const ChatComponentText = javaType("net.minecraft.util.ChatComponentText");
 const IChatComponent = javaType("net.minecraft.util.IChatComponent");
 const JavaArray = javaType("java.lang.reflect.Array");
-
-type SignTile = {
-    func_174877_v(): unknown;
-};
 
 type RhinoJavaObject = {
     class: HtswJavaClass;
@@ -296,12 +289,10 @@ function submitSignValue(value: string): void {
         throw new Error("Sign input was expected, but the sign editor is not open.");
     }
 
-    const sign = getDeclaredFieldInHierarchy(screen, "field_146848_f").get(
-        screen
-    ) as SignTile;
+    const sign = getDeclaredFieldInHierarchy(screen, "field_146848_f").get(screen);
     const lines = chatComponentLines([value, "", "", ""]);
     getDeclaredFieldInHierarchy(sign, "field_145915_a").set(sign, lines);
-    sendPacket(new C12PacketUpdateSign(sign.func_174877_v(), lines));
+    // In MC 1.8.9, GuiEditSign.onGuiClosed sends C12 with these lines and position.
     getMinecraft().func_147108_a(null);
 }
 

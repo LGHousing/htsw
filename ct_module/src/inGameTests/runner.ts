@@ -82,7 +82,7 @@ export async function runLiveTestSuite(ctx: TaskContext, slice?: string): Promis
     const tracePath = setTaskTraceEnabled(true);
     ctx.displayMessage(`&7[htsw test] task trace → &f${tracePath}`);
     try {
-        gmcOnImportStart();
+        await gmcOnImportStart(ctx);
         if (!(await waitForCreativeMode(ctx))) {
             ctx.displayMessage(
                 "&e[htsw test] Still not in creative after /gmc; region and item tests may fail."
