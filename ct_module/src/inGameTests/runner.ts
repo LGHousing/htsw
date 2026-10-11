@@ -60,6 +60,8 @@ import { gmcOnImportStart, waitForCreativeMode } from "../housingSync/sideEffect
 import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
 import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
+import { chatMessage } from "../housingSync/menus/menuWaiters";
+import { functionListOpened } from "../importables/waiters";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 
 type FixtureResult = {
@@ -825,8 +827,10 @@ async function cleanupFixture(
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         if (importable.type === "FUNCTION") {
-            await ctx.runCommand(`/function delete ${importable.name}`);
-            await ctx.sleep(300);
+            await ctx.expectAfter(
+                () => ctx.runCommand(`/function delete ${importable.name}`),
+                chatMessage(`Deleted the function ${importable.name}`)
+            );
         } else if (importable.type === "COMMAND") {
             await ctx.runCommand(`/command delete ${importable.name}`);
             await ctx.sleep(300);
@@ -929,6 +933,8 @@ async function readHouseState(ctx: TaskContext): Promise<{
     menus: string[];
     commands: string[];
 }> {
+    // Deleting a function leaves an open Functions menu unchanged on Housing.
+    await ctx.expectAfter(() => ctx.runCommand("/functions"), functionListOpened());
     return {
         functions: await listAllFunctionNames(ctx),
         regions: await listAllRegionNames(ctx),
