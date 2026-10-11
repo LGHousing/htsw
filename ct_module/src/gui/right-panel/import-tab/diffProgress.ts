@@ -31,7 +31,8 @@ export function createDiffProgressSession(
 ): DiffProgressSession {
     const tracked = importables.filter(
         (importable) =>
-            actionListsOfImportable(importable).length > 0 &&
+            (importable.type === "GROUP" ||
+                actionListsOfImportable(importable).length > 0) &&
             HOUSE_READERS[importable.type] !== null
     );
     const unitsByKey = new Map<string, number>();

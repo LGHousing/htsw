@@ -3,6 +3,7 @@ import type {
     Action,
     ImportableCommand,
     ImportableFunction,
+    ImportableGroup,
 } from "htsw/types";
 
 import {
@@ -112,6 +113,32 @@ describe("diff live reads", () => {
         expect(cacheMocks.writeImportableCache).not.toHaveBeenCalled();
         expect(importerBaseline).toEqual(baseline);
         expect(subsequentVerdict()).toBe(before);
+    });
+
+    it("reads settings-only groups in memory without updating the cache", async () => {
+        const group: ImportableGroup = { type: "GROUP", name: "Helper", tag: "GUEST" };
+        const reader = defineHouseExporter({
+            type: "GROUP",
+            noun: "group",
+            list: async () => ["Helper"],
+            reader: { kind: "direct", read: async () => group },
+            importableOf: (value) => value,
+            export: async () => undefined,
+        });
+        const live = await readDiffImportables(
+            {
+                checkCancelled: () => undefined,
+                displayMessage: () => undefined,
+            } as unknown as TaskContext,
+            "import.json",
+            "house",
+            { value: [group] } as never,
+            { sinkFor: () => undefined } as never,
+            { GROUP: reader }
+        );
+        expect(live.get("GROUP:Helper")?.importable).toEqual(group);
+        expect(cacheMocks.writeImportableCache).not.toHaveBeenCalled();
+        expect(lockMocks.upsertHouseLockImportable).not.toHaveBeenCalled();
     });
 
     it("keeps colliding capture names owned by their reader results", async () => {

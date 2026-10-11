@@ -44,6 +44,7 @@ import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
 import {
+    appendGroupDiffReport,
     evaluateDiffReport,
     formatDiffReport,
     matchDiffActionLists,
@@ -79,7 +80,11 @@ export async function readDiffImportables(
     const live = new Map<string, LiveDiffImportable>();
     const namesByType = new Map<Importable["type"], string[]>();
     for (const importable of parsed.value) {
-        if (actionListsOfImportable(importable).length === 0) continue;
+        if (
+            importable.type !== "GROUP" &&
+            actionListsOfImportable(importable).length === 0
+        )
+            continue;
         const names = namesByType.get(importable.type);
         if (names === undefined) {
             namesByType.set(importable.type, [importableIdentity(importable)]);
@@ -310,6 +315,7 @@ export function commandDiff(args: string[]): void {
                 existingLock,
                 projectItems
             );
+            appendGroupDiffReport(report, parsed.value, live);
             emitBridgeEvent("htsw_diff", {
                 status: "completed",
                 clean: report.clean,
