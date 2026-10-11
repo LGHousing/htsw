@@ -100,12 +100,21 @@ export function readGroupSettings(ctx: TaskContext): GroupSettings {
     };
 }
 
+function verifyGroupField(field: string, expected: unknown, actual: unknown): void {
+    if (actual !== expected) {
+        throw new Error(
+            `Housing did not apply group ${field}: expected ${JSON.stringify(expected)}, read ${JSON.stringify(actual)}`
+        );
+    }
+}
+
 export async function setGroupTag(ctx: TaskContext, tag: string): Promise<void> {
     const slot = ctx.getMenuItemSlot(CHANGE_TAG_SLOT);
     if (readTagValue(slot) === tag) return;
     slot.click(MouseButton.LEFT);
     await enterValue(ctx, tag);
     await waitForMenu(ctx);
+    verifyGroupField("tag", tag, readGroupSettings(ctx).tag);
 }
 
 export async function setGroupTagShownInChat(
@@ -116,6 +125,7 @@ export async function setGroupTagShownInChat(
     if (readEnabledDisabled(readLabeledLoreValue(slot, TAG_IN_CHAT_LABEL)) === value) return;
     slot.click(MouseButton.RIGHT);
     await timedWaitForMenu(ctx, "menuClickWait");
+    verifyGroupField("tagShownInChat", value, readGroupSettings(ctx).tagShownInChat);
 }
 
 function findColorOption(ctx: TaskContext, color: string): ItemSlot | null {
@@ -143,6 +153,7 @@ export async function setGroupColor(ctx: TaskContext, color: Color): Promise<voi
     if (ctx.tryGetMenuItemSlot(CHANGE_COLOR_SLOT) === null) {
         await clickGoBack(ctx);
     }
+    verifyGroupField("color", color, readGroupSettings(ctx).color);
 }
 
 export async function setGroupPriority(
@@ -154,6 +165,7 @@ export async function setGroupPriority(
     slot.click();
     await enterValue(ctx, String(priority));
     await waitForMenu(ctx);
+    verifyGroupField("priority", priority, readGroupSettings(ctx).priority);
 }
 
 // A boolean permission renders as a single slot whose name encodes its state,
@@ -353,6 +365,21 @@ export async function applyGroupPermissionMenu(
     }
     if (defaultGameMode !== undefined) {
         await setGroupCycle(ctx, DEFAULT_GAME_MODE_LABEL, defaultGameMode);
+    }
+    await clickGoBack(ctx);
+    const actual = await readGroupPermissionMenu(ctx);
+    for (const [name, expected] of Object.entries(permissions ?? {})) {
+        verifyGroupField(
+            `permission "${name}"`,
+            expected,
+            actual.permissions[name]
+        );
+    }
+    if (chatSpeed !== undefined) {
+        verifyGroupField("chatSpeed", chatSpeed, actual.chatSpeed);
+    }
+    if (defaultGameMode !== undefined) {
+        verifyGroupField("defaultGameMode", defaultGameMode, actual.defaultGameMode);
     }
     await clickGoBack(ctx);
 }

@@ -1,4 +1,4 @@
-import type { Action, Importable } from "htsw/types";
+import type { Action, Importable, Permission } from "htsw/types";
 
 import { compareActionList } from "../housingSync/actions/conflicts";
 import {
@@ -115,6 +115,66 @@ function actionListsByPath(importable: Importable): Map<string, readonly Action[
         byPath.set(list.basePath, list.actions);
     }
     return byPath;
+}
+
+export function appendGroupDiffReport(
+    report: DiffReport,
+    sourceImportables: readonly Importable[],
+    liveImportables: ReadonlyMap<string, LiveDiffImportable>
+): void {
+    for (const source of sourceImportables) {
+        if (source.type !== "GROUP") continue;
+        const live = liveImportables.get(importableKey("GROUP", source.name))?.importable;
+        if (live?.type !== "GROUP") {
+            report.unknown++;
+            continue;
+        }
+        const differences: ActionListConflictDifference[] = [];
+        const unreadable: string[] = [];
+        const compare = (path: string, expected: unknown, actual: unknown): void => {
+            if (expected === undefined) return;
+            if (actual === undefined) {
+                unreadable.push(path);
+            } else if (expected !== actual) {
+                differences.push({
+                    path,
+                    source: JSON.stringify(expected),
+                    live: JSON.stringify(actual),
+                });
+            }
+        };
+        for (const field of [
+            "tag",
+            "tagShownInChat",
+            "color",
+            "priority",
+            "chatSpeed",
+            "defaultGameMode",
+        ] as const) {
+            compare(field, source[field], live[field]);
+        }
+        for (const [name, expected] of Object.entries(source.permissions ?? {})) {
+            compare(
+                `permissions.${name}`,
+                expected,
+                live.permissions?.[name as Permission]
+            );
+        }
+        if (differences.length > 0) {
+            report.conflicts.push({
+                type: "GROUP",
+                identity: source.name,
+                basePath: "settings",
+                ...summarizeActionListConflictDifferences(differences),
+                canonicalDifferences: differences,
+                printerDiagnostics: [],
+            });
+        } else if (unreadable.length > 0) {
+            report.unknown++;
+        } else {
+            report.clean++;
+        }
+    }
 }
 
 export function evaluateDiffReport(
