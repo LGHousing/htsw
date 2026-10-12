@@ -4,7 +4,6 @@ import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { showToast } from "../toast";
-import type { HouseReadableType } from "../../importables/export/readers";
 import {
     addQueueRow,
     makeBulkQueueRow,
@@ -44,7 +43,7 @@ export function startDeepRead(
                         path: options.importJsonPath,
                         scope: {
                             kind: "houseType",
-                            type: spec.type as HouseReadableType,
+                            type: spec.type,
                         },
                         filter: "all",
                         label: `Read all ${spec.label}s`,

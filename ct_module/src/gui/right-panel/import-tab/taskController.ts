@@ -27,7 +27,6 @@ import {
 } from "../../../importables/import/session";
 import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
 import { importableIdentity, importableKey } from "../../../importables/identity";
-import { HOUSE_READERS } from "../../../importables/export/readers";
 import { isTaskCancelled } from "../../../tasks/manager";
 import { setTaskActivity } from "../../../tasks/activity";
 import type { Importable } from "htsw/types";
@@ -438,7 +437,7 @@ function prepareConflictReview(
         (importable) =>
             !retained.has(
                 importableKey(importable.type, importableIdentity(importable))
-            ) && HOUSE_READERS[importable.type] !== null
+            )
     );
     const firstSourcePath =
         importables.length > 0 ? importableSourcePath(importables[0]) : undefined;

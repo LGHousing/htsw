@@ -103,16 +103,13 @@ export async function runExportSession(
                 continue;
             }
             const reader = batch.reader ?? HOUSE_READERS[batch.type];
-            if (reader === null) {
-                throw new Error(`${batch.type} has no live Housing reader.`);
-            }
             const target =
                 destination.kind === "project"
                     ? destination.project
                     : {
                           importJsonPath: destination.importJsonPath,
                           rootDir: "",
-                          projectItems: destination.projectItems ?? [],
+                          projectItems: destination.projectItems,
                       };
             const result = await reader(ctx, {
                 ...target,

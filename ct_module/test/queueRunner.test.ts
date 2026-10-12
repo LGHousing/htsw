@@ -552,6 +552,29 @@ describe("bulk filter semantics", () => {
 });
 
 describe("queued held-item export", () => {
+    it("reads selected project items and leaves failed reads failed", async () => {
+        const item = makeImportableQueueRow({
+            op: "read",
+            house: "house-a",
+            path: "/items/import.json",
+            type: "ITEM",
+            identity: "cookie",
+        });
+        const fakeSession = (async (_ctx, destination, batches) => {
+            expect(destination.kind).toBe("cache");
+            expect(batches[0].reader).toBeUndefined();
+            expect(batches[0].names).toEqual(["cookie"]);
+            batches[0].onQueueRowFinished?.(item.key, "No live copy");
+            return { total: 1, succeeded: 0, failed: 1 };
+        }) as typeof runExportSession;
+
+        const result = await runQueuedExportSession(ctx, [item], "house-a", fakeSession);
+        expect(result).toEqual({
+            completedKeys: [],
+            failed: [{ key: item.key, error: "No live copy" }],
+        });
+    });
+
     it("captures at run time without passing the synthetic queue identity as a name", async () => {
         const held = makeImportableQueueRow({
             op: "export",

@@ -610,6 +610,9 @@ async function listHouseType(
     if (type === "EVENT") return { names: knownEventNames() };
     if (type === "TEAM") return { names: await listAllTeamNames(ctx) };
     if (type === "GROUP") return { names: await listAllGroupNames(ctx) };
+    // Items can be read by project NBT from inventory, but Housing cannot
+    // enumerate them by name. Keep the held-item export entry point.
+    if (type === "ITEM") return { names: [] };
     const entries = await listAllNpcs(ctx);
     const labels = new Map<string, string>();
     const names = entries.map((entry) => {
@@ -631,8 +634,7 @@ function selectedImportables(
     const filter = row.target.filter;
     return values.filter((importable) => {
         if (type !== null && importable.type !== type) return false;
-        // Items have no house reader and export only from the held stack.
-        if (row.op !== "import" && importable.type === "ITEM") return false;
+        if (row.op === "export" && importable.type === "ITEM") return false;
         const identity = importableIdentity(importable);
         if (liveNames !== undefined && !liveNames.has(identity)) return false;
         const status = buildCacheStatusRow(house, importable).state;
@@ -771,9 +773,10 @@ export async function runQueuedExportSession(
                   },
             Array.from(batches.entries()).map(([type, batchRows]) => ({
                 type,
-                reader: type === "ITEM" ? exportHeldItem : undefined,
+                reader:
+                    first.op === "export" && type === "ITEM" ? exportHeldItem : undefined,
                 names:
-                    type === "ITEM" || (first.op === "export" && type === "NPC")
+                    first.op === "export" && (type === "ITEM" || type === "NPC")
                         ? undefined
                         : batchRows.map((row) =>
                               row.target.kind === "importable" ? row.target.identity : ""
@@ -802,7 +805,7 @@ export async function runQueuedExportSession(
         if (!isTaskCancelled(error)) throw error;
         return { completedKeys, failed, cancelled: true };
     }
-    const itemRows = batches.get("ITEM") ?? [];
+    const itemRows = first.op === "export" ? (batches.get("ITEM") ?? []) : [];
     for (const itemRow of itemRows) {
         if (completedKeys.indexOf(itemRow.key) < 0) completedKeys.push(itemRow.key);
     }

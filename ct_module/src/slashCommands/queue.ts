@@ -397,9 +397,7 @@ function parseImportableType(raw: string | undefined): Importable["type"] | null
 function parseReadableType(raw: string | undefined): HouseReadableType | null {
     const type = parseImportableType(raw);
     if (type === null) return null;
-    return HOUSE_READABLE_TYPES.indexOf(type as HouseReadableType) >= 0
-        ? (type as HouseReadableType)
-        : null;
+    return HOUSE_READABLE_TYPES.indexOf(type) >= 0 ? type : null;
 }
 
 function splitAddArguments(args: string[]): { path: string; remaining: string[] } | null {

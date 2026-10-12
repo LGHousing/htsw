@@ -223,6 +223,20 @@ An item's `name` is its stable project identifier, used by item fields such as
 SNBT. `leftClickActions` and `rightClickActions` attach Housing interaction
 scripts to the item.
 
+`/htsw diff` reads an item's left and right click actions from a live copy in
+your inventory (hotbar or main inventory), using `/edit` and its Edit Actions
+menu. It matches the project's item NBT using the existing Housing normalization,
+not the display name or cached click actions. Inventory contents and the selected
+slot are restored after reading. A missing copy, ambiguous NBT match, different
+action signatures across copies, or incomplete action read counts as unknown.
+
+Housing has no list of project item names. If an item exists only in an action
+such as Give Item, obtain a copy from the house before running diff. Menu-slot
+actions and NPC click actions belong to those importables and are read separately;
+they are not the item's own click actions. Diff verifies the lists of the matched
+inventory copy, not every copy stored elsewhere in the house. NBT that Housing
+does not expose (such as `ItemModel` on 1.8.9) is not verified by this read.
+
 ```json
 {
   "items": [

@@ -2,7 +2,6 @@ import type { Importable } from "htsw/types";
 
 import { actionListsOfImportable } from "../../../importCache/actionLists";
 import { importableIdentity, importableKey } from "../../../importables/identity";
-import { HOUSE_READERS } from "../../../importables/export/readers";
 import { estimateImportableReadUnits } from "../../../housingSync/progress/costs";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
@@ -31,9 +30,7 @@ export function createDiffProgressSession(
 ): DiffProgressSession {
     const tracked = importables.filter(
         (importable) =>
-            (importable.type === "GROUP" ||
-                actionListsOfImportable(importable).length > 0) &&
-            HOUSE_READERS[importable.type] !== null
+            importable.type === "GROUP" || actionListsOfImportable(importable).length > 0
     );
     const unitsByKey = new Map<string, number>();
     const rowIndexByKey = new Map<string, number>();
