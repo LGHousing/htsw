@@ -144,7 +144,7 @@ export function createDiffProgressSession(
                     });
                 },
                 itemFailed(index, error) {
-                    livePreview.finish(index);
+                    livePreview.fail(index);
                     emit({
                         kind: "importableFinished",
                         key: rowKeyFor(names[index]),
