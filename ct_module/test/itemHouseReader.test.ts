@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => {
     return {
         slots: [] as Array<FakeItem | null>,
         held: null as FakeItem | null,
-        temporarilyHoldItem: vi.fn<(ctx: unknown, item: FakeItem) => Promise<object>>(),
+        holdInventoryItem: vi.fn<(ctx: unknown, item: FakeItem) => Promise<object>>(),
+        restoreHeldInventoryItem: vi.fn(),
+        temporarilyHoldItem: vi.fn(),
         restoreTemporarilyHeldItem: vi.fn(),
         restorePlayerInventory: vi.fn(),
         scanActionList: vi.fn(),
@@ -37,6 +39,8 @@ vi.mock("../src/utils/nbt", async (importOriginal) => ({
     itemToHtswTag: (item: { snbt: string }) => htsw.nbt.parseSnbtText(item.snbt),
 }));
 vi.mock("../src/housingSync/items/heldItem", () => ({
+    holdInventoryItem: mocks.holdInventoryItem,
+    restoreHeldInventoryItem: mocks.restoreHeldInventoryItem,
     temporarilyHoldItem: mocks.temporarilyHoldItem,
     restoreTemporarilyHeldItem: mocks.restoreTemporarilyHeldItem,
 }));
@@ -168,7 +172,13 @@ describe("item house reader", () => {
         vi.stubGlobal("Player", {
             getInventory: () => ({ getStackInSlot: (slot: number) => mocks.slots[slot] }),
         });
-        mocks.temporarilyHoldItem.mockImplementation(async (_itemCtx, item) => {
+        mocks.temporarilyHoldItem.mockImplementation(
+            async (_itemCtx: unknown, item: FakeItem) => {
+                mocks.held = item;
+                return {};
+            }
+        );
+        mocks.holdInventoryItem.mockImplementation(async (_itemCtx, item) => {
             mocks.held = item;
             return { selectedHotbarSlot: 4 };
         });
@@ -222,7 +232,7 @@ describe("item house reader", () => {
         const { result, live, report, ctx } = await read();
         expect(result).toEqual({ total: 1, succeeded: 1, failed: 0 });
         expect(report).toMatchObject({ clean: 2, conflicts: [], unknown: 0 });
-        expect(mocks.temporarilyHoldItem.mock.calls[0][1].snbt).toContain(
+        expect(mocks.holdInventoryItem.mock.calls[0][1].snbt).toContain(
             'interact_data:"live"'
         );
         expect(ctx.runCommand).toHaveBeenCalledWith("/edit");
@@ -235,7 +245,7 @@ describe("item house reader", () => {
             )
         );
         expect(mocks.writeImportableCache).not.toHaveBeenCalled();
-        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreHeldInventoryItem).toHaveBeenCalledOnce();
         expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
     });
 
@@ -281,6 +291,15 @@ describe("item house reader", () => {
             }),
             "reader"
         );
+        mocks.slots[35] = null;
+        mocks.summaries = {
+            "Left Click Actions": ["Actions:", "- None"],
+            "Right Click Actions": ["Actions:", "- None"],
+        };
+        const { report } = await read([source], [source.name]);
+        expect(report.unknown).toBe(0);
+        expect(report.clean).toBe(0);
+        expect(report.conflicts).toHaveLength(1);
     });
 
     it("compares changed live actions instead of the source or cached actions", async () => {
@@ -334,21 +353,21 @@ describe("item house reader", () => {
         const { result, report } = await read();
         expect(result.failed).toBe(1);
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
-        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreHeldInventoryItem).toHaveBeenCalledOnce();
     });
 
     it("keeps missing or changed NBT unknown even with the same display name", async () => {
         mocks.slots[35] = { snbt: SHELL.replace("minecraft:cookie", "minecraft:apple") };
         const { report } = await read();
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
-        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
     });
 
     it("rejects ambiguous project names without relying on cached signatures", async () => {
         const other = { ...sourceItem(), name: "another_cookie" };
         const { report } = await read([sourceItem(), other]);
         expect(report.unknown).toBe(4);
-        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
     });
 
     it("does not inject a source signature when no live inventory copy exists", async () => {
@@ -356,32 +375,59 @@ describe("item house reader", () => {
         const source = { ...sourceItem(), nbt: htsw.nbt.parseSnbtText(signed("source")) };
         const { report } = await read([source]);
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
-        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
     });
+
+    it.each([
+        [SHELL, signed("live")],
+        [
+            '{id:"minecraft:stone",tag:{display:{Lore:["Custom lore"]}}}',
+            '{id:"minecraft:stone",tag:{display:{Lore:["Custom lore"]},ExtraAttributes:{interact_data:"live"}}}',
+        ],
+        [
+            '{id:"minecraft:stone",tag:{custom:1b}}',
+            '{id:"minecraft:stone",tag:{custom:1b,ExtraAttributes:{interact_data:"live"}}}',
+        ],
+        [
+            '{id:"minecraft:stone",tag:{ItemModel:"minecraft:test"}}',
+            '{id:"minecraft:stone",tag:{ItemModel:"minecraft:test",ExtraAttributes:{interact_data:"live"}}}',
+        ],
+    ])(
+        "keeps a signed copy plus a changed unsigned custom copy unknown (%s)",
+        async (shell, custom) => {
+            mocks.slots[0] = { snbt: shell };
+            mocks.slots[35] = { snbt: custom };
+            const source = { ...sourceItem(), nbt: htsw.nbt.parseSnbtText(shell) };
+            const { result, report } = await read([source]);
+            expect(result.failed).toBe(1);
+            expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
+            expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
+        }
+    );
 
     it("rejects inventory copies with different signatures, but accepts identical duplicates", async () => {
         mocks.slots[0] = { snbt: signed("older") };
         expect((await read()).report.unknown).toBe(2);
-        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
         mocks.slots[0] = { snbt: signed("live") };
         expect((await read()).report.unknown).toBe(0);
     });
 
     it("rejects a swapped held item even when its material and display name match", async () => {
-        mocks.temporarilyHoldItem.mockImplementation(async () => {
+        mocks.holdInventoryItem.mockImplementation(async () => {
             mocks.held = { snbt: signed("replaced") };
             return {};
         });
         const { report, ctx } = await read();
         expect(report.unknown).toBe(2);
         expect(ctx.runCommand).not.toHaveBeenCalled();
-        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreHeldInventoryItem).toHaveBeenCalledOnce();
     });
 
     it("restores inventory and reports unknown on a failed menu read", async () => {
         mocks.scanActionList.mockRejectedValueOnce(new Error("menu timeout"));
         expect((await read()).report.unknown).toBe(2);
-        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreHeldInventoryItem).toHaveBeenCalledOnce();
         expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
     });
 
@@ -408,7 +454,7 @@ describe("item house reader", () => {
         const { report } = await read();
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
         expect(mocks.scanActionList).not.toHaveBeenCalled();
-        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreHeldInventoryItem).toHaveBeenCalledOnce();
         expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
     });
 
@@ -448,8 +494,33 @@ describe("item house reader", () => {
                 nbt: "items/cookie.snbt",
             }
         );
-        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
         expect(ctx.runCommand).not.toHaveBeenCalled();
+    });
+
+    it("keeps custom dependency export on main's creative-copy path", async () => {
+        mocks.slots.fill(null);
+        vi.stubGlobal("FileLib", {
+            exists: () => false,
+            read: () => null,
+            write: vi.fn(),
+        });
+        const registry = new ItemCaptureRegistry("live");
+        registry.register(signed("live"), "cookie");
+        const ctx = context();
+        expect(
+            await exportCapturedItems(
+                ctx as unknown as TaskContext,
+                registry,
+                "/project",
+                "/project/import.json",
+                "house"
+            )
+        ).toBe(1);
+        expect(mocks.temporarilyHoldItem).toHaveBeenCalledOnce();
+        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
+        expect(ctx.runCommand).toHaveBeenCalledWith("/edit");
     });
 
     it("hashes source and read-back items alike after Housing default NBT and signing", () => {

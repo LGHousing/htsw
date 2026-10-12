@@ -5,6 +5,7 @@ import {
     canonicalItemShellKey,
     canonicalItemShellTagKey,
     canonicalLiveItemKey,
+    defaultVanillaItemId,
     portableItemSnbt,
     snbtFromItem,
 } from "../../housingSync/items/itemNbt";
@@ -31,6 +32,7 @@ function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]
 
     let candidates = new Map<string, Item>();
     const signedCandidates = new Map<string, Item>();
+    let ambiguousUnsignedCopy = false;
     for (let slot = 0; slot < 36; slot++) {
         const item = Player.getInventory()?.getStackInSlot(slot);
         if (item == null || canonicalItemShellKey(item) !== shell) continue;
@@ -44,12 +46,22 @@ function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]
             ) !== undefined
         ) {
             signedCandidates.set(key, item);
+        } else if (
+            defaultVanillaItemId(snbtFromItem(item, { pretty: false })) === null ||
+            tagChild(tagChild(tag, "tag"), "ItemModel") !== undefined
+        ) {
+            ambiguousUnsignedCopy = true;
         }
     }
     // A custom item can share its material with plain menu/action references.
-    // Prefer live custom copies, but never choose between competing signatures.
+    // Only plain vanilla alternatives can be ignored. Unsigned custom copies
+    // may have lost their actions; choosing the older signed copy could look clean.
     // If all copies lost their actions, read the plain copy to detect removal.
-    if (hasItemClickActions(source) && signedCandidates.size > 0)
+    if (
+        hasItemClickActions(source) &&
+        signedCandidates.size > 0 &&
+        !ambiguousUnsignedCopy
+    )
         candidates = signedCandidates;
     if (candidates.size === 0) {
         throw new Error(

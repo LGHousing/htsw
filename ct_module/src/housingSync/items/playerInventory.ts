@@ -132,11 +132,17 @@ export async function restoreInventorySlots(
             }
         }
 
-        sendCreativeInventoryAction(
-            ctx,
-            inventorySlotToPacketSlot(entry.slotId),
-            desiredStack
-        );
+        try {
+            sendCreativeInventoryAction(
+                ctx,
+                inventorySlotToPacketSlot(entry.slotId),
+                desiredStack
+            );
+        } catch (error) {
+            throw new Error(
+                `Inventory restore stopped at slot ${entry.slotId}: ${String(error)} Remaining changes are unrestored.`
+            );
+        }
         await waitForSetSlotAck(ctx, `restore inventory slot ${entry.slotId}`);
         if (!(await waitForInventorySlotMatch(ctx, view, entry))) {
             failures.push(

@@ -37,7 +37,8 @@ const mocks = vi.hoisted(() => ({
     sentCreative: [] as Array<{ packetSlot: number; value: unknown }>,
 }));
 
-vi.mock("../src/utils/java", () => ({
+vi.mock("../src/utils/java", async (original) => ({
+    ...(await original<typeof import("../src/utils/java")>()),
     getPlayer: () => ({}),
     getMinecraft: () => ({
         field_71442_b: {
@@ -156,11 +157,15 @@ vi.mock("../src/housingSync/items/itemNbt", () => ({
 }));
 
 import {
+    holdInventoryItem,
+    restoreHeldInventoryItem,
     assertHeldStackIs,
     createImportedItemPlacementSession,
     restoreTemporarilyHeldItem,
     temporarilyHoldItem,
 } from "../src/housingSync/items/heldItem";
+
+import { readClickActions } from "../src/importables/items/readClickActions";
 
 function stack(name: string): MockStack {
     const itemType = {};
@@ -272,12 +277,12 @@ describe("held item placement", () => {
 
     test("a disconnect during a read never overwrites a full hotbar", async () => {
         const before = mocks.slots.slice();
-        const held = await temporarilyHoldItem(
+        const held = await holdInventoryItem(
             ctx as never,
             { getItemStack: () => mocks.slots[4] } as never
         );
         mocks.connected = false;
-        await restoreTemporarilyHeldItem(ctx as never, held);
+        await restoreHeldInventoryItem(ctx as never, held);
         expect(mocks.slots).toEqual(before);
         expect(mocks.sentCreative).toEqual([]);
     });
@@ -285,12 +290,12 @@ describe("held item placement", () => {
     test("reads an existing hotbar stack in survival without creative packets", async () => {
         mocks.creative = false;
         const before = mocks.slots.slice();
-        const held = await temporarilyHoldItem(
+        const held = await holdInventoryItem(
             ctx as never,
             { getItemStack: () => mocks.slots[2] } as never
         );
         expect(mocks.selectedSlot).toBe(2);
-        await restoreTemporarilyHeldItem(ctx as never, held);
+        await restoreHeldInventoryItem(ctx as never, held);
         expect(mocks.slots).toEqual(before);
         expect(mocks.sentCreative).toEqual([]);
         expect(mocks.selectedSlot).toBe(4);
@@ -303,14 +308,14 @@ describe("held item placement", () => {
             mocks.slots[20] = stack("custom");
             const originalHotbar = mocks.slots[4];
             const originalMain = mocks.slots[20];
-            const held = await temporarilyHoldItem(
+            const held = await holdInventoryItem(
                 ctx as never,
                 { getItemStack: () => originalMain } as never
             );
             expect(mocks.slots[4]).toBe(originalMain);
             expect(mocks.slots[20]).toBe(originalHotbar);
             if (disconnect) mocks.connected = false;
-            await restoreTemporarilyHeldItem(ctx as never, held);
+            await restoreHeldInventoryItem(ctx as never, held);
             expect(mocks.slots[4]).toBe(disconnect ? originalMain : originalHotbar);
             expect(mocks.slots[20]).toBe(disconnect ? originalHotbar : originalMain);
             expect(mocks.sentCreative).toEqual([]);
@@ -325,25 +330,49 @@ describe("held item placement", () => {
         const before = mocks.slots.slice();
         mocks.failNextPoll = true;
         await expect(
-            temporarilyHoldItem(ctx as never, { getItemStack: () => before[20] } as never)
+            holdInventoryItem(ctx as never, { getItemStack: () => before[20] } as never)
         ).rejects.toThrow("did not confirm the inventory swap");
         expect(mocks.slots).toEqual(before);
         expect(mocks.sentCreative).toEqual([]);
     });
 
-    test("a captured copy requires creative and an empty hotbar slot", async () => {
-        const item = { getItemStack: () => stack("captured") };
-        mocks.creative = false;
-        mocks.slots[2] = null;
-        await expect(temporarilyHoldItem(ctx as never, item as never)).rejects.toThrow(
-            "requires creative mode"
+    test.each(["disconnect", "creative revocation"])(
+        "a live read with no inventory copy never manufactures residue on %s",
+        async (failure) => {
+            mocks.slots[2] = null;
+            const before = mocks.slots.slice();
+            const readCtx = {
+                ...ctx,
+                runCommand: vi.fn(() => {
+                    if (failure === "disconnect") mocks.connected = false;
+                    else mocks.creative = false;
+                    throw new Error(failure);
+                }),
+                expectAfter: async (run: () => unknown) => run(),
+            };
+            await expect(
+                readClickActions(
+                    readCtx as never,
+                    { getItemStack: () => stack("captured") } as never,
+                    { itemReadMode: "export" } as never
+                )
+            ).rejects.toThrow("No live inventory copy");
+            expect(readCtx.runCommand).not.toHaveBeenCalled();
+            expect(mocks.slots).toEqual(before);
+            expect(mocks.sentCreative).toEqual([]);
+        }
+    );
+
+    test("dependency export retains main's borrowed-slot copy placement", async () => {
+        const held = await temporarilyHoldItem(
+            ctx as never,
+            { getItemStack: () => stack("captured") } as never
         );
-        mocks.creative = true;
-        mocks.slots[2] = stack("occupied");
-        await expect(temporarilyHoldItem(ctx as never, item as never)).rejects.toThrow(
-            "Free a hotbar slot"
-        );
-        expect(mocks.sentCreative).toEqual([]);
+        expect(mocks.slots[0]?.name).toBe("captured");
+        expect(mocks.sentCreative.map(({ packetSlot }) => packetSlot)).toEqual([36]);
+        await restoreTemporarilyHeldItem(ctx as never, held);
+        expect(mocks.slots[0]?.name).toBe("restored");
+        expect(mocks.selectedSlot).toBe(4);
     });
 
     test("temporary holding restores an initially empty slot", async () => {

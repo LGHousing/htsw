@@ -6,6 +6,8 @@ import { scanActionList } from "../../housingSync/actions/readList";
 import type { ListReadOptions } from "../../housingSync/context/actionReadContext";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import {
+    holdInventoryItem,
+    restoreHeldInventoryItem,
     temporarilyHoldItem,
     restoreTemporarilyHeldItem,
 } from "../../housingSync/items/heldItem";
@@ -23,7 +25,8 @@ export async function readClickActions(
     ctx: TaskContext,
     item: Item,
     read: ListReadOptions,
-    eventsForList?: (label: string) => SyncEventHandler
+    eventsForList?: (label: string) => SyncEventHandler,
+    itemSource: "inventory" | "captured" = "inventory"
 ): Promise<{ left: Action[]; right: Action[] }> {
     const expected = canonicalLiveItemKey(item);
     const assertHeldItem = (): void => {
@@ -32,7 +35,14 @@ export async function readClickActions(
             throw new Error("The item changed while its click actions were being read.");
         }
     };
-    const held = await temporarilyHoldItem(ctx, item);
+    let restore: () => Promise<void>;
+    if (itemSource === "inventory") {
+        const held = await holdInventoryItem(ctx, item);
+        restore = () => restoreHeldInventoryItem(ctx, held);
+    } else {
+        const held = await temporarilyHoldItem(ctx, item);
+        restore = () => restoreTemporarilyHeldItem(ctx, held);
+    }
     try {
         // Creative acceptance alone does not prove the item survived a house
         // loop. Never read the actions of whatever replaced it in our hand.
@@ -92,6 +102,6 @@ export async function readClickActions(
         assertHeldItem();
         return result;
     } finally {
-        await restoreTemporarilyHeldItem(ctx, held);
+        await restore();
     }
 }

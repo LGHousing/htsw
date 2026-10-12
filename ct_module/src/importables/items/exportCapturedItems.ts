@@ -68,10 +68,16 @@ export async function exportCapturedItems(
         const actions =
             interactData === undefined
                 ? { left: [], right: [] }
-                : await readClickActions(ctx, getItemFromSnbt(item.snbt), {
-                      itemReadMode: "export",
-                      itemCaptures: registry,
-                  });
+                : await readClickActions(
+                      ctx,
+                      getItemFromSnbt(item.snbt),
+                      {
+                          itemReadMode: "export",
+                          itemCaptures: registry,
+                      },
+                      undefined,
+                      "captured"
+                  );
         const target = snbtTargetForItemExport(
             importJsonPath,
             rootDir,
@@ -147,15 +153,11 @@ export async function exportCapturedItems(
             writeImportableCache(ctx, housingUuid, importable, "exporter", {
                 itemDependencies,
             });
-            upsertHouseLockImportable(
-                importJsonPath,
-                housingUuid,
-                {
-                    importable,
-                    itemDependencies,
-                    itemContent: sourceItemFieldContent(importable, items),
-                }
-            );
+            upsertHouseLockImportable(importJsonPath, housingUuid, {
+                importable,
+                itemDependencies,
+                itemContent: sourceItemFieldContent(importable, items),
+            });
         }
     }
 

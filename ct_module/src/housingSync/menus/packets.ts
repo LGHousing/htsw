@@ -53,6 +53,9 @@ export function sendCreativeInventoryAction(
     packetSlot: number,
     stack: HtswMinecraftItemStack | null
 ): void {
+    if (!getPlayer().field_71075_bZ.field_75098_d) {
+        throw new Error("Creative mode is required; no inventory packet was sent.");
+    }
     sendPacket(new C10PacketCreativeInventoryAction(packetSlot, stack));
 }
 

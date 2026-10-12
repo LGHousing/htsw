@@ -2,7 +2,7 @@ import TaskContext from "../../tasks/context";
 import { pollTicks } from "../../tasks/poll";
 import { getOpenContainerWindowId } from "../../tasks/specifics/slots";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
-import { closeOpenScreen, isInCreativeMode } from "../sideEffects";
+import { closeOpenScreen } from "../sideEffects";
 import {
     SET_SLOT_ACK_MAX_TICKS,
     selectedHotbarSlot,
@@ -79,9 +79,48 @@ export function createImportedItemPlacementSession(): ImportedItemPlacementSessi
 }
 
 export type TemporarilyHeldItem = {
+    slot: InventorySlotSnapshot;
+    selectedHotbarSlot: number;
+};
+
+export async function temporarilyHoldItem(
+    ctx: TaskContext,
+    item: Item
+): Promise<TemporarilyHeldItem> {
+    const stack = item.getItemStack() as MCItemStack | null;
+    if (stack === null) throw new Error("Cannot inject an empty item stack.");
+
+    await closeOpenScreen(ctx);
+    const slotId = findEmptyHotbarSlot() ?? 0;
+    const held = {
+        slot: readInventorySlot(slotId, "player"),
+        selectedHotbarSlot: selectedHotbarSlot(),
+    };
+    try {
+        await injectIntoInventorySlot(ctx, slotId, stack);
+        await selectHotbarSlotAndWait(ctx, slotId);
+        return held;
+    } catch (error) {
+        await restoreTemporarilyHeldItem(ctx, held);
+        throw error;
+    }
+}
+
+export async function restoreTemporarilyHeldItem(
+    ctx: TaskContext,
+    held: TemporarilyHeldItem
+): Promise<void> {
+    await closeOpenScreen(ctx);
+    try {
+        await restoreInventorySlots(ctx, [held.slot]);
+    } finally {
+        await selectHotbarSlotAndWait(ctx, held.selectedHotbarSlot);
+    }
+}
+
+export type HeldInventoryItem = {
     selectedHotbarSlot: number;
     hotbarSlot: number;
-    injectedKey?: string;
     swap?: {
         mainSlot: number;
         hotbar: InventorySlotSnapshot;
@@ -89,10 +128,10 @@ export type TemporarilyHeldItem = {
     };
 };
 
-export async function temporarilyHoldItem(
+export async function holdInventoryItem(
     ctx: TaskContext,
     item: Item
-): Promise<TemporarilyHeldItem> {
+): Promise<HeldInventoryItem> {
     await closeOpenScreen(ctx);
     const inventory = Player.getInventory();
     if (inventory == null) throw new Error("No player inventory is loaded.");
@@ -107,7 +146,7 @@ export async function temporarilyHoldItem(
         const candidate = inventory.getStackInSlot(slot);
         if (candidate == null || canonicalLiveItemKey(candidate) !== key) continue;
         const hotbarSlot = slot < 9 ? slot : (findEmptyHotbarSlot() ?? previous);
-        const held: TemporarilyHeldItem = { selectedHotbarSlot: previous, hotbarSlot };
+        const held: HeldInventoryItem = { selectedHotbarSlot: previous, hotbarSlot };
         try {
             if (slot >= 9) {
                 const hotbar = readInventorySlot(hotbarSlot, "player");
@@ -130,44 +169,19 @@ export async function temporarilyHoldItem(
             await selectHotbarSlotAndWait(ctx, hotbarSlot);
             return held;
         } catch (error) {
-            await restoreTemporarilyHeldItem(ctx, held);
+            await restoreHeldInventoryItem(ctx, held);
             throw error;
         }
     }
 
-    // Dependency exports may hold only a captured SNBT copy. Never replace an
-    // occupied stack with that copy: cleanup cannot recover it after disconnect.
-    if (!isInCreativeMode()) {
-        throw new Error(
-            "Reading a captured item requires creative mode (/gmc); no existing inventory copy was found."
-        );
-    }
-    const hotbarSlot = findEmptyHotbarSlot();
-    if (hotbarSlot === undefined) {
-        throw new Error(
-            "Free a hotbar slot to read this captured item; no existing inventory copy was found."
-        );
-    }
-    const stack = item.getItemStack() as MCItemStack | null;
-    if (stack === null) throw new Error("Cannot hold an empty item stack.");
-    const held: TemporarilyHeldItem = {
-        selectedHotbarSlot: previous,
-        hotbarSlot,
-        injectedKey: key,
-    };
-    try {
-        await injectIntoInventorySlot(ctx, hotbarSlot, stack);
-        await selectHotbarSlotAndWait(ctx, hotbarSlot);
-        return held;
-    } catch (error) {
-        await restoreTemporarilyHeldItem(ctx, held);
-        throw error;
-    }
+    throw new Error(
+        "No live inventory copy is available. Obtain this item from the house, then retry the read."
+    );
 }
 
-export async function restoreTemporarilyHeldItem(
+export async function restoreHeldInventoryItem(
     ctx: TaskContext,
-    held: TemporarilyHeldItem
+    held: HeldInventoryItem
 ): Promise<void> {
     if (Player.getInventory() == null) return;
     await closeOpenScreen(ctx);
@@ -192,17 +206,6 @@ export async function restoreTemporarilyHeldItem(
                     "Housing did not confirm restoring the item swap; both stacks remain in your inventory."
                 );
             }
-        }
-        const current = Player.getInventory()?.getStackInSlot(held.hotbarSlot);
-        if (
-            held.injectedKey !== undefined &&
-            current != null &&
-            isInCreativeMode() &&
-            canonicalLiveItemKey(current) === held.injectedKey
-        ) {
-            await restoreInventorySlots(ctx, [
-                { slotId: held.hotbarSlot, nbt: null, count: 0 },
-            ]);
         }
     } finally {
         if (Player.getInventory() != null) {
