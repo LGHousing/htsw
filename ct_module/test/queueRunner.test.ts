@@ -19,6 +19,7 @@ import {
 } from "../src/gui/right-panel/import-tab/queue";
 import {
     bulkFilterAllowed,
+    expandBulkDefault,
     drainQueue,
     matchesBulkCacheState,
     namesNotDeclared,
@@ -28,6 +29,7 @@ import {
     type QueueSessionResult,
 } from "../src/gui/right-panel/import-tab/queueRunner";
 import { exportHeldItem } from "../src/importables/items/export";
+import * as parses from "../src/gui/parsing/parses";
 import { getTaskActivity } from "../src/tasks/activity";
 import type { runExportSession } from "../src/importables/export/session";
 import { createExportProgressSink } from "../src/gui/export/progressSink";
@@ -552,6 +554,38 @@ describe("bulk filter semantics", () => {
 });
 
 describe("queued held-item export", () => {
+    it.each(["all", "unread"] as const)(
+        "expands ITEM %s reads from project declarations",
+        async (filter) => {
+            vi.spyOn(parses, "parseImportJsonCurrent").mockResolvedValue({
+                parsed: {
+                    value: [
+                        {
+                            type: "ITEM",
+                            name: "cookie",
+                            nbt: { type: "compound", value: {} },
+                        },
+                        { type: "FUNCTION", name: "unrelated" },
+                    ],
+                },
+            } as never);
+            const bulk = makeBulkQueueRow({
+                op: "read",
+                house: "house-a",
+                path: "/items/import.json",
+                scope: { kind: "houseType", type: "ITEM" },
+                filter,
+                label: `Read ${filter} items`,
+            });
+            const rows = await expandBulkDefault(ctx, bulk, "house-a");
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({
+                op: "read",
+                target: { type: "ITEM", identity: "cookie" },
+            });
+        }
+    );
+
     it("reads selected project items and leaves failed reads failed", async () => {
         const item = makeImportableQueueRow({
             op: "read",

@@ -237,6 +237,12 @@ they are not the item's own click actions. Diff verifies the lists of the matche
 inventory copy, not every copy stored elsewhere in the house. NBT that Housing
 does not expose (such as `ItemModel` on 1.8.9) is not verified by this read.
 
+Housing can refuse `/edit` for protected items such as its built-in cookie
+(`ExtraAttributes.COOKIE_ITEM`). Declared click lists on a refused item stay
+unknown. When exporting a referenced item with no `interact_data`, HTSW writes
+its NBT directly without opening the item editor; built-in behavior remains in
+the NBT. Items with custom action data still require a successful menu read.
+
 ```json
 {
   "items": [

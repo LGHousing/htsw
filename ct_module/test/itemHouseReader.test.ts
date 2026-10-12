@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as htsw from "htsw";
-import type { Action, ImportableItem } from "htsw/types";
+import type { ImportableItem } from "htsw/types";
 import type { ListReadOptions } from "../src/housingSync/context/actionReadContext";
+import type { ActionListScan } from "../src/housingSync/actions/readList";
 
 type FakeItem = { snbt: string };
 
@@ -14,16 +15,23 @@ const mocks = vi.hoisted(() => {
         restoreTemporarilyHeldItem: vi.fn(),
         restorePlayerInventory: vi.fn(),
         scanActionList: vi.fn(),
-        completeActionListScan:
+        hydrateActionListScan:
             vi.fn<
-                (ctx: unknown, scan: unknown, read: ListReadOptions) => Promise<Action[]>
+                (
+                    ctx: unknown,
+                    scan: ActionListScan,
+                    read: ListReadOptions
+                ) => Promise<void>
             >(),
         writeImportableCache: vi.fn(),
+        upsertImportableEntry: vi.fn(),
+        refuseEditor: false,
         summaries,
     };
 });
 
-vi.mock("../src/utils/nbt", () => ({
+vi.mock("../src/utils/nbt", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/nbt")>()),
     getItemFromSnbt: (snbt: string) => ({ snbt }),
     itemToHtswTag: (item: { snbt: string }) => htsw.nbt.parseSnbtText(item.snbt),
 }));
@@ -44,7 +52,7 @@ vi.mock("../src/housingSync/actions/readList", async (importOriginal) => ({
     scanActionList: mocks.scanActionList,
 }));
 vi.mock("../src/housingSync/actions/hydration/run", () => ({
-    completeActionListScan: mocks.completeActionListScan,
+    hydrateActionListScan: mocks.hydrateActionListScan,
 }));
 vi.mock("../src/housingSync/menus/menuUtils", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/housingSync/menus/menuUtils")>()),
@@ -57,6 +65,18 @@ vi.mock("../src/importCache/cache", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/importCache/cache")>()),
     writeImportableCache: mocks.writeImportableCache,
 }));
+vi.mock("../src/project/paths", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/project/paths")>()),
+    snbtTargetForItemExport: (importJsonPath: string, rootDir: string, name: string) => ({
+        importJsonPath,
+        snbtPath: `${rootDir}/items/${name}.snbt`,
+        snbtReference: `items/${name}.snbt`,
+    }),
+}));
+vi.mock("../src/project/importJsonMutations", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/project/importJsonMutations")>()),
+    upsertImportableEntry: mocks.upsertImportableEntry,
+}));
 
 import type TaskContext from "../src/tasks/context";
 import type { LiveDiffImportable } from "../src/slashCommands/diffReport";
@@ -67,6 +87,11 @@ import {
 import { readItems } from "../src/importables/items/readHouseItems";
 import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "../src/importables/export/readers";
 import { importableHash } from "../src/importCache/hash";
+import { exportCapturedItems } from "../src/importables/items/exportCapturedItems";
+import { ItemCaptureRegistry } from "../src/importables/items/captureRegistry";
+import * as projectDestination from "../src/importables/export/projectDestination";
+import { runQueuedExportSession } from "../src/gui/right-panel/import-tab/queueRunner";
+import { makeImportableQueueRow } from "../src/gui/right-panel/import-tab/queue";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import { message } from "./utils";
 
@@ -88,8 +113,12 @@ function context() {
     return {
         checkCancelled: vi.fn(),
         displayMessage: vi.fn(),
+        elapsedMs: () => 1000,
         runCommand: vi.fn(),
-        expectAfter: async (run: () => unknown) => run(),
+        expectAfter: async (run: () => unknown) => {
+            await run();
+            return mocks.refuseEditor ? "refused" : "opened";
+        },
         getItemSlot: (label: string) => ({
             click: vi.fn(),
             getItem: () => ({ getLore: () => mocks.summaries[label] ?? [] }),
@@ -131,6 +160,7 @@ describe("item house reader", () => {
         mocks.slots[35] = { snbt: signed("live") };
         mocks.held = null;
         mocks.summaries = {};
+        mocks.refuseEditor = false;
         vi.stubGlobal("Player", {
             getInventory: () => ({ getStackInSlot: (slot: number) => mocks.slots[slot] }),
         });
@@ -142,12 +172,45 @@ describe("item house reader", () => {
             slots: [{ action: message("read"), hydrated: true }],
         });
         let side = 0;
-        mocks.completeActionListScan.mockImplementation(async () => [
-            message(side++ === 0 ? "left" : "right"),
-        ]);
+        mocks.hydrateActionListScan.mockImplementation(async (_ctx, scan) => {
+            scan.slots[0].action = message(side++ === 0 ? "left" : "right");
+        });
     });
 
-    afterEach(() => vi.unstubAllGlobals());
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it("dispatches a successful queued ITEM read to the real session and caches both live lists", async () => {
+        vi.spyOn(projectDestination, "readProjectItemsForExport").mockReturnValue([
+            sourceItem(),
+        ]);
+        const row = makeImportableQueueRow({
+            op: "read",
+            house: "house",
+            path: "/project/import.json",
+            type: "ITEM",
+            identity: "cookie",
+        });
+        const result = await runQueuedExportSession(
+            context() as unknown as TaskContext,
+            [row],
+            "house"
+        );
+        expect(result).toEqual({ completedKeys: [row.key], failed: [] });
+        expect(mocks.writeImportableCache).toHaveBeenCalledWith(
+            expect.anything(),
+            "house",
+            expect.objectContaining({
+                type: "ITEM",
+                name: "cookie",
+                leftClickActions: [message("left")],
+                rightClickActions: [message("right")],
+            }),
+            "reader"
+        );
+    });
 
     it("registers ITEM and reads both lists from the signed live stack, including main inventory", async () => {
         expect(HOUSE_READERS.ITEM).toBe(readItems);
@@ -173,7 +236,9 @@ describe("item house reader", () => {
     });
 
     it("compares changed live actions instead of the source or cached actions", async () => {
-        mocks.completeActionListScan.mockResolvedValue([message("changed in Housing")]);
+        mocks.hydrateActionListScan.mockImplementation(async (_ctx, scan) => {
+            scan.slots[0].action = message("changed in Housing");
+        });
         const { report } = await read();
         expect(report).toMatchObject({ clean: 0, unknown: 0 });
         expect(report.conflicts).toHaveLength(2);
@@ -193,9 +258,13 @@ describe("item house reader", () => {
     it.each([
         { action: null, hydrated: false },
         { action: { type: "CONDITIONAL", ifActions: [null] }, hydrated: false },
+        {
+            action: { type: "CONDITIONAL", ifActions: [], elseActions: [] },
+            hydrated: true,
+        },
     ])("keeps unrecognized or incomplete actions unknown (%j)", async (entry) => {
         mocks.scanActionList.mockResolvedValue({ slots: [entry] });
-        mocks.completeActionListScan.mockResolvedValue([]);
+        mocks.hydrateActionListScan.mockResolvedValue(undefined);
         const { result, report } = await read();
         expect(result.failed).toBe(1);
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
@@ -251,14 +320,14 @@ describe("item house reader", () => {
     });
 
     it("preserves captured item-field content for diff comparison", async () => {
-        mocks.completeActionListScan.mockImplementation(async (_ctx, _scan, options) => {
+        mocks.hydrateActionListScan.mockImplementation(async (_ctx, scan, options) => {
             if (options.itemReadMode !== "export")
                 throw new Error("Expected item captures");
             const itemName = options.itemCaptures.register(
                 '{id:"minecraft:apple"}',
                 "apple"
             );
-            return [{ type: "GIVE_ITEM", itemName }];
+            scan.slots[0].action = { type: "GIVE_ITEM", itemName };
         });
         const { live } = await read();
         const entry = live.get("ITEM:cookie")!;
@@ -266,6 +335,55 @@ describe("item house reader", () => {
         expect(entry.itemContent(action, "itemName")).toBe(
             canonicalItemShellTagKey(htsw.nbt.parseSnbtText('{id:"minecraft:apple"}'))
         );
+    });
+
+    it("keeps an explicit Housing item-editor refusal unknown and restores inventory", async () => {
+        mocks.refuseEditor = true;
+        const { report } = await read();
+        expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
+        expect(mocks.scanActionList).not.toHaveBeenCalled();
+        expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
+        expect(mocks.restorePlayerInventory).toHaveBeenCalledOnce();
+    });
+
+    it("exports a protected cookie reference without trying to hold or edit it", async () => {
+        const writes: Record<string, string> = {};
+        vi.stubGlobal("FileLib", {
+            exists: () => false,
+            read: () => null,
+            write: (path: string, content: string) => {
+                writes[path] = content;
+            },
+        });
+        const registry = new ItemCaptureRegistry("live");
+        registry.register(
+            '{id:"minecraft:cookie",tag:{ExtraAttributes:{COOKIE_ITEM:1b}}}',
+            "cookie"
+        );
+        const ctx = context();
+        const count = await exportCapturedItems(
+            ctx as unknown as TaskContext,
+            registry,
+            "/project",
+            "/project/import.json",
+            "house"
+        );
+        expect(count).toBe(1);
+        expect(
+            Object.entries(writes).some(
+                ([path, snbt]) => path.endsWith(".snbt") && snbt.includes("COOKIE_ITEM")
+            )
+        ).toBe(true);
+        expect(mocks.upsertImportableEntry).toHaveBeenCalledWith(
+            "/project/import.json",
+            "items",
+            {
+                name: "cookie",
+                nbt: "items/cookie.snbt",
+            }
+        );
+        expect(mocks.temporarilyHoldItem).not.toHaveBeenCalled();
+        expect(ctx.runCommand).not.toHaveBeenCalled();
     });
 
     it("hashes source and read-back items alike after Housing default NBT and signing", () => {

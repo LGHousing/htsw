@@ -9,6 +9,7 @@ import { snbtTargetForItemExport } from "../../project/paths";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getItemFromSnbt } from "../../utils/nbt";
+import { tagChild } from "../../housingSync/items/itemTag";
 import { createItemDependencyIndex } from "./dependencyIndex";
 import { createProjectItemIndex } from "./projectItems";
 import { readParsedImportablesForExport } from "../export/projectDestination";
@@ -56,10 +57,21 @@ export async function exportCapturedItems(
         const item = registry.newEntries().find((entry) => !written.has(entry.name));
         if (item === undefined) break;
         written.add(item.name);
-        const actions = await readClickActions(ctx, getItemFromSnbt(item.snbt), {
-            itemReadMode: "export",
-            itemCaptures: registry,
-        });
+        // Custom click actions travel with the stack as interact_data. Plain
+        // references (including Housing's protected COOKIE_ITEM) only need
+        // their NBT exported; /edit can reject them even in creative mode.
+        const nbt = htsw.nbt.parseSnbtText(item.snbt);
+        const interactData = tagChild(
+            tagChild(tagChild(nbt, "tag"), "ExtraAttributes"),
+            "interact_data"
+        );
+        const actions =
+            interactData === undefined
+                ? { left: [], right: [] }
+                : await readClickActions(ctx, getItemFromSnbt(item.snbt), {
+                      itemReadMode: "export",
+                      itemCaptures: registry,
+                  });
         const target = snbtTargetForItemExport(
             importJsonPath,
             rootDir,

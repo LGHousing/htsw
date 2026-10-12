@@ -215,6 +215,12 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         );
         return;
     }
+    if (op === "export" && type === "ITEM") {
+        ChatLib.chat(
+            "&c[htsw] Items export from the held stack. Use Export held item in the Houses tab."
+        );
+        return;
+    }
     const destination = getExportDestinationStatus();
     if (destination.kind !== "ready") {
         ChatLib.chat(

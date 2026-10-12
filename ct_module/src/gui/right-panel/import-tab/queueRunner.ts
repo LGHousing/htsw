@@ -642,7 +642,7 @@ function selectedImportables(
     });
 }
 
-async function expandBulkDefault(
+export async function expandBulkDefault(
     ctx: TaskContext,
     row: QueueRow,
     house: string
@@ -659,7 +659,15 @@ async function expandBulkDefault(
     let selected: Array<{ type: Importable["type"]; identity: string; label: string }> =
         [];
 
-    if (row.target.scope.kind === "houseType") {
+    if (row.target.scope.kind === "houseType" && row.target.scope.type === "ITEM") {
+        // There is no Housing directory of item names. Read every selected
+        // project item so missing inventory copies fail instead of disappearing.
+        selected = selectedImportables(values, row, house).map((importable) => ({
+            type: importable.type,
+            identity: importableIdentity(importable),
+            label: importable.type === "EVENT" ? importable.event : importable.name,
+        }));
+    } else if (row.target.scope.kind === "houseType") {
         const type = row.target.scope.type;
         const listed = await listHouseType(ctx, type);
         recordHouseScan(house, type, listed.names, listed.labels);

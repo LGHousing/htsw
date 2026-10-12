@@ -33,8 +33,9 @@ const CACHE_SCHEMA_VERSION = 2;
 // current version, so a stale version keeps reporting "modified" against
 // hashes the new spec would judge equal. 2: notes wrapped across lore lines
 // now normalize to single-line notes (659904a0). 3: menu list keys name the
-// Housing slot number instead of the array position.
-const CACHE_ENTRY_VERSION = 3;
+// Housing slot number instead of the array position. 4: ITEM NBT uses the
+// same Housing normalization as item comparisons and live inventory reads.
+const CACHE_ENTRY_VERSION = 4;
 const ACCEPTED_SCHEMA_VERSIONS = [1, 2];
 
 export type CacheWriter = "exporter" | "importer" | "reader" | "project-lock";
