@@ -236,7 +236,11 @@ export function defineHouseExporter<
             }),
             writtenItems: new Set<string>(),
             inventorySnapshot:
-                spec.capturesActionItems === true ? snapshotPlayerInventory() : null,
+                // ITEM reads select/swap live stacks and clean up their own
+                // captures. Reconstructing every slot would undo that safety.
+                spec.capturesActionItems === true && spec.type !== "ITEM"
+                    ? snapshotPlayerInventory()
+                    : null,
         };
         const projectItems = options.projectItems ?? [];
         for (let i = 0; i < projectItems.length; i++) {

@@ -232,7 +232,51 @@ describe("item house reader", () => {
         );
         expect(mocks.writeImportableCache).not.toHaveBeenCalled();
         expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
-        expect(mocks.restorePlayerInventory).toHaveBeenCalledOnce();
+        expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
+    });
+
+    it("deep-reads and caches the custom stone alongside the fixture's plain stone", async () => {
+        const plain = '{id:"minecraft:stone",Count:1b}';
+        const custom =
+            '{id:"minecraft:stone",Count:1b,tag:{ExtraAttributes:{interact_data:{left:"signed",version:1}}}}';
+        const source: ImportableItem = {
+            type: "ITEM",
+            name: "htsw_test_item_basic",
+            nbt: htsw.nbt.parseSnbtText(plain),
+            leftClickActions: [{ type: "USE_HELD_ITEM" }],
+        };
+        mocks.slots[0] = { snbt: plain };
+        mocks.slots[35] = { snbt: custom };
+        mocks.hydrateActionListScan.mockImplementation(async (_ctx, scan) => {
+            scan.slots[0].action = { type: "USE_HELD_ITEM" };
+        });
+        mocks.summaries = { "Right Click Actions": ["Actions:", "- None"] };
+        const row = makeImportableQueueRow({
+            op: "read",
+            house: "house",
+            path: "/project/import.json",
+            type: "ITEM",
+            identity: source.name,
+        });
+        vi.spyOn(projectDestination, "readProjectItemsForExport").mockReturnValue([
+            source,
+        ]);
+        const result = await runQueuedExportSession(
+            context() as unknown as TaskContext,
+            [row],
+            "house"
+        );
+        expect(result).toEqual({ completedKeys: [row.key], failed: [] });
+        expect(mocks.writeImportableCache).toHaveBeenCalledWith(
+            expect.anything(),
+            "house",
+            expect.objectContaining({
+                name: source.name,
+                leftClickActions: [{ type: "USE_HELD_ITEM" }],
+                rightClickActions: [],
+            }),
+            "reader"
+        );
     });
 
     it("compares changed live actions instead of the source or cached actions", async () => {
@@ -316,7 +360,7 @@ describe("item house reader", () => {
         mocks.scanActionList.mockRejectedValueOnce(new Error("menu timeout"));
         expect((await read()).report.unknown).toBe(2);
         expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
-        expect(mocks.restorePlayerInventory).toHaveBeenCalledOnce();
+        expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
     });
 
     it("preserves captured item-field content for diff comparison", async () => {
@@ -343,7 +387,7 @@ describe("item house reader", () => {
         expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
         expect(mocks.scanActionList).not.toHaveBeenCalled();
         expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
-        expect(mocks.restorePlayerInventory).toHaveBeenCalledOnce();
+        expect(mocks.restorePlayerInventory).not.toHaveBeenCalled();
     });
 
     it("exports a protected cookie reference without trying to hold or edit it", async () => {

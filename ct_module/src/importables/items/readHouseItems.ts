@@ -8,11 +8,13 @@ import {
     portableItemSnbt,
     snbtFromItem,
 } from "../../housingSync/items/itemNbt";
-import { getItemFromSnbt } from "../../utils/nbt";
+import { itemToHtswTag } from "../../utils/nbt";
 import { defineHouseExporter } from "../export/exporter";
 import { readProjectItemsForExport } from "../export/projectDestination";
 import type { ReadFn } from "../export/reader";
 import { readClickActions } from "./readClickActions";
+import { hasItemClickActions } from "./interactDataCache";
+import { tagChild } from "../../housingSync/items/itemTag";
 
 function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]): Item {
     const source = projectItems.find((item) => item.name === name);
@@ -27,12 +29,28 @@ function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]
         );
     }
 
-    const candidates = new Map<string, string>();
+    let candidates = new Map<string, Item>();
+    const signedCandidates = new Map<string, Item>();
     for (let slot = 0; slot < 36; slot++) {
         const item = Player.getInventory()?.getStackInSlot(slot);
         if (item == null || canonicalItemShellKey(item) !== shell) continue;
-        candidates.set(canonicalLiveItemKey(item), snbtFromItem(item, { pretty: false }));
+        const key = canonicalLiveItemKey(item);
+        candidates.set(key, item);
+        const tag = itemToHtswTag(item);
+        if (
+            tagChild(
+                tagChild(tagChild(tag, "tag"), "ExtraAttributes"),
+                "interact_data"
+            ) !== undefined
+        ) {
+            signedCandidates.set(key, item);
+        }
     }
+    // A custom item can share its material with plain menu/action references.
+    // Prefer live custom copies, but never choose between competing signatures.
+    // If all copies lost their actions, read the plain copy to detect removal.
+    if (hasItemClickActions(source) && signedCandidates.size > 0)
+        candidates = signedCandidates;
     if (candidates.size === 0) {
         throw new Error(
             `No live copy of '${name}' in your inventory. Obtain it from the house, then retry.`
@@ -43,9 +61,7 @@ function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]
             `Inventory copies of '${name}' have different click-action data; cannot choose one.`
         );
     }
-    // Copy the observed stack, including its live interact_data. Source NBT
-    // and the import cache are never used to manufacture a readable item.
-    return getItemFromSnbt(Array.from(candidates.values())[0]);
+    return Array.from(candidates.values())[0];
 }
 
 const readInventoryItems = defineHouseExporter<string, "ITEM">({

@@ -110,23 +110,6 @@ async function waitForSetSlotAck(ctx: TaskContext, label: string): Promise<void>
     }
 }
 
-export async function clearInventorySlot(
-    ctx: TaskContext,
-    slotId: number,
-    view: InventoryView
-): Promise<void> {
-    sendCreativeInventoryAction(ctx, inventorySlotToPacketSlot(slotId), null);
-    await waitForSetSlotAck(ctx, `clear inventory slot ${slotId}`);
-    const cleared = await waitForInventorySlotMatch(ctx, view, {
-        slotId,
-        nbt: null,
-        count: 0,
-    });
-    if (!cleared) {
-        throw new Error(`Inventory slot ${slotId} did not clear.`);
-    }
-}
-
 export async function restoreInventorySlots(
     ctx: TaskContext,
     snapshot: readonly InventorySlotSnapshot[],

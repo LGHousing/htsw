@@ -226,9 +226,15 @@ scripts to the item.
 `/htsw diff` reads an item's left and right click actions from a live copy in
 your inventory (hotbar or main inventory), using `/edit` and its Edit Actions
 menu. It matches the project's item NBT using the existing Housing normalization,
-not the display name or cached click actions. Inventory contents and the selected
-slot are restored after reading. A missing copy, ambiguous NBT match, different
-action signatures across copies, or incomplete action read counts as unknown.
+not the display name or cached click actions. For a declared custom item, a unique
+signed copy takes precedence over plain copies of the same material; competing
+custom signatures remain ambiguous. HTSW selects an existing hotbar stack or
+swaps a main-inventory stack into the hotbar, then restores the selection/swap.
+Disconnecting during a swap leaves both stacks in the inventory. Captured copies
+used for dependency export require creative mode and an empty hotbar slot;
+reading nested item fields requires creative mode and spare inventory space.
+HTSW reports unmet prerequisites as unknown. A missing copy, ambiguous NBT match,
+or incomplete action read also counts as unknown.
 
 Housing has no list of project item names. If an item exists only in an action
 such as Give Item, obtain a copy from the house before running diff. Menu-slot

@@ -16,13 +16,15 @@ function containerSlotOf(slotId: number): number {
 
 const mocks = vi.hoisted(() => ({
     selectedSlot: 4,
+    swaps: [] as number[][],
+    connected: true,
+    creative: true,
     slots: [] as Array<MockStack | null>,
     restoreInventorySlots: vi.fn(),
     // Server-side script for a creative edit: what the server acks (null =
     // never acks) and what the slot holds by the time the poll runs.
     onCreativeAction: null as
-        | null
-        | ((packetSlot: number, value: unknown) => { ack: unknown; slot: unknown }),
+        null | ((packetSlot: number, value: unknown) => { ack: unknown; slot: unknown }),
     ackWaiters: [] as Array<{
         accepts: (windowId: number, slot: number, stack: unknown) => boolean;
         resolve: () => void;
@@ -32,6 +34,26 @@ const mocks = vi.hoisted(() => ({
     ackWindowId: 0,
     cleanedWaiters: 0,
     sentCreative: [] as Array<{ packetSlot: number; value: unknown }>,
+}));
+
+vi.mock("../src/utils/java", () => ({
+    getPlayer: () => ({}),
+    getMinecraft: () => ({
+        field_71442_b: {
+            func_78753_a: (
+                window: number,
+                slot: number,
+                hotbar: number,
+                mode: number
+            ) => {
+                mocks.swaps.push([window, slot, hotbar, mode]);
+                [mocks.slots[slot], mocks.slots[hotbar]] = [
+                    mocks.slots[hotbar],
+                    mocks.slots[slot],
+                ];
+            },
+        },
+    }),
 }));
 
 vi.mock("../src/tasks/poll", () => ({
@@ -46,6 +68,7 @@ vi.mock("../src/tasks/poll", () => ({
 
 vi.mock("../src/housingSync/sideEffects", () => ({
     closeOpenScreen: vi.fn(async () => undefined),
+    isInCreativeMode: () => mocks.creative,
     ensurePlayerInventoryScreen: vi.fn(async () => undefined),
 }));
 
@@ -96,7 +119,7 @@ vi.mock("../src/tasks/specifics/slots", () => ({
 }));
 
 vi.mock("../src/housingSync/items/playerInventory", () => ({
-    inventorySlotToPacketSlot: (slotId: number) => slotId + 36,
+    inventorySlotToPacketSlot: (slotId: number) => (slotId < 9 ? slotId + 36 : slotId),
     inventorySlotToOpenContainerSlot: (slotId: number) => containerSlotOf(slotId),
     heldItem: () => {
         const value = mocks.slots[mocks.selectedSlot];
@@ -118,6 +141,11 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     selectHotbarSlotAndWait: vi.fn(async (_ctx, slotId: number) => {
         mocks.selectedSlot = slotId;
     }),
+}));
+
+vi.mock("../src/housingSync/items/itemNbt", () => ({
+    canonicalLiveItemKey: (item: { getItemStack(): MockStack }) =>
+        item.getItemStack().name,
 }));
 
 import {
@@ -146,9 +174,12 @@ const ctx = {
 
 describe("held item placement", () => {
     beforeEach(() => {
+        mocks.swaps = [];
+        mocks.connected = true;
+        mocks.creative = true;
         mocks.selectedSlot = 4;
-        mocks.slots = Array.from({ length: 9 }, (_, slotId) =>
-            stack(`original-${slotId}`)
+        mocks.slots = Array.from({ length: 36 }, (_, slotId) =>
+            slotId < 9 ? stack(`original-${slotId}`) : null
         );
         mocks.restoreInventorySlots.mockClear();
         mocks.onCreativeAction = null;
@@ -157,12 +188,17 @@ describe("held item placement", () => {
         mocks.ackWindowId = 0;
         mocks.sentCreative = [];
         vi.stubGlobal("Player", {
-            getInventory: () => ({
-                getStackInSlot: (slotId: number) => {
-                    const value = mocks.slots[slotId];
-                    return value === null ? null : { getItemStack: () => value };
-                },
-            }),
+            getInventory: () =>
+                mocks.connected
+                    ? {
+                          getStackInSlot: (slotId: number) => {
+                              const value = mocks.slots[slotId];
+                              return value === null
+                                  ? null
+                                  : { getItemStack: () => value };
+                          },
+                      }
+                    : null,
         });
     });
 
@@ -226,14 +262,69 @@ describe("held item placement", () => {
         expect((mocks.sentCreative[0].value as MockStack).name).toBe("first");
     });
 
-    test("temporary holding overwrites an occupied slot without clearing it first", async () => {
-        await temporarilyHoldItem(
+    test("a disconnect during a read never overwrites a full hotbar", async () => {
+        const before = mocks.slots.slice();
+        const held = await temporarilyHoldItem(
             ctx as never,
-            { getItemStack: () => stack("captured") } as never
+            { getItemStack: () => mocks.slots[4] } as never
         );
+        mocks.connected = false;
+        await restoreTemporarilyHeldItem(ctx as never, held);
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+    });
 
-        expect(mocks.sentCreative.every(({ value }) => value !== null)).toBe(true);
-        expect(mocks.slots[0]?.name).toBe("captured");
+    test("reads an existing hotbar stack in survival without creative packets", async () => {
+        mocks.creative = false;
+        const before = mocks.slots.slice();
+        const held = await temporarilyHoldItem(
+            ctx as never,
+            { getItemStack: () => mocks.slots[2] } as never
+        );
+        expect(mocks.selectedSlot).toBe(2);
+        await restoreTemporarilyHeldItem(ctx as never, held);
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+        expect(mocks.selectedSlot).toBe(4);
+    });
+
+    test.each([false, true])(
+        "main inventory swaps preserve both stacks (disconnect=%s)",
+        async (disconnect) => {
+            mocks.creative = false;
+            mocks.slots[20] = stack("custom");
+            const originalHotbar = mocks.slots[4];
+            const originalMain = mocks.slots[20];
+            const held = await temporarilyHoldItem(
+                ctx as never,
+                { getItemStack: () => originalMain } as never
+            );
+            expect(mocks.slots[4]).toBe(originalMain);
+            expect(mocks.slots[20]).toBe(originalHotbar);
+            if (disconnect) mocks.connected = false;
+            await restoreTemporarilyHeldItem(ctx as never, held);
+            expect(mocks.slots[4]).toBe(disconnect ? originalMain : originalHotbar);
+            expect(mocks.slots[20]).toBe(disconnect ? originalHotbar : originalMain);
+            expect(mocks.sentCreative).toEqual([]);
+            expect(mocks.swaps).toEqual(
+                Array.from({ length: disconnect ? 1 : 2 }, () => [0, 20, 4, 2])
+            );
+        }
+    );
+
+    test("a captured copy requires creative and an empty hotbar slot", async () => {
+        const item = { getItemStack: () => stack("captured") };
+        mocks.creative = false;
+        mocks.slots[2] = null;
+        await expect(temporarilyHoldItem(ctx as never, item as never)).rejects.toThrow(
+            "requires creative mode"
+        );
+        mocks.creative = true;
+        mocks.slots[2] = stack("occupied");
+        await expect(temporarilyHoldItem(ctx as never, item as never)).rejects.toThrow(
+            "Free a hotbar slot"
+        );
+        expect(mocks.sentCreative).toEqual([]);
     });
 
     test("temporary holding restores an initially empty slot", async () => {
