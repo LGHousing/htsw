@@ -283,6 +283,30 @@ describe("read live preview", () => {
         preview.clear();
     });
 
+    test("does not restore a failed ITEM snapshot or its completed paths", () => {
+        const preview = createReadLivePreview("ITEM", "./project/import.json");
+        preview.start(["cookie"]);
+        preview.activate(0, true);
+        const path = getActiveTaskPath()!;
+        preview.eventsForList("Right Click Actions").emit({
+            kind: "observedSnapshot",
+            nodes: nodes(message("partial")),
+        });
+        preview.events.emit({ kind: "actionReadCompleted", path: p(0), hydrated: false });
+        expect(previewLinesForFile(path)[0].completed).toBe(true);
+
+        preview.fail(0);
+        preview.activate(0, false);
+        expect(previewLinesForFile(path)).toEqual([]);
+        expect(getActiveTaskListLabel()).toBeNull();
+        preview.events.emit({
+            kind: "observedSnapshot",
+            nodes: nodes(message("retried")),
+        });
+        expect(previewLinesForFile(path)[0].completed).toBeUndefined();
+        preview.clear();
+    });
+
     test("keeps staged scanning within the preview cache bound and rebuilds an evicted item", () => {
         const names = Array.from({ length: 512 }, (_value, index) => String(index));
         const preview = createReadLivePreview("FUNCTION", "./project/import.json");

@@ -102,12 +102,12 @@ function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>):
 }
 
 // Keyed by importable type and total over the house-readable set (derived from
-// HOUSE_READERS), so a new house-readable type is a compile error until it gets
-// a tab here. `HouseContentType & { type: K }` also pins each entry's `type`
+// HOUSE_READERS), except ITEM which reads inventory copies of project items
+// and has no house list. `HouseContentType & { type: K }` pins each entry's `type`
 // field to its key. HOUSE_CONTENT_TYPES below is the ordered array the view
 // consumes; Object.keys preserves this insertion order.
 const HOUSE_CONTENT_BY_TYPE: {
-    [K in HouseReadableType]: HouseReadableContentType & { type: K };
+    [K in Exclude<HouseReadableType, "ITEM">]: HouseReadableContentType & { type: K };
 } = {
     FUNCTION: {
         type: "FUNCTION",
@@ -302,7 +302,7 @@ const HOUSE_CONTENT_BY_TYPE: {
 };
 
 export const HOUSE_CONTENT_TYPES: HouseContentType[] = (
-    Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]
+    Object.keys(HOUSE_CONTENT_BY_TYPE) as (keyof typeof HOUSE_CONTENT_BY_TYPE)[]
 ).map((type) => HOUSE_CONTENT_BY_TYPE[type]);
 
 HOUSE_CONTENT_TYPES.push({

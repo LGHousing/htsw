@@ -113,7 +113,6 @@ import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
 import { itemChanges } from "../../../importables/items/changes";
 import { showToast } from "../../toast";
-import { HOUSE_READERS } from "../../../importables/export/readers";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { importableMatchesFilters } from "./filter";
 
@@ -730,15 +729,12 @@ function deepReadSpecs(importables: readonly Importable[]): DeepReadSpec[] {
     const namesByType = new Map<Importable["type"], string[]>();
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
-        if (HOUSE_READERS[imp.type] === null) continue;
         const names = namesByType.get(imp.type) ?? [];
         names.push(importableIdentity(imp));
         namesByType.set(imp.type, names);
     }
     const specs: DeepReadSpec[] = [];
     namesByType.forEach((names, type) => {
-        const read = HOUSE_READERS[type];
-        if (read === null) return;
         specs.push({ type, label: type.toLowerCase(), names });
     });
     return specs;
@@ -804,14 +800,6 @@ function houseExportCount(importables: readonly Importable[]): number {
     return count;
 }
 
-function deepReadableCount(importables: readonly Importable[]): number {
-    let count = 0;
-    for (let i = 0; i < importables.length; i++) {
-        if (HOUSE_READERS[importables[i].type] !== null) count++;
-    }
-    return count;
-}
-
 function runProjectDeepRead(
     parent: ResultImport,
     importJsonPath: string,
@@ -825,7 +813,7 @@ function runProjectDeepRead(
             "read",
             housingUuid,
             importJsonPath,
-            importables.filter((imp) => HOUSE_READERS[imp.type] !== null),
+            importables,
             "reads"
         );
         return;
@@ -854,7 +842,6 @@ const joinHouseFirstTooltip = (): string =>
     getHousingUuid() === null ? "Join a house first" : "";
 
 function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
-    if (HOUSE_READERS[imp.type] === null) return null;
     return {
         label: "Queue read",
         icon: Icons.scanEye,
@@ -1498,7 +1485,7 @@ export function resultRow(
                           ),
                   },
                   {
-                      label: `Queue read from house (${deepReadableCount(filteredImportables)})`,
+                      label: `Queue read from house (${filteredImportables.length})`,
                       icon: Icons.scanEye,
                       disabled: () => getHousingUuid() === null,
                       tooltip: joinHouseFirstTooltip,
@@ -1661,7 +1648,7 @@ export function includeGroupRow(
                     confirmProjectReExport(parent, fullPath, declaredImportables, narrowed),
             },
             {
-                label: `Queue read from house (${deepReadableCount(declaredImportables)})`,
+                label: `Queue read from house (${declaredImportables.length})`,
                 icon: Icons.scanEye,
                 disabled: () => getHousingUuid() === null,
                 tooltip: joinHouseFirstTooltip,

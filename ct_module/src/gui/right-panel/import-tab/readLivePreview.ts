@@ -22,6 +22,7 @@ export type ReadLivePreview = {
     start(names: readonly string[]): void;
     activate(index: number, reset: boolean): void;
     finish(index: number): void;
+    fail(index: number): void;
     clear(): void;
 };
 
@@ -133,6 +134,13 @@ export function createReadLivePreview(
             }
             if (getCurrentPath(path) !== null) setCurrent(path, null);
             markPreviewCompleted(path);
+        },
+        fail(index) {
+            if (index < 0 || index >= paths.length) return;
+            latestSnapshots[index] = null;
+            completedPaths[index].clear();
+            resetPreview(paths[index]);
+            if (activeIndex === index) setActiveTaskListLabel(null);
         },
         clear() {
             disposePreviewOperation(paths);

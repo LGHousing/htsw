@@ -94,6 +94,7 @@ vi.mock("../src/importables/export/readers", () => ({
         "TEAM",
         "GROUP",
         "NPC",
+        "ITEM",
     ],
 }));
 vi.mock("../src/project/paths", () => ({ resolveModuleRelativePath: (v: string) => v }));
@@ -152,6 +153,21 @@ describe("queue slash commands", () => {
                 scope: { kind: "houseType", type: "FUNCTION" },
                 filter: "unread",
             },
+        });
+    });
+
+    test("accepts ITEM reads while rejecting named and bulk ITEM exports", () => {
+        commandQueue(["export", "ITEM", "cookie"]);
+        commandQueue(["export", "ITEM", "all"]);
+        expect(state.rows).toEqual([]);
+
+        commandQueue(["read", "ITEM", "cookie"]);
+        commandQueue(["read", "ITEM", "all"]);
+        commandQueue(["read", "ITEM", "unread"]);
+        expect(state.rows).toHaveLength(3);
+        expect(state.rows[0]).toMatchObject({
+            op: "read",
+            target: { type: "ITEM", identity: "cookie" },
         });
     });
 

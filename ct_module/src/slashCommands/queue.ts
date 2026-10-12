@@ -215,6 +215,12 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         );
         return;
     }
+    if (op === "export" && type === "ITEM") {
+        ChatLib.chat(
+            "&c[htsw] Items export from the held stack. Use Export held item in the Houses tab."
+        );
+        return;
+    }
     const destination = getExportDestinationStatus();
     if (destination.kind !== "ready") {
         ChatLib.chat(
@@ -397,9 +403,7 @@ function parseImportableType(raw: string | undefined): Importable["type"] | null
 function parseReadableType(raw: string | undefined): HouseReadableType | null {
     const type = parseImportableType(raw);
     if (type === null) return null;
-    return HOUSE_READABLE_TYPES.indexOf(type as HouseReadableType) >= 0
-        ? (type as HouseReadableType)
-        : null;
+    return HOUSE_READABLE_TYPES.indexOf(type) >= 0 ? type : null;
 }
 
 function splitAddArguments(args: string[]): { path: string; remaining: string[] } | null {

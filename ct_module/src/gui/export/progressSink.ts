@@ -94,7 +94,8 @@ export function createExportProgressSink(
     const finishCurrent = (status: "imported" | "failed", error?: string): void => {
         if (currentIndex === null || currentClosed) return;
         currentClosed = true;
-        livePreview.finish(currentIndex);
+        if (status === "failed") livePreview.fail(currentIndex);
+        else livePreview.finish(currentIndex);
         emit({
             kind: "importableFinished",
             key: keyFor(identityAt(currentIndex)),

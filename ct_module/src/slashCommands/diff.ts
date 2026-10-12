@@ -95,11 +95,12 @@ export async function readDiffImportables(
 
     for (const [type, names] of namesByType) {
         const reader = readers[type];
-        if (reader === null || reader === undefined) continue;
+        if (reader === undefined) continue;
         await reader(ctx, {
             importJsonPath: manifest,
             rootDir: "",
             projectItems: projectItemsFromParsedImportJson(parsed),
+            parsed,
             names,
             quiet: true,
             progress: progress.sinkFor(type),

@@ -13,6 +13,8 @@ import { menuSlotCompareKey } from "../importables/menus/slotComparison";
 import { regionBoundsCompareKey } from "../importables/regions/bounds";
 import { actionListsOfImportable } from "./actionLists";
 import { getChildListFields } from "../housingSync/fields/actionMappings";
+import { canonicalItemShellTagKey } from "../housingSync/items/itemNbt";
+import type { TagLike } from "../housingSync/items/itemTag";
 
 /**
  * Importable-cache hashing.
@@ -166,6 +168,8 @@ export function importableCanonicalParts(
             // both sides hash alike.
             if (iconKey === null) continue;
             serialized = iconKey;
+        } else if (importable.type === "ITEM" && key === "nbt") {
+            serialized = canonicalItemShellTagKey(value as TagLike);
         } else {
             serialized = stableStringify(value);
         }

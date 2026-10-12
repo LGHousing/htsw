@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
 import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
-import { livePreviewCacheSize } from "../src/gui/right-panel/import-tab/livePreview";
+import {
+    livePreviewCacheSize,
+    previewLinesForFile,
+} from "../src/gui/right-panel/import-tab/livePreview";
 import {
     clearLastFinishedProgress,
     clearTaskProgress,
@@ -76,5 +79,23 @@ describe("diff progress", () => {
 
         expect(livePreviewCacheSize()).toBe(0);
         expect(getTaskProgress()).toBeNull();
+    });
+
+    test("discards an incomplete snapshot when an individual live read fails", () => {
+        const progress = createDiffProgressSession([sourceFunction()], MANIFEST);
+        progress.start();
+        const sink = progress.sinkFor("FUNCTION");
+        sink.start(["Example"]);
+        sink.item(0, "Example");
+        sink.events?.emit({
+            kind: "observedSnapshot",
+            nodes: [{ kind: "action", action: message("partial") }],
+        });
+        const path = getActiveTaskPath()!;
+        expect(previewLinesForFile(path)).not.toEqual([]);
+        sink.itemFailed?.(0, "Incomplete item action list");
+        expect(previewLinesForFile(path)).toEqual([]);
+        expect(getTaskProgress()?.rows[0].status).toBe("failed");
+        progress.clear();
     });
 });

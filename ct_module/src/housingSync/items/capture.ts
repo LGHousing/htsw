@@ -7,7 +7,6 @@ import { clickGoBack } from "../menus/menuUtils";
 import { timedWaitForMenu } from "../menus/menuWait";
 import { canonicalItemShellSnbtKey, snbtFromItem } from "./itemNbt";
 import {
-    clearInventorySlot,
     inventoryIsFull,
     restoreInventorySlots,
     snapshotInventoryView,
@@ -15,8 +14,7 @@ import {
     type InventoryView,
 } from "./playerInventory";
 import { SET_SLOT_ACK_MAX_TICKS } from "../menus/packets";
-
-const FULL_INVENTORY_CAPTURE_SLOT = 0;
+import { isInCreativeMode } from "../sideEffects";
 
 export interface ItemCaptureSink {
     register(snbt: string, displayNameHint: string): string;
@@ -142,12 +140,18 @@ async function recaptureCurrentItem(
     displayNameHint: string
 ): Promise<string | null> {
     const inventoryView: InventoryView = "openContainer";
+    if (!isInCreativeMode()) {
+        throw new Error(
+            "Reading item fields requires creative mode (/gmc) to remove captured copies safely."
+        );
+    }
+    if (inventoryIsFull(inventoryView)) {
+        throw new Error(
+            "Free an inventory slot to read item fields; HTSW will not replace an occupied stack."
+        );
+    }
     const originalInventory = snapshotInventoryView(inventoryView);
     try {
-        if (inventoryIsFull(inventoryView)) {
-            await clearInventorySlot(ctx, FULL_INVENTORY_CAPTURE_SLOT, inventoryView);
-        }
-
         const captureBaseline = snapshotInventoryView(inventoryView);
         currentItemSlot.click();
         const captured = await waitForCapturedInventoryChange(

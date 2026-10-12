@@ -19,6 +19,9 @@ import {
     type InventorySlotSnapshot,
 } from "./playerInventory";
 
+import { getMinecraft, getPlayer } from "../../utils/java";
+import { canonicalLiveItemKey } from "./itemNbt";
+
 type BorrowedHotbarSlot = {
     slot: InventorySlotSnapshot;
     selectedHotbarSlot: number;
@@ -115,6 +118,117 @@ export async function restoreTemporarilyHeldItem(
     }
 }
 
+export type HeldInventoryItem = {
+    selectedHotbarSlot: number;
+    hotbarSlot: number;
+    swap?: {
+        mainSlot: number;
+        hotbar: InventorySlotSnapshot;
+        main: InventorySlotSnapshot;
+    };
+};
+
+export async function holdInventoryItem(
+    ctx: TaskContext,
+    item: Item
+): Promise<HeldInventoryItem> {
+    await closeOpenScreen(ctx);
+    const inventory = Player.getInventory();
+    if (inventory == null) throw new Error("No player inventory is loaded.");
+    const key = canonicalLiveItemKey(item);
+    const previous = selectedHotbarSlot();
+    // Prefer the held stack, then another hotbar stack, then main inventory.
+    const slots = [previous];
+    for (let slot = 0; slot < 36; slot++) {
+        if (slot !== previous) slots.push(slot);
+    }
+    for (const slot of slots) {
+        const candidate = inventory.getStackInSlot(slot);
+        if (candidate == null || canonicalLiveItemKey(candidate) !== key) continue;
+        const hotbarSlot = slot < 9 ? slot : (findEmptyHotbarSlot() ?? previous);
+        const held: HeldInventoryItem = { selectedHotbarSlot: previous, hotbarSlot };
+        try {
+            if (slot >= 9) {
+                const hotbar = readInventorySlot(hotbarSlot, "player");
+                const main = readInventorySlot(slot, "player");
+                // Vanilla number-key swap preserves both stacks even if we disconnect.
+                held.swap = { mainSlot: slot, hotbar, main };
+                swapInventorySlot(slot, hotbarSlot);
+                if (
+                    !(await pollTicks(
+                        ctx,
+                        SET_SLOT_ACK_MAX_TICKS,
+                        () => slotMatches(hotbarSlot, main) && slotMatches(slot, hotbar)
+                    ))
+                ) {
+                    throw new Error(
+                        "Housing did not confirm the inventory swap; retry the item read."
+                    );
+                }
+            }
+            await selectHotbarSlotAndWait(ctx, hotbarSlot);
+            return held;
+        } catch (error) {
+            await restoreHeldInventoryItem(ctx, held);
+            throw error;
+        }
+    }
+
+    throw new Error(
+        "No live inventory copy is available. Obtain this item from the house, then retry the read."
+    );
+}
+
+export async function restoreHeldInventoryItem(
+    ctx: TaskContext,
+    held: HeldInventoryItem
+): Promise<void> {
+    if (Player.getInventory() == null) return;
+    await closeOpenScreen(ctx);
+    try {
+        const swap = held.swap;
+        if (
+            swap !== undefined &&
+            slotMatches(held.hotbarSlot, swap.main) &&
+            slotMatches(swap.mainSlot, swap.hotbar)
+        ) {
+            swapInventorySlot(swap.mainSlot, held.hotbarSlot);
+            if (
+                !(await pollTicks(
+                    ctx,
+                    SET_SLOT_ACK_MAX_TICKS,
+                    () =>
+                        slotMatches(held.hotbarSlot, swap.hotbar) &&
+                        slotMatches(swap.mainSlot, swap.main)
+                ))
+            ) {
+                throw new Error(
+                    "Housing did not confirm restoring the item swap; both stacks remain in your inventory."
+                );
+            }
+        }
+    } finally {
+        if (Player.getInventory() != null) {
+            await selectHotbarSlotAndWait(ctx, held.selectedHotbarSlot);
+        }
+    }
+}
+
+function swapInventorySlot(mainSlot: number, hotbarSlot: number): void {
+    getMinecraft().field_71442_b.func_78753_a(
+        0,
+        inventorySlotToPacketSlot(mainSlot),
+        hotbarSlot,
+        2,
+        getPlayer()
+    );
+}
+
+function slotMatches(slot: number, expected: InventorySlotSnapshot): boolean {
+    const current = readInventorySlot(slot, "player");
+    return current.nbt === expected.nbt && current.count === expected.count;
+}
+
 function findEmptyHotbarSlot(): number | undefined {
     for (let slotId = 0; slotId < 9; slotId++) {
         if (readInventorySlot(slotId, "player").nbt === null) return slotId;
@@ -179,13 +293,13 @@ function describeRejectedStack(slotId: number): string {
     if (observed !== null && observed !== undefined) {
         return (
             `Hypixel never confirmed this item in your inventory, and slot ${slotId} now holds ${holds}. ` +
-                `Either something in the house (a loop or event reacting to the item) replaced it, ` +
-                `or the SNBT was rejected.`
+            `Either something in the house (a loop or event reacting to the item) replaced it, ` +
+            `or the SNBT was rejected.`
         );
     }
     return (
         `Hypixel did not accept this item into your inventory. Check that its SNBT is formatted correctly ` +
-            `(slot ${slotId} holds: ${holds}).`
+        `(slot ${slotId} holds: ${holds}).`
     );
 }
 
@@ -245,4 +359,3 @@ async function restoreBorrowedSlot(
         await selectHotbarSlotAndWait(ctx, borrowed.selectedHotbarSlot);
     }
 }
-
