@@ -1,6 +1,7 @@
 import type { Action } from "htsw/types";
 
 import { hydrateActionListScan } from "../../housingSync/actions/hydration/run";
+import { ACTION_LIST_CONFIG } from "../../housingSync/actions/listConfigs";
 import { scanActionList } from "../../housingSync/actions/readList";
 import type { ListReadOptions } from "../../housingSync/context/actionReadContext";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
@@ -74,8 +75,15 @@ export async function readClickActions(
                 })
             );
             const listRead = { ...read, events: eventsForList?.(label) ?? read.events };
+            const explicitlyEmpty =
+                ctx.tryGetMenuItemSlot(ACTION_LIST_CONFIG.emptyPlaceholderName) !== null;
             const scan = await scanActionList(ctx, { kind: "full" }, listRead);
             await hydrateActionListScan(ctx, scan, listRead);
+            if (scan.slots.length === 0 && !explicitlyEmpty) {
+                throw new Error(
+                    `No observed actions in ${label}; its empty state is unconfirmed.`
+                );
+            }
             // Reject unknown nodes and missing child lists instead of using
             // the general export conversion, which can omit unread entries.
             result[side] = fullyHydratedObservedSlotsToActions(scan.slots);

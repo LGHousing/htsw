@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
         writeImportableCache: vi.fn(),
         upsertImportableEntry: vi.fn(),
         refuseEditor: false,
+        fullListEmpty: false,
         summaries,
     };
 });
@@ -119,6 +120,8 @@ function context() {
             await run();
             return mocks.refuseEditor ? "refused" : "opened";
         },
+        tryGetMenuItemSlot: (label: string) =>
+            label === "No Actions!" && mocks.fullListEmpty ? {} : null,
         getItemSlot: (label: string) => ({
             click: vi.fn(),
             getItem: () => ({ getLore: () => mocks.summaries[label] ?? [] }),
@@ -161,6 +164,7 @@ describe("item house reader", () => {
         mocks.held = null;
         mocks.summaries = {};
         mocks.refuseEditor = false;
+        mocks.fullListEmpty = false;
         vi.stubGlobal("Player", {
             getInventory: () => ({ getStackInSlot: (slot: number) => mocks.slots[slot] }),
         });
@@ -297,6 +301,24 @@ describe("item house reader", () => {
         expect(report.conflicts).toHaveLength(2);
         expect(report.unknown).toBe(0);
         expect(mocks.scanActionList).not.toHaveBeenCalled();
+    });
+
+    it("keeps a zero-slot full scan unknown without explicit empty-list lore", async () => {
+        mocks.scanActionList.mockResolvedValue({ slots: [] });
+        mocks.hydrateActionListScan.mockResolvedValue(undefined);
+        const { result, report } = await read();
+        expect(result.failed).toBe(1);
+        expect(report).toMatchObject({ clean: 0, conflicts: [], unknown: 2 });
+    });
+
+    it("reads an explicit No Actions! placeholder despite missing parent summary lore", async () => {
+        mocks.scanActionList.mockResolvedValue({ slots: [] });
+        mocks.hydrateActionListScan.mockResolvedValue(undefined);
+        mocks.fullListEmpty = true;
+        const { result, report } = await read();
+        expect(result.succeeded).toBe(1);
+        expect(report.unknown).toBe(0);
+        expect(report.conflicts).toHaveLength(2);
     });
 
     it.each([

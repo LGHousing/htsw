@@ -16,6 +16,7 @@ function containerSlotOf(slotId: number): number {
 
 const mocks = vi.hoisted(() => ({
     selectedSlot: 4,
+    failNextPoll: false,
     swaps: [] as number[][],
     connected: true,
     creative: true,
@@ -62,7 +63,13 @@ vi.mock("../src/tasks/poll", () => ({
             _ctx: unknown,
             _ticks: number,
             predicate: () => boolean | Promise<boolean>
-        ) => predicate()
+        ) => {
+            if (mocks.failNextPoll) {
+                mocks.failNextPoll = false;
+                return false;
+            }
+            return predicate();
+        }
     ),
 }));
 
@@ -174,6 +181,7 @@ const ctx = {
 
 describe("held item placement", () => {
     beforeEach(() => {
+        mocks.failNextPoll = false;
         mocks.swaps = [];
         mocks.connected = true;
         mocks.creative = true;
@@ -311,6 +319,17 @@ describe("held item placement", () => {
             );
         }
     );
+
+    test("restores both stacks when swap confirmation fails", async () => {
+        mocks.slots[20] = stack("custom");
+        const before = mocks.slots.slice();
+        mocks.failNextPoll = true;
+        await expect(
+            temporarilyHoldItem(ctx as never, { getItemStack: () => before[20] } as never)
+        ).rejects.toThrow("did not confirm the inventory swap");
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+    });
 
     test("a captured copy requires creative and an empty hotbar slot", async () => {
         const item = { getItemStack: () => stack("captured") };

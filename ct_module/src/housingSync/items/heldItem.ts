@@ -108,25 +108,25 @@ export async function temporarilyHoldItem(
         if (candidate == null || canonicalLiveItemKey(candidate) !== key) continue;
         const hotbarSlot = slot < 9 ? slot : (findEmptyHotbarSlot() ?? previous);
         const held: TemporarilyHeldItem = { selectedHotbarSlot: previous, hotbarSlot };
-        if (slot >= 9) {
-            const hotbar = readInventorySlot(hotbarSlot, "player");
-            const main = readInventorySlot(slot, "player");
-            // Vanilla number-key swap preserves both stacks even if we disconnect.
-            swapInventorySlot(slot, hotbarSlot);
-            held.swap = { mainSlot: slot, hotbar, main };
-            if (
-                !(await pollTicks(
-                    ctx,
-                    SET_SLOT_ACK_MAX_TICKS,
-                    () => slotMatches(hotbarSlot, main) && slotMatches(slot, hotbar)
-                ))
-            ) {
-                throw new Error(
-                    "Housing did not confirm the inventory swap; retry the item read."
-                );
-            }
-        }
         try {
+            if (slot >= 9) {
+                const hotbar = readInventorySlot(hotbarSlot, "player");
+                const main = readInventorySlot(slot, "player");
+                // Vanilla number-key swap preserves both stacks even if we disconnect.
+                held.swap = { mainSlot: slot, hotbar, main };
+                swapInventorySlot(slot, hotbarSlot);
+                if (
+                    !(await pollTicks(
+                        ctx,
+                        SET_SLOT_ACK_MAX_TICKS,
+                        () => slotMatches(hotbarSlot, main) && slotMatches(slot, hotbar)
+                    ))
+                ) {
+                    throw new Error(
+                        "Housing did not confirm the inventory swap; retry the item read."
+                    );
+                }
+            }
             await selectHotbarSlotAndWait(ctx, hotbarSlot);
             return held;
         } catch (error) {
