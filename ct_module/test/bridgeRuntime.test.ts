@@ -10,7 +10,7 @@ const progress = vi.hoisted(() => ({
     isEtaEstimating: vi.fn(() => false),
     isEtaRough: vi.fn(() => false),
 }));
-vi.mock("../src/gui/right-panel/import-tab/taskProgress", () => progress);
+vi.mock("../src/runtime/taskProgress", () => progress);
 
 afterEach(() => {
     vi.unstubAllGlobals();

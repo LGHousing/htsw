@@ -9,20 +9,20 @@ const state = vi.hoisted(() => ({
     retries: [] as string[],
 }));
 
-vi.mock("../src/gui/autoRun", () => ({
+vi.mock("../src/runtime/autoRun", () => ({
     autoRunQueueChanged: () => state.changed++,
     setAutoRunEnabled: (enabled: boolean) => {
         state.autoRun = enabled;
     },
 }));
-vi.mock("../src/gui/export/destinationStatus", () => ({
+vi.mock("../src/runtime/exportDestination", () => ({
     getExportDestinationStatus: () => ({
         kind: "ready",
         path: "/project/import.json",
     }),
 }));
-vi.mock("../src/gui/lib/pathDisplay", () => ({ compactFileLabel: (v: string) => v }));
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/project/pathDisplay", () => ({ compactFileLabel: (v: string) => v }));
+vi.mock("../src/runtime/parsing/parses", () => ({
     parseImportJsonCurrent: async (path: string) => ({
         canonicalPath: path,
         parsed: { importJson: { houseUuid: "house" }, value: [] },
@@ -34,8 +34,8 @@ vi.mock("../src/gui/parsing/parses", () => ({
         error: null,
     }),
 }));
-vi.mock("../src/gui/state", () => ({ getHousingUuid: () => "house" }));
-vi.mock("../src/gui/right-panel/import-tab/queue", () => ({
+vi.mock("../src/runtime/state/index", () => ({ getHousingUuid: () => "house" }));
+vi.mock("../src/runtime/queue", () => ({
     addQueueRow: (row: Record<string, unknown>) => {
         state.rows.push(row);
         return { kind: "added", row, message: "Queued" };
@@ -72,7 +72,7 @@ vi.mock("../src/gui/right-panel/import-tab/queue", () => ({
         return true;
     },
 }));
-vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
+vi.mock("../src/runtime/queueRunner", () => ({
     isQueueRunning: () => false,
     pauseQueue: () => {
         state.pauses++;

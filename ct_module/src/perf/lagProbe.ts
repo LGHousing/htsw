@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { normalizePathSeparators } from "htsw-editor-common/project";
-import { getTaskProgress } from "../gui/right-panel/import-tab/taskProgress";
-import { getParsePerfStats } from "../gui/parsing/parses";
+import { getTaskProgress } from "../runtime/taskProgress";
+import { getParsePerfStats } from "../runtime/parsing/parses";
 import { debugLog, debugLogError, flushGuiDebug } from "../gui/lib/debugLog";
 import { TaskManager } from "../tasks/manager";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";

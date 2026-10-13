@@ -5,13 +5,13 @@ import type { Element } from "../../lib/layout";
 import { Col, Input, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { ACCENT_WARN } from "../../lib/theme";
-import { shortPath } from "../../lib/pathDisplay";
+import { shortPath } from "../../../project/pathDisplay";
 import {
     canonicalPath,
     invalidateParseCacheEntry,
     requestParse,
-} from "../../parsing/parses";
-import { importableDeclaringPath } from "../../parsing/importablePaths";
+} from "../../../runtime/parsing/parses";
+import { importableDeclaringPath } from "../../../runtime/parsing/importablePaths";
 import { importableIdentity } from "../../../importables/identity";
 import { moveImportableEntry, type Section } from "../../../project/importJsonMutations";
 import { createIncludedFolderInTree } from "../../../project/paths";

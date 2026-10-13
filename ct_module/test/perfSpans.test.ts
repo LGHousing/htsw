@@ -2,17 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const logged = vi.hoisted(() => [] as string[]);
 
-vi.mock("../src/gui/lib/debugLog", () => ({
-    debugLog: (line: string) => logged.push(line),
-}));
-
 import {
     activeSpanPath,
     clearSlowSpans,
     getSlowSpans,
     setSpanThreshold,
     span,
+    slowSpanEvents,
 } from "../src/perf/spans";
+
+slowSpanEvents.observe(({ ms, path }) =>
+    logged.push(`[lagprobe] slow span ${ms}ms: ${path}`)
+);
 
 let now = 0;
 

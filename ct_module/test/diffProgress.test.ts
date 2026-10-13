@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
-import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
+import { createDiffProgressSession } from "../src/runtime/diffProgress";
 import {
     livePreviewCacheSize,
     previewLinesForFile,
@@ -13,7 +13,7 @@ import {
     getFinishedTaskSummary,
     getSessionVerb,
     getTaskProgress,
-} from "../src/gui/right-panel/import-tab/taskProgress";
+} from "../src/runtime/taskProgress";
 import { message } from "./utils";
 
 const MANIFEST = "./project/import.json";
@@ -99,3 +99,7 @@ describe("diff progress", () => {
         progress.clear();
     });
 });
+
+import { readSessions } from "../src/runtime/readProgress";
+import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
+readSessions.observe(({ type, basePath, observe }) => observe(createReadLivePreview(type, basePath)));

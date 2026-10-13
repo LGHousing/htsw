@@ -58,8 +58,14 @@ describe("right-panel live import tab", () => {
 
     test("keeps a failed import preview available for attention", async () => {
         const taskProgress = await import(
-            "../src/gui/right-panel/import-tab/taskProgress"
+            "../src/runtime/taskProgress"
         );
+        const { taskPathChanges, taskProgressChanges } = await import("../src/runtime/events");
+        taskPathChanges.observe(selection.rememberLiveTaskPath);
+        taskProgressChanges.observe(({ wasRunning, running, needsAttention }) => {
+            selection.onTaskRunningChanged(wasRunning, running, needsAttention);
+        });
+        selection.setLiveTaskPathProvider(taskProgress.getActiveTaskPath);
         livePath = "C:/project/functions/foo.htsl";
         taskProgress.startTaskProgress({
             progress: taskProgress.createTaskProgress({}),

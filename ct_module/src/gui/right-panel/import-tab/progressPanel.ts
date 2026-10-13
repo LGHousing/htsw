@@ -49,7 +49,7 @@ import {
     parkedTaskFor,
     phaseFractions,
     type PhaseUnits,
-} from "./taskProgress";
+} from "../../../runtime/taskProgress";
 import {
     countTaskRowsByStatus,
     isTaskTotalEtaReady,

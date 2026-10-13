@@ -5,7 +5,7 @@ import { Button, Col, Input, Row, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../../project/importJsonMutations";
-import { markParseStale, requestParse } from "../../parsing/parses";
+import { markParseStale, requestParse } from "../../../runtime/parsing/parses";
 import { bumpTreeRevision } from "./rowModel";
 import { importableIdentity } from "../../../importables/identity";
 

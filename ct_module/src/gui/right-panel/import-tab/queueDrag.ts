@@ -3,8 +3,8 @@
 import { getScrollState, setScrollOffset } from "../../lib/layout";
 import { javaType } from "../../lib/java";
 import { markGuiDirty } from "../../lib/dirty";
-import { getHousingUuid } from "../../state";
-import { getQueue, getQueueRow, moveQueueRowsOnto, queuePeerKeys } from "./queue";
+import { getHousingUuid } from "../../../runtime/state/index";
+import { getQueue, getQueueRow, moveQueueRowsOnto, queuePeerKeys } from "../../../runtime/queue";
 
 const MouseClass = javaType("org.lwjgl.input.Mouse");
 const KeyboardClass = javaType("org.lwjgl.input.Keyboard");

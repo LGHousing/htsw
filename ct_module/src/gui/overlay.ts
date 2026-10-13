@@ -1,3 +1,4 @@
+import { tickHousingLifecycle } from "../runtime/housingLifecycle";
 /// <reference types="../../CTAutocomplete" />
 
 import { Panel } from "./lib/panel";
@@ -51,8 +52,8 @@ import {
 } from "./lib/bounds";
 import { BottomToolbar } from "./bottom-toolbar";
 import { Container } from "./lib/components";
-import { handleCompletedParse, tickReparse } from "./parsing/reparse";
-import { onParseCacheEntryChanged, processPendingParses } from "./parsing/parses";
+import { handleCompletedParse, tickReparse } from "../runtime/parsing/reparse";
+import { onParseCacheEntryChanged, processPendingParses } from "../runtime/parsing/parses";
 import { invalidateSourceDiffForParse } from "./code-view/sourceDiff";
 import { CHAT_INPUT_ID } from "./chat";
 import { refreshChatLines } from "./chat/mcChat";
@@ -73,20 +74,18 @@ import {
     mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
-import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
-import { detectHousingUuid } from "../importCache/housingId";
+import { areTaskSoundsMuted } from "../runtime/state";
 import {
     getImportCachePresenceRevision,
     getImportCacheWriteRevision,
 } from "../importCache/cache";
-import { getHousingPresence, resetHousingPresence } from "../importCache/housingPresence";
+import { getHousingPresence } from "../importCache/housingPresence";
 import { isTaskRunning } from "../tasks/runningState";
-import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
-import { isAutoRunQueueRunning, setAutoRunDetectionLive } from "./autoRun";
+import { isAutoRunQueueRunning, setAutoRunDetectionLive } from "../runtime/autoRun";
 import { noteOverlayVisibility } from "../persistence/workspace";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
@@ -121,12 +120,9 @@ import {
     getOverlayScreenH,
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
-import { closeBoundProjectForHouse, openBoundProjectForHouse } from "./boundProject";
 import { canShowHousingFrame } from "./overlayVisibility";
-import { processImportableCacheWarm } from "./cache-status/cacheWarm";
+import { processImportableCacheWarm } from "../importCache/cacheWarm";
 import { pollLockBanners } from "./left-panel/projects/lockBanner";
-import { clearQueue } from "./right-panel/import-tab/queue";
-import { cancelActiveTask } from "../tasks/activeTask";
 import { span } from "../perf/spans";
 
 onParseCacheEntryChanged((entry) => {
@@ -221,52 +217,6 @@ function InventoryToolbarTree(): Element {
 
 function anyHtswPanelVisible(): boolean {
     return frameVisible() || inventoryToolbarVisible();
-}
-
-// Probe once per server while presence is unknown. Server transport resets the
-// verdict and cooldown so the next container open checks the new server.
-let uuidFetchInFlight = false;
-let lastUuidFetchAt = 0;
-const UUID_FETCH_COOLDOWN_MS = 60_000;
-let housingServerRevision = 0;
-
-function leaveHousingServer(): void {
-    housingServerRevision++;
-    const uuid = getHousingUuid();
-    cancelActiveTask();
-    closeBoundProjectForHouse(uuid);
-    clearQueue();
-    setHousingUuid(null);
-    resetHousingPresence();
-    lastUuidFetchAt = 0;
-}
-
-function maybeAutoFetchHousingUuid(): void {
-    if (uuidFetchInFlight) return;
-    if (getHousingPresence() !== "unknown") return;
-    if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
-    const serverRevision = housingServerRevision;
-    const task = TaskManager.tryRun(async (ctx) => {
-        const uuid = await detectHousingUuid(ctx);
-        if (serverRevision !== housingServerRevision) {
-            resetHousingPresence();
-            return;
-        }
-        if (uuid !== null) {
-            setHousingUuid(uuid);
-            openBoundProjectForHouse(uuid);
-        }
-    });
-    if (task === null) return;
-    uuidFetchInFlight = true;
-    lastUuidFetchAt = Date.now();
-    void task
-        .catch(() => {
-            /* timeout — stay "unknown" and allow a retry after the cooldown */
-        })
-        .then(() => {
-            uuidFetchInFlight = false;
-        });
 }
 
 // Track active panels so global handlers (wheel, key) can locate the laid-out trees.
@@ -473,32 +423,6 @@ export function initHtswGui(): void {
 
     // Drive the lib's wheel easing from the user's "Smooth scrolling" setting.
     setScrollEasingProvider(getSmoothScrolling);
-
-    // Hypixel server-transport messages are the cleanest "you may have
-    // changed housings" signal. When we see one, drop the cached UUID and
-    // cache-status rows so the next inventory open re-runs `/wtfmap` for the
-    // new server. Both `setCriteria("Sending you to ${server}...")` and a
-    // `^Sending you to ` regex were observed to silently never fire here,
-    // so we match on `${*}` and prefix-test the unformatted message in JS.
-    // We also clear `lastUuidFetchAt`: a prior failed `/wtfmap` (e.g. one
-    // attempted from a lobby) sets the cooldown, which would otherwise
-    // gate the next auto-fetch in the new housing for up to 60s.
-    // Read the event through a declared parameter only: on this Rhino build,
-    // pulling a ClientChatReceivedEvent out of `arguments` (which is what a
-    // `...args` rest parameter compiles to) throws
-    // "InternalError: Invalid JavaScript value" and silently kills the handler.
-    register("chat", (event) => {
-        // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
-        const msg = ChatLib.getChatMessage(event, false);
-        if (typeof msg !== "string") return;
-        if (msg.indexOf("Sending you to ") !== 0) return;
-        leaveHousingServer();
-    });
-
-    register("worldLoad", () => {
-        invalidateContainerBoundsCache();
-        leaveHousingServer();
-    });
 
     // Single fullscreen panel; the element tree (RootTree) wraps around the
     // container + chat cutouts. paintBackground=false because the tree paints
@@ -953,7 +877,7 @@ export function initHtswGui(): void {
             // the idle overlay appears. If the check depended on frameVisible(), an
             // unknown verdict could never become "in".
             if (getOpenContainerBounds() !== null) {
-                span("tick.housingPresence", maybeAutoFetchHousingUuid);
+                span("tick.housingPresence", () => tickHousingLifecycle(true));
             }
             // Only tear down popovers + focus when the overlay isn't showing at all.
             // frameVisible() stays true during an import gap (cached bounds), even

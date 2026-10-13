@@ -23,7 +23,7 @@ vi.mock("htsw", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
 }));
 
@@ -61,7 +61,7 @@ vi.mock("../src/importCache/houseLock", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
+vi.mock("../src/runtime/diffProgress", () => ({
     createDiffProgressSession: () => ({
         start: state.start,
         sinkFor: () => undefined,

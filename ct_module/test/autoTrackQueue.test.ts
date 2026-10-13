@@ -23,17 +23,17 @@ const fixture = vi.hoisted<{
     queueRunning: false,
 }));
 
-vi.mock("../src/gui/state", () => ({
+vi.mock("../src/runtime/state/index", () => ({
     getHousingUuid: () => "house-uuid",
     isAnyAutoTrackEnabled: () => true,
     isCurrentHouseTrusted: () => false,
 }));
 
-vi.mock("../src/gui/autoTrackScope", () => ({
+vi.mock("../src/runtime/autoTrackScope", () => ({
     getActiveAutoTrackSources: () => new Set([SOURCE_PATH]),
 }));
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     forEachCachedParse: (
         visit: (entry: {
@@ -55,12 +55,12 @@ vi.mock("../src/gui/parsing/parses", () => ({
     getParseCacheRevision: () => 0,
 }));
 
-vi.mock("../src/gui/cache-status", () => ({
+vi.mock("../src/importCache/importableStatus", () => ({
     cachedStatusForImportable: () => fixture.status,
     statusForImportableBlocking: () => fixture.status ?? "unknown",
 }));
 
-vi.mock("../src/gui/cache-status/cacheWarm", () => ({
+vi.mock("../src/importCache/cacheWarm", () => ({
     onImportableCacheWarm: () => () => {},
 }));
 
@@ -71,9 +71,9 @@ vi.mock("../src/importables/import/dependencyExpansion", () => ({
     ) => ({ importables: modified, addedImportables: [] }),
 }));
 
-vi.mock("../src/gui/autoRun", () => ({ autoRunRefresh: () => {} }));
+vi.mock("../src/runtime/autoRun", () => ({ autoRunRefresh: () => {} }));
 vi.mock("../src/settings", () => ({ getAutoRun: () => false }));
-vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
+vi.mock("../src/runtime/queueRunner", () => ({
     isQueueRunning: () => fixture.queueRunning,
 }));
 vi.mock("../src/prune/projectRun", () => ({
@@ -83,14 +83,14 @@ vi.mock("../src/prune/projectRun", () => ({
     setOnArmingScansReset: () => {},
 }));
 
-import { autoTrackRefresh } from "../src/gui/autoTrack";
+import { autoTrackRefresh } from "../src/runtime/autoTrack";
 import {
     addToQueue,
     clearQueue,
     getQueue,
     makeImportableQueueRow,
     setQueueRowStatus,
-} from "../src/gui/right-panel/import-tab/queue";
+} from "../src/runtime/queue";
 
 beforeEach(() => {
     clearQueue();

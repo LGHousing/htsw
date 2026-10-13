@@ -4,13 +4,13 @@ import { SourceMap, parseActionsResult, type SourceFile, type SpanTable } from "
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { getMtimeMs } from "../lib/java";
+import { getMtimeMs } from "../../utils/fileMetadata";
 import {
     ActionPath,
     type ChildActionListName,
     ActionListPath,
 } from "../../housingSync/actionPath";
-import { BoundedMap } from "../lib/boundedLruMap";
+import { BoundedMap } from "../../utils/boundedLruMap";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */

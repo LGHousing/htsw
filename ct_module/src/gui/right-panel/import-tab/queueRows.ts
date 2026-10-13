@@ -19,14 +19,14 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { openMenu, type MenuAction } from "../../lib/menu";
-import { basename, compactPath, shortPath } from "../../lib/pathDisplay";
+import { basename, compactPath, shortPath } from "../../../project/pathDisplay";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import { listCachedImportables } from "../../../importCache/cache";
 import { importableIdentity } from "../../../importables/identity";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { getHousingUuid, isCurrentHouseTrusted } from "../../state";
-import { isHouseTrusted } from "../../state/trust";
-import { canonicalPath, requestParse } from "../../parsing/parses";
+import { getHousingUuid, isCurrentHouseTrusted } from "../../../runtime/state/index";
+import { isHouseTrusted } from "../../../runtime/state/trust";
+import { canonicalPath, requestParse } from "../../../runtime/parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
 import { revealInHousesView } from "../../left-panel/houses";
@@ -36,7 +36,7 @@ import {
     getQueueRowRunState,
     isCurrentQueueRow,
     type QueueRowRunState,
-} from "./taskProgress";
+} from "../../../runtime/taskProgress";
 import {
     canMoveQueueRow,
     dismissQueueRow,
@@ -47,8 +47,8 @@ import {
     retryQueueRow,
     type QueueMove,
     type QueueRow,
-} from "./queue";
-import { cancelQueue } from "./queueRunner";
+} from "../../../runtime/queue";
+import { cancelQueue } from "../../../runtime/queueRunner";
 import {
     isQueueRowDragging,
     isQueueRowSelected,

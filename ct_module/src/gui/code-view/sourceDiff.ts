@@ -29,7 +29,7 @@
 import type { ImportablesParseResult, SourceFile, SpanTable } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
-import { normalizeHtswPath } from "../lib/pathDisplay";
+import { normalizeHtswPath } from "../../project/pathDisplay";
 import { matchByHash } from "../../importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
 import {
@@ -45,14 +45,14 @@ import {
     importableChildListPath,
     IMPORTABLE_CHILD_LIST_NAMES,
     type ImportableChildListName,
-} from "../parsing/importablePaths";
+} from "../../runtime/parsing/importablePaths";
 import {
     canonicalPath,
     forEachCachedParse,
     getParseAt,
     getParseCacheRevision,
-} from "../parsing/parses";
-import { getHousingUuid } from "../state/housing";
+} from "../../runtime/parsing/parses";
+import { getHousingUuid } from "../../runtime/state/housing";
 import {
     menuSlotActionsPath,
     readCachedActionList,

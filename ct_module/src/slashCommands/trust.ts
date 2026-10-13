@@ -1,6 +1,6 @@
 import { getCurrentHousingUuid } from "../importCache/housingId";
-import { getHousingUuid, setHousingUuid } from "../gui/state/housing";
-import { isHouseTrusted, setHouseTrust } from "../gui/state/trust";
+import { getHousingUuid, setHousingUuid } from "../runtime/state/housing";
+import { isHouseTrusted, setHouseTrust } from "../runtime/state/trust";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { emitBridgeEvent } from "../bridge/status";
 

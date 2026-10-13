@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mtimes = new Map<string, number>();
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/fileMetadata", () => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
+
 
 import {
     FP_RECHECK_MS,
@@ -12,7 +13,7 @@ import {
     isFreshnessCheckDue,
     settledChange,
     type Fingerprint,
-} from "../src/gui/parsing/freshness";
+} from "../src/runtime/parsing/freshness";
 
 function completeSweep(
     fingerprint: Fingerprint,

@@ -8,8 +8,8 @@ import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/comp
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../../lib/theme";
 import { updateImportableField, type Section } from "../../../project/importJsonMutations";
-import { markPathInSync } from "../../parsing/reparse";
-import { getParseAt } from "../../parsing/parses";
+import { markPathInSync } from "../../../runtime/parsing/reparse";
+import { getParseAt } from "../../../runtime/parsing/parses";
 import { importableHash } from "../../../importCache/hash";
 import { seedImportableHash } from "../../../importCache/status";
 import { importableIdentity } from "../../../importables/identity";

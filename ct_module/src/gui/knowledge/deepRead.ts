@@ -9,8 +9,8 @@ import {
     makeBulkQueueRow,
     makeImportableQueueRow,
     type QueueAddResult,
-} from "../right-panel/import-tab/queue";
-import { autoRunQueueChanged } from "../autoRun";
+} from "../../runtime/queue";
+import { autoRunQueueChanged } from "../../runtime/autoRun";
 
 export type DeepReadSpec = {
     type: Importable["type"];

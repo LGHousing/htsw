@@ -8,9 +8,9 @@ vi.mock("../src/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
 
-let saveSnapshot: typeof import("../src/gui/parsing/parseSnapshot").saveSnapshot;
-let loadSnapshot: typeof import("../src/gui/parsing/parseSnapshot").loadSnapshot;
-let restoreParseFromSnapshot: typeof import("../src/gui/parsing/parseSnapshot").restoreParseFromSnapshot;
+let saveSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").saveSnapshot;
+let loadSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").loadSnapshot;
+let restoreParseFromSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").restoreParseFromSnapshot;
 
 beforeAll(async () => {
     vi.stubGlobal("FileLib", {
@@ -21,7 +21,7 @@ beforeAll(async () => {
         },
     });
     ({ saveSnapshot, loadSnapshot, restoreParseFromSnapshot } =
-        await import("../src/gui/parsing/parseSnapshot"));
+        await import("../src/runtime/parsing/parseSnapshot"));
 });
 
 describe("parse snapshot import.json metadata", () => {
