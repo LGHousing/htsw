@@ -7,6 +7,7 @@ import {
 } from "../src/housingSync/items/itemTag";
 import {
     canonicalItemShellTagKey,
+    canonicalLiveItemSnbtKey,
     normalizeItemSnbtForExport,
 } from "../src/housingSync/items/itemNbt";
 
@@ -351,5 +352,43 @@ describe("canonicalItemShellTag", () => {
         });
         expect(canonicalItemShellTag(first)).toEqual(canonicalItemShellTag(second));
         expect(canonicalLiveItemTag(first)).not.toEqual(canonicalLiveItemTag(second));
+    });
+});
+
+describe("canonicalLiveItemTag", () => {
+    test("empty ExtraAttributes and an empty tag match the untagged server echo", () => {
+        const plain = '{id:"minecraft:obsidian",Count:64b,Damage:0s}';
+        for (const tag of ["{}", "{ExtraAttributes:{}}"]) {
+            const source = `{id:"minecraft:obsidian",Count:64b,Damage:0s,tag:${tag}}`;
+            expect(canonicalLiveItemSnbtKey(source)).toBe(canonicalLiveItemSnbtKey(plain));
+        }
+        expect(canonicalLiveItemSnbtKey(plain)).not.toBe(
+            canonicalLiveItemSnbtKey('{id:"minecraft:obsidian",Count:1b}')
+        );
+    });
+
+    test("removes only empty top-level ExtraAttributes compounds without changing the input", () => {
+        const display = compound({ Name: str("Named Obsidian") });
+        const plain = compound({ id: str("minecraft:obsidian"), tag: compound({ display }) });
+        const source = compound({
+            id: str("minecraft:obsidian"),
+            tag: compound({ display, ExtraAttributes: compound({}) }),
+        });
+        const snapshot = JSON.parse(JSON.stringify(source)) as TagLike;
+        expect(canonicalLiveItemTag(source)).toEqual(canonicalLiveItemTag(plain));
+        expect(source).toEqual(snapshot);
+
+        const preserved: Record<string, TagLike>[] = [
+            { ExtraAttributes: compound({ marker: compound({}) }) },
+            { ExtraAttributes: loreList([]) },
+            { custom: compound({}) },
+            { container: compound({ ExtraAttributes: compound({}) }) },
+        ];
+        for (const extra of preserved) {
+            expect(canonicalLiveItemTag(compound({
+                id: str("minecraft:obsidian"),
+                tag: compound({ display, ...extra }),
+            }))).not.toEqual(canonicalLiveItemTag(plain));
+        }
     });
 });

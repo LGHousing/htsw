@@ -464,7 +464,11 @@ function getCycleFieldSlot(
     if (isHolderCycle) {
         const malformedSlot = ctx.tryGetMenuItemSlot((slot) => {
             const name = removedFormatting(slot.getItem().getName()).trim();
-            if (name !== "Change Variable" && name !== "Head") return false;
+            if (
+                name !== "Change Variable" &&
+                name !== "Head" &&
+                name !== "Variable Requirement"
+            ) return false;
 
             const foundOptions = new Set<string>();
             const lore = itemLore(slot.getItem());

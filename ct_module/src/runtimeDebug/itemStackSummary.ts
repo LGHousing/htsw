@@ -35,7 +35,7 @@ function stackId(stack: unknown): string | null {
             stack as { func_77973_b(): HtswMinecraftItem | null }
         ).func_77973_b();
         if (item === null) return null;
-        const key = ItemClass.field_150901_e.func_148750_c(item);
+        const key = ItemClass.field_150901_e.func_177774_c(item);
         return key === null ? null : key.toString();
     } catch (_e) {
         return null;

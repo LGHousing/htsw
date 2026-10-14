@@ -499,7 +499,7 @@ declare global {
 
     interface HtswMinecraftItemClass {
         readonly field_150901_e: {
-            func_148750_c(item: HtswMinecraftItem): { toString(): string } | null;
+            func_177774_c(item: HtswMinecraftItem): { toString(): string } | null;
         };
         func_111206_d(id: string): HtswMinecraftItem | null;
         func_150891_b(item: HtswMinecraftItem): number;

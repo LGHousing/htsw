@@ -190,6 +190,11 @@ export function canonicalItemShellTag(tag: TagLike): TagLike {
 }
 
 export function canonicalLiveItemTag(tag: TagLike): TagLike {
+    // Hypixel can drop empty ExtraAttributes and the tag shell they occupied.
+    const extraAttributes = tagChild(tagChild(tag, "tag"), "ExtraAttributes");
+    if (isEmptyCompound(extraAttributes)) {
+        tag = withoutTagAtPath(tag, ["tag", "ExtraAttributes"]);
+    }
     return canonicalizeItemTag(tag, true);
 }
 

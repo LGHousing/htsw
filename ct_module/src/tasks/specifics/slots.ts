@@ -256,7 +256,7 @@ function rawStackId(stack: unknown): string | undefined {
             stack as { func_77973_b(): HtswMinecraftItem | null }
         ).func_77973_b();
         if (rawItem === null) return undefined;
-        const key = ItemClass.field_150901_e.func_148750_c(rawItem);
+        const key = ItemClass.field_150901_e.func_177774_c(rawItem);
         return key === null ? undefined : key.toString();
     } catch (_e) {
         return undefined;
