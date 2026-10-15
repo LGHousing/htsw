@@ -197,14 +197,16 @@ describe("trustedChildListPathsForImportable", () => {
         });
     });
 
-    it("omits hydration when every child list remains trusted", () => {
+    it("budgets rebuilding a trusted body when its conditional mode changes", () => {
         const cached = fn([conditional([chat("inside")])]);
         const desired = fn([{ ...conditional([chat("inside")]), matchAny: true }]);
         const entry = cacheEntry(cached);
         const emptyCached = fn([conditional([])]);
         const emptyDesired = fn([{ ...conditional([]), matchAny: true }]);
 
-        expect(estimateImportableUnits(desired, entry, true)).toBeCloseTo(
+        // Child-list trust can save the initial read, but cannot skip writing
+        // and verifying the new guarded block's body during replacement.
+        expect(estimateImportableUnits(desired, entry, true)).toBeGreaterThan(
             estimateImportableUnits(emptyDesired, cacheEntry(emptyCached), true)
         );
     });
