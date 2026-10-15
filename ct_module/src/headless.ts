@@ -13,6 +13,12 @@ import { initChatLiveness } from "./importCache/chatLiveness";
 import { initHousingLifecycle } from "./runtime/housingLifecycle";
 import { initStatusBridge } from "./bridge/runtime";
 
+export {
+    publishProject,
+    restoreProjectPublication,
+    installProjectPublication,
+} from "./project/publication";
+
 initStatusBridge();
 initChatLiveness();
 registerSlashCommands();
