@@ -188,7 +188,7 @@ async function runImportSessionInner(
     selection: ImportSessionRequest
 ): Promise<void> {
     resetRuntimeDebugRecords();
-    resetFunctionNameSession();
+    resetFunctionNameSession(selection.housingUuid);
     resetMenuNameSession();
     resetCommandNameSession();
 

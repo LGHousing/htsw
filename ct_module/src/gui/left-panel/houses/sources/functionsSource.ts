@@ -6,7 +6,7 @@ import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { markGuiDirty } from "../../../lib/dirty";
-import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
+import { invalidateFunctionListIndexHints, listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
 import { functionIconFromSnapshot } from "../../../../importables/functions/icon";
 import {
     deleteImportableCache,
@@ -80,16 +80,19 @@ register("chat", (event) => {
 
     let m = msg.match(/^Created function (.+)!$/);
     if (m !== null) {
+        invalidateFunctionListIndexHints();
         writePresence(uuid, "FUNCTION", m[1]);
         return;
     }
     m = msg.match(/^Deleted the function (.+)$/);
     if (m !== null) {
+        invalidateFunctionListIndexHints();
         deleteImportableCache(uuid, "FUNCTION", m[1]);
         return;
     }
     m = msg.match(/^Renamed function (.+) to (.+)$/);
     if (m !== null) {
+        invalidateFunctionListIndexHints();
         // A name containing " to " makes the split ambiguous; leave it for a
         // rescan rather than trust the heuristic.
         if (m[1].indexOf(" to ") !== -1 || m[2].indexOf(" to ") !== -1) return;

@@ -74,7 +74,7 @@ export async function scanImportableFunction(
     trustPlan?: ImportableTrustPlan
 ): Promise<FunctionRead> {
     const setup = createSetupStepEmitter(session.actions.events, 1);
-    const exists = (await getSessionFunctionNamesLower(ctx)).has(
+    const exists = (await getSessionFunctionNamesLower(ctx, [importable.name])).has(
         importable.name.toLowerCase()
     );
     const settingsTrusted = exists && functionSettingsTrusted(importable, trustPlan);

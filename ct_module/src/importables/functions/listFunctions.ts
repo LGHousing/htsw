@@ -11,7 +11,7 @@ import {
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
-import { extractFunctionNameFromSlot } from "./housing";
+import { extractFunctionNameFromSlot, openFunctionEditor } from "./housing";
 import { functionListOpened } from "../waiters";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
@@ -29,11 +29,66 @@ type SessionFunction = {
 
 let sessionFunctions: Map<string, SessionFunction> | null = null;
 
-export function resetFunctionNameSession(): void {
+export type FunctionListIndexHint = { name: string; index: number };
+
+// Hints are navigation only: neither presence, absence nor icons are trusted.
+// The host supplies them just before ONE import, scoped to its destination.
+let pendingIndexHints: { housingUuid: string; entries: FunctionListIndexHint[] } | null = null;
+let indexHints: Map<string, SessionFunction> | null = null;
+
+/** Opt in for the next import only. Pass null to discard pending/active hints.
+ * Indices are zero-based across the 21-entry Functions pages. The caller must
+ * discard its index on house transfer or any create/delete/rename. Stale hints
+ * are safe: requested names are probed live, and every list slot is verified.
+ */
+export function setFunctionListIndexHints(
+    housingUuid: string,
+    entries: readonly FunctionListIndexHint[] | null
+): void {
+    pendingIndexHints = null;
+    indexHints = null;
+    if (entries === null) return;
+    if (!housingUuid) throw new Error("Function index hints need a house UUID.");
+    const names = new Set<string>();
+    const indices = new Set<number>();
+    const copy: FunctionListIndexHint[] = [];
+    for (const entry of entries) {
+        const key = entry.name.toLowerCase();
+        if (!key || entry.name !== entry.name.trim() ||
+            !Number.isInteger(entry.index) || entry.index < 0 || entry.index > 9007199254740991 ||
+            names.has(key) || indices.has(entry.index)) {
+            throw new Error("Invalid or duplicate function index hint.");
+        }
+        names.add(key);
+        indices.add(entry.index);
+        copy.push({ name: entry.name, index: entry.index });
+    }
+    pendingIndexHints = { housingUuid: housingUuid.toLowerCase(), entries: copy };
+}
+
+export function resetFunctionNameSession(housingUuid?: string): void {
     sessionFunctions = null;
+    const pending = pendingIndexHints;
+    pendingIndexHints = null;
+    indexHints = null;
+    if (pending !== null && pending.housingUuid === housingUuid?.toLowerCase()) {
+        indexHints = new Map<string, SessionFunction>();
+        for (const entry of pending.entries) {
+            indexHints.set(entry.name.toLowerCase(), { index: entry.index, icon: null });
+        }
+    }
+}
+
+/** Drop every position on create/delete/rename, including ambiguous renames.
+ * Keep live name probing enabled for the rest of this opted-in import.
+ */
+export function invalidateFunctionListIndexHints(): void {
+    pendingIndexHints = null;
+    indexHints?.clear();
 }
 
 export function noteFunctionCreated(name: string): void {
+    invalidateFunctionListIndexHints();
     if (sessionFunctions !== null) {
         // A freshly created shell carries the Housing default icon; record it as
         // unknown so an icon-only import treats it as a mismatch and sets the icon.
@@ -60,10 +115,24 @@ async function ensureSessionFunctions(
 /**
  * The set of existing function names (lowercased) for this import session.
  * Reads the /functions GUI once and caches it; subsequent calls are free.
+ * With explicit index hints, requestedNames instead probes each requested name
+ * live. Omit requestedNames when complete enumeration is required.
  */
 export async function getSessionFunctionNamesLower(
-    ctx: TaskContext
+    ctx: TaskContext,
+    requestedNames?: readonly string[]
 ): Promise<Set<string>> {
+    if (indexHints !== null && requestedNames !== undefined) {
+        const existing = new Set<string>();
+        for (const name of requestedNames) {
+            const key = name.toLowerCase();
+            if (existing.has(key)) continue;
+            if (await openFunctionEditor(ctx, name) === "opened") existing.add(key);
+            else invalidateFunctionListIndexHints();
+        }
+        return existing;
+    }
+    // Enumeration callers still get a complete live scan, even when opted in.
     return new Set((await ensureSessionFunctions(ctx)).keys());
 }
 
@@ -76,6 +145,10 @@ export async function getSessionFunctionIcon(
     ctx: TaskContext,
     name: string
 ): Promise<FunctionIconSnapshot | null> {
+    if (indexHints !== null) {
+        const slot = await getSessionFunctionListSlot(ctx, name);
+        return snapshotIconStack(slot.getItem().getItemStack());
+    }
     return (await ensureSessionFunctions(ctx)).get(name.toLowerCase())?.icon ?? null;
 }
 
@@ -88,7 +161,7 @@ export async function getSessionFunctionListSlot(
     ctx: TaskContext,
     name: string
 ): Promise<ItemSlot> {
-    const functions = await ensureSessionFunctions(ctx);
+    const functions = indexHints ?? await ensureSessionFunctions(ctx);
     await openFunctionList(ctx);
 
     const key = name.toLowerCase();
@@ -109,6 +182,8 @@ export async function getSessionFunctionListSlot(
         } catch (_error) {
             // Fall through to the verified full-list lookup.
         }
+        // One stale position means the ordering may have changed everywhere.
+        if (indexHints !== null) functions.clear();
     }
 
     const found = await findPaginatedListEntry(

@@ -67,7 +67,7 @@ export async function planMissingReferencedShells(
     const existingFunctions =
         functions.size === 0
             ? new Set<string>()
-            : await getSessionFunctionNamesLower(ctx);
+            : await getSessionFunctionNamesLower(ctx, Array.from(functions.values()));
     const existingMenus =
         menus.size === 0 ? new Set<string>() : await getSessionMenuNamesLower(ctx);
     const existingRegions =

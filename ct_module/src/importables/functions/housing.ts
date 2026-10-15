@@ -93,7 +93,7 @@ export async function ensureFunctionNamesExist(
 
     // Use the session-cached function name set — read once per import, not once
     // per imported function.
-    const existing = await getSessionFunctionNamesLower(ctx);
+    const existing = await getSessionFunctionNamesLower(ctx, names);
 
     const missing: string[] = [];
     for (let i = 0; i < names.length; i++) {

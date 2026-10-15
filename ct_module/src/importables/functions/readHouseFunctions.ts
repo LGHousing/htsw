@@ -150,7 +150,7 @@ export const readFunctions = defineHouseExporter({
     noun: "function",
     // Drop any function-list cache from a prior run so per-function icon reads
     // reflect the live house, not a stale snapshot.
-    prelude: resetFunctionNameSession,
+    prelude: () => resetFunctionNameSession(),
     list: listAllFunctionNames,
     capturesActionItems: true,
     referencesExist: functionExportReferencesExist,

@@ -21,3 +21,6 @@ initHtswGui();
 initAutoUpdate();
 initSessionHeartbeat();
 initPersistence();
+
+// Optional host API; keeping this export also preserves it in the CT bundle.
+export { setFunctionListIndexHints } from "./importables/functions/listFunctions";
