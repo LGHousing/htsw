@@ -1,4 +1,4 @@
-import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { openAnswerableConflictPrompt } from "../runtime/conflictPrompt";
 import type TaskContext from "../tasks/context";
 import { prunePlanPopoverLines, summarizeTargets } from "./report";
 import type { PrunePlan, PruneTarget } from "./types";

@@ -3,10 +3,10 @@
 import { PROJECTS_ROOT } from "../project/paths";
 import { queueSourcePath } from "./left-panel/projects/source";
 import { forceImportExpand } from "./left-panel/projects/rows";
-import { canonicalPath } from "./parsing/parses";
+import { canonicalPath } from "../runtime/parsing/parses";
 import { previewSelect } from "./right-panel/selection";
-import { setImportJsonPath } from "./state";
-import { addRecent } from "./persistence/recents";
+import { setImportJsonPath } from "../runtime/state/index";
+import { addRecent } from "../persistence/recents";
 import { showToast } from "./toast";
 import {
     STARTER_PROJECT_NAME,

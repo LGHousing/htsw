@@ -6,7 +6,7 @@ import { expandImportDependencies } from "../importables/import/dependencyExpans
 import { peekImportableCache } from "../importCache/cache";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { buildTrustPlan } from "../importCache/trust";
-import { canonicalPath } from "../gui/parsing/parses";
+import { canonicalPath } from "../runtime/parsing/parses";
 import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";

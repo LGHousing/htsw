@@ -5,7 +5,7 @@ import {
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
-} from "../gui/right-panel/import-tab/taskProgress";
+} from "../runtime/taskProgress";
 import { isTaskTotalEtaReady } from "../housingSync/progress/types";
 import { javaType } from "../utils/java";
 import { connectBridge, disconnectBridge, publishBridgeStatus } from "./status";

@@ -26,7 +26,7 @@ vi.mock("../src/tasks/manager", () => ({
 vi.mock("../src/housingSync/taskRunner", () => ({
     runHousingSyncTask: mocks.runTask,
 }));
-vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
+vi.mock("../src/runtime/diffProgress", () => ({
     createDiffProgressSession: mocks.createProgress,
 }));
 

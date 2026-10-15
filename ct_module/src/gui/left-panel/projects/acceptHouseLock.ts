@@ -6,9 +6,9 @@ import { readHouseLock } from "../../../importCache/houseLock";
 import { TaskManager } from "../../../tasks/manager";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { Icons } from "../../lib/icons.generated";
-import { parseImportJsonBlocking } from "../../parsing/parses";
+import { parseImportJsonBlocking } from "../../../runtime/parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
-import { setHouseTrust } from "../../state";
+import { setHouseTrust } from "../../../runtime/state/index";
 import { showToast } from "../../toast";
 
 function acceptProjectLock(importJsonPath: string): void {

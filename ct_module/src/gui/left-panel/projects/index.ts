@@ -19,7 +19,7 @@ import {
     isHouseTrusted,
     setHouseTrust,
     setImportJsonPath,
-} from "../../state";
+} from "../../../runtime/state/index";
 import {
     ACCENT_SUCCESS,
     COLOR_BUTTON,
@@ -30,11 +30,11 @@ import {
     COLOR_TOGGLE_ON,
     COLOR_TOGGLE_ON_HOVER,
 } from "../../lib/theme";
-import { canonicalPath } from "../../parsing/parses";
+import { canonicalPath } from "../../../runtime/parsing/parses";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { houseDisplayName } from "../../../importCache/aliases";
-import { addRecent, getRecents } from "../../persistence/recents";
-import { normalizeHtswPath } from "../../lib/pathDisplay";
+import { addRecent, getRecents } from "../../../persistence/recents";
+import { normalizeHtswPath } from "../../../project/pathDisplay";
 import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
 import { queueSourcePath } from "./source";
 import { SORT_FIELDS, isSortDefault, sortPopoverContent } from "./sort";

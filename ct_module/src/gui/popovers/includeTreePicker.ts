@@ -9,7 +9,7 @@ import {
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
-import { canonicalPath } from "../parsing/parses";
+import { canonicalPath } from "../../runtime/parsing/parses";
 import { ROW_BG, ROW_HOVER_BG, caretButton } from "../left-panel/projects/rowModel";
 import type { IncludeNode } from "../left-panel/projects/includeTree";
 

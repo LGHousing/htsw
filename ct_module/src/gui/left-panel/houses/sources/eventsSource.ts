@@ -1,6 +1,6 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
-import { getHousingUuid } from "../../../state";
+import { getHousingUuid } from "../../../../runtime/state/index";
 import { showToast } from "../../../toast";
 import { knownEventNames } from "../../../../importables/events/listEvents";
 import {

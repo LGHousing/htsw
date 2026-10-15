@@ -1,9 +1,9 @@
 import type { Diagnostic, ImportablesParseResult } from "htsw";
 
-import { autoTrackBoundHouse } from "../gui/autoTrackScope";
-import { parseImportJsonCurrent } from "../gui/parsing/parses";
-import { getAutoTrackSources } from "../gui/state/autoTrack";
-import type { QueueRow } from "../gui/right-panel/import-tab/queue";
+import { autoTrackBoundHouse } from "../runtime/autoTrackScope";
+import { parseImportJsonCurrent } from "../runtime/parsing/parses";
+import { getAutoTrackSources } from "../runtime/state/autoTrack";
+import type { QueueRow } from "../runtime/queue";
 import type TaskContext from "../tasks/context";
 import { applyPrunePlan, formatPruneApplyResult } from "./apply";
 import { grantPruneConsent, hasPruneConsent } from "./consent";
@@ -13,7 +13,7 @@ import { formatPrunePlan } from "./report";
 import { confirmPrune } from "./session";
 import { pruneTypeOf } from "./registry";
 import { setTaskActivity } from "../tasks/activity";
-import { shortPath } from "../gui/lib/pathDisplay";
+import { shortPath } from "../project/pathDisplay";
 
 /**
  * A project that sets `dangerouslyDeleteEverythingNotInThisFile`, parsed as it

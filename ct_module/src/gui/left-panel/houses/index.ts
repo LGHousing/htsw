@@ -11,8 +11,8 @@ import {
     isHouseTrusted,
     setHousingUuid,
     setHouseTrust,
-} from "../../state";
-import { shortPath } from "../../lib/pathDisplay";
+} from "../../../runtime/state/index";
+import { shortPath } from "../../../project/pathDisplay";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { houseDisplayName, listAliases } from "../../../importCache/aliases";
@@ -25,7 +25,7 @@ import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
 import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";
-import { openBoundProjectForHouse } from "../../boundProject";
+import { openBoundProjectForHouse } from "../../../runtime/boundProject";
 import { confirmRebind } from "../../houseBinding";
 import {
     ACCENT_DANGER,

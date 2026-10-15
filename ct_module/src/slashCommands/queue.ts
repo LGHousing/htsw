@@ -1,14 +1,14 @@
 import { rejectBridgeRun } from "../bridge/status";
 import type { Importable } from "htsw/types";
 
-import { autoRunQueueChanged, setAutoRunEnabled } from "../gui/autoRun";
-import { getExportDestinationStatus } from "../gui/export/destinationStatus";
-import { compactFileLabel } from "../gui/lib/pathDisplay";
+import { autoRunQueueChanged, setAutoRunEnabled } from "../runtime/autoRun";
+import { getExportDestinationStatus } from "../runtime/exportDestination";
+import { compactFileLabel } from "../project/pathDisplay";
 import {
     parseImportJsonCurrent,
     parseImportJsonCurrentBlocking,
-} from "../gui/parsing/parses";
-import { getHousingUuid } from "../gui/state";
+} from "../runtime/parsing/parses";
+import { getHousingUuid } from "../runtime/state/index";
 import {
     addQueueRow,
     clearQueue,
@@ -21,12 +21,12 @@ import {
     type QueueAddResult,
     type QueueMove,
     type QueueRow,
-} from "../gui/right-panel/import-tab/queue";
+} from "../runtime/queue";
 import {
     isQueueRunning,
     pauseQueue,
     startQueue,
-} from "../gui/right-panel/import-tab/queueRunner";
+} from "../runtime/queueRunner";
 import { houseDisplayName } from "../importCache/aliases";
 import { importableIdentity } from "../importables/identity";
 import {

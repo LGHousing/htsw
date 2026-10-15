@@ -11,7 +11,7 @@ import {
     queueWorkRowCount,
     runnableQueueRowCount,
     type QueueRow,
-} from "../src/gui/right-panel/import-tab/queue";
+} from "../src/runtime/queue";
 
 const PATH = "C:/projects/root/import.json";
 

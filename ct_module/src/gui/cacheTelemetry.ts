@@ -10,11 +10,11 @@ import { anchorCacheSize } from "./lib/anchors";
 import { imageCacheSizes } from "./lib/images";
 import { textWidthCacheSize } from "./lib/layout";
 import { truncateCacheSize } from "./lib/render";
-import { forEachCachedParse, parseCacheSizes } from "./parsing/parses";
+import { forEachCachedParse, parseCacheSizes } from "../runtime/parsing/parses";
 import { rightPanelFileCacheSize } from "./right-panel";
 import { focusedLineCacheSize } from "./right-panel/import-tab/focusedLine";
 import { livePreviewCacheTelemetry } from "./right-panel/import-tab/livePreview";
-import { queueItemsCacheSize } from "./right-panel/import-tab/queue";
+import { queueItemsCacheSize } from "../runtime/queue";
 import { queueRowCacheSizes } from "./right-panel/import-tab/queueRows";
 import { debugLog } from "./lib/debugLog";
 

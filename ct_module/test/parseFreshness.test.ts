@@ -36,8 +36,11 @@ function parsedProject() {
     };
 }
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/fileMetadata", () => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
+}));
+vi.mock("../src/utils/java", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/java")>()),
     javaType: () => ({
         get: (path: string) => ({
             toAbsolutePath: () => ({
@@ -49,7 +52,7 @@ vi.mock("../src/gui/lib/java", () => ({
     }),
 }));
 
-vi.mock("../src/gui/parsing/offThreadParse", () => ({
+vi.mock("../src/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => currentFingerprint(),
     parseImportJsonOffThread: (
         _path: string,
@@ -65,7 +68,7 @@ vi.mock("../src/gui/parsing/offThreadParse", () => ({
         }),
 }));
 
-vi.mock("../src/gui/parsing/parseSnapshot", () => ({
+vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: () => null,
     restoreParseFromSnapshot: () => null,
@@ -88,7 +91,6 @@ vi.mock("../src/importables/items/dependencyIndex", () => ({
 vi.mock("../src/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
-vi.mock("../src/gui/lib/dirty", () => ({ markGuiDirty: () => undefined }));
 vi.mock("../src/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
@@ -96,14 +98,14 @@ vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
     uploadSlowParseDiagnostics: () => undefined,
 }));
 
-let parseImportJsonCurrent: typeof import("../src/gui/parsing/parses").parseImportJsonCurrent;
-let requestParse: typeof import("../src/gui/parsing/parses").requestParse;
-let isParsePending: typeof import("../src/gui/parsing/parses").isParsePending;
-let processPendingParses: typeof import("../src/gui/parsing/parses").processPendingParses;
+let parseImportJsonCurrent: typeof import("../src/runtime/parsing/parses").parseImportJsonCurrent;
+let requestParse: typeof import("../src/runtime/parsing/parses").requestParse;
+let isParsePending: typeof import("../src/runtime/parsing/parses").isParsePending;
+let processPendingParses: typeof import("../src/runtime/parsing/parses").processPendingParses;
 
 beforeAll(async () => {
     ({ parseImportJsonCurrent, requestParse, isParsePending, processPendingParses } =
-        await import("../src/gui/parsing/parses"));
+        await import("../src/runtime/parsing/parses"));
 });
 
 describe("import parse freshness", () => {

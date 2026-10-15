@@ -23,7 +23,7 @@ import {
     dirname,
     normalizeHtswPath,
     shortPath,
-} from "../lib/pathDisplay";
+} from "../../project/pathDisplay";
 import {
     getEffectiveNewExportTarget,
     getExportImportJsonPath,
@@ -31,19 +31,19 @@ import {
     getImportJsonPath,
     setExportImportJsonPath,
     setNewExportTarget,
-} from "../state";
+} from "../../runtime/state/index";
 import {
     isSectionLayoutProject,
     setSectionLayoutProject,
 } from "../../project/sectionLayoutProjects";
-import { addRecent, getRecents } from "../persistence/recents";
+import { addRecent, getRecents } from "../../persistence/recents";
 import {
     canonicalPath,
     forEachCachedParse,
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
-} from "../parsing/parses";
+} from "../../runtime/parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../popovers/file-browser";
 import { openConfirmPopover } from "../popovers/confirm";
 import { openTextPromptPopover } from "../popovers/text-prompt";
@@ -69,7 +69,7 @@ import {
     projectPathExists,
     restructureProjectPerSection,
 } from "../../project/paths";
-import { getExportDestinationStatus } from "./destinationStatus";
+import { getExportDestinationStatus } from "../../runtime/exportDestination";
 
 function selectExportImportJson(path: string): void {
     setExportImportJsonPath(path);

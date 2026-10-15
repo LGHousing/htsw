@@ -7,15 +7,15 @@ const tracked = new Set<string>();
 const bindings = new Map<string, string | null>();
 let currentHouse: string | null = null;
 
-vi.mock("../src/gui/state/autoTrack", () => ({
+vi.mock("../src/runtime/state/autoTrack", () => ({
     getAutoTrackSources: () => tracked,
 }));
 
-vi.mock("../src/gui/state/housing", () => ({
+vi.mock("../src/runtime/state/housing", () => ({
     getHousingUuid: () => currentHouse,
 }));
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path.replace(/\\/g, "/").toLowerCase(),
     getParseAt: (path: string) => {
         if (!bindings.has(path)) return null;
@@ -28,7 +28,7 @@ import {
     autoTrackBoundHouse,
     getActiveAutoTrackSources,
     isAutoTrackActive,
-} from "../src/gui/autoTrackScope";
+} from "../src/runtime/autoTrackScope";
 
 describe("auto-track bound-house scope", () => {
     beforeEach(() => {

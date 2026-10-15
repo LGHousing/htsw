@@ -47,8 +47,8 @@ import {
     canonicalPath,
     getParsePerfStats,
     parseImportJsonCurrentBlocking,
-} from "../gui/parsing/parses";
-import { compactFileLabel } from "../gui/lib/pathDisplay";
+} from "../runtime/parsing/parses";
+import { compactFileLabel } from "../project/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
@@ -65,11 +65,11 @@ import { commandTrust } from "./trust";
 import { commandWorkspace } from "./workspace";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
-import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { answerConflictPrompt } from "../runtime/conflictPrompt";
 import { bridgeStatus, rejectBridgeRun } from "../bridge/status";
 import { appendRawHtslFile } from "../rawHtslImport";
-import { addQueueRow, makeBulkQueueRow } from "../gui/right-panel/import-tab/queue";
-import { startQueue } from "../gui/right-panel/import-tab/queueRunner";
+import { addQueueRow, makeBulkQueueRow } from "../runtime/queue";
+import { startQueue } from "../runtime/queueRunner";
 import {
     getImportCodeViewTraceStatus,
     isImportCodeViewTraceEnabled,

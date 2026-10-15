@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import { runHousingSyncTask } from "../src/housingSync/taskRunner";
-import { getTaskElapsedMs } from "../src/gui/right-panel/import-tab/taskProgress";
+import { getTaskElapsedMs } from "../src/runtime/taskProgress";
 import {
     getActiveTaskElapsedMs,
     getActiveTaskStartedAt,

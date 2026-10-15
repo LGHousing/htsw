@@ -7,8 +7,8 @@ import {
     peekImportableCache,
 } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
-import { getHousingUuid } from "../state/housing";
-import { isHouseTrusted } from "../state/trust";
+import { getHousingUuid } from "../../runtime/state/housing";
+import { isHouseTrusted } from "../../runtime/state/trust";
 import {
     buildCacheStatusRowFromEntry,
     getImportableHashRevision,
@@ -17,7 +17,7 @@ import type { LinkStatusKey } from "./linkStatus";
 import {
     getImportableCacheWarmRevision,
     requestImportableCacheWarm,
-} from "./cacheWarm";
+} from "../../importCache/cacheWarm";
 import { getItemDependencyIndexRevision } from "../../importables/items/dependencyIndex";
 
 type HousePresenceState = "unscanned" | "present" | "absent";

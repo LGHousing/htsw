@@ -7,13 +7,13 @@ import {
 import { parentDirOf } from "../../project/paths";
 import { TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
-import { shortPath } from "../lib/pathDisplay";
-import { getParseAt, markParseStale } from "../parsing/parses";
+import { shortPath } from "../../project/pathDisplay";
+import { getParseAt, markParseStale } from "../../runtime/parsing/parses";
 import { openConfirmPopover } from "../popovers/confirm";
 import { openTextPromptPopover } from "../popovers/text-prompt";
-import { getNewExportTarget } from "../state/newExportTarget";
+import { getNewExportTarget } from "../../runtime/state/newExportTarget";
 import { showToast } from "../toast";
-import { getExportDestinationStatus } from "./destinationStatus";
+import { getExportDestinationStatus } from "../../runtime/exportDestination";
 import { emitBridgeEvent } from "../../bridge/status";
 
 function menuExists(importJsonPath: string, name: string): boolean {
