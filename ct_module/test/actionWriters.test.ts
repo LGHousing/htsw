@@ -85,6 +85,27 @@ describe("item-aware child-list writes", () => {
         }
     );
 
+    test("a condition note does not rewrite its predicate above populated branches", async () => {
+        const current: ActionConditional = {
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [{ type: "IS_SNEAKING", note: "old" }],
+            ifActions: [child],
+            elseActions: [],
+        };
+        const apply = applyOnly("conditions");
+        await writeConditional(
+            ctx as never,
+            { ...current, conditions: [{ type: "IS_SNEAKING", note: "new" }] },
+            {
+                current,
+                resolveItem: vi.fn(),
+                apply,
+            }
+        );
+        expect(apply.applyConditions).toHaveBeenCalled();
+    });
+
     test("unknown branch contents cannot be treated as empty", async () => {
         const desired: ActionConditional = {
             type: "CONDITIONAL",

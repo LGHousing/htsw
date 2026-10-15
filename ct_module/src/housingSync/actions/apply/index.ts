@@ -1,9 +1,7 @@
+import { preflightConditionalEdits } from "../conditionalSafety";
 import TaskContext from "../../../tasks/context";
 import type { ActionListApplyResult } from "./types";
-import {
-    type ActionListApplyOptions,
-    type ActionListPlan,
-} from "../plan";
+import { type ActionListApplyOptions, type ActionListPlan } from "../plan";
 import { appendActionsToOpenActionList } from "./actionOps";
 import { ActionListApplyRun, actionListApplyResultFromError } from "./run";
 import type { ApplyChildActionList, PlannedChildActionList } from "./types";
@@ -20,6 +18,7 @@ export async function applyActionListPlan(
     plan: ActionListPlan,
     options: ActionListApplyOptions
 ): Promise<ActionListApplyResult> {
+    preflightConditionalEdits(plan.diff);
     const progressScope = options.progressScope ?? { kind: "topLevel" as const };
     const run = new ActionListApplyRun(ctx, plan, options, progressScope);
     return run.apply(applyPlannedChildActionList);

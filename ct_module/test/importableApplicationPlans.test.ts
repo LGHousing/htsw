@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import type { ActionConditional } from "htsw/types";
 
 import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
 import {
@@ -6,6 +7,7 @@ import {
     type CommandImportPlan,
 } from "../src/importables/commands/import";
 import {
+    applyImportableFunctionPlan,
     functionApplicationPlan,
     type FunctionImportPlan,
 } from "../src/importables/functions/import";
@@ -126,7 +128,7 @@ describe("importable application plans", () => {
             functionApplicationPlan(plan, sessionWithPlannedShells()).steps.map(
                 (step) => step.key
             )
-        ).toEqual(["settings", "cache"]);
+        ).toEqual(["verifyActions", "settings", "cache"]);
     });
 
     test("region entry and exit lists have distinct ordered application steps", () => {
@@ -175,4 +177,139 @@ describe("importable application plans", () => {
             exitPlan.phaseUnits.applying
         );
     });
+});
+
+const functionIo = vi.hoisted(() => ({
+    applied: vi.fn(async () => undefined),
+    settings: vi.fn(async () => undefined),
+    open: vi.fn(async () => "opened"),
+    scan: vi.fn(async () => ({})),
+    read: vi.fn(async () => [] as unknown[]),
+    back: vi.fn(async () => undefined),
+}));
+vi.mock("../src/housingSync/actions/apply", async (original) => ({
+    ...(await original<typeof import("../src/housingSync/actions/apply")>()),
+    applyActionListPlan: functionIo.applied,
+}));
+vi.mock("../src/importables/functions/housing", async (original) => ({
+    ...(await original<typeof import("../src/importables/functions/housing")>()),
+    ensureFunctionExists: functionIo.open,
+    openFunctionEditor: functionIo.open,
+    openFunctionSettings: functionIo.open,
+    applyFunctionSettings: functionIo.settings,
+}));
+vi.mock("../src/importables/functions/listFunctions", async (original) => ({
+    ...(await original<typeof import("../src/importables/functions/listFunctions")>()),
+    openFunctionList: functionIo.open,
+}));
+vi.mock("../src/housingSync/actions/readList", async (original) => ({
+    ...(await original<typeof import("../src/housingSync/actions/readList")>()),
+    scanActionList: functionIo.scan,
+}));
+vi.mock("../src/housingSync/actions/hydration/run", async (original) => ({
+    ...(await original<typeof import("../src/housingSync/actions/hydration/run")>()),
+    completeActionListScan: functionIo.read,
+}));
+vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
+    ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
+    clickGoBack: functionIo.back,
+}));
+
+function directApplication() {
+    return {
+        run: async (_key: string, work: () => Promise<unknown>) => work(),
+        runActionList: async (
+            _key: string,
+            _plan: unknown,
+            sync: unknown,
+            work: (sync: unknown) => Promise<unknown>
+        ) => work(sync),
+    };
+}
+
+test("conditional preflight precedes every settings write, including enabling an empty-AND lobby body", async () => {
+    const old: ActionConditional = {
+        type: "CONDITIONAL",
+        matchAny: false,
+        conditions: [],
+        ifActions: [{ type: "SEND_TO_LOBBY" }],
+        elseActions: [],
+    };
+    const desired: ActionConditional = { ...old, conditions: [{ type: "IS_SNEAKING" }] };
+    const plan = {
+        kind: "FUNCTION",
+        exists: true,
+        importable: {
+            type: "FUNCTION",
+            name: "Autokick",
+            repeatTicks: 5,
+            actions: [desired],
+        },
+        actionsPlan: createKnownActionListPlan([desired] as never, [old] as never, {
+            sync: { trust: { trustMode: false } } as never,
+        }),
+        settingsPlan: [{ key: "repeatTicks", current: 0, desired: 5 }],
+    } as FunctionImportPlan;
+    functionIo.settings.mockClear();
+    functionIo.applied.mockClear();
+    await expect(
+        applyImportableFunctionPlan(
+            {} as never,
+            plan,
+            {} as never,
+            directApplication() as never
+        )
+    ).rejects.toBeDefined();
+    expect(functionIo.settings).not.toHaveBeenCalled();
+    expect(functionIo.applied).not.toHaveBeenCalled();
+});
+
+test("automatic execution follows body write and a fresh matching read, and stays off when verification fails", async () => {
+    const plan: FunctionImportPlan = {
+        kind: "FUNCTION",
+        exists: true,
+        importable: {
+            type: "FUNCTION",
+            name: "New",
+            repeatTicks: 5,
+            actions: [message("after")],
+        },
+        actionsPlan: actionPlan("before", "after"),
+        settingsPlan: [{ key: "repeatTicks", current: 0, desired: 5 }],
+    };
+    const session = {
+        actions: { canonicalizeItemName: (name: string) => name },
+    } as unknown as ImportContext;
+    const order: string[] = [];
+    functionIo.applied.mockImplementation(async () => {
+        order.push("write");
+    });
+    functionIo.read.mockImplementation(async () => {
+        order.push("verify");
+        return [message("after")];
+    });
+    functionIo.settings.mockImplementation(async () => {
+        order.push("enable");
+    });
+    await applyImportableFunctionPlan(
+        {} as never,
+        plan,
+        session,
+        directApplication() as never
+    );
+    expect(order).toEqual(["write", "verify", "enable"]);
+    order.length = 0;
+    functionIo.read.mockImplementation(async () => {
+        order.push("verify");
+        return [message("half edited")];
+    });
+    await expect(
+        applyImportableFunctionPlan(
+            {} as never,
+            plan,
+            session,
+            directApplication() as never
+        )
+    ).rejects.toBeDefined();
+    expect(order).toEqual(["write", "verify"]);
 });

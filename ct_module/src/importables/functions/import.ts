@@ -1,3 +1,4 @@
+import { Diagnostic } from "htsw";
 import type { Action, Importable, ImportableFunction } from "htsw/types";
 
 import {
@@ -39,7 +40,11 @@ import {
     type ObservedFunctionSettings,
 } from "./settings";
 import { recordEmptyFunctionShell } from "../import/emptyShells";
-import { COST } from "../../housingSync/progress/costs";
+import { COST, estimateActionListPhaseUnits } from "../../housingSync/progress/costs";
+import { preflightConditionalEdits } from "../../housingSync/actions/conditionalSafety";
+import { scanActionList } from "../../housingSync/actions/readList";
+import { completeActionListScan } from "../../housingSync/actions/hydration/run";
+import { actionListCompareKey } from "../../housingSync/actions/comparison";
 import {
     actionListStep,
     defineApplicationPlan,
@@ -137,6 +142,8 @@ export async function applyImportableFunctionPlan(
     session: ImportContext,
     application: ApplicationProgress
 ): Promise<void> {
+    // This must precede settings: a repeat interval can activate the old body.
+    if (plan.actionsPlan) preflightConditionalEdits(plan.actionsPlan.diff);
     if (
         !plan.exists &&
         !session.ensuredReferencedShells.functions.has(plan.importable.name.toLowerCase())
@@ -145,18 +152,6 @@ export async function applyImportableFunctionPlan(
             await ensureFunctionExists(ctx, plan.importable.name);
             await recordEmptyFunctionShell(ctx, session, plan.importable.name);
             await clickGoBack(ctx);
-        });
-    }
-    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
-        await application.run("settings", async () => {
-            for (const change of plan.settingsPlan ?? []) {
-                await openFunctionList(ctx);
-                await functionImportStep(
-                    `opening settings for function ${plan.importable.name}`,
-                    () => openFunctionSettings(ctx, plan.importable.name)
-                );
-                await applyFunctionSettings(ctx, plan.importable, [change]);
-            }
         });
     }
 
@@ -171,6 +166,23 @@ export async function applyImportableFunctionPlan(
             })
         );
         await application.run("closeActions", () => clickGoBack(ctx));
+    }
+    if (enablesAutomaticExecution(plan)) {
+        await application.run("verifyActions", () =>
+            verifyFunctionActions(ctx, plan, session)
+        );
+    }
+    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
+        await application.run("settings", async () => {
+            for (const change of plan.settingsPlan ?? []) {
+                await openFunctionList(ctx);
+                await functionImportStep(
+                    `opening settings for function ${plan.importable.name}`,
+                    () => openFunctionSettings(ctx, plan.importable.name)
+                );
+                await applyFunctionSettings(ctx, plan.importable, [change]);
+            }
+        });
     }
 }
 
@@ -196,6 +208,22 @@ export function functionApplicationPlan(
             )
         );
     }
+    if (actionListPlanNeedsApply(plan.actionsPlan)) {
+        steps.push(
+            workStep("openActions", COST.commandMenuWait),
+            actionListStep("actions", plan.actionsPlan),
+            workStep("closeActions", COST.goBackWait)
+        );
+    }
+    if (enablesAutomaticExecution(plan)) {
+        const read = estimateActionListPhaseUnits(plan.importable.actions ?? []);
+        steps.push(
+            workStep(
+                "verifyActions",
+                COST.commandMenuWait + COST.goBackWait + read.reading + read.hydrating
+            )
+        );
+    }
     if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
         let units = 0;
         for (const change of plan.settingsPlan ?? []) {
@@ -209,13 +237,6 @@ export function functionApplicationPlan(
         }
         steps.push(workStep("settings", units));
     }
-    if (actionListPlanNeedsApply(plan.actionsPlan)) {
-        steps.push(
-            workStep("openActions", COST.commandMenuWait),
-            actionListStep("actions", plan.actionsPlan),
-            workStep("closeActions", COST.goBackWait)
-        );
-    }
     steps.push(workStep("cache", COST.cacheWrite));
     return defineApplicationPlan(steps);
 }
@@ -225,6 +246,41 @@ export function functionPlanApplicationUnits(
     session: ImportContext
 ): number {
     return functionApplicationPlan(plan, session).totalUnits;
+}
+
+function enablesAutomaticExecution(plan: FunctionImportPlan): boolean {
+    return (
+        plan.settingsPlan?.some(
+            (change) => change.key === "repeatTicks" && (change.desired ?? 0) > 0
+        ) ?? false
+    );
+}
+
+async function verifyFunctionActions(
+    ctx: TaskContext,
+    plan: FunctionImportPlan,
+    session: ImportContext
+): Promise<void> {
+    if ((await openFunctionEditor(ctx, plan.importable.name)) === "missing") {
+        throw Diagnostic.error(
+            `Function ${plan.importable.name} disappeared before automatic execution verification.`
+        );
+    }
+    const read = {
+        itemReadMode: "sync" as const,
+        canonicalizeItemName: session.actions.canonicalizeItemName,
+    };
+    const scan = await scanActionList(ctx, { kind: "full" }, read);
+    const actual = await completeActionListScan(ctx, scan, read);
+    await clickGoBack(ctx);
+    if (
+        plan.importable.actions !== undefined &&
+        actionListCompareKey(actual) !== actionListCompareKey(plan.importable.actions)
+    ) {
+        throw Diagnostic.error(
+            `Function ${plan.importable.name} did not verify; automatic execution was not enabled.`
+        );
+    }
 }
 
 function functionSettingsPlanNeedsApply(

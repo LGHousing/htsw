@@ -1,4 +1,3 @@
-import { Diagnostic } from "htsw";
 import type {
     Action,
     ActionActionBar,
@@ -63,6 +62,12 @@ import { setItemValue } from "../items/itemPicker";
 import type { WriteActionOptions } from "./io";
 import { itemLore } from "../../utils/itemLore";
 
+import { assertConditionalGuardEditSafe } from "./conditionalSafety";
+import {
+    baselineConditionListFromConditions,
+    diffConditionList,
+} from "./conditions/diff";
+
 function booleanActionDefault(type: Action["type"], prop: string): boolean {
     return getActionFieldDefault(type, prop) as boolean;
 }
@@ -95,21 +100,20 @@ export async function writeConditional(
 ): Promise<void> {
     const current = options.current;
 
-    // Housing applies every click immediately. Replacing guards can run the old
-    // branches with no conditions (LGHousing/htsw-headless#179). Adding first is
-    // also unsafe for OR and else branches, and condition field edits are not
-    // atomic. Refuse before the first write; stopping repeatTicks would not stop
-    // callers or events and cannot be reliably undone after a client crash.
-    if (
-        current &&
-        (current.ifActions?.length !== 0 || current.elseActions?.length !== 0) &&
-        (options.apply.shouldApplyList("conditions") ||
-            current.matchAny !== action.matchAny)
-    ) {
-        throw Diagnostic.error(
-            "Cannot change the guards of a conditional with existing actions while it can execute. Stage a replacement with execution stopped; the live guards were preserved."
-        );
-    }
+    const conditionOps = options.apply.shouldApplyList("conditions")
+        ? diffConditionList(
+              baselineConditionListFromConditions(current?.conditions ?? []),
+              action.conditions
+          ).operations
+        : [];
+    // An item invalidation can require a write even when source names match.
+    assertConditionalGuardEditSafe(
+        current,
+        action,
+        options.apply.shouldApplyList("conditions") && conditionOps.length === 0
+            ? null
+            : conditionOps
+    );
 
     if (
         options.apply.shouldApplyList("conditions") &&
