@@ -12,17 +12,17 @@ import {
     COLOR_TOGGLE_ON_HOVER,
 } from "../../lib/theme";
 import { TaskManager } from "../../../tasks/manager";
-import { getQueue, runnableQueueRowCount } from "./queue";
-import { getHousingUuid } from "../../state";
-import { queueRunState, resumeQueue, startQueue } from "./queueRunner";
+import { getQueue, runnableQueueRowCount } from "../../../runtime/queue";
+import { getHousingUuid } from "../../../runtime/state/index";
+import { queueRunState, resumeQueue, startQueue } from "../../../runtime/queueRunner";
 import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
 import { appendRawHtslFile } from "../../../rawHtslImport";
 import { startOpenActionListExport } from "../../export/openActionListExport";
 import { getAutoRun } from "../../../settings";
-import { setAutoRunEnabled } from "../../autoRun";
+import { setAutoRunEnabled } from "../../../runtime/autoRun";
 import { getTaskActivity, observeTaskActivity } from "../../../tasks/activity";
 import { markGuiDirty } from "../../lib/dirty";
-import { getTaskProgress } from "./taskProgress";
+import { getTaskProgress } from "../../../runtime/taskProgress";
 
 observeTaskActivity(markGuiDirty);
 

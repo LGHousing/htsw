@@ -66,10 +66,12 @@ vi.mock("../src/gui/toast", () => ({
     showToast: mocks.showToast,
 }));
 
-import {
-    exportOpenActionListTo,
-    startOpenActionListExport,
-} from "../src/gui/export/openActionListExport";
+import { startOpenActionListExport } from "../src/gui/export/openActionListExport";
+import { exportOpenActionListTo } from "../src/runtime/openActionListExport";
+import { toasts } from "../src/runtime/events";
+toasts.observe((event) => {
+    if (event.kind === "show") mocks.showToast(event.message, event.color, event.durationMs, event.key);
+});
 
 describe("open action-list export", () => {
     beforeEach(() => {

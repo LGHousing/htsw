@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BoundedLruMap, BoundedMap } from "../src/gui/lib/boundedLruMap";
+import { BoundedLruMap, BoundedMap } from "../src/utils/boundedLruMap";
 
 describe("BoundedLruMap", () => {
     it("evicts the least recently read entry", () => {

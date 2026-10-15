@@ -29,7 +29,7 @@ import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../cache-status";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
-import { compactFileLabel, compactPath, hasExt } from "../lib/pathDisplay";
+import { compactFileLabel, compactPath, hasExt } from "../../project/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
 import { viewFooter } from "./view-footer";
 import { ImportCodeViewFollowButton } from "./importCodeView";
@@ -39,18 +39,18 @@ import {
     updateTabDrag,
     TAB_STRIP_SCROLL_ID,
 } from "./tabDrag";
-import { canonicalPath } from "../parsing/parses";
+import { canonicalPath } from "../../runtime/parsing/parses";
 import {
     getQueue,
     getQueuedItemKey,
     queueItemKey,
     queueItemsForPath,
     type QueueRow,
-} from "./import-tab/queue";
+} from "../../runtime/queue";
 import {
     getActiveTaskListLabel,
     getSessionVerb,
-} from "./import-tab/taskProgress";
+} from "../../runtime/taskProgress";
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;

@@ -14,7 +14,7 @@ import {
     setQueueRowStatus,
     toggleQueue,
     type QueueRow,
-} from "../src/gui/right-panel/import-tab/queue";
+} from "../src/runtime/queue";
 
 function functionItem(path: string, identity: string): QueueRow {
     return makeImportableQueueRow({

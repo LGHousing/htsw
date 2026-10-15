@@ -18,7 +18,7 @@ import {
     type ChildActionListName,
 } from "../../../housingSync/actionPath";
 import { tokenizeHtsl } from "../syntax";
-import { normalizeHtswPath } from "../../lib/pathDisplay";
+import { normalizeHtswPath } from "../../../project/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
 import type {
     Observed,

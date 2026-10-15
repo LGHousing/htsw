@@ -55,7 +55,7 @@ vi.mock("htsw", async (importOriginal) => ({
     }),
 }));
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: async () => ({
         parsed: { value: [mocks.source, mocks.otherSource], diagnostics: [] },
@@ -140,7 +140,7 @@ vi.mock("../src/housingSync/taskRunner", () => ({
     },
 }));
 
-vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
+vi.mock("../src/runtime/diffProgress", () => ({
     createDiffProgressSession: () => mocks.progress,
 }));
 
@@ -181,7 +181,7 @@ import {
 } from "../src/importCache/houseLock";
 import { readImportableCache } from "../src/importCache/cache";
 import { commandDiff } from "../src/slashCommands/diff";
-import { answerConflictPrompt } from "../src/gui/popovers/conflictPrompt";
+import { answerConflictPrompt } from "../src/runtime/conflictPrompt";
 
 const manifest = "import.json";
 const lockPath = "./house.lock.json";
@@ -354,3 +354,7 @@ describe("/htsw diff live-state adoption", () => {
         expect(readImportableCache("house", "FUNCTION", "Debug")).toBeNull();
     });
 });
+
+import { conflictPrompts } from "../src/runtime/conflictPrompt";
+import { renderConflictPrompt } from "../src/gui/popovers/conflictPrompt";
+conflictPrompts.observe(renderConflictPrompt);

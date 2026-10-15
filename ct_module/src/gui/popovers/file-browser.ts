@@ -26,10 +26,10 @@ import {
     COLOR_TEXT_DIM,
     SIZE_ROW_H,
 } from "../lib/theme";
-import { getHousingUuid, setImportJsonPath } from "../state";
-import { addRecent } from "../persistence/recents";
+import { getHousingUuid, setImportJsonPath } from "../../runtime/state/index";
+import { addRecent } from "../../persistence/recents";
 import { normalizePathSeparators } from "htsw-editor-common/project";
-import { basename, normalizeHtswPath } from "../lib/pathDisplay";
+import { basename, normalizeHtswPath } from "../../project/pathDisplay";
 import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";

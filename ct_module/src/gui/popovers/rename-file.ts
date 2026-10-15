@@ -4,7 +4,7 @@ import { Element, Rect } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 import { javaType } from "../lib/java";
-import { basename, dirname } from "../lib/pathDisplay";
+import { basename, dirname } from "../../project/pathDisplay";
 
 let editingValue = "";
 let editingPath = "";

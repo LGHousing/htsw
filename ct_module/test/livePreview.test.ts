@@ -31,8 +31,8 @@ import {
 import {
     getActiveTaskListLabel,
     getActiveTaskPath,
-} from "../src/gui/right-panel/import-tab/taskProgress";
-import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
+} from "../src/runtime/taskProgress";
+import { createReadProgressSession } from "../src/runtime/readProgress";
 import { createImportPreviewReplay } from "../src/gui/right-panel/import-tab/importPreviewReplay";
 import {
     ActionListPath,
@@ -250,7 +250,7 @@ describe("read live preview", () => {
     });
 
     test("does not carry completion state between menu slot action lists", () => {
-        const preview = createReadLivePreview("MENU", "./project/import.json");
+        const preview = createReadProgressSession("MENU", "./project/import.json");
         preview.start(["menu"]);
         preview.activate(0, true);
         const path = getActiveTaskPath()!;
@@ -284,7 +284,7 @@ describe("read live preview", () => {
     });
 
     test("does not restore a failed ITEM snapshot or its completed paths", () => {
-        const preview = createReadLivePreview("ITEM", "./project/import.json");
+        const preview = createReadProgressSession("ITEM", "./project/import.json");
         preview.start(["cookie"]);
         preview.activate(0, true);
         const path = getActiveTaskPath()!;
@@ -309,7 +309,7 @@ describe("read live preview", () => {
 
     test("keeps staged scanning within the preview cache bound and rebuilds an evicted item", () => {
         const names = Array.from({ length: 512 }, (_value, index) => String(index));
-        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadProgressSession("FUNCTION", "./project/import.json");
         preview.start(names);
 
         for (let i = 0; i < names.length; i++) {
@@ -331,7 +331,7 @@ describe("read live preview", () => {
     });
 
     test("keeps a menu-heavy sibling read in one preview state", () => {
-        const preview = createReadLivePreview("MENU", "./project/import.json");
+        const preview = createReadProgressSession("MENU", "./project/import.json");
         preview.start(["menu"]);
         preview.activate(0, true);
 
@@ -354,7 +354,7 @@ describe("read live preview", () => {
     });
 
     test("releases a completed export preview when the operation clears", () => {
-        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadProgressSession("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         preview.events.emit({
@@ -369,7 +369,7 @@ describe("read live preview", () => {
     });
 
     test("shows the shallow scan, follows hydration, and forces the final snapshot", () => {
-        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadProgressSession("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath();
@@ -417,7 +417,7 @@ describe("read live preview", () => {
     });
 
     test("colors shallow actions as soon as their scan completes", () => {
-        const preview = createReadLivePreview("FUNCTION", "./project/import.json");
+        const preview = createReadProgressSession("FUNCTION", "./project/import.json");
         preview.start(["a"]);
         preview.activate(0, true);
         const path = getActiveTaskPath()!;
@@ -842,3 +842,7 @@ describe("previewRevision", () => {
         expect(previewRevision(PATH)).toBe(before);
     });
 });
+
+import { readSessions } from "../src/runtime/readProgress";
+import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
+readSessions.observe(({ type, basePath, observe }) => observe(createReadLivePreview(type, basePath)));

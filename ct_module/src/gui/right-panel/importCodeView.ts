@@ -41,7 +41,7 @@ import {
     getSessionVerb,
     getTaskProgress,
     getTaskViewIdentity,
-} from "./import-tab/taskProgress";
+} from "../../runtime/taskProgress";
 
 const SCROLL_ID = "right-live-preview-scroll";
 const COLOR_PENDING_GRAY = 0xff666666 | 0;

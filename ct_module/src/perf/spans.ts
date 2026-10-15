@@ -1,6 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { debugLog } from "../gui/lib/debugLog";
+import { Observers } from "../utils/observers";
 import { getMinecraft } from "../utils/java";
 
 /**
@@ -11,6 +11,7 @@ import { getMinecraft } from "../utils/java";
  */
 
 type SlowSpan = { at: number; ms: number; path: string };
+export const slowSpanEvents = new Observers<SlowSpan>();
 
 const MAX_SLOW_SPANS = 40;
 
@@ -65,7 +66,7 @@ export function span<T>(name: string, fn: () => T): T {
         if (thresholdMs >= 0 && ms >= thresholdMs) {
             slowSpans.push({ at: Date.now(), ms, path });
             if (slowSpans.length > MAX_SLOW_SPANS) slowSpans.shift();
-            debugLog(`[lagprobe] slow span ${ms}ms: ${path}`);
+            slowSpanEvents.emit(slowSpans[slowSpans.length - 1]);
         }
     }
 }

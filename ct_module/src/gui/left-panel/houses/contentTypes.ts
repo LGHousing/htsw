@@ -60,7 +60,7 @@ import { openEventEditor } from "../../../importables/events/housing";
 import { openManageTeam } from "../../../importables/teams/listTeams";
 import { openEditGroup } from "../../../importables/groups/listGroups";
 import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";
-import { startExport } from "../../export/taskController";
+import { startExport } from "../../../runtime/exportQueue";
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.

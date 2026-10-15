@@ -1,6 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { normalizeHtswPath } from "../../lib/pathDisplay";
+import { normalizeHtswPath } from "../../../project/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
 import { ActionTreePath } from "../../../housingSync/actionPath";
 import { previewLineIdForPath } from "./livePreview";

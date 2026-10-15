@@ -3,7 +3,7 @@ import type { Importable, ImportableItem } from "htsw/types";
 import type TaskContext from "../../tasks/context";
 import { finishBridgeSession } from "../../bridge/status";
 import { isTaskCancelled } from "../../tasks/cancellation";
-import { createExportProgressSink } from "../../gui/export/progressSink";
+import { createExportProgressSink } from "../../runtime/exportProgress";
 import { exportAllNpcs } from "../npcs/exportAll";
 import {
     readProjectItemsForExport,
@@ -13,7 +13,7 @@ import { readNpcEntriesFromImportJson } from "../../project/paths";
 import { HOUSE_READERS } from "./readers";
 import type { ReadFn, ReadResult } from "./reader";
 import { writeTaskFailureLog } from "../../runtimeDebug/importFailureLog";
-import type { QueueRow } from "../../gui/right-panel/import-tab/queue";
+import type { QueueRow } from "../../runtime/queue";
 import type { HouseExportTypeName } from "./exportTypes";
 
 export type ExportBatchType = HouseExportTypeName | "NPC";

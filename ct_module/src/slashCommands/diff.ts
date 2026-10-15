@@ -9,8 +9,8 @@ import {
     setBridgeConflictDetails,
 } from "../bridge/status";
 
-import { canonicalPath, parseImportJsonCurrent } from "../gui/parsing/parses";
-import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { canonicalPath, parseImportJsonCurrent } from "../runtime/parsing/parses";
+import { openAnswerableConflictPrompt } from "../runtime/conflictPrompt";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { actionListsOfImportable } from "../importCache/actionLists";
 import {
@@ -38,7 +38,7 @@ import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
-import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
+import { createDiffProgressSession } from "../runtime/diffProgress";
 import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
 import {
     appendGroupDiffReport,
