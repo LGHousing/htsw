@@ -505,6 +505,31 @@ export async function parseImportJsonCurrent(rawPath: string): Promise<CachedPar
     return existing;
 }
 
+/**
+ * Serve an already-restored parse for `rawPath`, as a snapshot restore would.
+ * `fingerprint` must cover every file the whole project references, so any
+ * later edit falls back to a normal full parse.
+ */
+export function installParse(
+    rawPath: string,
+    parsed: ImportablesParseResult,
+    fingerprint: { [path: string]: number }
+): CachedParse {
+    const canon = canonicalPath(rawPath);
+    return commitParseEntry(
+        canon,
+        rawPath,
+        getMtimeMs(canon),
+        parsed,
+        null,
+        "snapshot",
+        fingerprint,
+        true,
+        true,
+        Date.now()
+    );
+}
+
 /** Look up a previously-parsed import.json by canonical path. */
 export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);

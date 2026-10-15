@@ -64,7 +64,7 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // changes, not only when this file's format does.
 // 21: `dangerouslyDeleteEverythingNotInThisFile` round-trips (v20 restored it as
 // false). Also drops v20 snapshots a house rebind resaved with stale diagnostics.
-const SNAPSHOT_VERSION = 21;
+export const SNAPSHOT_VERSION = 21;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -93,7 +93,7 @@ type SnapshotDiagnosticSpan = {
     label?: string;
 };
 
-type SnapshotDiagnostic = {
+export type SnapshotDiagnostic = {
     level: Diagnostic["level"];
     message: string;
     spans: SnapshotDiagnosticSpan[];
@@ -240,7 +240,7 @@ export function diffSnapshotFingerprint(snapshot: Snapshot): FingerprintChange[]
  * (still live) sourceMap, producing the storable form. Unresolvable
  * spans are dropped; the message and level always survive.
  */
-function serializeDiagnostic(sm: SourceMap, diag: Diagnostic): SnapshotDiagnostic {
+export function serializeDiagnostic(sm: SourceMap, diag: Diagnostic): SnapshotDiagnostic {
     const spans: SnapshotDiagnosticSpan[] = [];
     for (const s of diag.spans) {
         try {
@@ -269,7 +269,7 @@ function serializeDiagnostic(sm: SourceMap, diag: Diagnostic): SnapshotDiagnosti
  * into `sm` (only files that actually carry diagnostics get loaded) so
  * the restored spans are real SourceMap positions.
  */
-function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnostic {
+export function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnostic {
     let diag: Diagnostic;
     switch (stored.level) {
         case "bug":
@@ -303,12 +303,23 @@ function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnosti
     return diag;
 }
 
+// A selected restore holds only part of a project. Saving it would make the
+// next session serve that part as the whole project.
+const partialParses = new WeakSet<ImportablesParseResult>();
+
+export function markPartialParse(result: ImportablesParseResult): void {
+    partialParses.add(result);
+}
+
 export function saveSnapshot(
     importJsonPath: string,
     result: ImportablesParseResult,
     watchedMtimes: { [path: string]: number },
     precomputedHashes?: readonly string[]
 ): SnapshotSaveMetrics {
+    if (partialParses.has(result)) {
+        return { hashMs: 0, buildMs: 0, serializeMs: 0, writeMs: 0, bytes: null };
+    }
     const hashStartedAt = Date.now();
     const hashes =
         precomputedHashes === undefined
