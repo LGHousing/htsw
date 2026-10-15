@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
-import { COST } from "../src/housingSync/progress/costs";
+import { COST, estimateActionListPhaseUnits } from "../src/housingSync/progress/costs";
 import {
     functionPlanApplicationUnits,
     planImportableFunction,
@@ -32,6 +32,12 @@ describe("planned importable application units", () => {
         };
 
         const plan = planImportableFunction(read);
+        const verification = estimateActionListPhaseUnits(
+            actionsPlan.desired,
+            actionsPlan.desired
+        );
+        const repeatRead = COST.commandMenuWait + COST.menuClickWait + COST.goBackWait;
+        const repeatWrite = COST.commandMenuWait + COST.menuClickWait + COST.signInput;
 
         expect(
             functionPlanApplicationUnits(plan, {
@@ -42,12 +48,17 @@ describe("planned importable application units", () => {
                 },
             } as never)
         ).toBeCloseTo(
-            COST.commandMenuWait +
-                COST.menuClickWait +
-                COST.signInput +
+            2 * repeatRead +
+                repeatWrite +
                 COST.commandMenuWait +
                 actionsPlan.phaseUnits.applying +
                 COST.goBackWait +
+                COST.commandMenuWait +
+                verification.reading +
+                verification.hydrating +
+                COST.goBackWait +
+                repeatWrite +
+                repeatRead +
                 COST.cacheWrite
         );
     });
