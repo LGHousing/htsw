@@ -11,6 +11,9 @@ import {
     applyImportableFunctionPlan,
     functionApplicationPlan,
     type FunctionImportPlan,
+    scanImportableFunction,
+    hydrateImportableFunction,
+    planImportableFunction,
 } from "../src/importables/functions/import";
 import {
     planFunctionSettingChanges,
@@ -19,6 +22,19 @@ import {
 import { ApplicationProgress } from "../src/importables/import/applicationProgress";
 import { parseAutomaticExecutionTicks } from "../src/importables/functions/housing";
 import { changeVar, conditional, message } from "./utils";
+import {
+    buildTrustPlan,
+    deleteImportableCache,
+    readImportableCache,
+    tryWriteImportableCache,
+} from "../src/importCache";
+import type { ActionListPlan } from "../src/housingSync/actions/plan";
+
+vi.mock("../src/utils/filesystem", async (original) => ({
+    ...(await original<typeof import("../src/utils/filesystem")>()),
+    atomicWriteText: () => true,
+    getFileMtimeMs: () => 1,
+}));
 
 const live = vi.hoisted(() => ({ house: undefined as unknown as House }));
 vi.mock("../src/importables/functions/housing", async (original) => ({
@@ -36,6 +52,11 @@ vi.mock("../src/importables/functions/housing", async (original) => ({
         live.house.click("open body read-back");
         return "opened";
     },
+    readFunctionSettings: async () => ({
+        repeatTicks: live.house.repeat,
+        description: undefined,
+        icon: undefined,
+    }),
     openFunctionSettings: async () => {
         live.house.click("open settings");
     },
@@ -65,12 +86,11 @@ vi.mock("../src/importables/functions/housing", async (original) => ({
 }));
 vi.mock("../src/importables/functions/listFunctions", async (original) => ({
     ...(await original<typeof import("../src/importables/functions/listFunctions")>()),
+    getSessionFunctionNamesLower: async () =>
+        new Set(live.house.exists ? ["autokick"] : []),
     openFunctionList: async () => {
         live.house.click("open functions");
     },
-}));
-vi.mock("../src/importables/import/emptyShells", () => ({
-    recordEmptyFunctionShell: async () => undefined,
 }));
 vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
     ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
@@ -80,9 +100,17 @@ vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
 }));
 vi.mock("../src/housingSync/actions/apply", async (original) => ({
     ...(await original<typeof import("../src/housingSync/actions/apply")>()),
-    applyActionListPlan: async () => {
+    applyActionListPlan: async (_ctx: unknown, plan: ActionListPlan) => {
         const h = live.house;
         h.bodyWrites++;
+        if (h.applyAdds) {
+            for (const op of plan.diff.operations) {
+                if (op.kind !== "add") throw new Error("Expected only additions");
+                h.body.splice(op.toIndex, 0, clone(op.desired));
+                h.click("add action");
+            }
+            return;
+        }
         const first = h.body.length > 0 ? h.body[0] : undefined;
         if (first?.type === "CONDITIONAL") {
             // The recorded Autokick edit: open the old Conditional/Conditions,
@@ -113,6 +141,7 @@ vi.mock("../src/housingSync/actions/readList", async (original) => ({
     ...(await original<typeof import("../src/housingSync/actions/readList")>()),
     scanActionList: async () => {
         const h = live.house;
+        h.bodyReads++;
         h.click("scan whole body");
         const slots = clone(h.body).map((action, index): ObservedActionSlot => ({
             index,
@@ -195,8 +224,12 @@ const target = [
 const session = {
     actions: {
         trust: { trustMode: false },
+        itemRead: { mode: "sync" },
+        conflicts: [],
+        conflictEvidence: [],
         canonicalizeItemName: (name: string) => name,
     },
+    housingUuid: "function-suspension-house",
     ensuredReferencedShells: { functions: new Set<string>() },
     plannedReferencedShells: { functions: new Set<string>() },
 } as unknown as ImportContext;
@@ -209,8 +242,11 @@ class House {
     initial: Action[] = clone(old);
     clicks = 0;
     cut = Infinity;
+    cutLabel: string | null = null;
+    applyAdds = false;
     intervalReads = 0;
     bodyWrites = 0;
+    bodyReads = 0;
     writes: number[] = [];
     verified = false;
     rejectOff = false;
@@ -226,12 +262,18 @@ class House {
 
     click(_label: string): void {
         this.assertSafe();
-        if (++this.clicks === this.cut) throw new Error("disconnect");
+        if (++this.clicks === this.cut || this.cutLabel === _label)
+            throw new Error("disconnect");
     }
 }
 
-async function importHouse(house: House, repeatTicks = 5): Promise<void> {
+async function importHouse(
+    house: House,
+    repeatTicks = 5,
+    trusted = false
+): Promise<void> {
     live.house = house;
+    session.actions.trust.trustMode = trusted;
     house.verified = false;
     const importable: ImportableFunction = {
         type: "FUNCTION",
@@ -240,7 +282,7 @@ async function importHouse(house: House, repeatTicks = 5): Promise<void> {
         actions: clone(house.target),
     };
     // Every retry plans from the live interval and body; nothing is journalled.
-    const plan: FunctionImportPlan = {
+    let plan: FunctionImportPlan = {
         kind: "FUNCTION",
         exists: house.exists,
         importable,
@@ -252,12 +294,35 @@ async function importHouse(house: House, repeatTicks = 5): Promise<void> {
             importable
         ),
     };
+    if (trusted) {
+        const trust = buildTrustPlan(session.housingUuid, [importable], true);
+        const read = await scanImportableFunction(
+            {} as never,
+            importable,
+            session,
+            trust.importables.get("FUNCTION:Autokick")
+        );
+        await hydrateImportableFunction({} as never, read);
+        plan = planImportableFunction(read);
+        house.verified = false;
+    }
     const application = new ApplicationProgress(
         functionApplicationPlan(plan, session),
         undefined
     );
+    // Match the session's pre-apply invalidation; active creation must not
+    // republish an empty cache after this point.
+    if (trusted) deleteImportableCache(session.housingUuid, "FUNCTION", "Autokick");
     await applyImportableFunctionPlan({} as never, plan, session, application);
-    await application.run("cache", async () => undefined);
+    await application.run("cache", async () => {
+        if (trusted)
+            await tryWriteImportableCache(
+                {} as never,
+                importable,
+                "importer",
+                session.housingUuid
+            );
+    });
     application.assertComplete();
 }
 
@@ -335,6 +400,56 @@ describe("automatic function execution suspension", () => {
             }
         }
     );
+
+    test.each(["read interval", "add action"])(
+        "trusted retry reads live state after interruption at %s in a new function",
+        async (cutLabel) => {
+            const h = new House();
+            h.exists = false;
+            h.repeat = 0;
+            h.body = h.initial = [];
+            h.target = [message("first"), message("second")];
+            h.applyAdds = true;
+            h.cutLabel = cutLabel;
+            await expect(importHouse(h, 5, true)).rejects.toThrow("disconnect");
+            expect(h.repeat).toBe(0);
+            if (cutLabel === "add action") expect(h.body).toEqual([message("first")]);
+            expect(
+                readImportableCache(session.housingUuid, "FUNCTION", "Autokick")
+            ).toBeNull();
+            h.cutLabel = null;
+            const reads = h.bodyReads;
+            await importHouse(h, 5, true);
+            // A missing cache forces a live scan before verification.
+            expect(h.bodyReads - reads).toBe(2);
+            expect(h.body).toEqual(h.target);
+            expect(h.repeat).toBe(5);
+            expect(
+                readImportableCache(session.housingUuid, "FUNCTION", "Autokick")
+                    ?.importable
+            ).toEqual({
+                type: "FUNCTION",
+                name: "Autokick",
+                repeatTicks: 5,
+                actions: h.target,
+            });
+        }
+    );
+
+    test("an interval-only change suspends before a failing body read, then retries", async () => {
+        const h = new House();
+        h.target = clone(h.body);
+        h.unreadBody = "mismatch";
+        await expect(importHouse(h, 10)).rejects.toBeDefined();
+        expect(h.repeat).toBe(0);
+        expect(h.bodyWrites).toBe(0);
+        expect(h.writes).toEqual([0]);
+        h.unreadBody = null;
+        await importHouse(h, 10);
+        expect(h.repeat).toBe(10);
+        expect(h.bodyWrites).toBe(0);
+        expect(h.writes).toEqual([0, 10]);
+    });
 
     test("unchanged repeating functions have no interval reads, writes or extra clicks", async () => {
         const h = new House();

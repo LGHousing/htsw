@@ -107,16 +107,21 @@ function's settings or an empty function shell are needed.
 function does not repeat. Omitting `description` or `icon` leaves the existing
 setting unchanged; a new function uses Housing's defaults.
 
-Before editing a function's body, HTSW reads its live repeat interval. If it is
-running automatically, HTSW turns repetition off and verifies that it is off
-before changing the body. It uses the normal action planner, then reads and
+Before applying changes to a function, HTSW reads its live repeat interval. If
+it is running automatically, HTSW turns repetition off and verifies that it is
+off before changing the body. It uses the normal action planner, then reads and
 verifies the whole body before applying the target repeat interval. A new
-repeating function starts with repetition off. An unchanged function's interval
-is not rewritten.
+repeating function starts with repetition off. Interval-only and metadata-only
+changes also suspend repetition and verify the body before enabling the target
+interval; a failed read leaves the function off. A completely unchanged function
+gets no extra interval reads or writes.
 
 If an import stops during the edit, repetition stays off. Import again to read
 the live state, finish and verify the body, then enable its target interval.
-There is no saved restore state or cleanup step that enables an unfinished body.
+Active function creation leaves the cache invalidated, so Trusted retries read
+live actions after an interrupted edit. The completed target is cached only
+after verification and application succeed. There is no saved restore state or
+cleanup step that enables an unfinished body.
 Suspension does not cancel an in-flight invocation or prevent calls from events
 or other functions. Non-repeating functions are edited normally. Calls during
 an edit retain the same risk as other live HTSW imports; this is accepted and

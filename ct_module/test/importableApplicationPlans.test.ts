@@ -143,7 +143,7 @@ describe("importable application plans", () => {
             functionApplicationPlan(plan, sessionWithPlannedShells()).steps.map(
                 (step) => step.key
             )
-        ).toEqual(["verifyActions", "repeatExecution", "cache"]);
+        ).toEqual(["suspendExecution", "verifyActions", "repeatExecution", "cache"]);
     });
 
     test("region entry and exit lists have distinct ordered application steps", () => {
