@@ -38,7 +38,6 @@ import {
     type FunctionSettingChange,
     type ObservedFunctionSettings,
 } from "./settings";
-import { recordEmptyFunctionShell } from "../import/emptyShells";
 import { COST } from "../../housingSync/progress/costs";
 import {
     actionListStep,
@@ -143,7 +142,8 @@ export async function applyImportableFunctionPlan(
     ) {
         await application.run("createShell", async () => {
             await ensureFunctionExists(ctx, plan.importable.name);
-            await recordEmptyFunctionShell(ctx, session, plan.importable.name);
+            // The active import already invalidated its baseline. Do not cache
+            // an empty shell that a failed/disconnected write would leave stale.
             await clickGoBack(ctx);
         });
     }
@@ -189,10 +189,7 @@ export function functionApplicationPlan(
         steps.push(
             workStep(
                 "createShell",
-                COST.commandMessageWait +
-                    COST.commandMenuWait +
-                    COST.goBackWait +
-                    COST.cacheWrite
+                COST.commandMessageWait + COST.commandMenuWait + COST.goBackWait
             )
         );
     }
