@@ -67,7 +67,7 @@ function housingMenuOpened(): TaskWaiter<void> {
     return menuOpened({
         kind: "commandMenuWait",
         label: "Waiting for Housing menu",
-        items: [HOUSING_MENU_GROUPS_SLOT],
+        title: "Housing Menu",
     });
 }
 
@@ -95,8 +95,14 @@ async function openGroupsList(ctx: TaskContext): Promise<void> {
     if (isAtMenuTitle(ctx, "Permissions and Groups")) return;
 
     await ctx.expectAfter(() => ctx.runCommand("/hmenu"), housingMenuOpened());
+    const groups = ctx.tryGetMenuItemSlot(HOUSING_MENU_GROUPS_SLOT);
+    if (groups === null) {
+        throw new Error(
+            'This account cannot manage groups in this house: Housing Menu has no "Permissions and Groups" entry. Ask the house owner to grant access or apply the group changes.'
+        );
+    }
     await ctx.expectAfter(
-        () => ctx.getMenuItemSlot(HOUSING_MENU_GROUPS_SLOT).click(),
+        () => groups.click(),
         groupsListOpened()
     );
 }
