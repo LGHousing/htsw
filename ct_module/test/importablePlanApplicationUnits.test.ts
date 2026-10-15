@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
-import { COST } from "../src/housingSync/progress/costs";
+import { COST, estimateActionListPhaseUnits } from "../src/housingSync/progress/costs";
 import {
     functionPlanApplicationUnits,
     planImportableFunction,
@@ -32,6 +32,7 @@ describe("planned importable application units", () => {
         };
 
         const plan = planImportableFunction(read);
+        const verification = estimateActionListPhaseUnits(actionsPlan.desired);
 
         expect(
             functionPlanApplicationUnits(plan, {
@@ -47,6 +48,10 @@ describe("planned importable application units", () => {
                 COST.signInput +
                 COST.commandMenuWait +
                 actionsPlan.phaseUnits.applying +
+                COST.goBackWait +
+                COST.commandMenuWait +
+                verification.reading +
+                verification.hydrating +
                 COST.goBackWait +
                 COST.cacheWrite
         );
