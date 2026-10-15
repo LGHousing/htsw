@@ -1,8 +1,6 @@
-import { getCurrentHousingUuid } from "../importCache/housingId";
-import { getHousingUuid, setHousingUuid } from "../runtime/state/housing";
 import { isHouseTrusted, setHouseTrust } from "../runtime/state/trust";
-import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { emitBridgeEvent } from "../bridge/status";
+import { withCurrentHouse } from "./currentHouse";
 
 type TrustAction = "status" | "on" | "off";
 
@@ -32,10 +30,6 @@ function applyTrustAction(uuid: string, action: TrustAction): void {
     });
 }
 
-function errorReason(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 export function commandTrust(args: string[]): void {
     const action = args.length === 0 ? "status" : args[0].toLowerCase();
     if (args.length > 1 || (action !== "status" && action !== "on" && action !== "off")) {
@@ -43,19 +37,5 @@ export function commandTrust(args: string[]): void {
         return;
     }
 
-    const cached = getHousingUuid();
-    if (cached !== null) {
-        applyTrustAction(cached, action);
-        return;
-    }
-
-    void runHousingSyncTask(
-        "import",
-        async (ctx) => {
-            const uuid = await getCurrentHousingUuid(ctx);
-            setHousingUuid(uuid);
-            applyTrustAction(uuid, action);
-        },
-        { disabled: true }
-    ).catch((error: unknown) => trustFailure(errorReason(error)));
+    withCurrentHouse((uuid) => applyTrustAction(uuid, action), trustFailure);
 }

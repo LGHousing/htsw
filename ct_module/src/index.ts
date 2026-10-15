@@ -5,6 +5,8 @@ import "./injectHousingDecimal";
 import "./tasks/manager";
 
 import { registerSlashCommands } from "./slashCommands";
+import { CLIENT_DEBUG_SUBCOMMANDS, CLIENT_SUBCOMMANDS } from "./slashCommands/client";
+import { initChatLiveness } from "./importCache/chatLiveness";
 import { initHousingLifecycle } from "./runtime/housingLifecycle";
 import { initRuntimeGuiObservers } from "./gui/runtimeObservers";
 import { initHtswGui } from "./gui/overlay";
@@ -19,7 +21,8 @@ import { initStatusBridge } from "./bridge/runtime";
 
 initRuntimeGuiObservers();
 initStatusBridge();
-registerSlashCommands();
+initChatLiveness();
+registerSlashCommands(CLIENT_SUBCOMMANDS, CLIENT_DEBUG_SUBCOMMANDS);
 initHousingLifecycle();
 initHtswGui();
 initAutoUpdate();
