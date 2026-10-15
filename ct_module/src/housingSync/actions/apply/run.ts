@@ -370,6 +370,7 @@ export class ActionListApplyRun {
                     actionToImport,
                     this.options.sync.resolveItem,
                     apply,
+                    currentLength,
                     {
                         onMutationStarted: () => {
                             this.markSnapshotUnsafe();

@@ -518,6 +518,17 @@ export async function setSelectValue(
     await clickGoBack(ctx);
 }
 
+/** Identifies a failed read after a cycle already mutated the action. */
+export class CycleFieldReadError extends Error {
+    constructor(
+        public readonly slotName: string,
+        error: unknown
+    ) {
+        super(error instanceof Error ? error.message : String(error));
+        this.name = "CycleFieldReadError";
+    }
+}
+
 export async function setCycleValue(
     ctx: TaskContext,
     slotName: string,
@@ -543,7 +554,13 @@ export async function setCycleValue(
             getSlot().click(button);
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            if (readSelectedOption(getSlot(), options) === value) {
+            let slot: ItemSlot;
+            try {
+                slot = getSlot();
+            } catch (error) {
+                throw new CycleFieldReadError(slotName, error);
+            }
+            if (readSelectedOption(slot, options) === value) {
                 return true;
             }
         }
