@@ -56,7 +56,9 @@ export async function addAction(
     listLength: number,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
-    const listTitle = action.type === "CHANGE_VAR" ? ctx.getOpenContainerTitle() : null;
+    const container = action.type === "RANDOM" || action.type === "CONDITIONAL";
+    const listTitle =
+        action.type === "CHANGE_VAR" || container ? ctx.getOpenContainerTitle() : null;
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
@@ -72,6 +74,42 @@ export async function addAction(
         try {
             await writeOpenAction(ctx, action, { resolveItem, apply });
         } catch (error) {
+            if (container && error instanceof RemovedNewActionError) {
+                // Only this addAction call owns the new parent. Existing parents
+                // are edited through another path and must never be removed here.
+                try {
+                    if (
+                        baseTitle(ctx.getOpenContainerTitle()) !==
+                        baseTitle(error.listTitle)
+                    )
+                        throw error;
+                    await clickGoBack(ctx);
+                    const identity = newActionIdentity(
+                        ctx,
+                        listLength,
+                        listTitle,
+                        displayName
+                    );
+                    if (ctx.getOpenContainerTitle() !== "Action Settings") throw error;
+                    await clickGoBack(ctx);
+                    const slot = await identity.read();
+                    // Reopen without editing and reread the list: a changed parent
+                    // or sibling list is refused before removal.
+                    slot.click();
+                    await timedWaitForMenu(ctx, "menuClickWait");
+                    if (ctx.getOpenContainerTitle() !== "Action Settings") throw error;
+                    await clickGoBack(ctx);
+                    await identity.remove();
+                } catch (cleanupError) {
+                    throw new Error(
+                        `${error.message}; enclosing container cleanup refused: ${errorMessage(cleanupError)}`
+                    );
+                }
+                throw new RemovedNewActionError(
+                    `${error.message}; removed the newly added ${displayName} container.`,
+                    listTitle
+                );
+            }
             if (
                 action.type !== "CHANGE_VAR" ||
                 action.holder.type !== "Team" ||
@@ -100,18 +138,35 @@ export async function addAction(
     await setNoteOnLastVisibleSlot(ctx, action.note);
 }
 
-async function recoverNewChangeVar(
+class RemovedNewActionError extends Error {
+    constructor(
+        message: string,
+        readonly listTitle: string | null
+    ) {
+        super(message);
+    }
+}
+
+function baseTitle(title: string | null): string {
+    return (title ?? "").replace(/^\(\d+\/\d+\)\s+/, "");
+}
+
+function newActionIdentity(
     ctx: TaskContext,
-    action: Extract<Action, { type: "CHANGE_VAR" }>,
-    resolveItem: ResolveItemField,
-    apply: ActionApplyContext,
     index: number,
     listTitle: string | null,
-    originalError: Error
-): Promise<void> {
+    displayName: string
+) {
     let fingerprint: string | undefined;
-    const listSlot = async () => {
-        await clickGoBack(ctx);
+    const read = async () => {
+        if (
+            listTitle === null ||
+            baseTitle(ctx.getOpenContainerTitle()) !== baseTitle(listTitle)
+        ) {
+            throw new Error(
+                `Cannot identify the action list for ${displayName} recovery.`
+            );
+        }
         const slot = await getPaginatedListSlotAtIndex(
             ctx,
             index,
@@ -123,15 +178,14 @@ async function recoverNewChangeVar(
         const slots = getVisiblePaginatedItemSlots(ctx);
         const expectedPage = Math.floor(index / 21) + 1;
         if (
-            title.replace(/^\(\d+\/\d+\)\s+/, "") !==
-                (listTitle ?? "").replace(/^\(\d+\/\d+\)\s+/, "") ||
+            baseTitle(title) !== baseTitle(listTitle) ||
             (page?.currentPage ?? 1) !== expectedPage ||
             (page?.totalPages ?? 1) !== expectedPage ||
             slots.length !== (index % 21) + 1 ||
-            removedFormatting(slot.getItem().getName()) !== "Change Variable"
+            removedFormatting(slot.getItem().getName()) !== displayName
         )
             throw new Error(
-                "Cannot identify the newly added Change Variable action for Holder recovery."
+                `Cannot identify the newly added ${displayName} action for Holder recovery.`
             );
         const current = JSON.stringify([
             title,
@@ -140,11 +194,60 @@ async function recoverNewChangeVar(
         ]);
         if (fingerprint !== undefined && current !== fingerprint) {
             throw new Error(
-                "The newly added Change Variable action changed during Holder recovery."
+                `The newly added ${displayName} action changed during Holder recovery.`
             );
         }
         fingerprint = current;
         return slot;
+    };
+
+    return {
+        read,
+        async remove() {
+            const slot = await read();
+            slot.click(MouseButton.RIGHT);
+            await timedWaitForMenu(ctx, "menuClickWait");
+            const remainingPage = Math.max(1, Math.ceil(index / 21));
+            await goToPaginatedListPage(ctx, remainingPage, ACTION_LIST_CONFIG);
+            const remainingSlots = getVisiblePaginatedItemSlots(ctx);
+            const expectedVisible = index === 0 ? 0 : ((index - 1) % 21) + 1;
+            const visibleCount = remainingSlots.filter(
+                (item) =>
+                    removedFormatting(item.getItem().getName()) !==
+                    ACTION_LIST_CONFIG.emptyPlaceholderName
+            ).length;
+            const remainingTitle = ctx.getOpenContainerTitle() ?? "";
+            const remainingState = parsePaginatedTitlePage(
+                remainingTitle,
+                ACTION_LIST_CONFIG
+            );
+            if (
+                visibleCount !== expectedVisible ||
+                (remainingState?.totalPages ?? 1) !== remainingPage ||
+                baseTitle(remainingTitle) !== baseTitle(listTitle)
+            ) {
+                throw new Error(
+                    `Holder recovery exhausted; removal of the newly added ${displayName} action was not confirmed.`
+                );
+            }
+        },
+    };
+}
+
+async function recoverNewChangeVar(
+    ctx: TaskContext,
+    action: Extract<Action, { type: "CHANGE_VAR" }>,
+    resolveItem: ResolveItemField,
+    apply: ActionApplyContext,
+    index: number,
+    listTitle: string | null,
+    originalError: Error
+): Promise<void> {
+    const identity = newActionIdentity(ctx, index, listTitle, "Change Variable");
+    const listSlot = async () => {
+        if (ctx.getOpenContainerTitle() !== "Action Settings") throw originalError;
+        await clickGoBack(ctx);
+        return identity.read();
     };
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -163,32 +266,11 @@ async function recoverNewChangeVar(
         }
     }
 
-    const slot = await listSlot();
-    slot.click(MouseButton.RIGHT);
-    await timedWaitForMenu(ctx, "menuClickWait");
-    const remainingPage = Math.max(1, Math.ceil(index / 21));
-    await goToPaginatedListPage(ctx, remainingPage, ACTION_LIST_CONFIG);
-    const remainingSlots = getVisiblePaginatedItemSlots(ctx);
-    const expectedVisible = index === 0 ? 0 : ((index - 1) % 21) + 1;
-    const visibleCount = remainingSlots.filter(
-        (item) =>
-            removedFormatting(item.getItem().getName()) !==
-            ACTION_LIST_CONFIG.emptyPlaceholderName
-    ).length;
-    const remainingTitle = ctx.getOpenContainerTitle() ?? "";
-    const remainingState = parsePaginatedTitlePage(remainingTitle, ACTION_LIST_CONFIG);
-    if (
-        visibleCount !== expectedVisible ||
-        (remainingState?.totalPages ?? 1) !== remainingPage ||
-        remainingTitle.replace(/^\(\d+\/\d+\)\s+/, "") !==
-            (listTitle ?? "").replace(/^\(\d+\/\d+\)\s+/, "")
-    ) {
-        throw new Error(
-            `${originalError.message}; Holder recovery exhausted; removal of the newly added action was not confirmed.`
-        );
-    }
-    throw new Error(
-        `${originalError.message}; Holder recovery exhausted after 3 reopens; removed the newly added Change Variable action.`
+    await clickGoBack(ctx);
+    await identity.remove();
+    throw new RemovedNewActionError(
+        `${originalError.message}; Holder recovery exhausted after 3 reopens; removed the newly added Change Variable action.`,
+        listTitle
     );
 }
 
