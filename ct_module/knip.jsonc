@@ -1,6 +1,6 @@
 {
     "$schema": "https://unpkg.com/knip@6/schema.json",
-    "entry": ["src/headless.ts", "scripts/*.ts", "test/**/*.test.ts"],
+    "entry": ["scripts/*.ts", "test/**/*.test.ts"],
     "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
     "ignoreDependencies": ["@babel/preset-env"],
     "ignoreBinaries": ["java", "javac"],
