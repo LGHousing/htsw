@@ -295,7 +295,7 @@ function importView(parsed: ImportablesParseResult, selected: Importable, trustM
             const plan = trust.importables.get(key(imp));
             return {
                 key: key(imp),
-                body: JSON.parse(JSON.stringify(imp)),
+                body: JSON.parse(JSON.stringify(imp)) as unknown,
                 hash: memoizedImportableHash(imp),
                 freshHash: importableHash(imp),
                 dependencies: x.itemDependencies.snapshotOf(imp),
@@ -343,7 +343,7 @@ async function sessionView(parsed: ImportablesParseResult, selected: Importable)
         parsed,
         events: { emit: (event) => events.push(JSON.parse(JSON.stringify(event))) },
         conflictHandling: { kind: "proceed" },
-    }).catch((error: Error) => messages.push(`threw: ${error.message}`));
+    }).catch((error: unknown) => messages.push(`threw: ${(error as Error).message}`));
     return { events, messages, scans: mocks.scans.slice(), shellPlans: mocks.shellPlans.slice() };
 }
 
@@ -383,7 +383,8 @@ describe("project publication", () => {
             new SourceMap(new NodeFileLoader()),
             join(temp[0], "import.json")
         );
-        const moved = (value: unknown) => JSON.parse(JSON.stringify(value).split(temp[0]).join(dense.root));
+        const moved = (value: unknown): unknown =>
+            JSON.parse(JSON.stringify(value).split(temp[0]).join(dense.root));
         expect(JSON.parse(JSON.stringify(dense.full.value))).toEqual(moved(source.value));
         expect(dense.full.diagnostics.map((d) => d.message)).toEqual(source.diagnostics.map((d) => d.message));
         expect(dense.full.importJson.houseUuid).toBe(HOUSE);

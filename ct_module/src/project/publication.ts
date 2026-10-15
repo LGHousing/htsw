@@ -68,8 +68,9 @@ type PublishedFileNode = {
 };
 
 export type ProjectPublication = {
-    format: typeof FORMAT;
-    version: typeof VERSION;
+    // Read back from disk, so checked rather than trusted.
+    format: string;
+    version: number;
     parserVersion: number;
     /** Same parser version and source digests, same key. */
     key: string;
@@ -183,8 +184,12 @@ export function publishProject(
 
     const diagnostics = parsed.diagnostics.map((diagnostic) => {
         const stored = serializeDiagnostic(parsed.gcx.sourceMap, diagnostic);
-        const primary = stored.spans.find((span) => span.kind === "primary") ?? stored.spans[0];
-        const owners = primary === undefined ? [] : (ownersByFile.get(primary.path) ?? []);
+        const owners =
+            stored.spans.length === 0
+                ? []
+                : (ownersByFile.get(
+                      (stored.spans.find((span) => span.kind === "primary") ?? stored.spans[0]).path
+                  ) ?? []);
         return { ...diagnosticWithPaths(stored, relative), owners: owners.slice() };
     });
 
