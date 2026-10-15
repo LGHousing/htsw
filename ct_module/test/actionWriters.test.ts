@@ -35,6 +35,98 @@ function applyOnly(propToApply: string) {
 }
 
 describe("item-aware child-list writes", () => {
+    test.each([false, true])(
+        "preserves live guards before any write (matchAny=%s)",
+        async (matchAny) => {
+            const current: ActionConditional = {
+                type: "CONDITIONAL",
+                matchAny,
+                conditions: [
+                    {
+                        type: "REQUIRE_GROUP",
+                        group: "Resident",
+                        includeHigherGroups: true,
+                        inverted: true,
+                    },
+                ],
+                ifActions: [
+                    { type: "MESSAGE", message: "&cWIP!" },
+                    { type: "SEND_TO_LOBBY", lobby: "Housing" },
+                ],
+                elseActions: [],
+            };
+            const desired: ActionConditional = {
+                ...current,
+                // The cheapest edit pairs the old kick block with the pending-Boom
+                // block, not necessarily the new admission check (#179).
+                conditions: [
+                    {
+                        type: "COMPARE_VAR",
+                        holder: { type: "Global" },
+                        var: "bqc",
+                        op: "Greater Than",
+                        amount: "0",
+                        fallback: "0",
+                    },
+                ],
+                ifActions: [{ type: "FUNCTION", function: "Boom Check", global: false }],
+            };
+            const apply = applyOnly("conditions");
+            ctx.getMenuItemSlot.mockClear();
+            await expect(
+                writeConditional(ctx as never, desired, {
+                    current,
+                    resolveItem: vi.fn(),
+                    apply,
+                })
+            ).rejects.toBeDefined();
+            expect(ctx.getMenuItemSlot).not.toHaveBeenCalled();
+            expect(apply.applyConditions).not.toHaveBeenCalled();
+        }
+    );
+
+    test("unknown branch contents cannot be treated as empty", async () => {
+        const desired: ActionConditional = {
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [{ type: "IS_SNEAKING" }],
+            ifActions: [],
+            elseActions: [],
+        };
+        ctx.getMenuItemSlot.mockClear();
+        await expect(
+            writeConditional(ctx as never, desired, {
+                current: { type: "CONDITIONAL", matchAny: false },
+                resolveItem: vi.fn(),
+                apply: applyOnly("conditions"),
+            })
+        ).rejects.toBeDefined();
+        expect(ctx.getMenuItemSlot).not.toHaveBeenCalled();
+    });
+
+    test("refuses a mode change protecting an else branch before writes", async () => {
+        const current: ActionConditional = {
+            type: "CONDITIONAL",
+            matchAny: false,
+            conditions: [{ type: "IS_SNEAKING" }],
+            ifActions: [],
+            elseActions: [child],
+        };
+        ctx.getMenuItemSlot.mockClear();
+        await expect(
+            writeConditional(
+                ctx as never,
+                { ...current, matchAny: true },
+                {
+                    current,
+                    resolveItem: vi.fn(),
+                    apply: applyOnly("none"),
+                }
+            )
+        ).rejects.toBeDefined();
+        expect(ctx.getMenuItemSlot).not.toHaveBeenCalled();
+    });
+
     test("applies an item-only change in an otherwise equal conditional list", async () => {
         const action: ActionConditional = {
             type: "CONDITIONAL",
