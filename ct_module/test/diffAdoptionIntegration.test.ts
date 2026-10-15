@@ -57,6 +57,10 @@ vi.mock("htsw", async (importOriginal) => ({
 
 vi.mock("../src/gui/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
+    parseImportJsonCurrent: async () => ({
+        parsed: { value: [mocks.source, mocks.otherSource], diagnostics: [] },
+        error: null,
+    }),
 }));
 
 vi.mock("../src/project/paths", async (importOriginal) => ({
