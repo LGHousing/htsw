@@ -62,7 +62,9 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
 }));
 
 vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/actions/diffDetails")>()),
+    ...(await importOriginal<
+        typeof import("../src/housingSync/actions/diffDetails")
+    >()),
     writeDiffDetailsFile: mocks.writeDiffDetailsFile,
 }));
 

@@ -60,7 +60,9 @@ describe("progress cost estimates", () => {
             noteOnly: true,
         };
 
-        expect(conditionOperationUnits(op)).toBe(COST.anvilInput + COST.menuClickWait);
+        expect(conditionOperationUnits(op)).toBe(
+            COST.anvilInput + COST.menuClickWait
+        );
     });
 
     test("action note-only edits charge one note edit", () => {
@@ -107,7 +109,11 @@ describe("progress cost estimates", () => {
             childListDiffs: [],
         };
         const diff = { operations: [add], desiredLength: 3 };
-        const units = actionListOperationApplyUnits(diff, editUnitsWithChildLists, 3);
+        const units = actionListOperationApplyUnits(
+            diff,
+            editUnitsWithChildLists,
+            3
+        );
         const withoutWalk = actionOperationApplyUnits(
             { ...add, desiredIndex: 2, toIndex: 2 },
             editUnitsWithChildLists,
@@ -121,13 +127,15 @@ describe("progress cost estimates", () => {
         const child = Array.from({ length: 13 }, (_, i) => message(`child ${i}`));
         const emptyParent = conditional({ ifActions: [] });
         const parentWithChild = conditional({ ifActions: child });
-        const emptyDiff = diffActionList(baselineActionListFromActions([]), [
-            emptyParent,
-        ]);
+        const emptyDiff = diffActionList(
+            baselineActionListFromActions([]),
+            [emptyParent]
+        );
         const childDiff = diffActionList(baselineActionListFromActions([]), child);
-        const parentDiff = diffActionList(baselineActionListFromActions([]), [
-            parentWithChild,
-        ]);
+        const parentDiff = diffActionList(
+            baselineActionListFromActions([]),
+            [parentWithChild]
+        );
         const childTotal = actionListDiffApplyUnits(
             childDiff,
             editUnitsWithChildLists,
@@ -186,7 +194,9 @@ describe("progress cost estimates", () => {
             desired: { type: "GIVE_ITEM", itemName: "Key" },
             childListDiffs: [],
         };
-        expect(actionOperationApplyUnits(add, editUnitsWithChildLists, 0)).toBe(
+        expect(
+            actionOperationApplyUnits(add, editUnitsWithChildLists, 0)
+        ).toBe(
             COST.menuClickWait * 2 +
                 COST.menuClickWait +
                 COST.itemSelect +
@@ -230,11 +240,18 @@ describe("progress cost estimates", () => {
             42
         );
 
-        expect(units.get(op)).toBe(COST.pageTurnWait * 4 + COST.menuClickWait);
+        expect(units.get(op)).toBe(
+            COST.pageTurnWait * 4 + COST.menuClickWait
+        );
     });
 
     test("move pricing resolves its index after an earlier delete", () => {
-        const baseline = [message("X"), message("A"), message("B"), message("C")];
+        const baseline = [
+            message("X"),
+            message("A"),
+            message("B"),
+            message("C"),
+        ];
         const desired = [message("C"), message("A"), message("B")];
         const diff = diffActionList(baselineActionListFromActions(baseline), desired);
         const move = diff.operations.find(
@@ -286,7 +303,8 @@ describe("progress cost estimates", () => {
         );
 
         expect(
-            estimateImportableCost(withActions) - estimateImportableCost(withoutActions)
+            estimateImportableCost(withActions) -
+                estimateImportableCost(withoutActions)
         ).toBeCloseTo(actionApply);
     });
 
@@ -411,7 +429,8 @@ describe("progress cost estimates", () => {
                 importable,
                 lists: {},
             }) as ImportableCacheEntry;
-        const snapshot = COST.commandMenuWait + COST.menuClickWait;
+        const snapshot =
+            COST.commandMenuWait + COST.menuClickWait;
         const editOneMessage = actionListDiffApplyUnits(
             diffActionList(baselineActionListFromActions([message("old")]), [
                 message("new"),
@@ -497,7 +516,9 @@ describe("progress cost estimates", () => {
         expect(
             estimateImportableReadUnits(withItem) -
                 estimateImportableReadUnits(withoutItem)
-        ).toBeCloseTo(COST.menuClickWait + COST.goBackWait + ITEM_CAPTURE_FIELD_UNITS);
+        ).toBeCloseTo(
+            COST.menuClickWait + COST.goBackWait + ITEM_CAPTURE_FIELD_UNITS
+        );
     });
 
     test("function read estimate includes several item field hydrations", () => {
