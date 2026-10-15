@@ -183,7 +183,9 @@ const functionIo = vi.hoisted(() => ({
     applied: vi.fn(async () => undefined),
     settings: vi.fn(async () => undefined),
     open: vi.fn(async () => "opened"),
-    scan: vi.fn(async () => ({})),
+    scan: vi.fn(async () => ({
+        slots: [] as import("../src/housingSync/observedActions").ObservedActionSlot[],
+    })),
     read: vi.fn(async () => [] as unknown[]),
     back: vi.fn(async () => undefined),
 }));
@@ -227,7 +229,7 @@ function directApplication() {
     };
 }
 
-test("conditional preflight precedes every settings write, including enabling an empty-AND lobby body", async () => {
+test("unmarked unsafe plans are refused before settings, including enabling an empty-AND lobby body", async () => {
     const old: ActionConditional = {
         type: "CONDITIONAL",
         matchAny: false,
@@ -250,6 +252,11 @@ test("conditional preflight precedes every settings write, including enabling an
         }),
         settingsPlan: [{ key: "repeatTicks", current: 0, desired: 5 }],
     } as FunctionImportPlan;
+    // Only the planner's replacement path may handle this edit. Direct/stale
+    // in-place plans retain the preflight fence.
+    for (const op of plan.actionsPlan!.diff.operations) {
+        if (op.kind === "edit") delete op.replaceConditional;
+    }
     functionIo.settings.mockClear();
     functionIo.applied.mockClear();
     await expect(
@@ -312,4 +319,63 @@ test("automatic execution follows body write and a fresh matching read, and stay
         )
     ).rejects.toBeDefined();
     expect(order).toEqual(["write", "verify"]);
+});
+
+test("automatic verification allows condition order differences but rejects unread branches", async () => {
+    const body: ActionConditional = {
+        type: "CONDITIONAL",
+        matchAny: false,
+        conditions: [{ type: "IS_SNEAKING" }, { type: "IS_FLYING" }],
+        ifActions: [message("guarded")],
+        elseActions: [],
+    };
+    const plan: FunctionImportPlan = {
+        kind: "FUNCTION",
+        exists: true,
+        importable: {
+            type: "FUNCTION",
+            name: "Autokick",
+            repeatTicks: 5,
+            actions: [body],
+        },
+        actionsPlan: createKnownActionListPlan([body], [body], {
+            sync: { trust: { trustMode: false } } as never,
+        }),
+        settingsPlan: [{ key: "repeatTicks", current: 0, desired: 5 }],
+    };
+    const session = {
+        actions: { canonicalizeItemName: (name: string) => name },
+    } as unknown as ImportContext;
+    functionIo.read.mockResolvedValue([
+        { ...body, conditions: [...body.conditions].reverse() },
+    ]);
+    functionIo.settings.mockClear();
+    await applyImportableFunctionPlan(
+        {} as never,
+        plan,
+        session,
+        directApplication() as never
+    );
+    expect(functionIo.settings).toHaveBeenCalledOnce();
+
+    functionIo.scan.mockResolvedValue({
+        slots: [
+            {
+                index: 0,
+                hydrated: true,
+                truncatedFields: [],
+                action: { ...body, ifActions: [message("guarded"), null] },
+            },
+        ],
+    });
+    functionIo.settings.mockClear();
+    await expect(
+        applyImportableFunctionPlan(
+            {} as never,
+            plan,
+            session,
+            directApplication() as never
+        )
+    ).rejects.toBeDefined();
+    expect(functionIo.settings).not.toHaveBeenCalled();
 });

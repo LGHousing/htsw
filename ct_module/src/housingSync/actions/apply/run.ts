@@ -39,6 +39,7 @@ import {
 } from "./progress";
 import type { ActionListApplyResult, ApplyChildActionList } from "./types";
 import { cloneActionsWithItemFieldContent } from "../../items/fieldContent";
+import { buildConditionalBlock, conditionalBlockIo } from "./conditional";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -247,6 +248,19 @@ export class ActionListApplyRun {
 
             await this.beginOperation(op);
             await this.ctx.finishBeforeCancelling(async () => {
+                if (op.replaceConditional && op.desired.type === "CONDITIONAL") {
+                    this.markSnapshotUnsafe();
+                    await buildConditionalBlock(
+                        conditionalBlockIo(this.ctx, this.options.sync),
+                        op.desired,
+                        this.current.length,
+                        currentIndex,
+                        currentIndex
+                    );
+                    this.updateCurrentAction(currentIndex, op.desired);
+                    this.completeEdit(op);
+                    return;
+                }
                 const actionSlot = await getPaginatedListSlotAtIndex(
                     this.ctx,
                     currentIndex,
@@ -356,6 +370,20 @@ export class ActionListApplyRun {
         for (const op of adds) {
             await this.beginOperation(op);
             await this.ctx.finishBeforeCancelling(async () => {
+                if (op.desired.type === "CONDITIONAL") {
+                    this.markSnapshotUnsafe();
+                    await buildConditionalBlock(
+                        conditionalBlockIo(this.ctx, this.options.sync),
+                        op.desired,
+                        currentLength,
+                        op.toIndex
+                    );
+                    this.appendCurrentAction(op.desired);
+                    this.moveCurrentEntry(currentLength, op.toIndex);
+                    currentLength++;
+                    this.completeAdd(op);
+                    return;
+                }
                 const actionToImport = actionWithNote(op.desired, undefined);
 
                 const added = { value: false };

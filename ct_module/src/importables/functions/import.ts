@@ -44,7 +44,11 @@ import { COST, estimateActionListPhaseUnits } from "../../housingSync/progress/c
 import { preflightConditionalEdits } from "../../housingSync/actions/conditionalSafety";
 import { scanActionList } from "../../housingSync/actions/readList";
 import { completeActionListScan } from "../../housingSync/actions/hydration/run";
-import { actionListCompareKey } from "../../housingSync/actions/comparison";
+import {
+    baselineActionListFromActions,
+    diffActionList,
+} from "../../housingSync/actions/diff";
+import { fullyHydratedObservedSlotsToActions } from "../../housingSync/observedActions";
 import {
     actionListStep,
     defineApplicationPlan,
@@ -272,10 +276,14 @@ async function verifyFunctionActions(
     };
     const scan = await scanActionList(ctx, { kind: "full" }, read);
     const actual = await completeActionListScan(ctx, scan, read);
+    // The export-oriented conversion drops unread entries. Verification must
+    // reject those, including unread actions inside a conditional branch.
+    fullyHydratedObservedSlotsToActions(scan.slots);
     await clickGoBack(ctx);
     if (
         plan.importable.actions !== undefined &&
-        actionListCompareKey(actual) !== actionListCompareKey(plan.importable.actions)
+        diffActionList(baselineActionListFromActions(actual), plan.importable.actions)
+            .operations.length > 0
     ) {
         throw Diagnostic.error(
             `Function ${plan.importable.name} did not verify; automatic execution was not enabled.`

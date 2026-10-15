@@ -48,6 +48,7 @@ import { ActionPath, ActionListPath } from "../actionPath";
 import { COST, exactHydrationPlanUnits, phaseUnitsTotal } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfigs";
 import { itemLore } from "../../utils/itemLore";
+import { CONDITIONAL_BUILD_NOTE } from "./conditionalSafety";
 
 export type ActionListReadMode =
     | { kind: "full" }
@@ -236,7 +237,10 @@ export async function scanActionList(
         // inside their own ifActions/elseActions/actions, so any child-list
         // read's hydration plan can only carry scalar truncation entries.
         // Skip the child-list plan computation entirely for child-list reads.
-        if (mode.kind === "full") {
+        const recovering = observed.some(
+            (entry) => entry.action?.note === CONDITIONAL_BUILD_NOTE
+        );
+        if (mode.kind === "full" || recovering) {
             plan = buildFullHydrationPlan(observed);
         } else {
             const matches = matchObservedToDesired(observed, mode.desired);

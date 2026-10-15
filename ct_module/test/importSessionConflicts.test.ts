@@ -62,9 +62,7 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
 }));
 
 vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
-    ...(await importOriginal<
-        typeof import("../src/housingSync/actions/diffDetails")
-    >()),
+    ...(await importOriginal<typeof import("../src/housingSync/actions/diffDetails")>()),
     writeDiffDetailsFile: mocks.writeDiffDetailsFile,
 }));
 
@@ -594,6 +592,49 @@ describe("import conflict gate", () => {
         expect(messages).toContain(
             "&e[htsw] The current importable stopped during an unverified change, so its stale cache entry was removed."
         );
+    });
+
+    it("does not start editing if the crash-recovery baseline cannot be cleared", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Autokick",
+            actions: [message("desired")],
+        };
+        mocks.deleteImportableCache.mockReturnValue(false);
+        mocks.scanImportable.mockResolvedValue({
+            kind: "FUNCTION",
+            importable,
+            needsHydration: false,
+            hydrate: mocks.hydrateImportable,
+            plan: () => ({
+                kind: "FUNCTION",
+                importable,
+                applicationPlan: cacheApplicationPlan,
+                applicationUnits: cacheApplicationPlan.totalUnits,
+                isNoOp: () => false,
+                apply: mocks.applyImportablePlan,
+                reconstructObserved: () => null,
+                reconstructPartial: () => null,
+            }),
+        });
+        await expect(
+            runImportSession(
+                {
+                    sleep: async () => undefined,
+                    displayMessage: () => undefined,
+                } as unknown as TaskContext,
+                {
+                    importables: [importable],
+                    trustMode: false,
+                    housingUuid: "test-house",
+                    sourcePath: "./project/import.json",
+                    parsed: { value: [importable] } as never,
+                    conflictHandling: { kind: "proceed" },
+                }
+            )
+        ).rejects.toBeDefined();
+        expect(mocks.applyImportablePlan).not.toHaveBeenCalled();
+        expect(mocks.removeHouseLockImportables).not.toHaveBeenCalled();
     });
 });
 

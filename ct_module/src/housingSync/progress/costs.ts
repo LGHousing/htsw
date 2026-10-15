@@ -309,9 +309,7 @@ function conditionListReadUnits(conditions: ReadonlyArray<Condition | null>): nu
 }
 
 function conditionChildListUnits(conditions: readonly Condition[]): number {
-    return (
-        childListUnits(conditions.length) + conditionItemHydrationUnits(conditions)
-    );
+    return childListUnits(conditions.length) + conditionItemHydrationUnits(conditions);
 }
 
 /**
@@ -395,10 +393,7 @@ function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
 }
 
 function noteEditUnits(note: string | undefined): number {
-    return (
-        (note === undefined ? COST.chatInput : COST.anvilInput) +
-        COST.menuClickWait
-    );
+    return (note === undefined ? COST.chatInput : COST.anvilInput) + COST.menuClickWait;
 }
 
 /**
@@ -648,14 +643,18 @@ export function actionListOperationApplyUnits<
         } else if (op.kind === "edit") {
             const index = current.indexOf(op.entryId);
             units += visitIndexUnits(currentPage, index);
-            units += op.noteOnly
-                ? noteEditUnits(op.desired.note)
-                : COST.menuClickWait +
-                  editUnitsForFields(
-                      op as Extract<TOperation, { kind: "edit" }>
-                  ) +
-                  COST.goBackWait;
-            if (!op.noteOnly && op.noteDiffers) {
+            units +=
+                op.replaceConditional && op.desired.type === "CONDITIONAL"
+                    ? conditionalBuildUnits(op.desired) +
+                      COST.menuClickWait * 3 +
+                      COST.goBackWait +
+                      moveUnits(current.length - 1, index, current.length)
+                    : op.noteOnly
+                      ? noteEditUnits(op.desired.note)
+                      : COST.menuClickWait +
+                        editUnitsForFields(op as Extract<TOperation, { kind: "edit" }>) +
+                        COST.goBackWait;
+            if (!op.replaceConditional && !op.noteOnly && op.noteDiffers) {
                 units += noteEditUnits(op.desired.note);
             }
         } else if (op.kind === "move") {
@@ -677,8 +676,10 @@ export function actionListOperationApplyUnits<
         } else {
             const appendedIndex = current.length;
             units +=
-                actionAddShellUnits() +
-                actionWriteUnits(op.desired, op.childListDiffs);
+                op.desired.type === "CONDITIONAL"
+                    ? conditionalBuildUnits(op.desired)
+                    : actionAddShellUnits() +
+                      actionWriteUnits(op.desired, op.childListDiffs);
             units += moveUnits(appendedIndex, op.toIndex, appendedIndex + 1);
             let index = appendedIndex;
             while (index !== op.toIndex) {
@@ -695,7 +696,7 @@ export function actionListOperationApplyUnits<
             current.push(nextEntryId++);
             const entry = current.pop() as number;
             current.splice(op.toIndex, 0, entry);
-            if (op.desired.note !== undefined) {
+            if (op.desired.type !== "CONDITIONAL" && op.desired.note !== undefined) {
                 units += visitIndexUnits(currentPage, op.toIndex);
                 units += noteEditUnits(op.desired.note);
             }
@@ -727,11 +728,22 @@ export function actionOperationApplyUnits(
     }
     if (op.kind === "add") {
         let total =
-            actionAddShellUnits() +
-            actionWriteUnits(op.desired, op.childListDiffs);
+            op.desired.type === "CONDITIONAL"
+                ? conditionalBuildUnits(op.desired)
+                : actionAddShellUnits() + actionWriteUnits(op.desired, op.childListDiffs);
         total += moveUnits(desiredLength, op.toIndex, desiredLength + 1);
-        if (op.desired.note !== undefined) total += noteEditUnits(op.desired.note);
+        if (op.desired.type !== "CONDITIONAL" && op.desired.note !== undefined)
+            total += noteEditUnits(op.desired.note);
         return total;
+    }
+
+    if (op.replaceConditional && op.desired.type === "CONDITIONAL") {
+        return (
+            conditionalBuildUnits(op.desired) +
+            COST.menuClickWait * 3 +
+            COST.goBackWait +
+            moveUnits(desiredLength - 1, op.fromIndex, desiredLength)
+        );
     }
 
     let total = op.noteOnly
@@ -741,6 +753,29 @@ export function actionOperationApplyUnits(
         total += noteEditUnits(op.desired.note);
     }
     return total;
+}
+
+function conditionalBuildUnits(
+    desired: Extract<Action, { type: "CONDITIONAL" }>
+): number {
+    const stage = { ...desired, ifActions: [], elseActions: [] };
+    const stageRead = estimateActionListPhaseUnits([stage], [stage]);
+    const bodyRead = estimateActionListPhaseUnits([desired], [desired]);
+    const add = diffActionList([], [desired]).operations[0];
+    if (add.kind !== "add") throw new Error("Expected a conditional add plan");
+    // One creation plus full predicate/body writes, a second editor visit to
+    // populate, two empty-block reads and a completed-body read, and notes.
+    return (
+        actionAddShellUnits() +
+        actionWriteUnits(desired, add.childListDiffs) +
+        COST.menuClickWait +
+        COST.goBackWait +
+        2 * (stageRead.reading + stageRead.hydrating) +
+        bodyRead.reading +
+        bodyRead.hydrating +
+        noteEditUnits("[HTSW building conditional]") +
+        noteEditUnits(desired.note)
+    );
 }
 
 /**
@@ -1244,11 +1279,7 @@ export function estimateImportableCost(
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            return (
-                COST.itemInject +
-                COST.guaranteedSleep1000 +
-                COST.cacheWrite
-            );
+            return COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite;
         }
         return (
             COST.itemInject +

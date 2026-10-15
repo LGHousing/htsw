@@ -41,6 +41,18 @@ export function actionWithNote(action: Action, note: string | undefined): Action
     return note === action.note ? action : { ...action, note };
 }
 
+export async function canAddAction(
+    ctx: TaskContext,
+    type: Action["type"]
+): Promise<boolean> {
+    ctx.getMenuItemSlot("Add Action").click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    const slot = await getSlotPaginate(ctx, getActionIo(type).displayName);
+    const available = !isLimitExceeded(slot, "action");
+    await clickGoBack(ctx);
+    return available;
+}
+
 export async function addAction(
     ctx: TaskContext,
     action: Action,

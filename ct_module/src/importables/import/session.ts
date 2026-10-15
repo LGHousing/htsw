@@ -751,6 +751,11 @@ async function runImportSessionInner(
             // the next import blame Housing for this session's own writes.
             // With no baseline the next import reads it fresh.
             activeBaselineDropped = dropVerifiedState(selection, row);
+            if (!activeBaselineDropped) {
+                throw Diagnostic.error(
+                    `Could not clear the recovery baseline for ${row.importable.type} ${row.identity}; its edits were not started. Check cache and lock write access before retrying.`
+                );
+            }
             try {
                 const application = new ApplicationProgress(plan.applicationPlan, events);
                 await plan.apply(ctx, session, application);

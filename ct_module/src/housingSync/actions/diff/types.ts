@@ -73,6 +73,7 @@ export type ActionListOperation =
           desiredIndex: number;
           baselineAction: Observed<RootAction>;
           desired: RootAction;
+          replaceConditional?: true;
           noteOnly: boolean;
           noteDiffers: boolean;
           childListDiffs: ChildListDiff[];

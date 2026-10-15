@@ -34,6 +34,7 @@ import type { Observed, ObservedActionSlot } from "../../observedActions";
 import type { UiFieldKind } from "../../fields/loreSpecs";
 import { isChildListFieldKind } from "../../fields/loreSpecs";
 import type { ItemDiffContext } from "./itemDiffContext";
+import { conditionalPredicateChanges } from "../conditionalSafety";
 
 export type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
@@ -858,6 +859,18 @@ function createEditOperation(
     itemDiff?: ItemDiffContext
 ): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
+    const childListDiffs = noteOnly
+        ? []
+        : getChildListDiffs(match.current, match.desired, itemDiff);
+    const conditions = childListDiffs.find((list) => list.kind === "conditions");
+    const replaceConditional =
+        match.current.action.type === "CONDITIONAL" &&
+        match.desired.type === "CONDITIONAL" &&
+        conditionalPredicateChanges(
+            match.current.action,
+            match.desired,
+            conditions?.kind === "conditions" ? conditions.diff.operations : []
+        );
     return {
         kind: "edit",
         entryId: match.current.entryId,
@@ -867,9 +880,8 @@ function createEditOperation(
         desired: plannedAction(match.desired),
         noteOnly,
         noteDiffers: !notesEqual(match.current.action.note, match.desired.note),
-        childListDiffs: noteOnly
-            ? []
-            : getChildListDiffs(match.current, match.desired, itemDiff),
+        childListDiffs,
+        ...(replaceConditional ? { replaceConditional: true as const } : {}),
     };
 }
 

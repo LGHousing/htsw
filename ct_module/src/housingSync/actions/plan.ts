@@ -29,6 +29,7 @@ import type { ItemFieldContent } from "../items/fieldContent";
 import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
+import { CONDITIONAL_BUILD_NOTE } from "./conditionalSafety";
 
 export type ActionListApplyOptions = {
     sync: ActionSyncContext;
@@ -135,6 +136,7 @@ export async function scanActionListForPlan(
         : null;
     if (
         conflictVerdict === "unchanged" &&
+        !scan.slots.some((entry) => entry.action?.note === CONDITIONAL_BUILD_NOTE) &&
         options.trustedBaselineAfterUnchangedScan !== undefined
     ) {
         phaseUnits.hydrating = 0;
