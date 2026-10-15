@@ -149,12 +149,14 @@ export default defineConfig({
     build: {
         minify: false,
         lib: {
-            entry: "./src/index.ts",
+            // headless.js: imports, exports, diffs and the queue without the
+            // client overlay, for runners with no player (src/headless.ts).
+            entry: { index: "./src/index.ts", headless: "./src/headless.ts" },
             formats: ["cjs"],
-            fileName: () => "index.js",
+            fileName: (_format, entryName) =>
+                entryName === "headless" ? "headless.js" : "index.js",
         },
         rollupOptions: {
-            input: "./src/index.ts",
             output: {
                 format: "cjs",
                 dir: "dist",

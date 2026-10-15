@@ -5,11 +5,9 @@ import { getHousingUuid } from "../../../../runtime/state/index";
 import { showToast } from "../../../toast";
 import { listAllRegionNames } from "../../../../importables/regions/listRegions";
 import {
-    deleteImportableCache,
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
-    writePresence,
     type HouseImportable,
 } from "../../../../importCache/cache";
 
@@ -48,33 +46,3 @@ export function scanHouseRegions(): void {
         ChatLib.chat(`&c[htsw] Region scan failed: ${String(err)}`);
     });
 }
-
-// Liveness: regions announce create/delete/rename in chat, all carrying names.
-// Read the event through a declared parameter only: on this Rhino build,
-// pulling a ClientChatReceivedEvent out of `arguments` (which is what a
-// `...args` rest parameter compiles to) throws
-// "InternalError: Invalid JavaScript value" and silently kills the handler.
-register("chat", (event) => {
-    // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
-    const msg = ChatLib.getChatMessage(event, false);
-    if (typeof msg !== "string") return;
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-
-    let m = msg.match(/^Created region (.+)!$/);
-    if (m !== null) {
-        writePresence(uuid, "REGION", m[1]);
-        return;
-    }
-    m = msg.match(/^Deleted the region (.+)$/);
-    if (m !== null) {
-        deleteImportableCache(uuid, "REGION", m[1]);
-        return;
-    }
-    m = msg.match(/^Renamed region (.+) to (.+)$/);
-    if (m !== null) {
-        if (m[1].indexOf(" to ") !== -1 || m[2].indexOf(" to ") !== -1) return;
-        deleteImportableCache(uuid, "REGION", m[1]);
-        writePresence(uuid, "REGION", m[2]);
-    }
-});
