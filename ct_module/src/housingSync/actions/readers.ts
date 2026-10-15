@@ -51,7 +51,11 @@ export async function readOpenConditional({
         read?.emitSnapshot();
     }
 
-    base.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
+    const matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel));
+    if (matchAny === null) {
+        throw new Error("Could not read the conditional's Match Any setting.");
+    }
+    base.matchAny = matchAny;
 
     if (childListsToRead.has("ifActions")) {
         ctx.getMenuItemSlot(ifActionsLabel).click();

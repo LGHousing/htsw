@@ -1,3 +1,4 @@
+import { Diagnostic } from "htsw";
 import type { Action, Importable, ImportableFunction } from "htsw/types";
 
 import {
@@ -31,6 +32,7 @@ import {
     openFunctionEditor,
     openFunctionSettings,
     readFunctionSettings,
+    readFunctionRepeatTicks,
 } from "./housing";
 import {
     functionSettingsMatchDesired,
@@ -38,7 +40,15 @@ import {
     type FunctionSettingChange,
     type ObservedFunctionSettings,
 } from "./settings";
-import { COST } from "../../housingSync/progress/costs";
+import { COST, estimateActionListPhaseUnits } from "../../housingSync/progress/costs";
+import { scanActionList } from "../../housingSync/actions/readList";
+import { hydrateActionListScan } from "../../housingSync/actions/hydration/run";
+import { fullyHydratedObservedSlotsToActions } from "../../housingSync/observedActions";
+import { getChildListFields } from "../../housingSync/fields/actionMappings";
+import {
+    baselineActionListFromActions,
+    diffActionList,
+} from "../../housingSync/actions/diff";
 import {
     actionListStep,
     defineApplicationPlan,
@@ -147,21 +157,27 @@ export async function applyImportableFunctionPlan(
             await clickGoBack(ctx);
         });
     }
-    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
-        await application.run("settings", async () => {
-            for (const change of plan.settingsPlan ?? []) {
-                await openFunctionList(ctx);
-                await functionImportStep(
-                    `opening settings for function ${plan.importable.name}`,
-                    () => openFunctionSettings(ctx, plan.importable.name)
-                );
-                await applyFunctionSettings(ctx, plan.importable, [change]);
+
+    const actionsPlan = plan.actionsPlan;
+    const bodyChanges = actionListPlanNeedsApply(actionsPlan);
+    const changesFunction = !functionPlanIsNoOp(plan);
+    const targetTicks = plan.importable.repeatTicks ?? 0;
+    let currentTicks = 0;
+    let suspended = false;
+    if (changesFunction) {
+        await application.run("suspendExecution", async () => {
+            // Always read live state here, even when metadata was trusted during
+            // planning. A prior interrupted import may have left execution off.
+            currentTicks = await readFunctionRepeatTicks(ctx, plan.importable.name);
+            if (currentTicks > 0) {
+                await writeFunctionRepeatTicks(ctx, plan, 0, currentTicks);
+                await verifyFunctionRepeatTicks(ctx, plan, 0);
+                currentTicks = 0;
+                suspended = true;
             }
         });
     }
-
-    const actionsPlan = plan.actionsPlan;
-    if (actionListPlanNeedsApply(actionsPlan)) {
+    if (bodyChanges) {
         await application.run("openActions", () =>
             ensureFunctionExists(ctx, plan.importable.name)
         );
@@ -171,6 +187,34 @@ export async function applyImportableFunctionPlan(
             })
         );
         await application.run("closeActions", () => clickGoBack(ctx));
+    }
+    if (changesFunction) {
+        await application.run("verifyActions", async () => {
+            if (suspended || targetTicks > 0)
+                await verifyFunctionActions(ctx, plan, session);
+        });
+    }
+    const metadata =
+        plan.settingsPlan?.filter((change) => change.key !== "repeatTicks") ?? [];
+    if (metadata.length > 0) {
+        await application.run("settings", async () => {
+            for (const change of metadata) {
+                await openFunctionList(ctx);
+                await functionImportStep(
+                    `opening settings for function ${plan.importable.name}`,
+                    () => openFunctionSettings(ctx, plan.importable.name)
+                );
+                await applyFunctionSettings(ctx, plan.importable, [change]);
+            }
+        });
+    }
+    if (changesFunction) {
+        await application.run("repeatExecution", async () => {
+            if (currentTicks !== targetTicks) {
+                await writeFunctionRepeatTicks(ctx, plan, targetTicks, currentTicks);
+                await verifyFunctionRepeatTicks(ctx, plan, targetTicks);
+            }
+        });
     }
 }
 
@@ -193,19 +237,7 @@ export function functionApplicationPlan(
             )
         );
     }
-    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
-        let units = 0;
-        for (const change of plan.settingsPlan ?? []) {
-            units += COST.commandMenuWait + COST.menuClickWait;
-            units +=
-                change.key === "icon"
-                    ? COST.menuClickWait + COST.itemSelect
-                    : change.key === "description"
-                      ? COST.chatInput
-                      : COST.signInput;
-        }
-        steps.push(workStep("settings", units));
-    }
+    steps.push(workStep("suspendExecution", REPEAT_READ_UNITS * 2 + REPEAT_WRITE_UNITS));
     if (actionListPlanNeedsApply(plan.actionsPlan)) {
         steps.push(
             workStep("openActions", COST.commandMenuWait),
@@ -213,6 +245,28 @@ export function functionApplicationPlan(
             workStep("closeActions", COST.goBackWait)
         );
     }
+    const actions = plan.importable.actions ?? [];
+    const read = estimateActionListPhaseUnits(actions, actions);
+    steps.push(
+        workStep(
+            "verifyActions",
+            COST.commandMenuWait + COST.goBackWait + read.reading + read.hydrating
+        )
+    );
+    const metadata =
+        plan.settingsPlan?.filter((change) => change.key !== "repeatTicks") ?? [];
+    if (metadata.length > 0) {
+        let units = 0;
+        for (const change of metadata) {
+            units += COST.commandMenuWait + COST.menuClickWait;
+            units +=
+                change.key === "icon"
+                    ? COST.menuClickWait + COST.itemSelect
+                    : COST.chatInput;
+        }
+        steps.push(workStep("settings", units));
+    }
+    steps.push(workStep("repeatExecution", REPEAT_WRITE_UNITS + REPEAT_READ_UNITS));
     steps.push(workStep("cache", COST.cacheWrite));
     return defineApplicationPlan(steps);
 }
@@ -222,6 +276,80 @@ export function functionPlanApplicationUnits(
     session: ImportContext
 ): number {
     return functionApplicationPlan(plan, session).totalUnits;
+}
+
+const REPEAT_READ_UNITS = COST.commandMenuWait + COST.menuClickWait + COST.goBackWait;
+const REPEAT_WRITE_UNITS = COST.commandMenuWait + COST.menuClickWait + COST.signInput;
+
+async function writeFunctionRepeatTicks(
+    ctx: TaskContext,
+    plan: FunctionImportPlan,
+    desired: number,
+    current: number
+): Promise<void> {
+    await openFunctionList(ctx);
+    await openFunctionSettings(ctx, plan.importable.name);
+    await applyFunctionSettings(ctx, plan.importable, [
+        { key: "repeatTicks", current, desired },
+    ]);
+}
+
+async function verifyFunctionRepeatTicks(
+    ctx: TaskContext,
+    plan: FunctionImportPlan,
+    expected: number
+): Promise<void> {
+    if ((await readFunctionRepeatTicks(ctx, plan.importable.name)) !== expected) {
+        throw Diagnostic.error(
+            `Function ${plan.importable.name} automatic execution did not verify as ${expected} ticks; no further edits were applied.`
+        );
+    }
+}
+
+async function verifyFunctionActions(
+    ctx: TaskContext,
+    plan: FunctionImportPlan,
+    session: ImportContext
+): Promise<void> {
+    if ((await openFunctionEditor(ctx, plan.importable.name)) === "missing") {
+        throw Diagnostic.error(
+            `Function ${plan.importable.name} disappeared before automatic execution verification.`
+        );
+    }
+    const read = {
+        itemReadMode: "sync" as const,
+        canonicalizeItemName: session.actions.canonicalizeItemName,
+    };
+    const scan = await scanActionList(ctx, { kind: "full" }, read);
+    // Verification reads container editors even when their summaries say all
+    // lists are empty. In particular, Match Any must be read, never defaulted.
+    for (const entry of scan.slots) {
+        if (entry.action === null) continue;
+        const fields = getChildListFields(entry.action.type);
+        if (fields.length === 0) continue;
+        const work = scan.plan.get(entry);
+        if (work) {
+            for (const field of fields) work.childListsToRead.add(field.prop);
+        } else {
+            scan.plan.set(entry, {
+                childListsToRead: new Set(fields.map((field) => field.prop)),
+                scalarFieldsToRead: [],
+                itemFieldsToCapture: [],
+            });
+        }
+    }
+    await hydrateActionListScan(ctx, scan, read);
+    const actual = fullyHydratedObservedSlotsToActions(scan.slots);
+    await clickGoBack(ctx);
+    if (
+        plan.importable.actions !== undefined &&
+        diffActionList(baselineActionListFromActions(actual), plan.importable.actions)
+            .operations.length > 0
+    ) {
+        throw Diagnostic.error(
+            `Function ${plan.importable.name} did not verify; automatic execution was not enabled.`
+        );
+    }
 }
 
 function functionSettingsPlanNeedsApply(
