@@ -1,5 +1,8 @@
 import { expect, test, vi } from "vitest";
 
+// Builds Java atomics from the Rhino `java` global at load; not needed here.
+vi.mock("../src/perf/lagProbe", () => ({}));
+
 test("the headless command set leaves out watch, which needs the overlay's save polling", async () => {
     const commands = new Map<string, (...args: string[]) => void>();
     const chat: string[] = [];
