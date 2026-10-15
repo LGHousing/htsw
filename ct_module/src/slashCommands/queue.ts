@@ -36,6 +36,7 @@ import {
 import { resolveModuleRelativePath } from "../project/paths";
 import { getAutoRun } from "../settings";
 import { stripSurroundingQuotes } from "../utils/helpers";
+import { withCurrentHouse } from "./currentHouse";
 
 const IMPORTABLE_TYPES: Importable["type"][] = [
     "FUNCTION",
@@ -206,7 +207,11 @@ function commandQueueModified(args: string[]): void {
     ChatLib.chat(`&a[htsw] Queue now contains ${getQueue().length} item(s)`);
 }
 
-function commandQueueHouseOperation(op: "export" | "read", args: string[]): void {
+function commandQueueHouseOperation(
+    op: "export" | "read",
+    args: string[],
+    house = getHousingUuid()
+): void {
     const type = parseReadableType(args[0]);
     const selector = stripSurroundingQuotes(args.slice(1).join(" "));
     if (type === null || selector.length === 0) {
@@ -230,9 +235,12 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         );
         return;
     }
-    const house = getHousingUuid();
     if (house === null) {
-        ChatLib.chat("&c[htsw] Enter a Housing house first.");
+        withCurrentHouse(
+            (uuid) => commandQueueHouseOperation(op, args, uuid),
+            (reason) =>
+                ChatLib.chat(`&c[htsw] Couldn't find the current house: ${reason}`)
+        );
         return;
     }
 

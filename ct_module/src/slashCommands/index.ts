@@ -41,7 +41,6 @@ import { commandHeap } from "./debugHeap";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 import { commandCacheReport } from "./cacheReport";
 import { commandQueue } from "./queue";
-import { commandWatch } from "./watch";
 import { commandTrust } from "./trust";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
@@ -126,12 +125,6 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Manage the import queue",
         run: commandQueue,
         hidden: true,
-    },
-    {
-        name: "watch",
-        summary: "Auto-import changed Auto-Track files",
-        run: commandWatch,
-        usage: "watch <on|off>",
     },
     {
         name: "giveitem",

@@ -28,11 +28,19 @@ import type { HtswSubcommand } from "./index";
 import { resolveHtswGuiCommand } from "./gui";
 import { recompile } from "./recompile";
 import { commandWorkspace } from "./workspace";
+import { commandWatch } from "./watch";
 import { commandCaches } from "./debugCaches";
 
-// Commands for a player's client: the overlay, saved workspace, self-update
-// and GUI diagnostics. The headless entry leaves them out.
+// Commands for a player's client: Auto-Track save watching, the overlay,
+// saved workspace, self-update and GUI diagnostics. They depend on the
+// overlay's tick or a player, so the headless entry leaves them out.
 export const CLIENT_SUBCOMMANDS: HtswSubcommand[] = [
+    {
+        name: "watch",
+        summary: "Auto-import changed Auto-Track files",
+        run: commandWatch,
+        usage: "watch <on|off>",
+    },
     {
         name: "gui",
         summary:
