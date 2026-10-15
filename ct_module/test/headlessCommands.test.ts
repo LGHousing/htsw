@@ -14,6 +14,7 @@ test("the headless command set leaves out watch, which needs the overlay's save 
         },
     }));
     vi.stubGlobal("ChatLib", {
+        ...(globalThis as { ChatLib?: object }).ChatLib,
         chat: (line: string) => chat.push(line),
         getCenteredText: (line: string) => line,
     });
