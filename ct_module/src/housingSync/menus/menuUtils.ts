@@ -452,32 +452,19 @@ function getCycleFieldSlot(
     slotName: string,
     options: readonly string[]
 ): ItemSlot {
-    const exactSlot = ctx.tryGetMenuItemSlot(slotName);
-    if (exactSlot !== null) return exactSlot;
-
-    const isHolderCycle =
-        slotName === "Holder" &&
-        options.length === 3 &&
-        options.indexOf("Player") !== -1 &&
-        options.indexOf("Global") !== -1 &&
-        options.indexOf("Team") !== -1;
-    if (isHolderCycle) {
-        const malformedSlot = ctx.tryGetMenuItemSlot((slot) => {
-            const name = removedFormatting(slot.getItem().getName()).trim();
-            if (name !== "Change Variable" && name !== "Head") return false;
-
-            const foundOptions = new Set<string>();
-            const lore = itemLore(slot.getItem());
-            for (let i = 0; i < lore.length; i++) {
-                const option = normalizeSelectedOption(lore[i]);
-                if (options.indexOf(option) !== -1) foundOptions.add(option);
-            }
-            return foundOptions.size === options.length;
-        });
-        if (malformedSlot !== null) return malformedSlot;
+    if (slotName !== "Holder") return ctx.getMenuItemSlot(slotName);
+    const slot = ctx.tryGetMenuItemSlot("Holder");
+    if (slot !== null) {
+        const loreOptions = itemLore(slot.getItem()).map(normalizeSelectedOption);
+        if (
+            options.every((option) => loreOptions.indexOf(option) !== -1) &&
+            readSelectedOption(slot, options) !== null
+        )
+            return slot;
     }
-
-    return ctx.getMenuItemSlot(slotName);
+    // Hypixel sometimes renders the action's list icon here. Never cycle it,
+    // even if named Holder with incomplete lore; reopening makes it render again.
+    throw new HolderReadError(`Could not find "Holder"${menuStateDescription()}`);
 }
 
 export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
@@ -518,14 +505,10 @@ export async function setSelectValue(
     await clickGoBack(ctx);
 }
 
-/** Identifies a failed read after a cycle already mutated the action. */
-export class CycleFieldReadError extends Error {
-    constructor(
-        public readonly slotName: string,
-        error: unknown
-    ) {
-        super(error instanceof Error ? error.message : String(error));
-        this.name = "CycleFieldReadError";
+export class HolderReadError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "HolderReadError";
     }
 }
 
@@ -554,12 +537,7 @@ export async function setCycleValue(
             getSlot().click(button);
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            let slot: ItemSlot;
-            try {
-                slot = getSlot();
-            } catch (error) {
-                throw new CycleFieldReadError(slotName, error);
-            }
+            const slot = getSlot();
             if (readSelectedOption(slot, options) === value) {
                 return true;
             }

@@ -501,12 +501,32 @@ describe("live-state replan after interrupted container creation", () => {
             const variable = changeVar({ key: "z31", op: "Multiply", value: "7" });
             const before =
                 type === "RANDOM"
-                    ? random({ actions: [keep] })
-                    : conditional({ ifActions: [keep] });
+                    ? random({ actions: [keep, changeVar({ key: "Kills", value: "1" })] })
+                    : conditional({
+                          conditions: [
+                              {
+                                  type: "COMPARE_VAR",
+                                  holder: { type: "Player" },
+                                  var: "Kills",
+                              },
+                          ],
+                          ifActions: [],
+                      });
             const after =
                 type === "RANDOM"
                     ? random({ actions: [keep, variable] })
-                    : conditional({ ifActions: [keep, variable] });
+                    : conditional({
+                          conditions: [
+                              {
+                                  type: "COMPARE_VAR",
+                                  holder: { type: "Player" },
+                                  var: "z31",
+                                  op: "Equal",
+                                  amount: "7",
+                              },
+                          ],
+                          ifActions: [keep],
+                      });
             const diff = ops([obs(0, before)], [after]);
             expect(kindCounts(diff)).toEqual({ edit: 1, add: 0, delete: 0, move: 0 });
             expect(diff[0]).toMatchObject({ kind: "edit", fromIndex: 0 });
