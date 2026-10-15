@@ -123,23 +123,35 @@ export async function openFunctionSettings(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {
-    const autoExecSlot = ctx.tryGetItemSlot("Automatic Execution");
-    if (autoExecSlot === null) {
-        return undefined;
-    }
+function readAutomaticExecutionTicks(ctx: TaskContext): number {
+    return parseAutomaticExecutionTicks(
+        itemLore(ctx.getItemSlot("Automatic Execution").getItem())
+    );
+}
 
-    for (const line of itemLore(autoExecSlot.getItem())) {
+export function parseAutomaticExecutionTicks(lore: readonly string[]): number {
+    for (const line of lore) {
         const kv = parseLoreKeyValueLine(line);
         if (!kv || kv.label !== "Current") continue;
-        const ticks = parseInt(removedFormatting(kv.value).trim(), 10);
-        if (!isNaN(ticks) && ticks > 0) {
-            return ticks;
-        }
+        const value = removedFormatting(kv.value).trim();
+        if (value === "Disabled") return 0;
+        if (/^\d+$/.test(value) && Number.isSafeInteger(Number(value)))
+            return Number(value);
         break;
     }
+    throw new Error("Could not read the function's automatic execution interval.");
+}
 
-    return undefined;
+export async function readFunctionRepeatTicks(
+    ctx: TaskContext,
+    name: string
+): Promise<number> {
+    await openFunctionSettings(ctx, name);
+    try {
+        return readAutomaticExecutionTicks(ctx);
+    } finally {
+        await clickGoBack(ctx);
+    }
 }
 
 function readFunctionDescription(ctx: TaskContext): string | undefined {
@@ -196,7 +208,7 @@ async function setAutomaticExecutionTicksIfNeeded(
     repeatTicks: number
 ): Promise<void> {
     const autoExecSlot = ctx.getItemSlot("Automatic Execution");
-    const currentTicks = readAutomaticExecutionTicks(ctx) ?? 0;
+    const currentTicks = readAutomaticExecutionTicks(ctx);
     if (currentTicks === repeatTicks) {
         return;
     }
@@ -282,7 +294,7 @@ export async function readFunctionSettings(
         return {
             icon,
             description: readFunctionDescription(ctx),
-            repeatTicks: readAutomaticExecutionTicks(ctx) ?? 0,
+            repeatTicks: readAutomaticExecutionTicks(ctx),
         };
     } finally {
         await clickGoBack(ctx);

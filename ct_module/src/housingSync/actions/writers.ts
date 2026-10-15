@@ -62,12 +62,6 @@ import { setItemValue } from "../items/itemPicker";
 import type { WriteActionOptions } from "./io";
 import { itemLore } from "../../utils/itemLore";
 
-import { assertConditionalGuardEditSafe } from "./conditionalSafety";
-import {
-    baselineConditionListFromConditions,
-    diffConditionList,
-} from "./conditions/diff";
-
 function booleanActionDefault(type: Action["type"], prop: string): boolean {
     return getActionFieldDefault(type, prop) as boolean;
 }
@@ -99,21 +93,6 @@ export async function writeConditional(
     options: WriteActionOptions<ActionConditional>
 ): Promise<void> {
     const current = options.current;
-
-    const conditionOps = options.apply.shouldApplyList("conditions")
-        ? diffConditionList(
-              baselineConditionListFromConditions(current?.conditions ?? []),
-              action.conditions
-          ).operations
-        : [];
-    // An item invalidation can require a write even when source names match.
-    assertConditionalGuardEditSafe(
-        current,
-        action,
-        options.apply.shouldApplyList("conditions") && conditionOps.length === 0
-            ? null
-            : conditionOps
-    );
 
     if (
         options.apply.shouldApplyList("conditions") &&

@@ -32,7 +32,12 @@ describe("planned importable application units", () => {
         };
 
         const plan = planImportableFunction(read);
-        const verification = estimateActionListPhaseUnits(actionsPlan.desired);
+        const verification = estimateActionListPhaseUnits(
+            actionsPlan.desired,
+            actionsPlan.desired
+        );
+        const repeatRead = COST.commandMenuWait + COST.menuClickWait + COST.goBackWait;
+        const repeatWrite = COST.commandMenuWait + COST.menuClickWait + COST.signInput;
 
         expect(
             functionPlanApplicationUnits(plan, {
@@ -43,9 +48,8 @@ describe("planned importable application units", () => {
                 },
             } as never)
         ).toBeCloseTo(
-            COST.commandMenuWait +
-                COST.menuClickWait +
-                COST.signInput +
+            2 * repeatRead +
+                repeatWrite +
                 COST.commandMenuWait +
                 actionsPlan.phaseUnits.applying +
                 COST.goBackWait +
@@ -53,6 +57,8 @@ describe("planned importable application units", () => {
                 verification.reading +
                 verification.hydrating +
                 COST.goBackWait +
+                repeatWrite +
+                repeatRead +
                 COST.cacheWrite
         );
     });
