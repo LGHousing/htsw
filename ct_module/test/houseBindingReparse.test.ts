@@ -31,17 +31,8 @@ function parsedProject() {
     };
 }
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/fileMetadata", () => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
-    javaType: () => ({
-        get: (path: string) => ({
-            toAbsolutePath: () => ({
-                toRealPath: () => ({
-                    toString: () => path,
-                }),
-            }),
-        }),
-    }),
 }));
 
 vi.mock("../src/runtime/parsing/offThreadParse", () => ({
@@ -83,7 +74,6 @@ vi.mock("../src/importables/items/dependencyIndex", () => ({
 vi.mock("../src/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
-vi.mock("../src/gui/lib/dirty", () => ({ markGuiDirty: () => undefined }));
 vi.mock("../src/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));

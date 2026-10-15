@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: mocks.parse,
 }));
