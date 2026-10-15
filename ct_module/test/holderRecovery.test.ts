@@ -2,7 +2,8 @@ import { beforeEach, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     back: vi.fn(async () => undefined),
-    write: vi.fn(async () => undefined),
+    write: vi.fn<(...args: unknown[]) => Promise<void>>(),
+    actionIo: vi.fn(),
     slotAt: vi.fn(),
     visible: vi.fn(),
     add: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock("../src/housingSync/menus/paginatedList", async (original) => ({
     goToPaginatedListPage: vi.fn(async () => undefined),
 }));
 vi.mock("../src/housingSync/actions/io", () => ({
-    getActionIo: () => ({ displayName: "Change Variable", write: true }),
+    getActionIo: mocks.actionIo,
     writeOpenAction: mocks.write,
 }));
 
@@ -48,8 +49,14 @@ const action = {
     op: "Multiply",
     value: "7",
 } as const;
+let title = "Actions: Proof";
+let listTitle = "Actions: Proof";
+let childList = false;
+let editor = false;
+let parentName: string | undefined;
+const removed = new Set<string>();
 const ctx = {
-    getOpenContainerTitle: vi.fn(() => "Actions: Proof"),
+    getOpenContainerTitle: vi.fn(() => title),
     getMenuItemSlot: vi.fn(() => ({ click: vi.fn() })),
     tryGetMenuItemSlot: vi.fn(() => ({})),
 };
@@ -61,18 +68,57 @@ const slot = {
     }),
     click: vi.fn<(button?: MouseButton) => void>(),
 };
+const parentSlot = {
+    getSlotId: () => 10,
+    getItem: () => ({ getName: () => parentName!, getLore: () => ["Actions: keep"] }),
+    click: vi.fn<(button?: MouseButton) => void>(),
+};
 const apply = () => addAction(ctx as never, action, vi.fn() as never, {} as never, 0);
 
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.write.mockReset();
-    ctx.getOpenContainerTitle.mockReset().mockReturnValue("Actions: Proof");
-    mocks.readList.mockResolvedValue([]);
-    mocks.slotAt.mockResolvedValue(slot);
-    mocks.visible.mockReturnValue([slot]);
-    slot.click.mockImplementation((button) => {
-        if (button === MouseButton.RIGHT) mocks.visible.mockReturnValue([]);
+    title = listTitle = "Actions: Proof";
+    childList = editor = false;
+    parentName = undefined;
+    removed.clear();
+    ctx.getOpenContainerTitle.mockReset().mockImplementation(() => title);
+    mocks.actionIo.mockImplementation((type: string) => {
+        const displayName =
+            type === "RANDOM"
+                ? "Random Action"
+                : type === "CONDITIONAL"
+                  ? "Conditional"
+                  : "Change Variable";
+        if (type !== "CHANGE_VAR") parentName = displayName;
+        return { displayName, write: true };
     });
+    mocks.add.mockImplementation(() => {
+        editor = true;
+        title = "Action Settings";
+    });
+    mocks.back.mockImplementation(async () => {
+        if (!editor && childList) {
+            childList = false;
+            editor = true;
+        } else editor = false;
+        title = editor ? "Action Settings" : childList ? "Actions: New child" : listTitle;
+    });
+    mocks.readList.mockResolvedValue([]);
+    const current = () => (!childList && parentName ? parentSlot : slot);
+    mocks.slotAt.mockImplementation(async () => current());
+    mocks.visible.mockImplementation(() =>
+        removed.has(childList ? "child" : "root") ? [] : [current()]
+    );
+    const click = (button?: MouseButton) => {
+        if (button === MouseButton.RIGHT) removed.add(childList ? "child" : "root");
+        else {
+            editor = true;
+            title = "Action Settings";
+        }
+    };
+    slot.click.mockImplementation(click);
+    parentSlot.click.mockImplementation(click);
 });
 
 test("a failed read after a cycle carries the original diagnostic and field name", async () => {
@@ -158,9 +204,8 @@ test("raw append recovers the new action after the existing paginated list", asy
     mocks.readList.mockResolvedValue(
         Array.from({ length: 25 }, (_, index) => ({ index }))
     );
-    ctx.getOpenContainerTitle
-        .mockReturnValueOnce("(1/2) Actions: Proof")
-        .mockReturnValue("(2/2) Actions: Proof");
+    title = "(1/2) Actions: Proof";
+    listTitle = "(2/2) Actions: Proof";
     mocks.visible.mockReturnValue(Array.from({ length: 5 }, () => slot));
     mocks.write
         .mockRejectedValueOnce(new CycleFieldReadError("Holder", missing()))
@@ -169,4 +214,74 @@ test("raw append recovers the new action after the existing paginated list", asy
     expect(mocks.slotAt).toHaveBeenCalledWith(ctx, 25, 26, expect.anything());
     expect(mocks.add).toHaveBeenCalledTimes(1);
     expect(slot.click).toHaveBeenCalledExactlyOnceWith();
+});
+
+for (const type of ["RANDOM", "CONDITIONAL"] as const) {
+    test(`removes the newly created ${type} only after rereading unchanged list lore`, async () => {
+        mocks.write
+            .mockImplementationOnce(async () => {
+                childList = true;
+                editor = false;
+                title = "Actions: New child";
+                await apply();
+            })
+            .mockRejectedValueOnce(new CycleFieldReadError("Holder", missing()))
+            .mockRejectedValue(missing());
+        const parent =
+            type === "RANDOM"
+                ? { type, actions: [action] }
+                : {
+                      type,
+                      conditions: [],
+                      matchAny: false,
+                      ifActions: [action],
+                      elseActions: [],
+                  };
+        await expect(
+            addAction(ctx as never, parent, vi.fn() as never, {} as never, 0)
+        ).rejects.toThrow(
+            `removed the newly added ${type === "RANDOM" ? "Random Action" : "Conditional"} container`
+        );
+        expect(
+            slot.click.mock.calls.filter((args) => args[0] === MouseButton.RIGHT)
+        ).toHaveLength(1);
+        expect(parentSlot.click.mock.calls.map((args) => args[0])).toEqual([
+            undefined,
+            MouseButton.RIGHT,
+        ]);
+    });
+}
+
+test("a changed parent is retained for a fresh live-state replan", async () => {
+    mocks.write
+        .mockImplementationOnce(async () => {
+            childList = true;
+            editor = false;
+            title = "Actions: New child";
+            await apply();
+        })
+        .mockRejectedValueOnce(new CycleFieldReadError("Holder", missing()))
+        .mockRejectedValue(missing());
+    let parentReads = 0;
+    mocks.slotAt.mockImplementation(async () => {
+        if (childList) return slot;
+        if (++parentReads === 1) return parentSlot;
+        return {
+            ...parentSlot,
+            getItem: () => ({
+                getName: () => parentName!,
+                getLore: () => ["someone else's action"],
+            }),
+        };
+    });
+    await expect(
+        addAction(
+            ctx as never,
+            { type: "RANDOM", actions: [action] },
+            vi.fn() as never,
+            {} as never,
+            0
+        )
+    ).rejects.toThrow("changed during Holder recovery");
+    expect(parentSlot.click.mock.calls.map((args) => args[0])).toEqual([undefined]);
 });
