@@ -11,7 +11,8 @@ import {
 } from "../../../progress/costs";
 import type { PhaseUnits } from "../../../progress/types";
 import { traceConditionOp } from "../../../trace/progressTrace";
-import { writeOpenCondition } from "../io";
+import { getConditionIo, writeOpenCondition } from "../io";
+import { withHolderRecovery } from "../../../menus/holderRecovery";
 import {
     addConditionToOpenConditionList,
     deleteObservedCondition,
@@ -128,14 +129,32 @@ export class ConditionListApplyRun {
                 continue;
             }
 
+            const listTitle =
+                op.desired.type === "COMPARE_VAR"
+                    ? this.ctx.getOpenContainerTitle()
+                    : null;
             conditionSlot.click();
             await timedWaitForMenu(this.ctx, "menuClickWait");
 
-            await writeOpenCondition(
+            await withHolderRecovery(
                 this.ctx,
-                op.desired,
-                op.baselineCondition,
-                this.options.resolveItem
+                op.desired.type === "COMPARE_VAR"
+                    ? {
+                          listTitle,
+                          index: currentIndex,
+                          listLength: this.current.length,
+                          displayName: getConditionIo(op.desired.type).displayName,
+                          config: CONDITION_LIST_CONFIG,
+                          editorTitle: "Settings",
+                      }
+                    : undefined,
+                () =>
+                    writeOpenCondition(
+                        this.ctx,
+                        op.desired,
+                        op.baselineCondition,
+                        this.options.resolveItem
+                    )
             );
 
             const currentInverted = op.baselineCondition.inverted === true;
@@ -188,7 +207,8 @@ export class ConditionListApplyRun {
             await addConditionToOpenConditionList(
                 this.ctx,
                 op.desired,
-                this.options.resolveItem
+                this.options.resolveItem,
+                this.current.length
             );
             this.appendCurrentEntry();
             this.completeOperation(op);
