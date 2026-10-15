@@ -40,18 +40,18 @@ vi.mock("../src/utils/fileMetadata", async () => {
 });
 
 vi.mock("../src/utils/java", () => ({
-        runtimeString: (value: string) => value,
-        javaType: () => ({
-            get: (p: string) => {
-                const self = {
-                    normalize: () => self,
-                    toAbsolutePath: () => self,
-                    toRealPath: () => self,
-                    toString: () => p,
-                };
-                return self;
-            },
-        }),
+    runtimeString: (value: string) => value,
+    javaType: () => ({
+        get: (p: string) => {
+            const self = {
+                normalize: () => self,
+                toAbsolutePath: () => self,
+                toRealPath: () => self,
+                toString: () => p,
+            };
+            return self;
+        },
+    }),
 }));
 
 // The house side of an import session: record what each read is asked for.
