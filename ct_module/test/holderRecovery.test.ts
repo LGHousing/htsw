@@ -28,7 +28,11 @@ vi.mock("../src/housingSync/menus/paginatedList", async (original) => ({
 }));
 vi.mock("../src/housingSync/actions/io", () => ({
     getActionIo: mocks.actionIo,
-    writeOpenAction: mocks.write,
+    writeOpenAction: async (...args: unknown[]) => {
+        const result = mocks.write(...args);
+        cycled = true;
+        return result;
+    },
 }));
 
 import {
@@ -54,6 +58,7 @@ let listTitle = "Actions: Proof";
 let childList = false;
 let editor = false;
 let parentName: string | undefined;
+let cycled = false;
 const removed = new Set<string>();
 const ctx = {
     getOpenContainerTitle: vi.fn(() => title),
@@ -64,7 +69,10 @@ const slot = {
     getSlotId: () => 10,
     getItem: () => ({
         getName: () => "Change Variable",
-        getLore: () => ["Holder: Team", "Variable: Kills"],
+        getLore: () =>
+            cycled
+                ? ["Holder: Team", "Team: None", "Variable: Kills"]
+                : ["Holder: Player", "Variable: Kills"],
     }),
     click: vi.fn<(button?: MouseButton) => void>(),
 };
@@ -78,6 +86,7 @@ const apply = () => addAction(ctx as never, action, vi.fn() as never, {} as neve
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.write.mockReset();
+    cycled = false;
     title = listTitle = "Actions: Proof";
     childList = editor = false;
     parentName = undefined;
@@ -94,6 +103,7 @@ beforeEach(() => {
         return { displayName, write: true };
     });
     mocks.add.mockImplementation(() => {
+        cycled = false;
         editor = true;
         title = "Action Settings";
     });
@@ -158,7 +168,7 @@ test("reopens the addition and then writes it without adding another action", as
     expect(mocks.add).toHaveBeenCalledTimes(1);
     expect(mocks.write).toHaveBeenCalledTimes(2);
     expect(mocks.slotAt).toHaveBeenCalledWith(ctx, 0, 1, expect.anything());
-    expect(slot.click).toHaveBeenCalledExactlyOnceWith();
+    expect(slot.click.mock.calls.map((args) => args[0])).toEqual([undefined, undefined]);
 });
 
 test("three failed reopens delete the addition before throwing", async () => {
@@ -171,6 +181,7 @@ test("three failed reopens delete the addition before throwing", async () => {
     expect(mocks.write).toHaveBeenCalledTimes(4);
     expect(mocks.add).toHaveBeenCalledTimes(1);
     expect(slot.click.mock.calls.map((args) => args[0])).toEqual([
+        undefined, // checkpoint reopen before the cycle
         undefined,
         undefined,
         undefined,
@@ -178,25 +189,28 @@ test("three failed reopens delete the addition before throwing", async () => {
     ]);
 });
 
-test("a missing Holder before any cycle does not reopen or delete an action", async () => {
+test("a missing Holder before any cycle does not enter recovery or delete an action", async () => {
     mocks.write.mockRejectedValueOnce(missing());
     await expect(apply()).rejects.toThrow('Could not find "Holder"');
-    expect(mocks.slotAt).not.toHaveBeenCalled();
-    expect(slot.click).not.toHaveBeenCalled();
+    expect(mocks.slotAt).toHaveBeenCalledTimes(1);
+    expect(slot.click).toHaveBeenCalledExactlyOnceWith();
 });
 
-test("a changed list entry is never reopened or deleted", async () => {
+test("a swap before the first recovery read is never reopened or deleted", async () => {
     mocks.write
         .mockRejectedValueOnce(new CycleFieldReadError("Holder", missing()))
         .mockRejectedValue(missing());
-    mocks.slotAt.mockResolvedValueOnce(slot).mockResolvedValueOnce({
+    const swapped = {
         ...slot,
         getItem: () => ({
             getName: () => "Change Variable",
             getLore: () => ["Holder: Team", "Variable: another writer"],
         }),
-    });
-    await expect(apply()).rejects.toThrow("changed during Holder recovery");
+    };
+    mocks.slotAt.mockImplementation(async () => (cycled ? swapped : slot));
+    await expect(apply()).rejects.toThrow(
+        `${missing().message}; The newly added Change Variable action changed during Holder recovery.`
+    );
     expect(slot.click.mock.calls.map((args) => args[0])).toEqual([undefined]);
 });
 
@@ -213,11 +227,11 @@ test("raw append recovers the new action after the existing paginated list", asy
     await appendActionsToOpenActionList(ctx as never, [action], vi.fn() as never);
     expect(mocks.slotAt).toHaveBeenCalledWith(ctx, 25, 26, expect.anything());
     expect(mocks.add).toHaveBeenCalledTimes(1);
-    expect(slot.click).toHaveBeenCalledExactlyOnceWith();
+    expect(slot.click.mock.calls.map((args) => args[0])).toEqual([undefined, undefined]);
 });
 
 for (const type of ["RANDOM", "CONDITIONAL"] as const) {
-    test(`removes the newly created ${type} only after rereading unchanged list lore`, async () => {
+    test(`retains a new ${type} for a live replan without relying on its summary`, async () => {
         mocks.write
             .mockImplementationOnce(async () => {
                 childList = true;
@@ -239,49 +253,20 @@ for (const type of ["RANDOM", "CONDITIONAL"] as const) {
                   };
         await expect(
             addAction(ctx as never, parent, vi.fn() as never, {} as never, 0)
-        ).rejects.toThrow(
-            `removed the newly added ${type === "RANDOM" ? "Random Action" : "Conditional"} container`
-        );
+        ).rejects.toThrow(`${missing().message}; Holder recovery exhausted`);
         expect(
             slot.click.mock.calls.filter((args) => args[0] === MouseButton.RIGHT)
         ).toHaveLength(1);
-        expect(parentSlot.click.mock.calls.map((args) => args[0])).toEqual([
-            undefined,
-            MouseButton.RIGHT,
-        ]);
+        expect(parentSlot.click).not.toHaveBeenCalled();
     });
 }
 
-test("a changed parent is retained for a fresh live-state replan", async () => {
+test("an unconfirmed removal retains the original Holder diagnostic", async () => {
     mocks.write
-        .mockImplementationOnce(async () => {
-            childList = true;
-            editor = false;
-            title = "Actions: New child";
-            await apply();
-        })
         .mockRejectedValueOnce(new CycleFieldReadError("Holder", missing()))
         .mockRejectedValue(missing());
-    let parentReads = 0;
-    mocks.slotAt.mockImplementation(async () => {
-        if (childList) return slot;
-        if (++parentReads === 1) return parentSlot;
-        return {
-            ...parentSlot,
-            getItem: () => ({
-                getName: () => parentName!,
-                getLore: () => ["someone else's action"],
-            }),
-        };
-    });
-    await expect(
-        addAction(
-            ctx as never,
-            { type: "RANDOM", actions: [action] },
-            vi.fn() as never,
-            {} as never,
-            0
-        )
-    ).rejects.toThrow("changed during Holder recovery");
-    expect(parentSlot.click.mock.calls.map((args) => args[0])).toEqual([undefined]);
+    mocks.visible.mockImplementation(() => [slot]);
+    await expect(apply()).rejects.toThrow(
+        `${missing().message}; Holder recovery exhausted; removal of the newly added Change Variable action was not confirmed.`
+    );
 });
