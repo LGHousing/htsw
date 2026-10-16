@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 import type { ImportContext } from "../src/importables/import/context";
 import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
@@ -29,6 +29,11 @@ import {
     tryWriteImportableCache,
 } from "../src/importCache";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
+import { createItemDiffContext } from "../src/importables/items/diff";
+import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { itemFieldObservationFromSnbt } from "../src/housingSync/items/capture";
+import type { ItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
 
 vi.mock("../src/utils/filesystem", async (original) => ({
     ...(await original<typeof import("../src/utils/filesystem")>()),
@@ -143,12 +148,14 @@ vi.mock("../src/housingSync/actions/readList", async (original) => ({
         const h = live.house;
         h.bodyReads++;
         h.click("scan whole body");
-        const slots = clone(h.body).map((action, index): ObservedActionSlot => ({
-            index,
-            action,
-            hydrated: true,
-            truncatedFields: [],
-        }));
+        const slots = clone(h.readBody ?? h.body).map(
+            (action, index): ObservedActionSlot => ({
+                index,
+                action,
+                hydrated: true,
+                truncatedFields: [],
+            })
+        );
         if (h.unreadBody === "root")
             slots.push({
                 index: slots.length,
@@ -175,9 +182,17 @@ vi.mock("../src/housingSync/actions/hydration/run", async (original) => ({
         scan: {
             slots: ObservedActionSlot[];
             plan: Map<ObservedActionSlot, { childListsToRead: Set<string> }>;
-        }
+        },
+        read: { itemFieldObservations?: ItemFieldObservationRecorder }
     ) => {
         for (const slot of scan.slots) {
+            if (slot.action?.type === "GIVE_ITEM" && live.house.itemSnbt !== null) {
+                read.itemFieldObservations?.record(
+                    slot.action as Action,
+                    "itemName",
+                    itemFieldObservationFromSnbt(live.house.itemSnbt)
+                );
+            }
             if (slot.action?.type === "CONDITIONAL")
                 expect([...scan.plan.get(slot)!.childListsToRead]).toEqual([
                     "conditions",
@@ -239,6 +254,9 @@ class House {
     repeat = 5;
     body: Action[] = clone(old);
     target: Action[] = clone(target);
+    readBody: Action[] | null = null;
+    customItem?: ImportableItem;
+    itemSnbt: string | null = null;
     initial: Action[] = clone(old);
     clicks = 0;
     cut = Infinity;
@@ -281,6 +299,17 @@ async function importHouse(
         ...(repeatTicks > 0 ? { repeatTicks } : {}),
         actions: clone(house.target),
     };
+    const importables = [importable, ...(house.customItem ? [house.customItem] : [])];
+    const items = createProjectItemIndex(importables);
+    session.actions.itemDiff = house.customItem
+        ? createItemDiffContext(
+              importables,
+              createItemDependencyIndex(importables, items),
+              items,
+              session.housingUuid,
+              () => undefined
+          )
+        : undefined;
     // Every retry plans from the live interval and body; nothing is journalled.
     let plan: FunctionImportPlan = {
         kind: "FUNCTION",
@@ -512,6 +541,43 @@ describe("automatic function execution suspension", () => {
         expect(h.writes).toEqual([5]);
         expect(h.verified).toBe(true);
     });
+
+    test.each(["matching", "changed", "missing"] as const)(
+        "repeating custom-item GIVE_ITEM verifies captured content (%s)",
+        async (capture) => {
+            const h = new House();
+            h.body =
+                h.target =
+                h.initial =
+                    [{ type: "GIVE_ITEM", itemName: "custom_stone" }];
+            h.readBody = [{ type: "GIVE_ITEM", itemName: "Stone" }];
+            h.customItem = {
+                type: "ITEM",
+                name: "custom_stone",
+                nbt: {
+                    type: "compound",
+                    value: {
+                        id: { type: "string", value: "minecraft:stone" },
+                        Count: { type: "byte", value: 1 },
+                        Damage: { type: "short", value: 0 },
+                    },
+                },
+            };
+            h.itemSnbt =
+                capture === "missing"
+                    ? null
+                    : `{id:"minecraft:${capture === "matching" ? "stone" : "dirt"}",Count:1b,Damage:0s}`;
+            if (capture === "matching") {
+                await importHouse(h, 10);
+                expect(h.repeat).toBe(10);
+                expect(h.writes).toEqual([0, 10]);
+            } else {
+                await expect(importHouse(h, 10)).rejects.toThrow("did not verify");
+                expect(h.repeat).toBe(0);
+                expect(h.writes).toEqual([0]);
+            }
+        }
+    );
 
     test("only explicitly readable interval values count as off", () => {
         expect(parseAutomaticExecutionTicks(["§7Current: §a0"])).toBe(0);
