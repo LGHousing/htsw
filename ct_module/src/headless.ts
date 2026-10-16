@@ -18,6 +18,7 @@ export {
     restoreProjectPublication,
     installProjectPublication,
 } from "./project/publication";
+export { installVerifiedCacheEntry } from "./importCache/cache";
 
 initStatusBridge();
 initChatLiveness();
