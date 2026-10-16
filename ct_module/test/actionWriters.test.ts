@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
     clickGoBack: vi.fn(async () => undefined),
     setBooleanValue: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
+    readBooleanValue: vi.fn((): boolean | null => false),
 }));
 
 vi.mock("../src/housingSync/menus/menuUtils", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/housingSync/menus/menuUtils")>()),
     clickGoBack: mocks.clickGoBack,
     setBooleanValue: mocks.setBooleanValue,
+    readBooleanValue: mocks.readBooleanValue,
 }));
 
 vi.mock("../src/housingSync/menus/menuWait", async (importOriginal) => ({
@@ -19,6 +21,7 @@ vi.mock("../src/housingSync/menus/menuWait", async (importOriginal) => ({
 }));
 
 import { writeConditional, writeRandom } from "../src/housingSync/actions/writers";
+import { readOpenConditional } from "../src/housingSync/actions/readers";
 
 const child: Action = { type: "MESSAGE", message: "same structure" };
 const ctx = {
@@ -35,6 +38,12 @@ function applyOnly(propToApply: string) {
 }
 
 describe("item-aware child-list writes", () => {
+    test("an unreadable Match Any setting cannot verify as disabled", async () => {
+        mocks.readBooleanValue.mockReturnValueOnce(null);
+        await expect(
+            readOpenConditional({ ctx: ctx as never, childListsToRead: new Set() })
+        ).rejects.toThrow("Could not read the conditional's Match Any setting");
+    });
     test("applies an item-only change in an otherwise equal conditional list", async () => {
         const action: ActionConditional = {
             type: "CONDITIONAL",

@@ -100,12 +100,29 @@ describe("importable application plans", () => {
                 plan,
                 sessionWithPlannedShells(["referenced"])
             ).steps.map((step) => step.key)
-        ).toEqual(["openActions", "actions", "closeActions", "cache"]);
+        ).toEqual([
+            "suspendExecution",
+            "openActions",
+            "actions",
+            "closeActions",
+            "verifyActions",
+            "repeatExecution",
+            "cache",
+        ]);
         expect(
             functionApplicationPlan(plan, sessionWithPlannedShells()).steps.map(
                 (step) => step.key
             )
-        ).toEqual(["createShell", "openActions", "actions", "closeActions", "cache"]);
+        ).toEqual([
+            "createShell",
+            "suspendExecution",
+            "openActions",
+            "actions",
+            "closeActions",
+            "verifyActions",
+            "repeatExecution",
+            "cache",
+        ]);
     });
 
     test("function settings do not plan a close step after Housing exits the editor", () => {
@@ -126,7 +143,7 @@ describe("importable application plans", () => {
             functionApplicationPlan(plan, sessionWithPlannedShells()).steps.map(
                 (step) => step.key
             )
-        ).toEqual(["settings", "cache"]);
+        ).toEqual(["suspendExecution", "verifyActions", "repeatExecution", "cache"]);
     });
 
     test("region entry and exit lists have distinct ordered application steps", () => {
