@@ -18,6 +18,7 @@ import type { ItemDependencySnapshot } from "../importables/items/dependencyInde
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { rememberImportableHash } from "./hashMemo";
+import { isRecord, validStoredImportable } from "./structure";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 
 /**
@@ -370,7 +371,8 @@ function persistImportableCacheWrite(
 /**
  * Install a baseline already verified by the headless store. Call on the main
  * thread while idle, after the caller has checked the store's clean status and
- * epoch. This checks the envelope, NOT the content against Housing or its hash.
+ * epoch. This checks the envelope and AST structure, not the content against
+ * Housing or its hash.
  * Explicit verification and current hash versions are required; presence-only
  * and old entries cannot become trusted content through this API.
  *
@@ -407,10 +409,6 @@ export function installVerifiedCacheEntry(
         serialized: serializedEntry,
     });
     legacyMigrationChecked.add(path);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isStoredHash(value: unknown): value is string {
@@ -474,61 +472,6 @@ function validVerifiedCacheEntry(
         }
     }
     return true;
-}
-
-// Cheap structural checks only: don't traverse/normalize action trees or NBT.
-function validStoredImportable(value: unknown): value is Importable {
-    if (!isRecord(value)) return false;
-    for (const field of [
-        "actions",
-        "onEnterActions",
-        "onExitActions",
-        "leftClickActions",
-        "rightClickActions",
-    ]) {
-        if (value[field] !== undefined && !Array.isArray(value[field])) return false;
-    }
-    if (value.type === "EVENT")
-        return (
-            typeof value.event === "string" &&
-            value.event.length > 0 &&
-            Array.isArray(value.actions)
-        );
-    if (typeof value.name !== "string" || value.name.length === 0) return false;
-    switch (value.type) {
-        case "NPC":
-            return validStoredPos(value.pos);
-        case "REGION":
-            return (
-                isRecord(value.bounds) &&
-                validStoredPos(value.bounds.from) &&
-                validStoredPos(value.bounds.to)
-            );
-        case "MENU":
-            return Array.isArray(value.slots);
-        case "ITEM":
-            return isRecord(value.nbt);
-        case "FUNCTION":
-            return (
-                value.icon === undefined ||
-                (isRecord(value.icon) && typeof value.icon.item === "string")
-            );
-        case "COMMAND":
-        case "TEAM":
-        case "GROUP":
-            return true;
-        default:
-            return false;
-    }
-}
-
-function validStoredPos(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        [value.x, value.y, value.z].every(
-            (coordinate) => typeof coordinate === "number" && Number.isFinite(coordinate)
-        )
-    );
 }
 
 function writeImportableCacheOffThread(

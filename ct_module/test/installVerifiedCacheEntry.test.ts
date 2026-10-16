@@ -37,7 +37,37 @@ import { cachePathForId, legacyCachePathForId } from "../src/importCache/paths";
 import type TaskContext from "../src/tasks/context";
 
 const importables: Importable[] = [
-    { type: "FUNCTION", name: "Function", actions: [] },
+    {
+        type: "FUNCTION",
+        name: "Function",
+        actions: [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [
+                    { type: "COMPARE_HEALTH", op: "Equal", amount: "10", inverted: true },
+                ],
+                ifActions: [
+                    {
+                        type: "RANDOM",
+                        actions: [
+                            { type: "MESSAGE", message: "accepted" },
+                            { type: "PAUSE", ticks: 2 },
+                        ],
+                    },
+                ],
+                elseActions: [
+                    {
+                        type: "CHANGE_VAR",
+                        holder: { type: "Team", team: "Red" },
+                        key: "score",
+                        op: "Set",
+                        value: "1",
+                    },
+                ],
+            },
+        ],
+    },
     { type: "COMMAND", name: "command", actions: [] },
     { type: "EVENT", event: EVENTS[0], actions: [] },
     { type: "NPC", name: "NPC", pos: { x: 1, y: 2, z: 3 } },
@@ -242,6 +272,102 @@ test.each([
     { importable: [] },
     { importable: { type: "UNKNOWN", name: "Cached" } },
     { importable: { type: "FUNCTION", name: "Cached", actions: "bad" } },
+    ...[
+        [null],
+        [[]],
+        [false],
+        [{ type: "UNKNOWN" }],
+        [{ type: "constructor" }],
+        [{ type: "__proto__" }],
+        [{ type: "MESSAGE" }],
+        [{ type: "MESSAGE", message: 123 }],
+        [{ type: "PAUSE", ticks: "2" }],
+        [{ type: "FUNCTION", function: "work", global: "true" }],
+        [{ type: "MESSAGE", message: "ok", note: false }],
+        [{ type: "RANDOM", actions: [null] }],
+        [{ type: "RANDOM", actions: {} }],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [null],
+                ifActions: [],
+                elseActions: [],
+            },
+        ],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [{ type: "UNKNOWN" }],
+                ifActions: [],
+                elseActions: [],
+            },
+        ],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [{ type: "COMPARE_HEALTH", amount: 10 }],
+                ifActions: [],
+                elseActions: [],
+            },
+        ],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [{ type: "IS_FLYING", inverted: "false" }],
+                ifActions: [],
+                elseActions: [],
+            },
+        ],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: "false",
+                conditions: [],
+                ifActions: [],
+                elseActions: [],
+            },
+        ],
+        [
+            {
+                type: "CONDITIONAL",
+                matchAny: false,
+                conditions: [],
+                ifActions: null,
+                elseActions: [],
+            },
+        ],
+        [{ type: "TELEPORT", location: { type: "Custom Coordinates", value: 10 } }],
+        [
+            {
+                type: "CHANGE_VAR",
+                holder: { type: "Team", team: 1 },
+                key: "x",
+                op: "Set",
+                value: "1",
+            },
+        ],
+    ].map((actions) => ({ importable: { type: "FUNCTION", name: "Cached", actions } })),
+    { importable: { type: "MENU", name: "Cached", slots: [null] } },
+    {
+        importable: {
+            type: "MENU",
+            name: "Cached",
+            slots: [{ slot: 1, nbt: {}, actions: [null] }],
+        },
+    },
+    {
+        importable: {
+            type: "REGION",
+            name: "Cached",
+            bounds: { from: { x: 0, y: 0, z: 0 }, to: { x: 1, y: 1, z: 1 } },
+            onEnterActions: [null],
+        },
+    },
+    { importable: { type: "ITEM", name: "Cached", nbt: {}, rightClickActions: [null] } },
     { itemDependencies: null },
     { itemDependencies: { version: 1, dependencies: [null] } },
     {
@@ -259,6 +385,8 @@ test.each([
             installVerifiedCacheEntry(house, JSON.stringify({ ...entry(), ...overrides }))
         ).toThrow("Invalid verified cache entry");
         expect(io.write).not.toHaveBeenCalled();
+        expect(importableHash).not.toHaveBeenCalled();
+        expect(listHashes).not.toHaveBeenCalled();
         expect(peekImportableCache(house, "FUNCTION", "Cached")).toEqual({
             loaded: false,
         });
