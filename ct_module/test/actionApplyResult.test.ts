@@ -313,7 +313,7 @@ describe("ActionListApplyResult", () => {
             }),
             click,
         });
-        const desired = { type: "SET_GAMEMODE", gamemode: "SURVIVAL" } as Action;
+        const desired: Action = { type: "SET_GAMEMODE", gamemode: "Survival" };
         let thrown: unknown;
         try {
             await applyActionListPlan(
