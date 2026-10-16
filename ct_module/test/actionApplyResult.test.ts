@@ -269,6 +269,7 @@ describe("ActionListApplyResult", () => {
         const { applyActionListPlan, actionListApplyResultFromError } =
             await import("../src/housingSync/actions/apply");
         mocks.getSlotPaginate.mockReturnValue({
+            getItem: () => ({ getLore: () => [] }),
             click: () => {
                 throw new Error("selection failed after click");
             },
@@ -291,5 +292,50 @@ describe("ActionListApplyResult", () => {
         }
 
         expect(actionListApplyResultFromError(thrown)).toBeNull();
+    });
+
+    test("refuses a denied Add Action option before clicking or invalidating the previous result", async () => {
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
+        const { getActionIo } = await import("../src/housingSync/actions/io");
+        vi.mocked(getActionIo).mockReturnValueOnce({
+            displayName: "Set Gamemode",
+            write: true,
+        } as never);
+        const click = vi.fn();
+        mocks.getSlotPaginate.mockReturnValue({
+            getItem: () => ({
+                getLore: () => [
+                    "§7Changes the player's mode.",
+                    "§cYou are not allowed to use this action!",
+                    "minecraft:diamond",
+                ],
+            }),
+            click,
+        });
+        const desired = { type: "SET_GAMEMODE", gamemode: "SURVIVAL" } as Action;
+        let thrown: unknown;
+        try {
+            await applyActionListPlan(
+                {
+                    checkCancelled: () => undefined,
+                    finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+                    getMenuItemSlot: () => ({ click: () => undefined }),
+                } as never,
+                addPlan([observedSlot(0, oldAction)], [oldAction, desired]),
+                { sync: syncContext() }
+            );
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(Error);
+        expect((thrown as Error).message).toBe(
+            "action not allowed for this player: Set Gamemode"
+        );
+        expect(click).not.toHaveBeenCalled();
+        expect(mocks.writeOpenAction).not.toHaveBeenCalled();
+        expect(actionListApplyResultFromError(thrown)).toEqual({
+            currentSnapshot: [oldAction],
+        });
     });
 });

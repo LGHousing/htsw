@@ -1,5 +1,7 @@
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
+import { itemLore } from "../../../utils/itemLore";
+import { removedFormatting } from "../../../utils/helpers";
 
 import type { ResolveItemField } from "../../items/itemReferences";
 import TaskContext from "../../../tasks/context";
@@ -222,6 +224,14 @@ async function clickAddActionOption(
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     const slot = await getSlotPaginate(ctx, displayName);
+
+    if (
+        itemLore(slot.getItem()).some((line) =>
+            removedFormatting(line).includes("You are not allowed to use this action!")
+        )
+    ) {
+        throw new Error(`action not allowed for this player: ${displayName}`);
+    }
 
     if (isLimitExceeded(slot, "action")) {
         throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
