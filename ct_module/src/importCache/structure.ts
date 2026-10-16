@@ -28,9 +28,24 @@ const optional =
 const optionalText = optional(text),
     optionalNumber = optional(number),
     optionalBoolean = optional(boolean);
+const childLists = new Set([
+    "actions",
+    "conditions",
+    "ifActions",
+    "elseActions",
+    "onEnterActions",
+    "onExitActions",
+    "leftClickActions",
+    "rightClickActions",
+]);
 
 function fields(value: Record<string, unknown>, checks: Record<string, Check>): boolean {
     for (const field in checks) if (!checks[field](value[field])) return false;
+    // A list attached to the wrong node is not part of that AST shape either.
+    for (const field in value) {
+        if (childLists.has(field) && !Object.prototype.hasOwnProperty.call(checks, field))
+            return false;
+    }
     return true;
 }
 

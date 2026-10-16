@@ -281,6 +281,7 @@ test.each([
         [{ type: "__proto__" }],
         [{ type: "MESSAGE" }],
         [{ type: "MESSAGE", message: 123 }],
+        [{ type: "MESSAGE", message: "ok", actions: [null] }],
         [{ type: "PAUSE", ticks: "2" }],
         [{ type: "FUNCTION", function: "work", global: "true" }],
         [{ type: "MESSAGE", message: "ok", note: false }],
@@ -352,6 +353,7 @@ test.each([
         ],
     ].map((actions) => ({ importable: { type: "FUNCTION", name: "Cached", actions } })),
     { importable: { type: "MENU", name: "Cached", slots: [null] } },
+    { importable: { type: "TEAM", name: "Cached", actions: [null] } },
     {
         importable: {
             type: "MENU",
