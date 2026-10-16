@@ -45,10 +45,8 @@ import { scanActionList } from "../../housingSync/actions/readList";
 import { hydrateActionListScan } from "../../housingSync/actions/hydration/run";
 import { fullyHydratedObservedSlotsToActions } from "../../housingSync/observedActions";
 import { getChildListFields } from "../../housingSync/fields/actionMappings";
-import {
-    baselineActionListFromActions,
-    diffActionList,
-} from "../../housingSync/actions/diff";
+import { compareActionList } from "../../housingSync/actions/conflicts";
+import { createItemFieldObservationRecorder } from "../../housingSync/items/fieldObservations";
 import {
     actionListStep,
     defineApplicationPlan,
@@ -316,7 +314,9 @@ async function verifyFunctionActions(
             `Function ${plan.importable.name} disappeared before automatic execution verification.`
         );
     }
+    const observations = createItemFieldObservationRecorder();
     const read = {
+        itemFieldObservations: observations,
         itemReadMode: "sync" as const,
         canonicalizeItemName: session.actions.canonicalizeItemName,
     };
@@ -339,12 +339,21 @@ async function verifyFunctionActions(
         }
     }
     await hydrateActionListScan(ctx, scan, read);
-    const actual = fullyHydratedObservedSlotsToActions(scan.slots);
+    // Validate every branch before comparing. Keep the observed nodes themselves:
+    // item captures are keyed by their identity, which the strict conversion clones.
+    fullyHydratedObservedSlotsToActions(scan.slots);
+    const actual = scan.slots.map((slot) => slot.action as Action);
     await clickGoBack(ctx);
     if (
         plan.importable.actions !== undefined &&
-        diffActionList(baselineActionListFromActions(actual), plan.importable.actions)
-            .operations.length > 0
+        compareActionList(
+            { actions: actual },
+            { contentHash: undefined, scanHash: undefined },
+            plan.importable.actions,
+            "content",
+            (owner, property) => observations.get(owner, property)?.canonicalKey,
+            session.actions.itemDiff?.fieldContent
+        )?.sourceDiffersFromLive !== false
     ) {
         throw Diagnostic.error(
             `Function ${plan.importable.name} did not verify; automatic execution was not enabled.`
