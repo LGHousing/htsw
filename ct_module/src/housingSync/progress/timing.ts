@@ -12,6 +12,8 @@ export type TimedOperationKind =
     | "chatInput"
     | "signInput"
     | "anvilInput"
+    | "itemInject"
+    | "inventoryRestore"
     | "itemSelect"
     | "reorderStep"
     | "sleep1000";

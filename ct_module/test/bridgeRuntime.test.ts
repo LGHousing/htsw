@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initStatusBridge, sampleBridgeProgress } from "../src/bridge/runtime";
+import { getSessionTimingUnits, resetSessionTiming } from "../src/housingSync/progress/timing";
 import { HTSW_STATUS_PROPERTY } from "../src/bridge/types";
 
 const progress = vi.hoisted(() => ({
@@ -18,6 +19,17 @@ afterEach(() => {
 });
 
 describe("bridge runtime", () => {
+    it("exposes the refined total only after diff planning, plus actual inventory work", () => {
+        resetSessionTiming();
+        progress.getTaskProgress.mockReturnValue({ totalsLocked: false, totalUnits: 36000, active: null });
+        expect(sampleBridgeProgress().plannedUnits).toBeNull();
+        progress.getTaskProgress.mockReturnValue({ totalsLocked: true, totalUnits: 10000 });
+        expect(sampleBridgeProgress().plannedUnits).toBe(10000);
+        Object.assign(getSessionTimingUnits(), { itemInject: 1.3, inventoryRestore: 1.1 });
+        expect(sampleBridgeProgress().plannedUnits).toBeCloseTo(10002.4);
+        resetSessionTiming();
+    });
+
     it("uses the displayed total ETA readiness and rough/estimating flags", () => {
         progress.getTaskProgress.mockReturnValue({
             totalsLocked: false,

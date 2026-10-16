@@ -10,6 +10,8 @@ import {
     waitForAnySetSlot,
 } from "../menus/packets";
 import { traceNote } from "../trace/taskTrace";
+import { COST } from "../progress/costs";
+import { timed } from "../progress/timing";
 import { snbtFromItem } from "./itemNbt";
 
 const INVENTORY_SIZE = 36;
@@ -132,23 +134,25 @@ export async function restoreInventorySlots(
             }
         }
 
-        try {
-            sendCreativeInventoryAction(
-                ctx,
-                inventorySlotToPacketSlot(entry.slotId),
-                desiredStack
-            );
-        } catch (error) {
-            throw new Error(
-                `Inventory restore stopped at slot ${entry.slotId}: ${String(error)} Remaining changes are unrestored.`
-            );
-        }
-        await waitForSetSlotAck(ctx, `restore inventory slot ${entry.slotId}`);
-        if (!(await waitForInventorySlotMatch(ctx, view, entry))) {
-            failures.push(
-                `slot ${entry.slotId}: server did not accept the restored item`
-            );
-        }
+        await timed("inventoryRestore", COST.inventoryRestore, async () => {
+            try {
+                sendCreativeInventoryAction(
+                    ctx,
+                    inventorySlotToPacketSlot(entry.slotId),
+                    desiredStack
+                );
+            } catch (error) {
+                throw new Error(
+                    `Inventory restore stopped at slot ${entry.slotId}: ${String(error)} Remaining changes are unrestored.`
+                );
+            }
+            await waitForSetSlotAck(ctx, `restore inventory slot ${entry.slotId}`);
+            if (!(await waitForInventorySlotMatch(ctx, view, entry))) {
+                failures.push(
+                    `slot ${entry.slotId}: server did not accept the restored item`
+                );
+            }
+        });
     }
     if (failures.length > 0) {
         throw new Error(`Inventory restore failed: ${failures.join("; ")}`);
