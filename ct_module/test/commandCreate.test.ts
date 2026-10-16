@@ -3,6 +3,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 vi.mock("../src/importables/commands/listCommands", () => ({
     getSessionCommandNamesLower: vi.fn(async () => new Set<string>()),
     noteCommandCreated: vi.fn(),
+    resetCommandNameSession: vi.fn(),
 }));
 vi.mock("../src/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(),
@@ -12,6 +13,7 @@ import { ensureCommandExists } from "../src/importables/commands/housing";
 import {
     getSessionCommandNamesLower,
     noteCommandCreated,
+    resetCommandNameSession,
 } from "../src/importables/commands/listCommands";
 import { timedWaitForMenu } from "../src/housingSync/menus/menuWait";
 import TaskContext from "../src/tasks/context";
@@ -56,10 +58,6 @@ function commandContext() {
 beforeEach(() => vi.clearAllMocks());
 
 test.each([
-    [
-        "§cThis command is not valid! This command already exists!",
-        "This command already exists!",
-    ],
     ["  This command is not valid!  ", "This command is not valid!"],
     // Any reason with the observed refusal prefix is handled without guessing
     // Housing's other reason texts.
@@ -77,10 +75,60 @@ test.each([
 
         expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create tpa");
         expect(noteCommandCreated).not.toHaveBeenCalled();
+        expect(resetCommandNameSession).not.toHaveBeenCalled();
+        expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(1);
         expect(messageCleanup).toHaveBeenCalled();
         expect(menuCleanup).toHaveBeenCalled();
     }
 );
+
+for (const reply of [
+    "§cThis command is not valid! This command already exists!",
+    "This command already exists!",
+]) {
+    test(`uses the existing command when a create race becomes visible: ${reply}`, async () => {
+        const { ctx, runCommand, receive, messageCleanup, menuCleanup } =
+            commandContext();
+        vi.mocked(getSessionCommandNamesLower)
+            .mockResolvedValueOnce(new Set())
+            .mockImplementationOnce(async () => {
+                expect(resetCommandNameSession).toHaveBeenCalledTimes(1);
+                expect(messageCleanup).toHaveBeenCalled();
+                expect(menuCleanup).toHaveBeenCalled();
+                return new Set(["tpa"]);
+            });
+        runCommand.mockImplementation(async () => receive(reply));
+        await expect(ensureCommandExists(ctx, "TPA")).resolves.toBe("existing");
+        expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(2);
+        expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create TPA");
+        expect(noteCommandCreated).not.toHaveBeenCalled();
+    });
+
+    test(`refuses an already-existing command only after one fresh list still hides it: ${reply}`, async () => {
+        const { ctx, runCommand, receive } = commandContext();
+        runCommand.mockImplementation(async () => receive(reply));
+        await expect(ensureCommandExists(ctx, "home")).rejects.toThrow(
+            "command name rejected by Housing: already exists (not visible in Commands)"
+        );
+        expect(resetCommandNameSession).toHaveBeenCalledTimes(1);
+        expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(2);
+        expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create home");
+        expect(noteCommandCreated).not.toHaveBeenCalled();
+    });
+}
+
+test("preserves a failed Commands refresh instead of claiming a hidden collision", async () => {
+    const { ctx, runCommand, receive } = commandContext();
+    const error = new Error("Timed out reading Commands");
+    vi.mocked(getSessionCommandNamesLower)
+        .mockResolvedValueOnce(new Set())
+        .mockRejectedValueOnce(error);
+    runCommand.mockImplementation(async () => receive("This command already exists!"));
+    await expect(ensureCommandExists(ctx, "home")).rejects.toBe(error);
+    expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(2);
+    expect(resetCommandNameSession).toHaveBeenCalledTimes(1);
+    expect(noteCommandCreated).not.toHaveBeenCalled();
+});
 
 test("creates a command on menu success, ignoring unrelated chat", async () => {
     const { ctx, runCommand, receive, openMenu, messageCleanup, menuCleanup } =

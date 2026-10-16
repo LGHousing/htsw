@@ -9,7 +9,11 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import type TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { getSessionCommandNamesLower, noteCommandCreated } from "./listCommands";
+import {
+    getSessionCommandNamesLower,
+    noteCommandCreated,
+    resetCommandNameSession,
+} from "./listCommands";
 import { desiredCommandSettings, type CommandSettings } from "./settings";
 import { itemLore } from "../../utils/itemLore";
 
@@ -22,30 +26,45 @@ export async function ensureCommandExists(
 
     // Listen before sending: a headless connection can deliver the refusal
     // before runCommand's continuation starts waiting for a menu.
-    const refusal = ctx.waitFor("message", (message) =>
-        removedFormatting(message).trim().startsWith("This command is not valid!")
-    );
-    const rejected = refusal.then(([message]) => {
-        const reason = removedFormatting(message)
-            .trim()
-            .substring("This command is not valid!".length)
-            .trim();
-        throw new Error(
-            `command name rejected by Housing: ${reason || "This command is not valid!"}`
+    const refusal = ctx.waitFor("message", (message) => {
+        const text = removedFormatting(message).trim();
+        return (
+            text.startsWith("This command is not valid!") ||
+            text === "This command already exists!"
         );
     });
-    rejected.catch(() => {});
+    const refusalReason = refusal.then(([message]) => {
+        const reason = removedFormatting(message)
+            .trim()
+            .replace(/^This command is not valid!/, "")
+            .trim();
+        return reason || "This command is not valid!";
+    });
+    refusalReason.catch(() => {});
     let menu: ReturnType<typeof timedWaitForMenu> | undefined;
+    let reason: string | null;
     try {
         await ctx.runCommand(`/command create ${name}`);
         menu = timedWaitForMenu(ctx, "commandMenuWait");
-        await ctx.race([
-            [menu, menu],
-            [rejected, refusal],
+        reason = await ctx.race<string | null>([
+            [menu.then(() => null), menu],
+            [refusalReason, refusal],
         ]);
     } finally {
         refusal.cleanupWaiter?.();
         menu?.cleanupWaiter?.();
+    }
+    if (reason !== null) {
+        if (reason === "This command already exists!") {
+            // The list may predate another bot's or the owner's creation.
+            resetCommandNameSession();
+            const refreshed = await getSessionCommandNamesLower(ctx);
+            if (refreshed.has(name.toLowerCase())) return "existing";
+            throw new Error(
+                "command name rejected by Housing: already exists (not visible in Commands)"
+            );
+        }
+        throw new Error(`command name rejected by Housing: ${reason}`);
     }
     noteCommandCreated(name);
     return "created";
