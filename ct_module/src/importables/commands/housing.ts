@@ -20,8 +20,33 @@ export async function ensureCommandExists(
     const existing = await getSessionCommandNamesLower(ctx);
     if (existing.has(name.toLowerCase())) return "existing";
 
-    await ctx.runCommand(`/command create ${name}`);
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    // Listen before sending: a headless connection can deliver the refusal
+    // before runCommand's continuation starts waiting for a menu.
+    const refusal = ctx.waitFor("message", (message) =>
+        removedFormatting(message).trim().startsWith("This command is not valid!")
+    );
+    const rejected = refusal.then(([message]) => {
+        const reason = removedFormatting(message)
+            .trim()
+            .substring("This command is not valid!".length)
+            .trim();
+        throw new Error(
+            `command name rejected by Housing: ${reason || "This command is not valid!"}`
+        );
+    });
+    rejected.catch(() => {});
+    let menu: ReturnType<typeof timedWaitForMenu> | undefined;
+    try {
+        await ctx.runCommand(`/command create ${name}`);
+        menu = timedWaitForMenu(ctx, "commandMenuWait");
+        await ctx.race([
+            [menu, menu],
+            [rejected, refusal],
+        ]);
+    } finally {
+        refusal.cleanupWaiter?.();
+        menu?.cleanupWaiter?.();
+    }
     noteCommandCreated(name);
     return "created";
 }
