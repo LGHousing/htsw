@@ -39,7 +39,7 @@ export function createExportProgressSink(
     type: Importable["type"],
     importJsonPath: string,
     verb: "export" | "read" = "export",
-    labels?: ReadonlyMap<string, string>,
+    _labels?: ReadonlyMap<string, string>,
     queue?: {
         queueRows?: readonly QueueRow[];
         onFinished?: (key: string, error?: string) => void;
@@ -174,7 +174,6 @@ export function createExportProgressSink(
                 etaRough: resolved.knownCount === 0,
             });
             livePreview.start(ns);
-            void labels;
         },
         scanStarted() {
             if (names.length === 0) return;

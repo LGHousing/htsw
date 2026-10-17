@@ -176,8 +176,8 @@ function recordScanIntoCache(
             return;
         }
         recordHouseScan(housingUuid, type, identities);
-    } catch (_error) {
-        void _error;
+    } catch {
+        // Cache writes are best-effort.
     }
 }
 
