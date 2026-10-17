@@ -1,21 +1,29 @@
 import type { TokenMark, TokenSpan } from "./lineTypes";
 
-export function tokensWithMarks(
+type ColumnSpan = { startColumn: number; endColumn: number };
+
+/**
+ * Split tokens at every span edge that falls inside one, so each piece sits
+ * under the same spans throughout. `piece` builds the token for the columns
+ * [start, end) of `token`.
+ */
+export function splitTokensAtSpans(
     tokens: readonly TokenSpan[],
-    marks: readonly TokenMark[]
+    spans: readonly ColumnSpan[],
+    piece: (token: TokenSpan, text: string, start: number, end: number) => TokenSpan
 ): TokenSpan[] {
-    if (marks.length === 0) return tokens.slice();
+    if (spans.length === 0) return tokens.slice();
     const out: TokenSpan[] = [];
     let tokenStart = 0;
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
         const tokenEnd = tokenStart + token.text.length;
         const cuts = [tokenStart, tokenEnd];
-        for (let j = 0; j < marks.length; j++) {
-            if (marks[j].startColumn > tokenStart && marks[j].startColumn < tokenEnd)
-                cuts.push(marks[j].startColumn);
-            if (marks[j].endColumn > tokenStart && marks[j].endColumn < tokenEnd)
-                cuts.push(marks[j].endColumn);
+        for (let j = 0; j < spans.length; j++) {
+            if (spans[j].startColumn > tokenStart && spans[j].startColumn < tokenEnd)
+                cuts.push(spans[j].startColumn);
+            if (spans[j].endColumn > tokenStart && spans[j].endColumn < tokenEnd)
+                cuts.push(spans[j].endColumn);
         }
         cuts.sort((a, b) => a - b);
         const uniqueCuts: number[] = [];
@@ -25,23 +33,33 @@ export function tokensWithMarks(
         for (let j = 0; j < uniqueCuts.length - 1; j++) {
             const start = uniqueCuts[j];
             const end = uniqueCuts[j + 1];
-            let mark: TokenMark | undefined;
-            for (let k = 0; k < marks.length; k++) {
-                if (marks[k].startColumn < end && marks[k].endColumn > start) {
-                    mark = marks[k];
-                    break;
-                }
-            }
-            out.push({
-                text: token.text.substring(start - tokenStart, end - tokenStart),
-                color: token.color,
-                fieldProp: token.fieldProp,
-                srcStart: token.srcStart,
-                underlineColor: token.underlineColor ?? mark?.underlineColor,
-                linkTarget: mark?.linkTarget ?? token.linkTarget,
-            });
+            const text = token.text.substring(start - tokenStart, end - tokenStart);
+            out.push(piece(token, text, start, end));
         }
         tokenStart = tokenEnd;
     }
     return out;
+}
+
+export function tokensWithMarks(
+    tokens: readonly TokenSpan[],
+    marks: readonly TokenMark[]
+): TokenSpan[] {
+    return splitTokensAtSpans(tokens, marks, (token, text, start, end) => {
+        let mark: TokenMark | undefined;
+        for (let k = 0; k < marks.length; k++) {
+            if (marks[k].startColumn < end && marks[k].endColumn > start) {
+                mark = marks[k];
+                break;
+            }
+        }
+        return {
+            text,
+            color: token.color,
+            fieldProp: token.fieldProp,
+            srcStart: token.srcStart,
+            underlineColor: token.underlineColor ?? mark?.underlineColor,
+            linkTarget: mark?.linkTarget ?? token.linkTarget,
+        };
+    });
 }

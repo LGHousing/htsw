@@ -30,7 +30,8 @@ vi.mock("../src/gui/lib/dirty", () => ({
         state.dirtyMarks++;
     },
 }));
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     getMtimeMs: (path: string) => state.mtimes.get(path) ?? 0,
 }));
 vi.mock("../src/gui/parsing/parses", () => ({

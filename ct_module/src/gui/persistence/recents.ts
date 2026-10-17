@@ -1,8 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { pathExists } from "../lib/java";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { defineRootDoc } from "../../persistence/store";
+import { pathExists } from "../../utils/filesystem";
 
 const MAX_RECENTS = 8;
 const PRUNE_THROTTLE_MS = 1000;

@@ -5,9 +5,9 @@ import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait"
 import { enterValue } from "../../housingSync/menus/menuUtils";
 import { isAtMenuTitle } from "../../housingSync/menus/currentMenu";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { plainItemName } from "../../utils/helpers";
 import type { Color } from "htsw/types";
-import { teamGroupColorFromDisplayName } from "../teamGroupColor";
+import { teamGroupColorFromDisplayName } from "../teamGroupMenus";
 
 const HOUSING_MENU_GROUPS_SLOT = "Permissions and Groups";
 const CREATE_GROUP_SLOT = "Create Group";
@@ -29,12 +29,8 @@ export type GroupListEntry = {
     color?: Color;
 };
 
-function stripTooltipDebugSuffix(name: string): string {
-    return name.replace(/\s*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/, "").trim();
-}
-
 function groupNameFromDisplayName(displayName: string): string | null {
-    const name = stripTooltipDebugSuffix(removedFormatting(displayName).trim());
+    const name = plainItemName(displayName);
     if (name.length === 0) return null;
     if (GROUP_LIST_CONTROLS.has(name.toLowerCase())) return null;
     return name;

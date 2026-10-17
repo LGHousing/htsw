@@ -40,6 +40,7 @@ import {
     type ActionListReadMode,
     type ActionListScan,
 } from "../readList";
+import { errorMessage } from "../../../utils/helpers";
 
 async function readActionList(
     ctx: TaskContext,
@@ -213,7 +214,7 @@ async function hydrateActionDetail(
         return;
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
-        const inner = error instanceof Error ? error.message : String(error);
+        const inner = errorMessage(error);
         const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);

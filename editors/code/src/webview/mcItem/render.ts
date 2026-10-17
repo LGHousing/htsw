@@ -1,7 +1,7 @@
 import * as htsw from "htsw";
 import * as itemIcons from "minecraft-icon-items";
 import minecraftFontDataUri from "@south-paw/typeface-minecraft/files/minecraft.woff2?inline";
-import { ampToSection } from "htsw-editor-common/text/colorCodes";
+import { trimTrailingEmptyLines } from "htsw-editor-common/item/buildItemNbt";
 
 type ItemViewEnchant = { name: string; level: number };
 
@@ -184,12 +184,6 @@ function stripCodes(value: string): string {
     return value.replace(/[&§][0-9a-fk-or]/gi, "");
 }
 
-function trimTrailingEmptyLines(lines: readonly string[]): string[] {
-    const out = [...lines];
-    while (out.length > 0 && out[out.length - 1] === "") out.pop();
-    return out;
-}
-
 function shadowColorFor(hexColor: string): string {
     const rgb = parseInt(hexColor.slice(1), 16);
     const quartered = (rgb >> 2) & 0x3f3f3f;
@@ -205,7 +199,7 @@ function formatMinecraftText(value: string): Node[] {
     let strike = false;
     let magic = false;
     let current = "";
-    const sectioned = ampToSection(value);
+    const sectioned = htsw.helpers.ampToSection(value);
 
     function flush(): void {
         if (!current) return;

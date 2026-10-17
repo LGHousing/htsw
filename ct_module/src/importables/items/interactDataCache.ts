@@ -3,7 +3,7 @@ import type { ImportableItem } from "htsw/types";
 
 import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
 import { IMPORT_CACHE_ROOT } from "../../importCache/paths";
-import { atomicWriteText, getFileMtimeMs } from "../../utils/filesystem";
+import { atomicWriteText, getMtimeMs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { runtimeString } from "../../utils/java";
 import type { ItemDependencyIndex } from "./dependencyIndex";
@@ -57,7 +57,7 @@ export function hasInteractDataCache(
     housingUuid: string
 ): boolean {
     const path = cachePath(item, dependencies, housingUuid);
-    const mtime = getFileMtimeMs(path);
+    const mtime = getMtimeMs(path);
     if (mtime === 0) return false;
     const known = blobValidity.get(path);
     if (known !== undefined && known.mtime === mtime) return known.valid;

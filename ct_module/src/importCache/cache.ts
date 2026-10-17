@@ -1,7 +1,7 @@
 import { COLORS, type Color, type FunctionIcon, type Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { atomicWriteText, getFileMtimeMs } from "../utils/filesystem";
+import { atomicWriteText, getMtimeMs } from "../utils/filesystem";
 import { traceNote } from "../housingSync/trace/taskTrace";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
@@ -345,7 +345,7 @@ function commitImportableCacheWrite(
                 icon: importable.type === "FUNCTION" ? importable.icon : undefined,
                 color: houseDisplayColor(importable),
             },
-            mtime: getFileMtimeMs(path),
+            mtime: getMtimeMs(path),
             checkedAt: Date.now(),
         });
         contentWriteRevision++;
@@ -538,7 +538,7 @@ export function writePresence(
                 icon,
                 color,
             },
-            mtime: getFileMtimeMs(path),
+            mtime: getMtimeMs(path),
             checkedAt: Date.now(),
         });
         indexUpsert(housingUuid, type, {
@@ -597,7 +597,7 @@ export function readImportableCache(
     const memo = readCache.get(path);
     if (memo !== undefined) {
         if (now - memo.checkedAt < 1000) return memo.entry;
-        const mtime = getFileMtimeMs(path);
+        const mtime = getMtimeMs(path);
         if (mtime === memo.mtime) {
             memo.checkedAt = now;
             return memo.entry;
@@ -607,7 +607,7 @@ export function readImportableCache(
     // post-read stat, we'd store the new mtime with the old content and serve
     // stale until the next write. Stale-mtime-with-new-content (the other
     // ordering's failure) just re-reads on the next check.
-    const mtimeBeforeRead = getFileMtimeMs(path);
+    const mtimeBeforeRead = getMtimeMs(path);
     let raw: string | null;
     try {
         raw = FileLib.read(path);
@@ -724,7 +724,7 @@ export function loadImportableCachesOffThread(
         }
     };
     const loadOne = (plan: (typeof plans)[number]): LoadedCacheFile => {
-        const mtime = getFileMtimeMs(plan.path);
+        const mtime = getMtimeMs(plan.path);
         if (plan.memo !== undefined && plan.memo.mtime === mtime) {
             return {
                 path: plan.path,
@@ -771,7 +771,7 @@ export function loadImportableCachesOffThread(
                                     type: plan.type,
                                     entry: null,
                                     house: null,
-                                    mtime: getFileMtimeMs(plan.path),
+                                    mtime: getMtimeMs(plan.path),
                                 });
                             }
                         }

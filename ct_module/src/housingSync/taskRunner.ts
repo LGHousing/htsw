@@ -22,6 +22,7 @@ import {
     recordRuntimeDebug,
     resetRuntimeDebugRecords,
 } from "../runtimeDebug/runtimeDebugBuffer";
+import { errorMessage } from "../utils/helpers";
 
 // Cancellation resolves undefined; other errors still reject.
 export async function runHousingSyncTask<T>(
@@ -58,7 +59,7 @@ export async function runHousingSyncTask<T>(
         } catch (error) {
             if (kind !== "queue" && !bridge?.disabled) {
                 const status = isTaskCancelled(error) ? "cancelled" : "failed";
-                const reason = error instanceof Error ? error.message : String(error);
+                const reason = errorMessage(error);
                 if (bridge?.diagnostic !== undefined)
                     emitBridgeEvent(bridge.diagnostic, { status, reason });
                 finishBridgeRun(status, { reason });

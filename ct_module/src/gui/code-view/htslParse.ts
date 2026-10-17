@@ -4,13 +4,14 @@ import { SourceMap, parseActionsResult, type SourceFile, type SpanTable } from "
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { getMtimeMs } from "../lib/java";
 import {
     ActionPath,
     type ChildActionListName,
     ActionListPath,
 } from "../../housingSync/actionPath";
 import { BoundedMap } from "../lib/boundedLruMap";
+import { errorMessage } from "../../utils/helpers";
+import { getMtimeMs } from "../../utils/filesystem";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
@@ -24,19 +25,6 @@ export type HtslLine = {
 };
 
 const fileLoader = new FileSystemFileLoader();
-
-function errorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (
-        error !== null &&
-        typeof error === "object" &&
-        "message" in error &&
-        typeof error.message === "string"
-    ) {
-        return error.message;
-    }
-    return String(error);
-}
 
 export type ParsedFile = {
     mtime: number;

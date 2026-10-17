@@ -3,7 +3,7 @@ import {
     createEmptyProjectFiles,
     createIncludedFolderInTree,
     ensureSectionFolderImportJson,
-    htslTargetForFunctionExport,
+    htslTargetForExport,
     importJsonTargetForSectionEntry,
     moveImportableEntry,
     projectSectionFolders,
@@ -137,7 +137,7 @@ describe("section folder export routing", () => {
             "/project/functions/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(fs, ROOT, "My Function");
+        const target = htslTargetForExport(fs, ROOT, "functions", "My Function");
         expect(target.importJsonPath).toBe("/project/functions/import.json");
         expect(target.htslReference).toBe("My_Function.htsl");
         expect(target.htslPath).toBe("/project/functions/My_Function.htsl");
@@ -146,7 +146,7 @@ describe("section folder export routing", () => {
     test("new function falls back to the entry file without a section include", () => {
         const fs = memoryFs({ [ROOT]: "{}" });
 
-        const target = htslTargetForFunctionExport(fs, ROOT, "My Function");
+        const target = htslTargetForExport(fs, ROOT, "functions", "My Function");
         expect(target.importJsonPath).toBe(ROOT);
     });
 
@@ -156,7 +156,7 @@ describe("section folder export routing", () => {
             "/project/functions/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(fs, ROOT, "My Function");
+        const target = htslTargetForExport(fs, ROOT, "functions", "My Function");
         expect(target.importJsonPath).toBe(ROOT);
     });
 
@@ -172,7 +172,7 @@ describe("section folder export routing", () => {
             "/project/custom/mine.htsl": "chat \"hi\"",
         });
 
-        const target = htslTargetForFunctionExport(fs, ROOT, "My Function");
+        const target = htslTargetForExport(fs, ROOT, "functions", "My Function");
         expect(target.importJsonPath).toBe("/project/custom/import.json");
         expect(target.htslReference).toBe("mine.htsl");
     });
@@ -233,9 +233,10 @@ describe("preferred new-export target routing", () => {
             "/project/combat/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             ROOT,
+            "functions",
             "Duel",
             "/project/combat/import.json"
         );
@@ -256,9 +257,10 @@ describe("preferred new-export target routing", () => {
             "/project/combat/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             ROOT,
+            "functions",
             "Duel",
             "/project/combat/import.json"
         );
@@ -276,9 +278,10 @@ describe("preferred new-export target routing", () => {
             "/project/combat/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             ROOT,
+            "functions",
             "Duel",
             "/project/combat/import.json"
         );
@@ -313,9 +316,10 @@ describe("preferred new-export target routing", () => {
             "/project/combat/import.json": "{}",
         });
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             ROOT,
+            "functions",
             "Duel",
             "/project/combat/import.json"
         );
@@ -325,9 +329,10 @@ describe("preferred new-export target routing", () => {
     test("a saved base target does not suppress a lazy section folder", () => {
         const fs = memoryFs({ [ROOT]: "{}\n" });
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             ROOT,
+            "functions",
             "Duel",
             ROOT,
             ensureSectionFolderImportJson
@@ -355,9 +360,10 @@ describe("preferred new-export target routing", () => {
             "/root"
         );
 
-        const target = htslTargetForFunctionExport(
+        const target = htslTargetForExport(
             fs,
             "./htsw/proj/import.json",
+            "functions",
             "Duel",
             "./htsw/proj/combat/import.json"
         );
@@ -504,7 +510,7 @@ describe("restructureProjectPerSection", () => {
         expect(projectSectionFolders(fs, ROOT).length).toBeGreaterThan(0);
 
         // New exports now route into the folders.
-        const target = htslTargetForFunctionExport(fs, ROOT, "Another");
+        const target = htslTargetForExport(fs, ROOT, "functions", "Another");
         expect(target.importJsonPath).toBe("/project/functions/import.json");
     });
 

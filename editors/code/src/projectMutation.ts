@@ -6,6 +6,7 @@ import {
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "./nodeProjectFs";
 import { absolutePathKey } from "./pathIdentity";
+import { errorMessage } from "./errorMessage";
 
 type PendingFile = {
     path: string;
@@ -62,7 +63,7 @@ function validateNewImportJsonPath(projectRoot: string, value: string): string |
     try {
         relativePath = normalizeNewImportJsonPath(value);
     } catch (err) {
-        return err instanceof Error ? err.message : String(err);
+        return errorMessage(err);
     }
 
     const targetPath = path.resolve(projectRoot, relativePath);

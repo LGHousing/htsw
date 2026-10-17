@@ -3,6 +3,7 @@ import { getHousingUuid, setHousingUuid } from "../gui/state/housing";
 import { isHouseTrusted, setHouseTrust } from "../gui/state/trust";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { emitBridgeEvent } from "../bridge/status";
+import { errorMessage } from "../utils/helpers";
 
 type TrustAction = "status" | "on" | "off";
 
@@ -32,10 +33,6 @@ function applyTrustAction(uuid: string, action: TrustAction): void {
     });
 }
 
-function errorReason(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 export function commandTrust(args: string[]): void {
     const action = args.length === 0 ? "status" : args[0].toLowerCase();
     if (args.length > 1 || (action !== "status" && action !== "on" && action !== "off")) {
@@ -57,5 +54,5 @@ export function commandTrust(args: string[]): void {
             applyTrustAction(uuid, action);
         },
         { disabled: true }
-    ).catch((error: unknown) => trustFailure(errorReason(error)));
+    ).catch((error: unknown) => trustFailure(errorMessage(error)));
 }

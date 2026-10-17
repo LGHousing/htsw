@@ -48,6 +48,7 @@ import {
     type ApplicationProgress,
     type ApplicationStep,
 } from "../import/applicationProgress";
+import { errorMessage } from "../../utils/helpers";
 
 export type FunctionImportPlan = {
     kind: "FUNCTION";
@@ -237,7 +238,7 @@ async function functionImportStep<T>(label: string, run: () => Promise<T>): Prom
     try {
         return await run();
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }
 }

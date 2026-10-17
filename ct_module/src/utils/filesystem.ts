@@ -110,15 +110,46 @@ function tryFilesystemMove(move: () => void): boolean {
     }
 }
 
-export function getFileMtimeMs(path: string): number {
+// Cache the type lookups: getMtimeMs is called in tight loops (mtime
+// watcher, parse-cache fingerprint check) over hundreds of files, and
+// `Java.type` is not free.
+let _Paths: HtswJavaPathsClass | null = null;
+let _Files: HtswJavaFilesClass | null = null;
+
+function nioPath(path: string): HtswJavaPath {
+    if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
+    return _Paths.get(runtimeString(path));
+}
+
+function nioFiles(): HtswJavaFilesClass {
+    if (_Files === null) _Files = javaType("java.nio.file.Files");
+    return _Files;
+}
+
+/** Last-modified time in ms, or 0 when the file is missing or unreadable. */
+export function getMtimeMs(path: string): number {
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        return Number(
-            Files.getLastModifiedTime(Paths.get(runtimeString(path))).toMillis()
-        );
+        return Number(nioFiles().getLastModifiedTime(nioPath(path)).toMillis());
     } catch (_e) {
-        return -1;
+        return 0;
+    }
+}
+
+// FileLib.exists resolves relative to the CT modules dir, so it can't check
+// absolute paths; go through java.nio instead.
+export function pathExists(path: string): boolean {
+    try {
+        return nioFiles().exists(nioPath(path));
+    } catch (_e) {
+        return false;
+    }
+}
+
+export function isDirectory(path: string): boolean {
+    try {
+        return nioFiles().isDirectory(nioPath(path));
+    } catch (_e) {
+        return false;
     }
 }
 
@@ -173,32 +204,4 @@ function countRecursive(Files: HtswJavaFilesClass, p: HtswJavaPath): number {
         try { stream.close(); } catch (_e) { /* ignore */ }
     }
     return n;
-}
-
-export function encodeFilesystemComponent(
-    value: string,
-    options: { escapeDots?: boolean } = {}
-): string {
-    let out = "";
-    for (let i = 0; i < value.length; i++) {
-        const ch = value.charAt(i);
-        const code = value.charCodeAt(i);
-        const safe =
-            (code >= 0x30 && code <= 0x39) ||
-            (code >= 0x41 && code <= 0x5a) ||
-            (code >= 0x61 && code <= 0x7a) ||
-            ch === "-" ||
-            ch === "_" ||
-            (ch === "." && options.escapeDots !== true);
-
-        if (safe) {
-            out += ch;
-        } else {
-            // ES5 lib: no String.prototype.padStart in ChatTriggers.
-            let hex = code.toString(16);
-            while (hex.length < 4) hex = "0" + hex;
-            out += "_" + hex;
-        }
-    }
-    return out;
 }

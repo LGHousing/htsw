@@ -1,5 +1,7 @@
 import type { Importable } from "htsw/types";
 
+import { parentDir } from "htsw-editor-common/project";
+
 import { atomicWriteText } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
@@ -43,14 +45,6 @@ export type HouseLock = {
     contentHashVersion?: number;
     importables: Record<string, HouseLockEntry>;
 };
-
-function parentDir(path: string): string {
-    const norm = path.split("\\").join("/");
-    const slash = norm.lastIndexOf("/");
-    if (slash < 0) return ".";
-    if (slash === 0) return "/";
-    return norm.substring(0, slash);
-}
 
 export function houseLockPathForImportJson(importJsonPath: string): string {
     return `${parentDir(importJsonPath)}/${HOUSE_LOCK_FILE}`;

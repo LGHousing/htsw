@@ -12,6 +12,7 @@ import { getItemFromNbt, getItemFromSnbt, itemWithInteractData } from "../../uti
 import { runHousingSyncTask } from "../taskRunner";
 import { injectIntoInventorySlot } from "./heldItem";
 import { readInventorySlot } from "./playerInventory";
+import { errorMessage } from "../../utils/helpers";
 
 const INVENTORY_SIZE = 36;
 
@@ -106,7 +107,7 @@ export function giveItemsInBackground(
             if (summary !== undefined) onDone(summary);
         })
         .catch((error: unknown) => {
-            onError(error instanceof Error ? error.message : String(error));
+            onError(errorMessage(error));
         });
     return true;
 }
@@ -145,7 +146,7 @@ export async function giveItems(
                 stopped: {
                     kind: "error",
                     label,
-                    message: error instanceof Error ? error.message : String(error),
+                    message: errorMessage(error),
                 },
             };
         }

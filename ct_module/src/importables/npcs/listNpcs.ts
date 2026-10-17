@@ -11,7 +11,12 @@ import {
 } from "../../housingSync/menus/paginatedList";
 import TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
-import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
+import {
+    normalizeFormattingCodes,
+    removedFormatting,
+    stripTooltipDebugSuffix,
+} from "../../utils/helpers";
+import { npcPosIdentity } from "htsw-editor-common/project";
 import { teleportSucceeded } from "../waiters";
 import { itemLore } from "../../utils/itemLore";
 
@@ -34,18 +39,8 @@ export function createNpcLookupCache(): NpcLookupCache {
     return { entriesByPos: new Map() };
 }
 
-function npcPosIdentity(pos: Pos): string {
-    return `${pos.x},${pos.y},${pos.z}`;
-}
-
 export function npcLabel(entry: { name: string; pos: Pos }): string {
     return `${removedFormatting(entry.name)} @ ${npcPosIdentity(entry.pos)}`;
-}
-
-function stripTooltipDebugSuffix(name: string): string {
-    return name
-        .replace(/\s*(?:&[0-9a-fklmnor])*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/i, "")
-        .trim();
 }
 
 function extractNpcName(rawDisplayName: string): string | null {

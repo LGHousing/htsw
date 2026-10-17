@@ -9,7 +9,6 @@ import type {
     SpanTable,
 } from "htsw";
 
-import { getMtimeMs, pathExists } from "../lib/java";
 import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
@@ -33,6 +32,8 @@ import {
 } from "../../diagnostics/spans";
 import { ActionListPath, ActionPath } from "../../housingSync/actionPath";
 import { BoundedMap } from "../lib/boundedLruMap";
+import { getMtimeMs, pathExists } from "../../utils/filesystem";
+import { splitTokensAtSpans } from "./tokenMarks";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
@@ -166,50 +167,26 @@ export function tokensWithDiagnosticSpans(
     tokens: readonly TokenSpan[],
     spans: readonly DiagnosticLineSpan[]
 ): TokenSpan[] {
-    if (spans.length === 0) return tokens.slice();
-    const out: TokenSpan[] = [];
-    let tokenStart = 0;
-    for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
-        const tokenEnd = tokenStart + token.text.length;
-        const cuts = [tokenStart, tokenEnd];
-        for (let j = 0; j < spans.length; j++) {
-            const span = spans[j];
-            if (span.startColumn > tokenStart && span.startColumn < tokenEnd)
-                cuts.push(span.startColumn);
-            if (span.endColumn > tokenStart && span.endColumn < tokenEnd)
-                cuts.push(span.endColumn);
+    return splitTokensAtSpans(tokens, spans, (token, text, start, end) => {
+        let winner: DiagnosticLineSpan | undefined;
+        for (let k = 0; k < spans.length; k++) {
+            const span = spans[k];
+            if (span.startColumn >= end || span.endColumn <= start) continue;
+            if (winner === undefined || spanWins(span, winner)) winner = span;
         }
-        cuts.sort((a, b) => a - b);
-        const uniqueCuts: number[] = [];
-        for (let j = 0; j < cuts.length; j++) {
-            if (j === 0 || cuts[j] !== cuts[j - 1]) uniqueCuts.push(cuts[j]);
-        }
-        for (let j = 0; j < uniqueCuts.length - 1; j++) {
-            const start = uniqueCuts[j];
-            const end = uniqueCuts[j + 1];
-            let winner: DiagnosticLineSpan | undefined;
-            for (let k = 0; k < spans.length; k++) {
-                const span = spans[k];
-                if (span.startColumn >= end || span.endColumn <= start) continue;
-                if (winner === undefined || spanWins(span, winner)) winner = span;
-            }
-            out.push({
-                text: token.text.substring(start - tokenStart, end - tokenStart),
-                color: token.color,
-                fieldProp: token.fieldProp,
-                linkTarget: token.linkTarget,
-                underlineColor:
-                    winner === undefined
-                        ? undefined
-                        : winner.kind === "secondary"
-                          ? DIAG_SECONDARY
-                          : DIAG_UNDERLINE[winner.level],
-            });
-        }
-        tokenStart = tokenEnd;
-    }
-    return out;
+        return {
+            text,
+            color: token.color,
+            fieldProp: token.fieldProp,
+            linkTarget: token.linkTarget,
+            underlineColor:
+                winner === undefined
+                    ? undefined
+                    : winner.kind === "secondary"
+                      ? DIAG_SECONDARY
+                      : DIAG_UNDERLINE[winner.level],
+        };
+    });
 }
 
 function decorateLineDiagnostics(

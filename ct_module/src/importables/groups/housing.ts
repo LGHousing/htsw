@@ -10,17 +10,22 @@ import {
 import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait";
 import type TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { plainItemName, removedFormatting } from "../../utils/helpers";
 import { itemLore } from "../../utils/itemLore";
+import {
+    CHANGE_COLOR_SLOT,
+    CHANGE_TAG_SLOT,
+    pickColor,
+    readColorValue,
+    readEnabledDisabled,
+    readLabeledLoreValue,
+    readTagValue,
+} from "../teamGroupMenus";
 
-const CHANGE_TAG_SLOT = "Change Tag";
-const CHANGE_COLOR_SLOT = "Change Color";
 const CHANGE_PRIORITY_SLOT = "Change Priority";
 const EDIT_PERMISSIONS_SLOT = "Edit Permissions";
 
-const CURRENT_TAG_LABEL = "Current Tag:";
 const TAG_IN_CHAT_LABEL = "Tag Shows in Chat:";
-const CURRENT_COLOR_LABEL = "Current Color:";
 const CURRENT_PRIORITY_LABEL = "Current Priority:";
 
 export type GroupSettings = {
@@ -29,54 +34,6 @@ export type GroupSettings = {
     color: string | null;
     priority: number | null;
 };
-
-function stripTooltipDebugSuffix(name: string): string {
-    return name.replace(/\s*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/, "").trim();
-}
-
-// Housing renders a group field as a single "Label: value" lore line
-// ("Current Tag: [GUEST]", "Current Color: Gray", "Tag Shows in Chat:
-// Disabled"); a value on the following line is tolerated too.
-function readLabeledLoreValue(slot: ItemSlot, label: string): string | null {
-    const lore = itemLore(slot.getItem());
-    for (let i = 0; i < lore.length; i++) {
-        const line = removedFormatting(lore[i]).trim();
-        if (line.indexOf(label) !== 0) continue;
-        const inline = line.substring(label.length).trim();
-        if (inline.length > 0) return inline;
-        if (i + 1 < lore.length) {
-            const next = removedFormatting(lore[i + 1]).trim();
-            if (next.length > 0) return next;
-        }
-        return null;
-    }
-    return null;
-}
-
-// Housing displays a group tag wrapped in brackets ("Current Tag: [GUEST]") but
-// stores and accepts the bare value; strip the wrapper for the canonical tag.
-function stripTagBrackets(value: string): string {
-    if (
-        value.length >= 2 &&
-        value.charAt(0) === "[" &&
-        value.charAt(value.length - 1) === "]"
-    ) {
-        return value.substring(1, value.length - 1);
-    }
-    return value;
-}
-
-function readTagValue(slot: ItemSlot): string | null {
-    const raw = readLabeledLoreValue(slot, CURRENT_TAG_LABEL);
-    return raw === null ? null : stripTagBrackets(raw);
-}
-
-function readEnabledDisabled(value: string | null): boolean | null {
-    if (value === null) return null;
-    if (value === "Enabled") return true;
-    if (value === "Disabled") return false;
-    return null;
-}
 
 function readPriorityValue(slot: ItemSlot): number | null {
     const raw = readLabeledLoreValue(slot, CURRENT_PRIORITY_LABEL);
@@ -95,7 +52,7 @@ export function readGroupSettings(ctx: TaskContext): GroupSettings {
             tagSlot === null
                 ? null
                 : readEnabledDisabled(readLabeledLoreValue(tagSlot, TAG_IN_CHAT_LABEL)),
-        color: colorSlot === null ? null : readLabeledLoreValue(colorSlot, CURRENT_COLOR_LABEL),
+        color: colorSlot === null ? null : readColorValue(colorSlot),
         priority: prioritySlot === null ? null : readPriorityValue(prioritySlot),
     };
 }
@@ -128,31 +85,8 @@ export async function setGroupTagShownInChat(
     verifyGroupField("tagShownInChat", value, readGroupSettings(ctx).tagShownInChat);
 }
 
-function findColorOption(ctx: TaskContext, color: string): ItemSlot | null {
-    return ctx.tryGetMenuItemSlot((slot) => {
-        const name = stripTooltipDebugSuffix(
-            removedFormatting(slot.getItem().getName()).trim()
-        );
-        return name === color;
-    });
-}
-
 export async function setGroupColor(ctx: TaskContext, color: Color): Promise<void> {
-    const slot = ctx.getMenuItemSlot(CHANGE_COLOR_SLOT);
-    if (readLabeledLoreValue(slot, CURRENT_COLOR_LABEL) === color) return;
-
-    await openSubmenu(ctx, CHANGE_COLOR_SLOT);
-    const optionSlot = findColorOption(ctx, color);
-    if (optionSlot === null) {
-        throw new Error(
-            `Could not find color "${color}" in the group color picker${menuStateDescription()}`
-        );
-    }
-    optionSlot.click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-    if (ctx.tryGetMenuItemSlot(CHANGE_COLOR_SLOT) === null) {
-        await clickGoBack(ctx);
-    }
+    await pickColor(ctx, color, "group");
     verifyGroupField("color", color, readGroupSettings(ctx).color);
 }
 
@@ -174,17 +108,13 @@ function permMatches(permission: Permission): (slot: ItemSlot) => boolean {
     const onName = `${permission}: On`;
     const offName = `${permission}: Off`;
     return (slot) => {
-        const name = stripTooltipDebugSuffix(
-            removedFormatting(slot.getItem().getName()).trim()
-        );
+        const name = plainItemName(slot.getItem().getName());
         return name === onName || name === offName;
     };
 }
 
 function readPermState(slot: ItemSlot, permission: Permission): boolean | null {
-    const name = stripTooltipDebugSuffix(
-        removedFormatting(slot.getItem().getName()).trim()
-    );
+    const name = plainItemName(slot.getItem().getName());
     if (name === `${permission}: On`) return true;
     if (name === `${permission}: Off`) return false;
     return null;
@@ -197,17 +127,13 @@ function readPermState(slot: ItemSlot, permission: Permission): boolean | null {
 const CHAT_SPEED_LABEL = "Chat";
 const DEFAULT_GAME_MODE_LABEL = "Default Game Mode";
 
-function labelPrefixMatch(label: string): (slot: ItemSlot) => boolean {
+export function labelPrefixMatch(label: string): (slot: ItemSlot) => boolean {
     const prefix = `${label}: `;
-    return (slot) => {
-        const item = slot.getItem();
-        const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
-        return name.indexOf(prefix) === 0;
-    };
+    return (slot) => plainItemName(slot.getItem().getName()).indexOf(prefix) === 0;
 }
 
-function readCycleValue(slot: ItemSlot, label: string): string {
-    const name = stripTooltipDebugSuffix(removedFormatting(slot.getItem().getName()).trim());
+export function readCycleValue(slot: ItemSlot, label: string): string {
+    const name = plainItemName(slot.getItem().getName());
     return name.substring(`${label}: `.length).trim();
 }
 
@@ -251,7 +177,7 @@ export async function readGroupPermissionMenu(
         if (slots === null) return;
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
-            const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
+            const name = plainItemName(item.getName());
             // Cycle labels are checked before the boolean parse: a chat speed of
             // "Off"/"On" makes the name "Chat: Off"/"Chat: On", which would
             // otherwise be misread as a boolean toggle named "Chat".

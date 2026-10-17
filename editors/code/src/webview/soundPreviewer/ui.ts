@@ -7,6 +7,8 @@ import type {
     SoundPreviewToHostMessage,
     SoundMode,
 } from "../protocol";
+import { escapeAttr, escapeHtml } from "../escapeHtml";
+import { errorMessage } from "../../errorMessage";
 
 type VsCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
@@ -79,7 +81,7 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initial
             ).catch((err) => {
                 state.status = {
                     kind: "error",
-                    text: err instanceof Error ? err.message : String(err),
+                    text: errorMessage(err),
                 };
                 renderStatus();
             });
@@ -347,13 +349,3 @@ function formatNumber(value: number): string {
     return Number.isFinite(value) ? value.toFixed(2) : "";
 }
 
-function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-    return escapeHtml(value).replace(/"/g, "&quot;");
-}

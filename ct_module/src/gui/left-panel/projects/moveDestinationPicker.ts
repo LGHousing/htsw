@@ -5,7 +5,7 @@ import type { Element } from "../../lib/layout";
 import { Col, Input, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { ACCENT_WARN } from "../../lib/theme";
-import { shortPath } from "../../lib/pathDisplay";
+import { dirname, shortPath } from "../../lib/pathDisplay";
 import {
     canonicalPath,
     invalidateParseCacheEntry,
@@ -40,12 +40,6 @@ const moveExpansion: Set<string> = new Set();
 let moveFilter = "";
 let moveShowSearch = false;
 let moveCtx: { entryPath: string; section: Section; identity: string } | null = null;
-
-function dirOfPath(p: string): string {
-    const s = p.split("\\").join("/");
-    const i = s.lastIndexOf("/");
-    return i < 0 ? s : s.substring(0, i);
-}
 
 function performMoveTo(destPath: string): void {
     const ctx = moveCtx;
@@ -111,7 +105,7 @@ export function openMoveDestinationPicker(
     const root = includeTreeOf(parent);
     const rootPath = canonicalPath(root.path);
     const current = canonicalPath(importableDeclaringPath(imp, parent.parse));
-    const projectDir = dirOfPath(rootPath);
+    const projectDir = dirname(rootPath);
 
     moveExpansion.clear();
     let total: number;

@@ -1,9 +1,4 @@
-import {
-    Diagnostic,
-    SourceMap,
-    parseImportablesResult,
-    type ImportablesParseResult,
-} from "htsw";
+import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 import {
     emitBridgeEvent,
@@ -39,7 +34,11 @@ import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { stripSurroundingQuotes } from "../utils/helpers";
+import {
+    blockingDiagnostics,
+    errorMessage,
+    stripSurroundingQuotes,
+} from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
@@ -55,18 +54,6 @@ import {
 function diffFailure(reason: string): void {
     rejectBridgeRun("diff", reason, "htsw_diff");
     ChatLib.chat(`[htsw] Diff failed: ${reason}`);
-}
-
-function errorReason(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
-function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
-    let count = 0;
-    for (const diagnostic of diagnostics) {
-        if (diagnostic.level === "error" || diagnostic.level === "bug") count++;
-    }
-    return count;
 }
 
 export async function readDiffImportables(
@@ -285,10 +272,10 @@ export function commandDiff(args: string[]): void {
             manifest
         );
     } catch (error) {
-        diffFailure(errorReason(error));
+        diffFailure(errorMessage(error));
         return;
     }
-    const errorCount = countBlockingDiagnostics(parsed.diagnostics);
+    const errorCount = blockingDiagnostics(parsed.diagnostics).length;
     if (errorCount > 0) {
         diffFailure(`manifest has ${errorCount} error${errorCount === 1 ? "" : "s"}`);
         return;
@@ -351,7 +338,7 @@ export function commandDiff(args: string[]): void {
                     diffPath: detailsPath,
                 });
             } catch (error) {
-                ChatLib.chat(`[htsw] Diff details not written: ${errorReason(error)}`);
+                ChatLib.chat(`[htsw] Diff details not written: ${errorMessage(error)}`);
             }
             if (adoptionLists.length > 0) {
                 const shouldAdopt =
@@ -369,7 +356,7 @@ export function commandDiff(args: string[]): void {
                             `[htsw] Adopted ${adoptionLists.length} live action list${adoptionLists.length === 1 ? "" : "s"}`
                         );
                     } catch (error) {
-                        ChatLib.chat(`[htsw] Adoption failed: ${errorReason(error)}`);
+                        ChatLib.chat(`[htsw] Adoption failed: ${errorMessage(error)}`);
                     }
                 }
             }
@@ -384,7 +371,7 @@ export function commandDiff(args: string[]): void {
             if (completed === undefined) progress.clear();
         })
         .catch((error: unknown) => {
-            const reason = errorReason(error);
+            const reason = errorMessage(error);
             progress.fail(reason);
             ChatLib.chat(`[htsw] Diff failed: ${reason}`);
         });

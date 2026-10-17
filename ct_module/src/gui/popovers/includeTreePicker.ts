@@ -9,6 +9,7 @@ import {
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
+import { basename, dirname } from "../lib/pathDisplay";
 import { canonicalPath } from "../parsing/parses";
 import { ROW_BG, ROW_HOVER_BG, caretButton } from "../left-panel/projects/rowModel";
 import type { IncludeNode } from "../left-panel/projects/includeTree";
@@ -35,18 +36,6 @@ export type PickerNode = {
     selectableCount: number;
 };
 
-function dirOfPath(p: string): string {
-    const s = p.split("\\").join("/");
-    const i = s.lastIndexOf("/");
-    return i < 0 ? s : s.substring(0, i);
-}
-
-function baseNameOf(p: string): string {
-    const s = p.split("\\").join("/");
-    const i = s.lastIndexOf("/");
-    return i < 0 ? s : s.substring(i + 1);
-}
-
 // A destination's label is its path relative to its parent node's directory
 // with a trailing import.json dropped, so a sub-include reads as "clocks"
 // instead of "functions/clocks/import.json".
@@ -61,7 +50,7 @@ function includeNodeLabel(parentDir: string, nodePath: string): string {
     ) {
         rel = rel.substring(0, rel.length - tail.length);
     } else if (rel.toLowerCase() === "import.json") {
-        rel = baseNameOf(base);
+        rel = basename(base);
     }
     return rel.length === 0 ? "import.json" : rel;
 }
@@ -73,7 +62,7 @@ export function buildPickerNode(
     disabledPath: string | null
 ): PickerNode {
     const path = canonicalPath(node.path);
-    const dir = dirOfPath(path);
+    const dir = dirname(path);
     const children: PickerNode[] = [];
     for (let i = 0; i < node.includes.length; i++) {
         children.push(buildPickerNode(node.includes[i], dir, depth + 1, disabledPath));

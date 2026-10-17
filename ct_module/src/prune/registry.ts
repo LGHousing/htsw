@@ -9,7 +9,8 @@ import { deleteNpcAtPos, listAllNpcs } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import { listAllTeamNames, deleteTeam } from "../importables/teams/listTeams";
 import { knownEventNames } from "../importables/events/listEvents";
-import { npcPosIdentity, parseNpcPosIdentity } from "../importables/identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
+import { parseNpcPosIdentity } from "../importables/identity";
 
 /**
  * How an undeclared house object stops existing. `clearActions` is for events:

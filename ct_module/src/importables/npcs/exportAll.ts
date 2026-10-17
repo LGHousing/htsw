@@ -20,7 +20,7 @@ import { exportNpcWithSharedState } from "./export";
 import { readImportableCache } from "../../importCache/cache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
-import { npcPosIdentity } from "../identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
 import { createExportItemCaptureRegistry } from "../export/projectDestination";
 import {
     createNpcLookupCache,

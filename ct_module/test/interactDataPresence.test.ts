@@ -8,7 +8,7 @@ const disk = vi.hoisted(() => ({
 
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: () => true,
-    getFileMtimeMs: (path: string) => disk.files.get(path)?.mtime ?? 0,
+    getMtimeMs: (path: string) => disk.files.get(path)?.mtime ?? 0,
 }));
 
 import { hasInteractDataCache } from "../src/importables/items/interactDataCache";

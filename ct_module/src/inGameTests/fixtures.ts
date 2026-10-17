@@ -8,6 +8,7 @@ import {
     createCoverage,
     type SuiteCoverage,
 } from "./coverage";
+import { blockingDiagnostics } from "../utils/helpers";
 
 const MODULE_ENV_PATH = "./config/ChatTriggers/modules/HTSW/.env";
 
@@ -64,15 +65,6 @@ function matchesFixtureSlice(
         fixture.id.toLowerCase().indexOf(key) >= 0 ||
         coverageMatchesSlice(fixture.coverage, key)
     );
-}
-
-function blockingDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
-    const out: Diagnostic[] = [];
-    for (let i = 0; i < diagnostics.length; i++) {
-        const diag = diagnostics[i];
-        if (diag.level === "error" || diag.level === "bug") out.push(diag);
-    }
-    return out;
 }
 
 function fixtureId(importJsonPath: string): string {

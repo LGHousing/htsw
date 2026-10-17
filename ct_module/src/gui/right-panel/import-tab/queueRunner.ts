@@ -20,11 +20,8 @@ import {
 } from "../../../importables/export/readers";
 import { listAllFunctionNames } from "../../../importables/functions/listFunctions";
 import { listAllGroupNames } from "../../../importables/groups/listGroups";
-import {
-    importableIdentity,
-    npcPosIdentity,
-    parseNpcPosIdentity,
-} from "../../../importables/identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
+import { importableIdentity, parseNpcPosIdentity } from "../../../importables/identity";
 import { listAllMenuNames } from "../../../importables/menus/listMenus";
 import { listAllNpcs } from "../../../importables/npcs/listNpcs";
 import { readProjectExportDestination } from "../../../importables/export/projectDestination";
@@ -64,6 +61,7 @@ import {
     type BulkFilter,
     type QueueOp,
 } from "./queue";
+import { errorMessage } from "../../../utils/helpers";
 
 export type QueueRunState = "idle" | "running" | "paused";
 export type QueueStartOptions = { autoRun?: boolean };
@@ -247,7 +245,7 @@ async function finishProjectRow(
         await dependencies.finishProject(ctx, row, currentHouse);
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         setQueueRowStatus(row.key, "failed", message);
         if (tally !== undefined) {
             tally.failed++;
@@ -384,7 +382,7 @@ async function drainQueueInner(
                 children = await dependencies.expandBulk(ctx, head, currentHouse);
             } catch (error) {
                 if (isTaskCancelled(error)) return "paused";
-                const message = error instanceof Error ? error.message : String(error);
+                const message = errorMessage(error);
                 setQueueRowStatus(head.key, "failed", message);
                 if (tally !== undefined) {
                     tally.failed++;
@@ -427,7 +425,7 @@ async function drainQueueInner(
                 }
                 return "paused";
             }
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             resetSessionRows(session);
             setQueueRowStatus(head.key, "failed", message);
             if (tally !== undefined) {

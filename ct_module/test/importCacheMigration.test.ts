@@ -3,7 +3,7 @@ import type { ImportableFunction } from "htsw/types";
 
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
-    getFileMtimeMs: () => 1,
+    getMtimeMs: () => 1,
 }));
 
 import { readImportableCache } from "../src/importCache/cache";

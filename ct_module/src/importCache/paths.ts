@@ -1,5 +1,5 @@
 import type { Importable } from "htsw/types";
-import { encodeFilesystemComponent } from "../utils/filesystem";
+import { encodeFilesystemComponent } from "htsw-editor-common/project";
 import { cyrb53 } from "../utils/helpers";
 
 export const IMPORT_CACHE_ROOT = "./htsw/.cache";

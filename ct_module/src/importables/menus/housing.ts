@@ -2,7 +2,7 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting, unique } from "../../utils/helpers";
+import { plainItemName, removedFormatting, unique } from "../../utils/helpers";
 import { oneOf } from "../../tasks/waiters";
 import { chatMessage } from "../../housingSync/menus/menuWaiters";
 import { menuCreated, menuSettingsOpened } from "../waiters";
@@ -60,9 +60,7 @@ export async function setMenuSize(ctx: TaskContext, rows: number): Promise<void>
     await timedWaitForMenu(ctx, "menuClickWait");
 
     const target = ctx.getItemSlot((s) => {
-        const name = removedFormatting(s.getItem().getName())
-            .replace(/\s*\(#[^)]*\)\s*$/, "")
-            .trim();
+        const name = plainItemName(s.getItem().getName());
         return name === `${rows} Rows` || name === `${rows} Row`;
     });
     target.click(MouseButton.LEFT);

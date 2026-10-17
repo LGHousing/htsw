@@ -13,6 +13,7 @@ import { getParseAt } from "../../parsing/parses";
 import { importableHash } from "../../../importCache/hash";
 import { seedImportableHash } from "../../../importCache/status";
 import { importableIdentity } from "../../../importables/identity";
+import { SECTION_BY_TYPE } from "./rowModel";
 
 let editingValue = "";
 let editingX = "";
@@ -27,21 +28,6 @@ let editingToZ = "";
 let editingFor = "";
 
 const MAX_SUGGESTIONS = 6;
-
-function sectionForType(type: Importable["type"]): Section | null {
-    switch (type) {
-        case "FUNCTION": return "functions";
-        case "EVENT": return "events";
-        case "REGION": return "regions";
-        case "ITEM": return "items";
-        case "MENU": return "menus";
-        case "TEAM": return "teams";
-        case "GROUP": return "groups";
-        case "COMMAND": return "commands";
-        case "NPC": return "npcs";
-    }
-    return null;
-}
 
 const SECTION_TYPE: Partial<{ [k in Section]: Importable["type"] }> = {
     functions: "FUNCTION", events: "EVENT", regions: "REGION",
@@ -179,8 +165,8 @@ function parsePos(x: string, y: string, z: string): Pos | null {
 }
 
 function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
-    const section = sectionForType(imp.type);
-    if (section === null) return;
+    const section = SECTION_BY_TYPE[imp.type];
+    if (section === undefined) return;
     const identity = identityOf(imp);
 
     let value: unknown;

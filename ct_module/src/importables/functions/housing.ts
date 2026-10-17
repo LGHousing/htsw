@@ -16,7 +16,7 @@ import {
 } from "../../housingSync/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting, unique } from "../../utils/helpers";
+import { errorMessage, removedFormatting, unique } from "../../utils/helpers";
 import { oneOf } from "../../tasks/waiters";
 import { chatMessage } from "../../housingSync/menus/menuWaiters";
 import { functionActionEditorOpened } from "../waiters";
@@ -36,23 +36,6 @@ import type {
     ObservedFunctionSettings,
 } from "./settings";
 import { itemLore } from "../../utils/itemLore";
-
-export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
-    const trimmed = rawDisplayName.trim();
-    if (trimmed.length === 0) return null;
-    const lower = trimmed.toLowerCase();
-    if (
-        lower === "go back" ||
-        lower === "close" ||
-        lower === "create function" ||
-        lower.indexOf("previous page") >= 0 ||
-        lower.indexOf("next page") >= 0
-    ) {
-        return null;
-    }
-    const m = trimmed.match(/^(.+?)\s*\(#\d+\)\s*$/);
-    return m !== null ? m[1] : trimmed;
-}
 
 export async function openFunctionEditor(
     ctx: TaskContext,
@@ -223,7 +206,7 @@ async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Pr
     try {
         return await run();
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }
 }

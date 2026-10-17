@@ -10,9 +10,9 @@ import {
     type PaginatedListConfig,
 } from "../../housingSync/menus/paginatedList";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { plainItemName } from "../../utils/helpers";
 import type { Color } from "htsw/types";
-import { teamGroupColorFromDisplayName } from "../teamGroupColor";
+import { teamGroupColorFromDisplayName } from "../teamGroupMenus";
 
 const TEAM_LIST_CONFIG: PaginatedListConfig = {
     label: "team",
@@ -33,12 +33,8 @@ const TEAM_LIST_CONTROLS = new Set([
     "close",
 ]);
 
-function stripTooltipDebugSuffix(name: string): string {
-    return name.replace(/\s*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/, "").trim();
-}
-
 function teamNameFromSlotName(rawDisplayName: string): string | null {
-    const name = stripTooltipDebugSuffix(removedFormatting(rawDisplayName).trim());
+    const name = plainItemName(rawDisplayName);
     if (name.length === 0) return null;
     if (TEAM_LIST_CONTROLS.has(name.toLowerCase())) return null;
     return name;

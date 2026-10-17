@@ -9,6 +9,7 @@ import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
 import { compactFileLabel } from "./gui/lib/pathDisplay";
 import { emitBridgeEvent, rejectBridgeRun } from "./bridge/status";
+import { blockingDiagnostics } from "./utils/helpers";
 
 export function appendRawHtslFile(path: string): void {
     if (TaskManager.isBusy()) {
@@ -23,9 +24,7 @@ export function appendRawHtslFile(path: string): void {
     const result = parseActionsResult(sm, path);
     printDiagnostics(sm, result.diagnostics);
 
-    const errCount = result.diagnostics.filter(
-        (diagnostic) => diagnostic.level === "error" || diagnostic.level === "bug"
-    ).length;
+    const errCount = blockingDiagnostics(result.diagnostics).length;
     if (errCount > 0) {
         rejectBridgeRun("import", "parse_errors", "htsw_raw_import");
         printDiagnostic(

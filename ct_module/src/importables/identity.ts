@@ -1,8 +1,5 @@
 import type { Importable, Pos } from "htsw/types";
-
-export function npcPosIdentity(pos: Pos): string {
-    return `${pos.x},${pos.y},${pos.z}`;
-}
+import { npcPosIdentity } from "htsw-editor-common/project";
 
 export function parseNpcPosIdentity(identity: string): Pos {
     const parts = identity.split(",");

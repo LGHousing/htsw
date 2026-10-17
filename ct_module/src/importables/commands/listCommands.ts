@@ -5,7 +5,7 @@ import {
     readPaginatedList,
     type PaginatedListConfig,
 } from "../../housingSync/menus/paginatedList";
-import { removedFormatting } from "../../utils/helpers";
+import { removedFormatting, stripTooltipDebugSuffix } from "../../utils/helpers";
 
 const COMMAND_LIST_CONFIG: PaginatedListConfig = {
     label: "command",
@@ -38,9 +38,7 @@ export async function getSessionCommandNamesLower(ctx: TaskContext): Promise<Set
 export function extractCommandNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
     if (trimmed.length === 0 || trimmed.charAt(0) !== "/") return null;
-    const withoutSlash = trimmed.substring(1);
-    const m = withoutSlash.match(/^(.+?)\s*\(#[0-9a-fA-F]+\)\s*$/);
-    return m !== null ? m[1] : withoutSlash;
+    return stripTooltipDebugSuffix(trimmed.substring(1));
 }
 
 export async function listAllCommandNames(ctx: TaskContext): Promise<string[]> {

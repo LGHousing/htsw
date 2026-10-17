@@ -20,6 +20,7 @@ import type {
     ItemEditorToHostMessage,
     ProjectFromHostMessage,
 } from "./protocol";
+import { errorMessage } from "../errorMessage";
 
 type CreatedItem = {
     files: string[];
@@ -67,7 +68,7 @@ async function createItemImportJson(
             createdPath,
         } satisfies ItemEditorFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "itemImportJsonCreated" } satisfies ItemEditorFromHostMessage);
         void vscode.window.showWarningMessage(`Could not create import.json: ${error}`);
     }
@@ -101,7 +102,7 @@ async function saveItem(webview: vscode.Webview, snbtPath: string, tag: unknown)
 
         await webview.postMessage({ type: "saveResult", ok: true, snbtPath } satisfies ItemEditorFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "saveResult", ok: false, error } satisfies ItemEditorFromHostMessage);
         void vscode.window.showWarningMessage(`Could not save item: ${error}`);
     }
@@ -123,7 +124,7 @@ async function submitItem(webview: vscode.Webview, form: ItemEditorForm, tag: un
         } satisfies ProjectFromHostMessage);
         await openGeneratedItem(created.files);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "submitResult", ok: false, error } satisfies ItemEditorFromHostMessage);
         void vscode.window.showWarningMessage(`Could not add item: ${error}`);
     }

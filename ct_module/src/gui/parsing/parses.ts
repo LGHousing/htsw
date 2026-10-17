@@ -12,7 +12,6 @@ import {
     invalidateItemDependencyIndex,
 } from "../../importables/items/dependencyIndex";
 import { recordHouseBinding } from "../../importCache/houseBindings";
-import { getMtimeMs } from "../lib/java";
 import {
     diffSnapshotFingerprint,
     loadSnapshot,
@@ -40,6 +39,7 @@ import { BoundedMap } from "../lib/boundedLruMap";
 import { span } from "../../perf/spans";
 import { runOnMainThread } from "../../utils/mainThread";
 import { resolveCanonicalPath, resolveCanonicalPaths } from "./realPath";
+import { getMtimeMs } from "../../utils/filesystem";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show

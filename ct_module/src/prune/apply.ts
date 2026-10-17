@@ -13,6 +13,7 @@ import { pruneTypeOf } from "./registry";
 import { describeTarget } from "./report";
 import { writePruneRecord, type PruneRecordEntry } from "./record";
 import type { PruneTarget } from "./types";
+import { errorMessage } from "../utils/helpers";
 
 export type PruneApplyRequest = {
     manifestPath: string;
@@ -251,6 +252,3 @@ export function formatPruneApplyResult(result: PruneApplyResult): string[] {
     return lines;
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}

@@ -905,11 +905,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
             label: "Rename",
             icon: Icons.pencil,
             onClick: () => {
-                openRenameImportablePopover(
-                    { x: 0, y: 0, w: 0, h: 0 },
-                    parent.fullPath,
-                    imp
-                );
+                openRenameImportablePopover(parent.fullPath, imp);
             },
         },
         // Offered even in a project with no includes yet — the picker's

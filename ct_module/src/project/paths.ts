@@ -3,9 +3,7 @@ import {
     commandExportReferencesExist as commandExportReferencesExistWithFs,
     eventExportReferencesExist as eventExportReferencesExistWithFs,
     functionExportReferencesExist as functionExportReferencesExistWithFs,
-    htslTargetForCommandExport as htslTargetForCommandExportWithFs,
-    htslTargetForEventExport as htslTargetForEventExportWithFs,
-    htslTargetForFunctionExport as htslTargetForFunctionExportWithFs,
+    htslTargetForExport as htslTargetForExportWithFs,
     htslTargetsForRegionExport as htslTargetsForRegionExportWithFs,
     htslTargetsForNpcExport as htslTargetsForNpcExportWithFs,
     importJsonTargetForSectionEntry as importJsonTargetForSectionEntryWithFs,
@@ -192,42 +190,16 @@ export function regionExportReferencesExist(
     return regionExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
 }
 
-export function htslTargetForFunctionExport(
+export function htslTargetForExport(
+    section: "functions" | "events" | "commands",
     entryImportJsonPath: string,
     identity: string,
     preferredNewTargetImportJson?: string
 ): HtslExportTarget {
-    return htslTargetForFunctionExportWithFs(
+    return htslTargetForExportWithFs(
         ctProjectFs,
         entryImportJsonPath,
-        identity,
-        preferredNewTargetImportJson,
-        exportSectionFolderResolver
-    );
-}
-
-export function htslTargetForEventExport(
-    entryImportJsonPath: string,
-    identity: string,
-    preferredNewTargetImportJson?: string
-): HtslExportTarget {
-    return htslTargetForEventExportWithFs(
-        ctProjectFs,
-        entryImportJsonPath,
-        identity,
-        preferredNewTargetImportJson,
-        exportSectionFolderResolver
-    );
-}
-
-export function htslTargetForCommandExport(
-    entryImportJsonPath: string,
-    identity: string,
-    preferredNewTargetImportJson?: string
-): HtslExportTarget {
-    return htslTargetForCommandExportWithFs(
-        ctProjectFs,
-        entryImportJsonPath,
+        section,
         identity,
         preferredNewTargetImportJson,
         exportSectionFolderResolver

@@ -12,7 +12,7 @@ import { TaskManager } from "../tasks/manager";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 import { ensureParentDirs } from "../utils/filesystem";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { stripSurroundingQuotes } from "../utils/helpers";
+import { blockingDiagnostics, stripSurroundingQuotes } from "../utils/helpers";
 import {
     buildCacheReportRows,
     deriveCacheReportCounts,
@@ -40,9 +40,7 @@ export function commandCacheReport(args: string[]): void {
     const sourceMap = new SourceMap(new FileSystemFileLoader());
     const parsed = parseImportablesResult(sourceMap, importJsonPath);
     printDiagnostics(sourceMap, parsed.diagnostics);
-    const blocking = parsed.diagnostics.filter(
-        (diagnostic) => diagnostic.level === "error" || diagnostic.level === "bug"
-    );
+    const blocking = blockingDiagnostics(parsed.diagnostics);
     if (blocking.length > 0) {
         printDiagnostic(
             sourceMap,

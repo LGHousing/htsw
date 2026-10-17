@@ -39,8 +39,8 @@ import {
 import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { ensureParentDirs } from "../../utils/filesystem";
-import { getMtimeMs, runtimeString, type RuntimeString } from "../lib/java";
+import { ensureParentDirs, getMtimeMs } from "../../utils/filesystem";
+import { runtimeString, type RuntimeString } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";

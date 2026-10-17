@@ -13,6 +13,7 @@ import { openFileBrowserWithHtslDestination } from "../popovers/file-browser";
 import { showToast } from "../toast";
 import { StandaloneItemCaptures } from "./standaloneItemCaptures";
 import { emitBridgeEvent, rejectBridgeRun } from "../../bridge/status";
+import { blockingDiagnostics } from "../../utils/helpers";
 
 function standaloneHtsl(actions: readonly htsw.types.Action[]): string {
     const printed = htsw.htsl.printActionsWithDiagnostics(actions);
@@ -26,9 +27,7 @@ function standaloneHtsl(actions: readonly htsw.types.Action[]): string {
         new htsw.SourceMap(new StringFileLoader(printed.source)),
         "open-action-list.htsl"
     );
-    const errors = parsed.diagnostics.filter(
-        (diagnostic) => diagnostic.level === "error" || diagnostic.level === "bug"
-    );
+    const errors = blockingDiagnostics(parsed.diagnostics);
     if (errors.length > 0) {
         throw new Error(
             `Printed HTSL did not parse cleanly: ${errors.map((error) => error.message).join("; ")}`

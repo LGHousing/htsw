@@ -20,6 +20,7 @@ import {
 } from "./registry";
 import { detectRenames, type PruneRename } from "./rename";
 import { emptyPrunePlan, type PrunePlan, type PruneTarget } from "./types";
+import { errorMessage } from "../utils/helpers";
 
 export type PruneScanRequest = {
     /**
@@ -261,6 +262,3 @@ export function vanishedWork(
     return { plan, renames };
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}

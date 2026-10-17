@@ -88,6 +88,7 @@ import {
     diffDetailsReportForImportConflicts,
     writeDiffDetailsFile,
 } from "../../housingSync/actions/diffDetails";
+import { errorMessage } from "../../utils/helpers";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -136,7 +137,7 @@ function toImportDiagnostic(
 ): Diagnostic {
     if (error instanceof Diagnostic) return error;
     const verb = phase === "read" ? "read" : "import";
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return Diagnostic.error(`Failed to ${verb} ${type}: ${message}`);
 }
 
@@ -908,7 +909,7 @@ function writeImportConflictDiff(
         );
         return path;
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = errorMessage(error);
         ctx.displayMessage(
             `&e[htsw] Housing conflict detected, but the diff file could not be saved: ${reason}`
         );

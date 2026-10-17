@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-    htslTargetForFunctionExport,
+    htslTargetForExport,
     htslTargetsForNpcExport,
     htslTargetsForRegionExport,
     moveImportableEntry,
@@ -55,7 +55,7 @@ describe("HTSL export targets", () => {
             "/project/Guide_1_64_-2_right.htsl": "chat \"old right\"\n",
         });
 
-        expect(htslTargetForFunctionExport(fs, "/project/import.json", "Clock").htslReference)
+        expect(htslTargetForExport(fs, "/project/import.json", "functions", "Clock").htslReference)
             .toBe("Clock_2.htsl");
         const region = htslTargetsForRegionExport(fs, "/project/import.json", "Spawn");
         expect(region.onEnter.htslReference).toBe("Spawn_enter_2.htsl");

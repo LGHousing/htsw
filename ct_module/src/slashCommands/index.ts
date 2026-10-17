@@ -1,7 +1,12 @@
 import { SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 import { normalizePathSeparators } from "htsw-editor-common/project";
 
-import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
+import {
+    blockingDiagnostics,
+    chatSeparator,
+    errorMessage,
+    stripSurroundingQuotes,
+} from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 import { recompile } from "./recompile";
@@ -461,7 +466,7 @@ function commandCodeViewTrace(args: string[]): void {
     } catch (error) {
         ChatLib.chat(
             `&c[htsw] import CodeView replay failed: ` +
-                (error instanceof Error ? error.message : String(error))
+                (errorMessage(error))
         );
     }
 }
@@ -903,7 +908,7 @@ function commandSimulator(args: string[]) {
 
         printDiagnostics(sm, result.diagnostics);
 
-        const errCount = countBlockingDiagnostics(result.diagnostics);
+        const errCount = blockingDiagnostics(result.diagnostics).length;
         if (errCount > 0) {
             printDiagnostic(
                 sm,
@@ -934,6 +939,3 @@ function commandSimulator(args: string[]) {
     }
 }
 
-function countBlockingDiagnostics(diagnostics: Diagnostic[]): number {
-    return diagnostics.filter((it) => it.level === "error" || it.level === "bug").length;
-}

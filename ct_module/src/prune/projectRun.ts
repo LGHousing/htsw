@@ -1,4 +1,4 @@
-import type { Diagnostic, ImportablesParseResult } from "htsw";
+import type { ImportablesParseResult } from "htsw";
 
 import { autoTrackBoundHouse } from "../gui/autoTrackScope";
 import { parseImportJsonCurrent } from "../gui/parsing/parses";
@@ -14,6 +14,7 @@ import { confirmPrune } from "./session";
 import { pruneTypeOf } from "./registry";
 import { setTaskActivity } from "../tasks/activity";
 import { shortPath } from "../gui/lib/pathDisplay";
+import { blockingDiagnostics } from "../utils/helpers";
 
 /**
  * A project that sets `dangerouslyDeleteEverythingNotInThisFile`, parsed as it
@@ -35,7 +36,7 @@ async function readArmedProject(row: QueueRow): Promise<ArmedProject | null> {
  * fewer importables than the project has, and "not declared" reads as "delete it".
  */
 function pruneRefusal(project: ArmedProject, house: string): string | null {
-    const errors = countBlockingDiagnostics(project.parsed.diagnostics);
+    const errors = blockingDiagnostics(project.parsed.diagnostics).length;
     if (errors > 0) {
         return (
             `nothing removed: the project has ${errors} error${errors === 1 ? "" : "s"}, ` +
@@ -70,7 +71,7 @@ function otherTrackedProjectsOn(house: string, path: string): string[] {
 export function isArmedForPrune(parsed: ImportablesParseResult): boolean {
     return (
         parsed.importJson.dangerouslyDeleteEverythingNotInThisFile &&
-        countBlockingDiagnostics(parsed.diagnostics) === 0
+        blockingDiagnostics(parsed.diagnostics).length === 0
     );
 }
 
@@ -122,14 +123,6 @@ export function hasPendingRemovals(
     const pending = work.plan.targets.length > 0 || work.renames.length > 0;
     removalMemo.set(parsed, { path, revision: lockRevision, pending });
     return pending;
-}
-
-function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
-    let count = 0;
-    for (const diagnostic of diagnostics) {
-        if (diagnostic.level === "error" || diagnostic.level === "bug") count++;
-    }
-    return count;
 }
 
 /**

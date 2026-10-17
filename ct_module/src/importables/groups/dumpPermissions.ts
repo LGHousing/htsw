@@ -7,10 +7,10 @@ import {
     tryGetSlotPaginateBy,
 } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
-import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { MouseButton } from "../../tasks/specifics/slots";
+import { plainItemName, removedFormatting } from "../../utils/helpers";
 import { listAllGroupNames, openEditGroup } from "./listGroups";
-import { openGroupPermissions } from "./housing";
+import { labelPrefixMatch, openGroupPermissions, readCycleValue } from "./housing";
 import { itemLore } from "../../utils/itemLore";
 
 const REPORT_PATH = "./htsw/group-permissions.json";
@@ -30,10 +30,6 @@ type PermPageReport = {
     title: string | null;
     items: PermItemReport[];
 };
-
-function stripTooltipDebugSuffix(name: string): string {
-    return name.replace(/\s*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/, "").trim();
-}
 
 function classify(name: string, lore: string[]): PermItemReport {
     const lastColon = name.lastIndexOf(": ");
@@ -59,20 +55,6 @@ function classify(name: string, lore: string[]): PermItemReport {
     };
 }
 
-function labelPrefixMatch(label: string): (slot: ItemSlot) => boolean {
-    const prefix = `${label}: `;
-    return (slot) => {
-        const item = slot.getItem();
-        const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
-        return name.indexOf(prefix) === 0;
-    };
-}
-
-function valueForLabel(slot: ItemSlot, label: string): string {
-    const name = stripTooltipDebugSuffix(removedFormatting(slot.getItem().getName()).trim());
-    return name.substring(`${label}: `.length).trim();
-}
-
 // Discover a cycle's full value set by clicking forward until it loops back to
 // the starting value. Because the last click restores the start value, the
 // group's setting is left where it began.
@@ -80,7 +62,7 @@ async function enumerateCycle(ctx: TaskContext, label: string): Promise<string[]
     const match = labelPrefixMatch(label);
     const located = await tryGetSlotPaginateBy(ctx, match);
     if (located === null) return [];
-    const values: string[] = [valueForLabel(located, label)];
+    const values: string[] = [readCycleValue(located, label)];
     for (let i = 0; i < 25; i++) {
         const slot = ctx.tryGetMenuItemSlot(match);
         if (slot === null) break;
@@ -88,7 +70,7 @@ async function enumerateCycle(ctx: TaskContext, label: string): Promise<string[]
         await timedWaitForMenu(ctx, "menuClickWait");
         const after = ctx.tryGetMenuItemSlot(match);
         if (after === null) break;
-        const value = valueForLabel(after, label);
+        const value = readCycleValue(after, label);
         if (value === values[0]) break;
         values.push(value);
     }
@@ -101,7 +83,7 @@ function readPage(ctx: TaskContext, page: number): PermPageReport {
     if (slots !== null) {
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
-            const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
+            const name = plainItemName(item.getName());
             const rawLore = itemLore(item);
             const lore: string[] = [];
             for (let j = 0; j < rawLore.length; j++) {

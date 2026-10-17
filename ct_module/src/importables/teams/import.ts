@@ -7,10 +7,10 @@ import { listAllTeamNames, openManageTeam } from "./listTeams";
 import {
     createTeam,
     readTeamSettings,
-    setTeamColor,
     setTeamFriendlyFire,
     setTeamTag,
 } from "./housing";
+import { pickColor } from "../teamGroupMenus";
 import { COST } from "../../housingSync/progress/costs";
 import {
     defineApplicationPlan,
@@ -90,7 +90,7 @@ export async function applyImportableTeamPlan(
     }
     const color = importable.color;
     if (color !== undefined && !plan.colorHandled) {
-        await application.run("color", () => setTeamColor(ctx, color));
+        await application.run("color", () => pickColor(ctx, color, "team"));
     }
     const friendlyFire = importable.friendlyFire;
     if (friendlyFire !== undefined && !plan.friendlyFireHandled) {

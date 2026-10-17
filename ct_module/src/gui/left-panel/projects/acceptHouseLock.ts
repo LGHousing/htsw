@@ -10,6 +10,7 @@ import { parseImportJsonBlocking } from "../../parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
 import { setHouseTrust } from "../../state";
 import { showToast } from "../../toast";
+import { blockingDiagnostics } from "../../../utils/helpers";
 
 function acceptProjectLock(importJsonPath: string): void {
     if (TaskManager.isBusy()) {
@@ -26,9 +27,7 @@ function acceptProjectLock(importJsonPath: string): void {
             );
             return;
         }
-        const blocking = cached.parsed.diagnostics.filter(
-            (d) => d.level === "error" || d.level === "bug"
-        );
+        const blocking = blockingDiagnostics(cached.parsed.diagnostics);
         if (blocking.length > 0) {
             showToast(
                 `Project has ${blocking.length} blocking diagnostic${blocking.length === 1 ? "" : "s"}`,

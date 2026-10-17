@@ -13,6 +13,12 @@ import type {
     ItemDependencySnapshot,
 } from "../src/importables/items/dependencyIndex";
 
+// No Java in the test runner: report a file's mtime from the stubbed FileLib.
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
+    getMtimeMs: (path: string) => (FileLib.exists(path) ? 1 : 0),
+}));
+
 function fn(name: string, message: string): ImportableFunction {
     const actions: Action[] = [{ type: "MESSAGE", message }];
     return { type: "FUNCTION", name, actions };

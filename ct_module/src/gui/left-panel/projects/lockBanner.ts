@@ -11,7 +11,6 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { markGuiDirty } from "../../lib/dirty";
-import { getMtimeMs } from "../../lib/java";
 import { TaskManager } from "../../../tasks/manager";
 import { getHousingUuid } from "../../state";
 import {
@@ -26,6 +25,7 @@ import {
 import { houseLockCurrentEntryFor } from "../../../importCache/acceptHouseLock";
 import { confirmAcceptProjectLock } from "./acceptHouseLock";
 import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./rowModel";
+import { getMtimeMs } from "../../../utils/filesystem";
 
 // "Lock is ahead of cache": a teammate imported and pushed house.lock.json,
 // so the lock describes the project as it is on disk while this machine's

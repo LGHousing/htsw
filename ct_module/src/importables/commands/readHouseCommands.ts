@@ -12,7 +12,7 @@ import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     commandExportReferencesExist,
-    htslTargetForCommandExport,
+    htslTargetForExport,
 } from "../../project/paths";
 import {
     defineHouseExporter,
@@ -105,7 +105,8 @@ async function writeCommandResult(
     importable: ImportableCommand,
     options: ReadOptions
 ): Promise<void> {
-    const target = htslTargetForCommandExport(
+    const target = htslTargetForExport(
+        "commands",
         options.importJsonPath,
         name,
         options.newExportTargetImportJson

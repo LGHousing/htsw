@@ -12,7 +12,7 @@ import {
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
 import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
-import { atomicWriteText } from "../utils/filesystem";
+import { atomicWriteText, isDirectory } from "../utils/filesystem";
 import {
     chatSeparator,
     normalizeFormattingCodes,
@@ -75,15 +75,6 @@ function isRegularFile(path: string): boolean {
     try {
         const Files = javaType("java.nio.file.Files");
         return Files.isRegularFile(javaPath(path));
-    } catch (_e) {
-        return false;
-    }
-}
-
-function isDirectory(path: string): boolean {
-    try {
-        const Files = javaType("java.nio.file.Files");
-        return Files.isDirectory(javaPath(path));
     } catch (_e) {
         return false;
     }

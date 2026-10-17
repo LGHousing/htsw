@@ -2,6 +2,7 @@ import type TaskContext from "./context";
 import type { TaskWaiter } from "./context";
 import type { WaitForPromise } from "./specifics/waitFor";
 import { isTaskCancelled } from "./cancellation";
+import { errorMessage } from "../utils/helpers";
 
 type AnyWaiter = TaskWaiter<unknown>;
 type WaiterKey<T> = Extract<keyof T, string>;
@@ -24,10 +25,6 @@ function waiterLabel(
         labels.push(`${key}=${waiters[key].label}`);
     }
     return `${prefix} ${labels.join(", ")}`;
-}
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
 
 export function allOf<T extends Record<string, AnyWaiter>>(

@@ -3,19 +3,12 @@ import { parseCommandArgs } from "../utils/commandArgs";
 import { javaType } from "../utils/java";
 import { showInExplorer, revealInFilesLabel } from "../utils/osShell";
 import { chatLine } from "../utils/chat";
+import { pathExists } from "../utils/filesystem";
 
 const IMPLIED_EXTENSIONS = [".snbt", ".json", ".htsl"];
 
 function javaPath(path: string): HtswJavaPath {
     return javaType("java.nio.file.Paths").get(path);
-}
-
-function pathExists(path: string): boolean {
-    try {
-        return javaType("java.nio.file.Files").exists(javaPath(path));
-    } catch (_e) {
-        return false;
-    }
 }
 
 function absolutePath(path: string): string {

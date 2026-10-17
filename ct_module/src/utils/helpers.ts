@@ -1,4 +1,4 @@
-import { helpers } from "htsw";
+import { helpers, type Diagnostic } from "htsw";
 import { getMinecraft } from "./java";
 
 export function removedFormatting(str: string): string {
@@ -7,6 +7,37 @@ export function removedFormatting(str: string): string {
 
 export function normalizeFormattingCodes(str: string): string {
     return helpers.sectionToAmp(str);
+}
+
+// Advanced tooltips (F3+H) append the item id to names, e.g. "Stone (#0001)"
+// or "Wool (#0035/14)", sometimes after a color code.
+export function stripTooltipDebugSuffix(name: string): string {
+    return name
+        .replace(/\s*(?:&[0-9a-fklmnor])*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/i, "")
+        .trim();
+}
+
+/** Item name with formatting codes and the F3+H id suffix removed. */
+export function plainItemName(name: string): string {
+    return stripTooltipDebugSuffix(removedFormatting(name));
+}
+
+export function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (
+        error !== null &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+    ) {
+        return error.message;
+    }
+    return String(error);
+}
+
+/** Errors and bugs: the diagnostics that stop an import. */
+export function blockingDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
+    return diagnostics.filter((it) => it.level === "error" || it.level === "bug");
 }
 
 /**

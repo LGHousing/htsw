@@ -6,9 +6,10 @@ import { importableHash } from "../../importCache/hash";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { runOnMainThread } from "../../utils/mainThread";
 import { resolveCanonicalPaths } from "./realPath";
-import { getMtimeMs, javaType } from "../lib/java";
+import { javaType } from "../lib/java";
 import { allReferencedPaths } from "./importablePaths";
 import { saveSnapshot } from "./parseSnapshot";
+import { getMtimeMs } from "../../utils/filesystem";
 
 export type OffThreadParseResult = {
     parsed: ImportablesParseResult | null;

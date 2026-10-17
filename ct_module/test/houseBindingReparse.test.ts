@@ -32,7 +32,6 @@ function parsedProject() {
 }
 
 vi.mock("../src/gui/lib/java", () => ({
-    getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
     javaType: () => ({
         get: (path: string) => ({
             toAbsolutePath: () => ({
@@ -42,6 +41,10 @@ vi.mock("../src/gui/lib/java", () => ({
             }),
         }),
     }),
+}));
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
+    getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
 
 vi.mock("../src/gui/parsing/offThreadParse", () => ({
