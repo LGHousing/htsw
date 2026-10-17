@@ -37,6 +37,6 @@ export function createItemFieldResolver(
                     `or import it before whatever ${kind} references it.`
             );
         }
-        return itemWithInteractData(importable.nbt, interactData);
+        return itemWithInteractData(entry.nbt, interactData);
     };
 }

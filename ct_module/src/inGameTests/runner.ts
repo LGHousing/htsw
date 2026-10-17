@@ -872,8 +872,8 @@ async function clearImportedItemSlot(ctx: TaskContext): Promise<void> {
             "clearing imported test item slot",
             SET_SLOT_ACK_TIMEOUT_MS
         );
-    } catch (_e) {
-        void _e;
+    } catch {
+        // Continue cleanup even if the slot acknowledgement times out.
     }
     await ctx.waitFor("tick");
 }

@@ -262,6 +262,7 @@ type DefinitionTypes = {
     importJsonPath: string;
     htslPath: string;
     snbtPath: string;
+    itemName: string;
     functionImportable: RawFunctionImportable;
     functionIcon: RawFunctionIcon;
     eventImportable: RawEventImportable;
@@ -337,6 +338,9 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
     importJsonPath: string({ pattern: "\\.?[iI][mM][pP][oO][rR][tT]\\.json$" }),
     htslPath: string({ pattern: "\\.htsl$" }),
     snbtPath: string({ pattern: "\\.snbt$" }),
+    // `@` delimits the `@<count>` stack-size suffix in an item field, so it
+    // cannot appear in a name that a field resolves against.
+    itemName: string({ pattern: "^[^@]*$" }),
     functionImportable: object<RawFunctionImportable>({
         name: required(string()),
         actions: optional(ref("htslPath")),
@@ -369,7 +373,7 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS: {
         onExitActions: optional(ref("htslPath")),
     }),
     itemImportable: object<RawItemImportable>({
-        name: required(string()),
+        name: required(ref("itemName")),
         nbt: required(ref("snbtPath")),
         leftClickActions: optional(ref("htslPath")),
         rightClickActions: optional(ref("htslPath")),
