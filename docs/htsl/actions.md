@@ -258,7 +258,9 @@ Gives the player an item.
 
 - **Item:** The item stack to give, containing up to 64 of the same item. Use an
   ITEM importable name, a [vanilla item name](../vanilla-item-names.md), or an
-  `.snbt` path relative to this HTSL file.
+  `.snbt` path relative to this HTSL file. Add an
+  [`@<count>` suffix](basic-syntax.md#stack-counts) to set the stack size, as in
+  `oak_log@8`.
 - **Allow Multiple:** A boolean flag. When disabled, if there is another item in the player's
   inventory with the exact same nbt, this action does nothing.
 - **Inventory Slot:** A selection that determines where in the player's inventory to give the item.
@@ -300,7 +302,9 @@ Removes an item from the player.
 
 - **Item:** The item stack to remove, containing up to 64 of the same item. Use
   an ITEM importable name, a [vanilla item name](../vanilla-item-names.md), or an
-  `.snbt` path relative to this HTSL file.
+  `.snbt` path relative to this HTSL file. Add an
+  [`@<count>` suffix](basic-syntax.md#stack-counts) to set the stack size, as in
+  `oak_log@8`.
 
 #### HTSL
 
@@ -857,7 +861,8 @@ Drops an item at a specific location.
 
 #### Options
 
-- **Item:** The item being dropped.
+- **Item:** The item being dropped. An
+  [`@<count>` suffix](basic-syntax.md#stack-counts) sets the stack size.
 - **Location:** A [Location](#locations). The location that the item will be spawned at.
 - **Drop Naturally:** A boolean flag. When enabled, the item will be dropped naturally in the world, having some slight randomness to its location.
 - **Prevent Item Merging:** A boolean flag. When enabled, the item will not merge with other items on the ground.

@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "name": "Token",
+      "nbt": "stone.snbt"
+    }
+  ],
+  "functions": [
+    {
+      "name": "GiveTokens",
+      "actions": "item_count_out_of_range.htsl"
+    }
+  ]
+}

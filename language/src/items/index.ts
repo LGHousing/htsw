@@ -3,7 +3,7 @@ import { Diagnostic } from "../diagnostic";
 import { parseSnbt, parseSnbtText, type Tag } from "../nbt";
 import { MINECRAFT_ITEMS, type ImportableItem } from "../types";
 
-export type ResolvedItemReference =
+export type ResolvedItemReference = (
     | {
           kind: "named";
           key: string;
@@ -22,7 +22,90 @@ export type ResolvedItemReference =
           key: string;
           id: string;
           nbt: Tag;
-      };
+      }
+) & {
+    /** The `@<count>` suffix's stack size, when the reference carried a valid one. */
+    count?: number;
+};
+
+/**
+ * Bounds for an item reference's `@<count>` suffix. A Housing item field holds
+ * a single stack, so the same 1..64 range the import.json schema already
+ * applies to a function icon's count applies here.
+ */
+export const ITEM_COUNT_MIN = 1;
+export const ITEM_COUNT_MAX = 64;
+
+export type ItemReferenceParts = {
+    /** The reference with its `@<count>` suffix removed, or the whole reference when it has none. */
+    base: string;
+    /**
+     * The suffix's stack size, present whenever a `@<digits>` suffix was found.
+     * Out-of-range values are reported here too so callers can diagnose them;
+     * check `isValidItemCount` before applying one.
+     */
+    count?: number;
+};
+
+const ITEM_COUNT_SUFFIX_RE = /^[0-9]+$/;
+
+/**
+ * Split a `name@<count>` stack-count suffix off an item reference.
+ *
+ * The suffix must be all digits, which is what keeps direct `.snbt` paths
+ * unambiguous: a path always ends in `.snbt`, so a file named `oak@8.snbt`
+ * splits to the non-numeric `8.snbt` and is left whole, while `./oak.snbt@8`
+ * splits cleanly. Declared item names cannot contain `@` at all (the
+ * import.json parser rejects it) and no vanilla id or damage-variant name
+ * does, so a numeric suffix never collides with a real name.
+ */
+export function parseItemReferenceParts(reference: string): ItemReferenceParts {
+    const at = reference.lastIndexOf("@");
+    if (at <= 0) return { base: reference };
+    const suffix = reference.slice(at + 1);
+    if (!ITEM_COUNT_SUFFIX_RE.test(suffix)) return { base: reference };
+    return { base: reference.slice(0, at), count: Number(suffix) };
+}
+
+export function isValidItemCount(count: number): boolean {
+    return (
+        Number.isInteger(count) &&
+        count >= ITEM_COUNT_MIN &&
+        count <= ITEM_COUNT_MAX
+    );
+}
+
+/**
+ * A copy of `nbt` with its stack size set to `count`. Never mutates the source
+ * tag — an item importable's `nbt` is shared by every reference that resolves
+ * to it, so a count suffix must not leak back into the declaration.
+ */
+export function withItemCount(nbt: Tag, count: number): Tag {
+    if (nbt.type !== "compound") return nbt;
+    return {
+        type: "compound",
+        value: { ...nbt.value, Count: { type: "byte", value: count } },
+    };
+}
+
+/**
+ * Re-key a resolved reference under the text that was actually written and
+ * apply its count suffix. An out-of-range count is deliberately left
+ * unapplied: `checkItems` reports it as an error, and building a stack
+ * Housing cannot hold would only turn a clear diagnostic into a confusing
+ * import.
+ */
+function withResolvedCount(
+    resolved: ResolvedItemReference | undefined,
+    key: string,
+    count: number | undefined
+): ResolvedItemReference | undefined {
+    if (resolved === undefined) return undefined;
+    if (count === undefined || !isValidItemCount(count)) {
+        return { ...resolved, key };
+    }
+    return { ...resolved, key, count, nbt: withItemCount(resolved.nbt, count) };
+}
 
 const VANILLA_ITEM_NAMES = new Set(MINECRAFT_ITEMS.map((item) => item.name));
 
@@ -87,7 +170,7 @@ export const VANILLA_VARIATION_REFERENCE_COLLISIONS: readonly string[] = (() => 
 })();
 
 export function isDirectSnbtItemReference(value: string): boolean {
-    return value.toLowerCase().endsWith(".snbt");
+    return parseItemReferenceParts(value).base.toLowerCase().endsWith(".snbt");
 }
 
 export function resolveItemReference(
@@ -96,28 +179,38 @@ export function resolveItemReference(
     ownerNode: object,
     itemName: string
 ): ResolvedItemReference | undefined {
-    const named = itemNames.get(itemName);
+    const { base, count } = parseItemReferenceParts(itemName);
+
+    const named = itemNames.get(base);
     if (named !== undefined) {
-        return {
-            kind: "named",
-            key: itemName,
-            name: named.name,
-            importable: named,
-            nbt: named.nbt,
-        };
+        return withResolvedCount(
+            {
+                kind: "named",
+                key: base,
+                name: named.name,
+                importable: named,
+                nbt: named.nbt,
+            },
+            itemName,
+            count
+        );
     }
 
-    const vanilla = resolveVanillaItemReference(itemName);
+    const vanilla = resolveVanillaItemReference(base);
     if (vanilla !== undefined) {
-        return vanilla;
+        return withResolvedCount(vanilla, itemName, count);
     }
 
-    if (!isDirectSnbtItemReference(itemName)) {
+    if (!isDirectSnbtItemReference(base)) {
         return undefined;
     }
 
-    const resolvedPath = resolveItemPathFromOwner(gcx, ownerNode, itemName);
-    return resolveDirectSnbtItemReference(gcx, itemName, resolvedPath, ownerNode);
+    const resolvedPath = resolveItemPathFromOwner(gcx, ownerNode, base);
+    return withResolvedCount(
+        resolveDirectSnbtItemReference(gcx, base, resolvedPath, ownerNode),
+        itemName,
+        count
+    );
 }
 
 export function resolveItemReferenceFromSourcePath(
@@ -126,31 +219,48 @@ export function resolveItemReferenceFromSourcePath(
     sourcePath: string,
     itemName: string
 ): ResolvedItemReference | undefined {
-    const named = itemNames.get(itemName);
+    const { base, count } = parseItemReferenceParts(itemName);
+
+    const named = itemNames.get(base);
     if (named !== undefined) {
-        return {
-            kind: "named",
-            key: itemName,
-            name: named.name,
-            importable: named,
-            nbt: named.nbt,
-        };
+        return withResolvedCount(
+            {
+                kind: "named",
+                key: base,
+                name: named.name,
+                importable: named,
+                nbt: named.nbt,
+            },
+            itemName,
+            count
+        );
     }
 
-    const vanilla = resolveVanillaItemReference(itemName);
+    const vanilla = resolveVanillaItemReference(base);
     if (vanilla !== undefined) {
-        return vanilla;
+        return withResolvedCount(vanilla, itemName, count);
     }
 
-    if (!isDirectSnbtItemReference(itemName)) {
+    if (!isDirectSnbtItemReference(base)) {
         return undefined;
     }
 
-    const resolvedPath = resolveItemPathFromSourcePath(gcx, sourcePath, itemName);
-    return resolveDirectSnbtItemReference(gcx, itemName, resolvedPath);
+    const resolvedPath = resolveItemPathFromSourcePath(gcx, sourcePath, base);
+    return withResolvedCount(
+        resolveDirectSnbtItemReference(gcx, base, resolvedPath),
+        itemName,
+        count
+    );
 }
 
 export function resolveVanillaItemReference(
+    itemName: string
+): ResolvedItemReference | undefined {
+    const { base, count } = parseItemReferenceParts(itemName);
+    return withResolvedCount(resolveVanillaBaseReference(base), itemName, count);
+}
+
+function resolveVanillaBaseReference(
     itemName: string
 ): ResolvedItemReference | undefined {
     const prefixed = itemName.startsWith("minecraft:");
@@ -230,5 +340,8 @@ export function resolveItemPathFromSourcePath(
     itemName: string
 ): string {
     const parentPath = gcx.sourceMap.fileLoader.getParentPath(sourcePath);
-    return gcx.sourceMap.fileLoader.resolvePath(parentPath, itemName);
+    return gcx.sourceMap.fileLoader.resolvePath(
+        parentPath,
+        parseItemReferenceParts(itemName).base
+    );
 }

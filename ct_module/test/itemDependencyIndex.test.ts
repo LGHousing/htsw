@@ -67,6 +67,54 @@ describe("item dependency index", () => {
         expect(invalidations.hasInvalidatedSubtree(conditional)).toBe(true);
     });
 
+    test("stack-count references share one dependency target with the item", () => {
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "stock up",
+            actions: [give("key"), give("key@8"), give("key@4")],
+        };
+
+        const dependencies = snapshot([item("key", 1), owner], owner).dependencies;
+
+        expect(dependencies).toHaveLength(1);
+        expect(dependencies[0].target).toEqual({ kind: "named", name: "key" });
+    });
+
+    test("an NBT change invalidates the fields that reference it with a count", () => {
+        const plain = give("key");
+        const stacked = give("key@8");
+        const owner: Importable = {
+            type: "FUNCTION",
+            name: "stock up",
+            actions: [plain, stacked],
+        };
+        const oldSnapshot = snapshot([item("key", 1), owner], owner);
+        const currentImportables = [item("key", 2), owner];
+        const index = createItemDependencyIndex(
+            currentImportables,
+            createProjectItemIndex(currentImportables)
+        );
+
+        const invalidations = index.invalidationsFor(owner, oldSnapshot);
+
+        expect(invalidations.isFieldInvalidated(plain, "itemName")).toBe(true);
+        expect(invalidations.isFieldInvalidated(stacked, "itemName")).toBe(true);
+    });
+
+    test("a reference's stack count does not reach the item's fingerprint", () => {
+        const dependenciesFor = (reference: string) => {
+            const owner: Importable = {
+                type: "FUNCTION",
+                name: "stock up",
+                actions: [give(reference)],
+            };
+            return snapshot([item("key", 1), owner], owner).dependencies;
+        };
+
+        expect(dependenciesFor("key@8")).toEqual(dependenciesFor("key"));
+        expect(dependenciesFor("key@4")).toEqual(dependenciesFor("key"));
+    });
+
     test("click-action fingerprints exclude the owner's NBT and include referenced NBT", () => {
         const firstKey = item("key", 1);
         const firstOwner = item("button", 1, [give("key")]);
