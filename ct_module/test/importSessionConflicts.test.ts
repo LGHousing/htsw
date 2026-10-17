@@ -81,13 +81,12 @@ import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import type { TagLike } from "../src/housingSync/items/itemTag";
 
 // @ts-expect-error Every import caller must choose conflict handling.
-const requestWithoutConflictHandling: ImportSessionRequest = {
+const _requestWithoutConflictHandling: ImportSessionRequest = {
     importables: [],
     trustMode: false,
     housingUuid: "test-house",
     sourcePath: "./project/import.json",
 };
-void requestWithoutConflictHandling;
 
 const cacheApplicationPlan = {
     steps: [{ key: "cache", kind: "work", units: 0.25 }] as const,
