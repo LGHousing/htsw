@@ -22,7 +22,6 @@ import {
     type ValueParser,
 } from "../../persistence/store";
 import { canonicalPath } from "../parsing/parses";
-import { pathExists } from "../lib/java";
 import { getImportJsonPath, setImportJsonPath } from "../state/paths";
 import { restoreSourcePaths, sourcePaths } from "../left-panel/projects/source";
 import {
@@ -55,6 +54,7 @@ import {
     type QueueRow,
     type QueueStatus,
 } from "../right-panel/import-tab/queue";
+import { pathExists } from "../../utils/filesystem";
 
 const IMPORTABLE_TYPES: readonly Importable["type"][] = [
     "FUNCTION",

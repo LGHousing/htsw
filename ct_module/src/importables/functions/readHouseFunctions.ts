@@ -12,7 +12,7 @@ import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     functionExportReferencesExist,
-    htslTargetForFunctionExport,
+    htslTargetForExport,
 } from "../../project/paths";
 import {
     defineHouseExporter,
@@ -110,7 +110,8 @@ async function writeFunctionResult(
     importable: ImportableFunction,
     options: ReadOptions
 ): Promise<void> {
-    const target = htslTargetForFunctionExport(
+    const target = htslTargetForExport(
+        "functions",
         options.importJsonPath,
         name,
         options.newExportTargetImportJson

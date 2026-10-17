@@ -53,7 +53,10 @@ import {
     getParseCacheRevision,
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
-import { readCachedActionList } from "../../importCache/actionLists";
+import {
+    menuSlotActionsPath,
+    readCachedActionList,
+} from "../../importCache/actionLists";
 import {
     actionLineRange as parsedActionLineRange,
     parseHtslFile,
@@ -218,8 +221,7 @@ function computeFor(
     if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
-    const cachedPrefix = cacheListPrefix(match, cache.importable);
-    const cachedActions = readCachedActionList(cache.importable, cachedPrefix);
+    const cachedActions = readCachedActionList(cache.importable, match.prefix);
     if (cachedActions === undefined) return null;
     const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = {
@@ -233,7 +235,7 @@ function computeFor(
     const changedItems = changedItemsByAction(match.importable, cache.itemDependencies);
     walk(
         out,
-        cachedPrefix,
+        match.prefix,
         "",
         undefined,
         sourceActions,
@@ -270,26 +272,10 @@ function changedItemsByAction(
 
 export type FileTarget = {
     importable: Importable;
-    /** Parse-side list prefix: "actions" / "onEnterActions" / ... /
-     * "slots[2].actions" (index into the PARSED menu's slots array). */
+    /** List prefix: "actions" / "onEnterActions" / ... / a menu slot's
+     * `menuSlotActionsPath`. */
     prefix: string;
-    /** For MENU slot targets: the Housing slot number. The cached menu's
-     * slots array can be ordered differently than the parsed one, so cache
-     * lookups re-locate the slot by number via `cacheListPrefix`. */
-    menuSlot?: number;
 };
-
-function cacheListPrefix(match: FileTarget, cached: Importable): string {
-    if (match.menuSlot === undefined) return match.prefix;
-    if (cached.type === "MENU") {
-        for (let i = 0; i < cached.slots.length; i++) {
-            if (cached.slots[i].slot === match.menuSlot) return `slots[${i}].actions`;
-        }
-    }
-    // Slot absent from the cached menu: every list lookup misses, so the
-    // whole source list reads as added — which is what an import would do.
-    return "slots[-1].actions";
-}
 
 // Per-(path, parse-cache revision) memo. `findFileTarget` resolves the
 // path of EVERY importable in EVERY cached parse (each through several
@@ -334,16 +320,14 @@ export function findFileTarget(
                 }
             }
             if (importable.type === "MENU") {
-                for (let s = 0; s < importable.slots.length; s++) {
-                    const slot = importable.slots[s];
+                for (const slot of importable.slots) {
                     if (
                         slot.actionsPath !== undefined &&
                         canonicalPath(slot.actionsPath) === norm
                     ) {
                         found = {
                             importable,
-                            prefix: `slots[${s}].actions`,
-                            menuSlot: slot.slot,
+                            prefix: menuSlotActionsPath(slot.slot),
                         };
                         return;
                     }

@@ -5,6 +5,7 @@ import {
     customItemTagsFromTag,
     itemFieldsFromTag,
     MAX_HOUSING_ENCHANTMENT_LEVEL,
+    trimTrailingEmptyLines,
 } from "htsw-editor-common/item/buildItemNbt";
 import { ensureMinecraftFont, renderItemPreviewInto, type ItemView } from "../mcItem/render";
 import { scrollPastNumberInputs } from "../numberInputWheel";
@@ -14,6 +15,8 @@ import type {
     ItemEditorFromHostMessage,
     ItemEditorToHostMessage,
 } from "../protocol";
+import { escapeAttr, escapeHtml } from "../escapeHtml";
+import { errorMessage } from "../../errorMessage";
 
 type VsCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
@@ -711,12 +714,6 @@ function projectSection(state: State): string {
     `;
 }
 
-function trimTrailingEmptyLines(lines: readonly string[]): string[] {
-    const out = [...lines];
-    while (out.length > 0 && out[out.length - 1] === "") out.pop();
-    return out;
-}
-
 function currentItem(state: State): MinecraftItem | undefined {
     return itemByName(state.itemName);
 }
@@ -975,13 +972,6 @@ function customTagErrors(customTags: readonly CustomTagInput[]): string[] {
     });
 }
 
-function errorMessage(error: unknown): string {
-    if (typeof error === "object" && error !== null && "message" in error) {
-        return String(error.message);
-    }
-    return String(error);
-}
-
 function bindInputIn(app: HTMLElement, id: string, handler: (value: string) => void): void {
     const input = app.querySelector(`#${id}`) as HTMLInputElement | null;
     input?.addEventListener("input", () => handler(input.value));
@@ -1027,13 +1017,3 @@ function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
-function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-    return escapeHtml(value).replace(/"/g, "&quot;");
-}

@@ -1,15 +1,13 @@
 import { createHash } from "node:crypto";
-import { createWriteStream, promises as fs } from "node:fs";
-import { get } from "node:https";
+import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { FALLBACK_SOUND_VERSIONS } from "./soundMap";
 import type { SoundMode } from "../webview/protocol";
+import { download, fetchText } from "../http";
 
 const MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const MANIFEST_FALLBACK_URL = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 const OBJECT_BASE_URL = "https://resources.download.minecraft.net";
-const REQUEST_TIMEOUT_MS = 30000;
-const MAX_REDIRECTS = 5;
 
 type VersionManifest = {
     latest: { release: string };
@@ -149,7 +147,7 @@ export async function downloadObject(hash: string, destPath: string): Promise<vo
     await fs.mkdir(path.dirname(destPath), { recursive: true });
     const tempPath = `${destPath}.${Date.now()}.tmp`;
     try {
-        const actual = await download(objectUrl(hash), tempPath);
+        const actual = await download(objectUrl(hash), tempPath, "sha1");
         if (actual.toLowerCase() !== hash.toLowerCase()) {
             throw new Error("downloaded object hash mismatch");
         }
@@ -182,75 +180,3 @@ function fetchJson<T>(url: string): Promise<T> {
     return fetchText(url).then((text) => JSON.parse(text) as T);
 }
 
-function fetchText(url: string, redirects = 0): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const req = get(url, (res) => {
-            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
-            if (redirect !== null) {
-                res.resume();
-                if (redirects >= MAX_REDIRECTS) {
-                    reject(new Error("too many redirects"));
-                    return;
-                }
-                fetchText(redirect, redirects + 1).then(resolve, reject);
-                return;
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            let body = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk) => (body += chunk));
-            res.on("end", () => resolve(body));
-        });
-        req.on("error", reject);
-        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
-            req.destroy(new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`))
-        );
-    });
-}
-
-function download(url: string, destPath: string, redirects = 0): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const req = get(url, (res) => {
-            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
-            if (redirect !== null) {
-                res.resume();
-                if (redirects >= MAX_REDIRECTS) {
-                    reject(new Error("too many redirects"));
-                    return;
-                }
-                download(redirect, destPath, redirects + 1).then(resolve, reject);
-                return;
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            const hash = createHash("sha1");
-            const file = createWriteStream(destPath);
-            res.on("data", (chunk) => hash.update(chunk));
-            res.pipe(file);
-            file.on("finish", () => file.close(() => resolve(hash.digest("hex"))));
-            file.on("error", reject);
-        });
-        req.on("error", reject);
-        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
-            req.destroy(new Error(`download timed out after ${REQUEST_TIMEOUT_MS}ms`))
-        );
-    });
-}
-
-function redirectUrl(
-    currentUrl: string,
-    statusCode: number | undefined,
-    location: string | string[] | undefined,
-): string | null {
-    if (statusCode === undefined || statusCode < 300 || statusCode >= 400) return null;
-    const next = Array.isArray(location) ? location[0] : location;
-    if (typeof next !== "string" || next.length === 0) return null;
-    return new URL(next, currentUrl).toString();
-}

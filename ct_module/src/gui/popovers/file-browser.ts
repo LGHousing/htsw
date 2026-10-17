@@ -35,6 +35,7 @@ import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { asNullableString, defineRootDoc } from "../../persistence/store";
+import { pathExists } from "../../utils/filesystem";
 
 type Entry = {
     name: string;
@@ -404,16 +405,6 @@ function openInOS(): void {
     }
 }
 
-function pathExists(path: string): boolean {
-    try {
-        const Files = javaType("java.nio.file.Files");
-        const Paths = javaType("java.nio.file.Paths");
-        return Files.exists(Paths.get(path));
-    } catch (_e) {
-        return false;
-    }
-}
-
 function newFolder(): void {
     try {
         const Files = javaType("java.nio.file.Files");
@@ -424,7 +415,7 @@ function newFolder(): void {
             const p = Paths.get(candidate);
             if (!Files.exists(p)) {
                 Files.createDirectories(p);
-                openRenameFilePopover(ZERO, candidate);
+                openRenameFilePopover(candidate);
                 return;
             }
             i++;
@@ -538,10 +529,7 @@ function fileRow(entry: Entry): Element {
                         {
                             label: "Rename",
                             onClick: () => {
-                                openRenameFilePopover(
-                                    { x: 0, y: 0, w: 0, h: 0 },
-                                    entry.fullPath
-                                );
+                                openRenameFilePopover(entry.fullPath);
                             },
                         },
                         {

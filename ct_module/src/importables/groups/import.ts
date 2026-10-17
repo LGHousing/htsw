@@ -189,8 +189,7 @@ export function groupApplicationPlan(plan: GroupImportPlan): ApplicationPlan {
             steps.push(
                 workStep(
                     "create",
-                    COST.commandInterval +
-                        COST.commandMenuWait +
+                    COST.commandMenuWait +
                         COST.menuClickWait +
                         COST.anvilInput
                 )
@@ -199,7 +198,7 @@ export function groupApplicationPlan(plan: GroupImportPlan): ApplicationPlan {
         steps.push(
             workStep(
                 "openEdit",
-                COST.commandInterval + COST.commandMenuWait + COST.menuClickWait
+                COST.commandMenuWait + COST.menuClickWait
             )
         );
         if (!plan.tagHandled) steps.push(workStep("tag", COST.chatInput));

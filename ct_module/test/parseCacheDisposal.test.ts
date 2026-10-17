@@ -32,7 +32,6 @@ function mockPath(path: string): MockPath {
 }
 
 vi.mock("../src/gui/lib/java", () => ({
-    getMtimeMs: () => 1,
     runtimeString: (value: string) => value,
     javaType: (name: string) => {
         if (name === "java.util.concurrent.ConcurrentLinkedQueue") {
@@ -60,6 +59,10 @@ vi.mock("../src/gui/lib/java", () => ({
             get: (path: string) => mockPath(path),
         };
     },
+}));
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
+    getMtimeMs: () => 1,
 }));
 
 vi.mock("../src/gui/parsing/parseSnapshot", () => ({

@@ -2,10 +2,13 @@ import { getCurrentHousingUuid } from "../importCache/housingId";
 import { getHousingUuid, setHousingUuid } from "../gui/state/housing";
 import { isHouseTrusted, setHouseTrust } from "../gui/state/trust";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
+import { emitBridgeEvent } from "../bridge/status";
+import { errorMessage } from "../utils/helpers";
 
 type TrustAction = "status" | "on" | "off";
 
 function trustFailure(reason: string): void {
+    emitBridgeEvent("htsw_setting", { setting: "trust", status: "failed", reason });
     ChatLib.chat(`[htsw] Trust change failed: ${reason}`);
 }
 
@@ -22,10 +25,12 @@ function applyTrustAction(uuid: string, action: TrustAction): void {
         return;
     }
     ChatLib.chat(`[htsw] Trust set to ${enabled ? "ON" : "OFF"} · house ${uuid}`);
-}
-
-function errorReason(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    emitBridgeEvent("htsw_setting", {
+        setting: "trust",
+        status: "completed",
+        value: enabled,
+        house: uuid,
+    });
 }
 
 export function commandTrust(args: string[]): void {
@@ -41,9 +46,13 @@ export function commandTrust(args: string[]): void {
         return;
     }
 
-    void runHousingSyncTask("import", async (ctx) => {
-        const uuid = await getCurrentHousingUuid(ctx);
-        setHousingUuid(uuid);
-        applyTrustAction(uuid, action);
-    }).catch((error: unknown) => trustFailure(errorReason(error)));
+    void runHousingSyncTask(
+        "import",
+        async (ctx) => {
+            const uuid = await getCurrentHousingUuid(ctx);
+            setHousingUuid(uuid);
+            applyTrustAction(uuid, action);
+        },
+        { disabled: true }
+    ).catch((error: unknown) => trustFailure(errorMessage(error)));
 }

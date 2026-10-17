@@ -14,6 +14,7 @@ import { openTextPromptPopover } from "../popovers/text-prompt";
 import { getNewExportTarget } from "../state/newExportTarget";
 import { showToast } from "../toast";
 import { getExportDestinationStatus } from "./destinationStatus";
+import { emitBridgeEvent } from "../../bridge/status";
 
 function menuExists(importJsonPath: string, name: string): boolean {
     const parsed = getParseAt(importJsonPath)?.parsed;
@@ -57,6 +58,7 @@ function runChestExport(
             );
         })
         .catch((error: unknown) => {
+            emitBridgeEvent("htsw_export", { status: "failed", reason: String(error) });
             showToast(`Chest export failed: ${String(error)}`, 0xffe85c5c, 8000);
         });
 }

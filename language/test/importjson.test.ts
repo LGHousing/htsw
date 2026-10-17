@@ -511,6 +511,75 @@ describe("import.json houseUuid", () => {
     });
 });
 
+describe("import.json dangerouslyDeleteEverythingNotInThisFile", () => {
+    it("defaults to disarmed", () => {
+        const result = parseImportables(caseFilePath("house_uuid"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFileSpan).toBe(null);
+    });
+
+    it("arms deletion when the entry file declares it alongside houseUuid", () => {
+        const result = parseImportables(caseFilePath("delete_everything"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(true);
+        expect(
+            result.importJson.dangerouslyDeleteEverythingNotInThisFileSpan
+        ).not.toBe(null);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("refuses to arm deletion without a bound house", () => {
+        const result = parseImportables(caseFilePath("delete_everything_unbound"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("requires `houseUuid`")
+            )
+        ).toBe(true);
+    });
+
+    it("accepts references that the manifest declares", () => {
+        const result = parseImportables(caseDirPath("delete_everything_refs"));
+
+        expect(result.diagnostics.map((d) => `${d.level}: ${d.message}`)).toEqual([]);
+    });
+
+    it("reports every reference the manifest does not declare", () => {
+        const result = parseImportables(caseDirPath("delete_everything_undeclared"));
+        const messages = result.diagnostics.map((diagnostic) => diagnostic.message);
+
+        expect(messages).toContain("Undeclared function 'Ghost'");
+        expect(messages).toContain("Undeclared menu 'OldShop'");
+        expect(messages).toContain("Undeclared team 'Blue'");
+        expect(messages).toContain("Undeclared group 'Loser'");
+        expect(messages).toContain("Undeclared region 'Attic'");
+    });
+
+    it("leaves undeclared references alone when the key is not set", () => {
+        const result = parseImportables(caseDirPath("unarmed_undeclared"));
+
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.startsWith("Undeclared ")
+            )
+        ).toBe(false);
+    });
+
+    it("ignores the key in an included file and warns that it does nothing", () => {
+        const result = parseImportables(caseDirPath("delete_everything_include"));
+
+        expect(result.importJson.dangerouslyDeleteEverythingNotInThisFile).toBe(false);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("has no effect in an included file")
+            )
+        ).toBe(true);
+    });
+});
+
 describe("import.json diagnostics readability", () => {
     it("reports unknown keys", () => {
         const result = parseImportables(caseFilePath("unknown_key"));

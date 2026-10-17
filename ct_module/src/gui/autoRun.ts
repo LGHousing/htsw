@@ -1,3 +1,4 @@
+import { emitBridgeEvent } from "../bridge/status";
 /// <reference types="../../CTAutocomplete" />
 
 import { getAutoRun, setAutoRun } from "../settings";
@@ -17,6 +18,7 @@ import {
 import { dismissToast, showToast } from "./toast";
 import { registerBadge } from "./badge";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
+import { resetArmingScans } from "../prune/projectRun";
 
 const AUTO_RUN_COLOR = 0xffe85c5c;
 const AUTO_RUN_PAUSED_COLOR = 0xffe8b45c;
@@ -25,6 +27,9 @@ let detectionLive = false;
 let debounceRevision = 0;
 let startedByAutoRun = false;
 let blockedUntilNextParse = false;
+// Importable keys, not queue keys: auto-track queues a whole project as one
+// row, and a loop is the same importables reading back as modified.
+let lastDetectedWorkKeys: string[] = [];
 let lastSuccessfulImportKeys: string[] | null = null;
 let awaitingSuccessRefresh = false;
 let runEndedListenerInstalled = false;
@@ -108,10 +113,10 @@ function autoRunEligibleRows(): QueueRow[] {
     return rows;
 }
 
-function monitorAutoRun(importKeys: readonly string[]): void {
+function monitorAutoRun(importKeys: readonly string[], workKeys: readonly string[]): void {
     setTimeout(() => {
         if (isQueueRunning()) {
-            monitorAutoRun(importKeys);
+            monitorAutoRun(importKeys, workKeys);
             return;
         }
         startedByAutoRun = false;
@@ -126,7 +131,7 @@ function monitorAutoRun(importKeys: readonly string[]): void {
                 }
             }
             awaitingSuccessRefresh = successful;
-            lastSuccessfulImportKeys = successful ? importKeys.slice() : null;
+            lastSuccessfulImportKeys = successful ? workKeys.slice() : null;
         }, 1600);
     }, 100);
 }
@@ -136,6 +141,7 @@ function runAutoQueue(): void {
     const eligible = autoRunEligibleRows();
     if (eligible.length === 0) return;
     const importKeys = queuedImportKeys(eligible);
+    const workKeys = lastDetectedWorkKeys;
     if (!startQueue({ autoRun: true })) return;
     startedByAutoRun = true;
     showToast(
@@ -143,7 +149,7 @@ function runAutoQueue(): void {
         0xff5c9ded,
         4000
     );
-    monitorAutoRun(importKeys);
+    monitorAutoRun(importKeys, workKeys);
 }
 
 /** Debounce Auto-run after any producer changes the queue. */
@@ -183,6 +189,14 @@ function disableForLoop(keys: readonly string[]): void {
     awaitingSuccessRefresh = false;
     lastSuccessfulImportKeys = null;
     const path = writeLoopAlarm(keys);
+    emitBridgeEvent("htsw_setting", {
+        setting: "auto_run",
+        value: false,
+        status: "completed",
+        reason: "import_loop",
+        path,
+        keys,
+    });
     ChatLib.chat(
         "&c&l[htsw] AUTO-RUN DISABLED — importables read back as modified immediately after importing:"
     );
@@ -206,13 +220,13 @@ export function autoRunRefresh(
     trigger: AutoTrackRefreshTrigger,
     changed: number,
     newlyQueuedChanged: number,
-    detectedWorkKeys: readonly string[],
-    _trackedSources: ReadonlySet<string>
+    detectedWorkKeys: readonly string[]
 ): void {
     if (!getAutoRun()) return;
     if (trigger === "reparse") blockedUntilNextParse = false;
 
     const detected = sortedUnique(detectedWorkKeys);
+    lastDetectedWorkKeys = detected;
     if (awaitingSuccessRefresh) {
         awaitingSuccessRefresh = false;
         if (
@@ -252,6 +266,11 @@ export function isAutoRunQueueRunning(): boolean {
 
 export function setAutoRunEnabled(enabled: boolean): void {
     setAutoRun(enabled);
+    emitBridgeEvent("htsw_setting", {
+        setting: "auto_run",
+        value: enabled,
+        status: "completed",
+    });
     if (!enabled) {
         clearDebounce();
         awaitingSuccessRefresh = false;
@@ -269,4 +288,7 @@ export function setAutoRunEnabled(enabled: boolean): void {
         "&c&l[htsw] AUTO-RUN ON &c— queued Housing work will run automatically. &f/htsw watch off &cto disable."
     );
     autoRunQueueChanged();
+    // Each project that claims its whole house is owed one full scan: the only
+    // way to find content htsw did not create, which house.lock cannot list.
+    resetArmingScans();
 }

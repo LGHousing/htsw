@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
+import * as htsw from "htsw";
 
 import { ItemCaptureRegistry } from "../src/importables/items/captureRegistry";
-import type { ImportableItem } from "htsw/types";
+import { MINECRAFT_ITEMS, type ImportableItem } from "htsw/types";
 
 const first = '{id:"minecraft:stone",tag:{ExtraAttributes:{interact_data:{version:1}}}}';
 const second = '{id:"minecraft:stone",tag:{ExtraAttributes:{interact_data:{version:2}}}}';
@@ -75,6 +76,51 @@ describe("ItemCaptureRegistry identity", () => {
 
         expect(registry.register(first, "Stone")).toBe("first");
         expect(registry.counts()).toEqual({ matched: 1, fresh: 0 });
+    });
+
+    test("suffixes a name when an on-disk file has different canonical NBT", () => {
+        const registry = new ItemCaptureRegistry("shell", {
+            existingSnbt: (name) =>
+                name === "tribes"
+                    ? '{id:"minecraft:stone",tag:{custom:2b}}'
+                    : null,
+        });
+
+        expect(registry.register(first, "Tribes")).toBe("tribes_2");
+    });
+
+    test("reuses an on-disk name with identical canonical NBT and deduplicates it", () => {
+        const registry = new ItemCaptureRegistry("shell", {
+            existingSnbt: (name) =>
+                name === "tribes"
+                    ? '{tag:{ExtraAttributes:{interact_data:{version:2}}},id:"minecraft:stone"}'
+                    : null,
+        });
+
+        expect(registry.register(first, "Tribes")).toBe("tribes");
+        expect(registry.register(second, "TRIBES")).toBe("tribes");
+        expect(registry.newEntries()).toHaveLength(1);
+    });
+
+    test("names unnamed items from their vanilla id and damage variation", () => {
+        const greenPane = MINECRAFT_ITEMS.find(
+            (entry) => entry.name === "stained_glass_pane"
+        )?.variations?.find((entry) => entry.metadata === 13);
+        expect(greenPane).toBeDefined();
+        expect(
+            htsw.items.vanillaVariationReferenceName(greenPane?.displayName ?? "")
+        ).toBe("green_stained_glass_pane");
+
+        const registry = new ItemCaptureRegistry("shell");
+        expect(
+            registry.register(
+                '{id:"minecraft:stained_glass_pane",Count:1b,Damage:13s}',
+                ""
+            )
+        ).toBe("green_stained_glass_pane");
+        expect(
+            registry.register('{id:"minecraft:skull",Count:1b,Damage:0s}', "")
+        ).toBe("skull");
     });
 });
 

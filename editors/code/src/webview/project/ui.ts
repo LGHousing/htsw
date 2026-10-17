@@ -15,6 +15,8 @@ import type {
     ProjectTextSpan,
     ProjectToHostMessage,
 } from "../protocol";
+import { escapeAttr, escapeHtml } from "../escapeHtml";
+import { errorMessage } from "../../errorMessage";
 
 export type ProjectExplorerPersistedState = {
     expanded?: string[];
@@ -1163,7 +1165,7 @@ function renderTree(state: State): string {
         pruneSelection(state);
         return rows || emptyState("No matching project entries.");
     } catch (err) {
-        return emptyState(`Failed to render tree: ${err instanceof Error ? err.message : String(err)}`);
+        return emptyState(`Failed to render tree: ${errorMessage(err)}`);
     }
 }
 
@@ -1804,17 +1806,6 @@ function gitRollupBadge(rollup?: boolean): string {
 
 function post(vscode: VsCodeApi, message: ProjectToHostMessage): void {
     vscode.postMessage(message);
-}
-
-function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-    return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
 const SVG = {

@@ -7,34 +7,38 @@ import { isAnyAutoTrackEnabled, getHousingUuid, isCurrentHouseTrusted } from "./
 import { getActiveAutoTrackSources } from "./autoTrackScope";
 import { canonicalPath, forEachCachedParse } from "./parsing/parses";
 import { cachedStatusForImportable, statusForImportableBlocking } from "./cache-status";
+import { shortPath } from "./lib/pathDisplay";
 import {
+    makeBulkQueueRow,
     makeImportableQueueRow,
     queueItemKey,
     reconcileAutoTrackedQueue,
     type QueueRow,
 } from "./right-panel/import-tab/queue";
+import { isQueueRunning } from "./right-panel/import-tab/queueRunner";
 import { onImportableCacheWarm } from "./cache-status/cacheWarm";
 import { expandImportDependencies } from "../importables/import/dependencyExpansion";
 import { importableIdentity } from "../importables/identity";
-import { showToast } from "./toast";
+import { getAutoRun } from "../settings";
+import {
+    hasPendingRemovals,
+    isArmedForPrune,
+    needsArmingScan,
+    setOnArmingScansReset,
+} from "../prune/projectRun";
 import { autoRunRefresh } from "./autoRun";
+import { span } from "../perf/spans";
 
-type ModifiedQueueOptions = {
-    blockingCacheRead?: boolean;
-};
-
-type PlannedQueueItem = {
-    item: QueueRow;
-    changed: boolean;
-    required: boolean;
-    workKey: string;
-};
-
-type ModifiedQueuePlan = {
+/**
+ * One tracked project's pending work. It queues as a single project row, whose
+ * importables are expanded when it runs, from the files as they are then.
+ */
+type ProjectPlan = {
+    row: QueueRow | null;
     changed: number;
-    required: number;
     complete: boolean;
-    items: PlannedQueueItem[];
+    /** Queue keys of the importables the row would import, dependencies included. */
+    workKeys: string[];
 };
 
 function importableStatus(
@@ -55,17 +59,13 @@ export function needsModifiedQueue(imp: Importable, blockingCacheRead = false): 
     return status === "modified" || status === "unknown";
 }
 
-function planModifiedImportables(
-    sourcePath: string,
-    parsed: ImportablesParseResult,
-    importables: readonly Importable[] = parsed.value,
-    options: ModifiedQueueOptions = {}
-): ModifiedQueuePlan {
+function planProject(sourcePath: string, parsed: ImportablesParseResult): ProjectPlan {
     const canonicalSourcePath = canonicalPath(sourcePath);
+    const house = parsed.importJson.houseUuid;
     const modified: Importable[] = [];
     let complete = true;
-    for (const imp of importables) {
-        const status = importableStatus(imp, options.blockingCacheRead ?? false);
+    for (const imp of parsed.value) {
+        const status = importableStatus(imp, false);
         if (status === null) {
             complete = false;
         } else if (status === "modified" || status === "unknown") {
@@ -76,60 +76,62 @@ function planModifiedImportables(
     const expansion =
         housingUuid === null
             ? null
-            : expandImportDependencies(parsed, modified, housingUuid, {
-                  trustMode: isCurrentHouseTrusted(),
-                  importJsonPath: canonicalSourcePath,
-              });
+            : span("autoTrack.dependencies", () =>
+                  expandImportDependencies(parsed, modified, housingUuid, {
+                      trustMode: isCurrentHouseTrusted(),
+                      importJsonPath: canonicalSourcePath,
+                  })
+              );
     const work = expansion?.importables ?? modified;
-    const required = expansion?.addedImportables ?? [];
-    const requiredKeys = new Set<string>();
-    for (const importable of required) {
-        requiredKeys.add(`${importable.type}:${importableIdentity(importable)}`);
-    }
-    const modifiedKeys = new Set<string>();
-    for (const importable of modified) {
-        modifiedKeys.add(`${importable.type}:${importableIdentity(importable)}`);
-    }
-    const items: PlannedQueueItem[] = [];
-    for (const importable of work) {
-        const identityKey = `${importable.type}:${importableIdentity(importable)}`;
-        const item = makeImportableQueueRow({
-            op: "import",
-            house: parsed.importJson.houseUuid,
-            path: canonicalSourcePath,
-            type: importable.type,
-            identity: importableIdentity(importable),
-            label: importable.type === "EVENT" ? importable.event : importable.name,
-            origin: "autotrack",
-        });
-        items.push({
-            item,
-            changed: modifiedKeys.has(identityKey),
-            required: requiredKeys.has(identityKey),
-            workKey: item.key,
-        });
-    }
-    return {
-        changed: modified.length,
-        required: required.length,
-        complete,
-        items,
-    };
+    const workKeys = work.map(
+        (importable) =>
+            makeImportableQueueRow({
+                op: "import",
+                house,
+                path: canonicalSourcePath,
+                type: importable.type,
+                identity: importableIdentity(importable),
+            }).key
+    );
+
+    // A project that claims its whole house also has work when a save only
+    // removed declarations, and once per auto-run session for its full scan.
+    const removals =
+        isArmedForPrune(parsed) &&
+        ((getAutoRun() && needsArmingScan(canonicalSourcePath)) ||
+            span("autoTrack.pendingRemovals", () =>
+                hasPendingRemovals(canonicalSourcePath, parsed)
+            ));
+    const row =
+        work.length > 0 || removals
+            ? makeBulkQueueRow({
+                  op: "import",
+                  house,
+                  path: canonicalSourcePath,
+                  scope: { kind: "file", path: canonicalSourcePath },
+                  filter: "modified",
+                  label: `Import ${shortPath(canonicalSourcePath)}`,
+                  origin: "autotrack",
+              })
+            : null;
+    return { row, changed: modified.length, complete, workKeys };
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
 
 export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm"): void {
+    span(`autoTrack.refresh(${trigger})`, () => refresh(trigger));
+}
+
+function refresh(trigger: AutoTrackRefreshTrigger): void {
     if (!isAnyAutoTrackEnabled()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
     const tracked = getActiveAutoTrackSources();
     let changed = 0;
-    let required = 0;
     let newlyQueuedChanged = 0;
-    let newlyQueuedRequired = 0;
     const detectedWorkKeys: string[] = [];
-    const plans: ModifiedQueuePlan[] = [];
+    const plans: ProjectPlan[] = [];
     const seenTracked = new Set<string>();
     let reconciliationComplete = true;
     forEachCachedParse((entry) => {
@@ -139,37 +141,38 @@ export function autoTrackRefresh(trigger: AutoTrackRefreshTrigger = "cacheWarm")
             reconciliationComplete = false;
             return;
         }
-        const plan = planModifiedImportables(entry.canonicalPath, entry.parsed);
+        const parsed = entry.parsed;
+        const plan = span("autoTrack.plan", () =>
+            planProject(entry.canonicalPath, parsed)
+        );
         plans.push(plan);
         if (!plan.complete) reconciliationComplete = false;
         changed += plan.changed;
-        required += plan.required;
-        for (const planned of plan.items) {
-            detectedWorkKeys.push(planned.workKey);
-        }
+        for (const key of plan.workKeys) detectedWorkKeys.push(key);
     });
     if (seenTracked.size !== tracked.size) reconciliationComplete = false;
 
     const desiredItems: QueueRow[] = [];
     for (const plan of plans) {
-        for (const planned of plan.items) desiredItems.push(planned.item);
+        if (plan.row !== null) desiredItems.push(plan.row);
     }
-    const autoAddedKeys = reconcileAutoTrackedQueue(desiredItems, reconciliationComplete);
+    // A save is the signal to try a stopped project again.
+    const retryStopped = trigger === "reparse" && !isQueueRunning();
+    const autoAddedKeys = reconcileAutoTrackedQueue(
+        desiredItems,
+        reconciliationComplete,
+        retryStopped
+    );
     for (const plan of plans) {
-        for (const planned of plan.items) {
-            if (!autoAddedKeys.has(queueItemKey(planned.item))) continue;
-            if (planned.changed) newlyQueuedChanged++;
-            if (planned.required) newlyQueuedRequired++;
+        if (plan.row !== null && autoAddedKeys.has(queueItemKey(plan.row))) {
+            newlyQueuedChanged += plan.changed;
         }
     }
-    if (newlyQueuedRequired > 0) {
-        showToast(
-            `Auto-Track: ${changed} changed + ${required} required = ${changed + required} queued`,
-            0xff5c9ded,
-            8000
-        );
-    }
-    autoRunRefresh(trigger, changed, newlyQueuedChanged, detectedWorkKeys, tracked);
+    autoRunRefresh(trigger, changed, newlyQueuedChanged, detectedWorkKeys);
 }
 
 onImportableCacheWarm(autoTrackRefresh);
+
+// Switching auto-run on owes every armed project a full scan, which needs a
+// project row queued even when no file changed.
+setOnArmingScansReset(() => autoTrackRefresh("cacheWarm"));

@@ -20,8 +20,12 @@ import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
-import { getIconImage, renderMcItem } from "./images";
-import { getMinecraft, javaType } from "./java";
+import { getIconImage, renderMcItem, resolveMcItemStack } from "./images";
+import { drawItemTooltip, mcItemTooltipLines } from "./itemTooltip";
+import { GL11, getMinecraft, javaType } from "./java";
+import { TextLayoutWrap } from "../../diagnostics/textLayout";
+
+const SPIN_PERIOD_MS = 1000;
 
 const Gui = javaType("net.minecraft.client.gui.Gui" as never) as unknown as {
     func_73734_a(
@@ -128,7 +132,11 @@ function truncateToWidthUncached(text: string, maxW: number): string {
 // `inPlace` tooltips paint over the anchor itself (text aligned exactly on the
 // original glyphs) instead of below it — used to reveal a truncated label's
 // full text where it sits, spilling over the siblings to its right.
-type QueuedTooltip = { text: string; color: number; anchor: Rect; inPlace?: boolean };
+// `item` tooltips are a hovered item's own inventory tooltip, drawn vanilla-style
+// by the mouse.
+type QueuedTooltip =
+    | { kind: "text"; text: string; color: number; anchor: Rect; inPlace?: boolean }
+    | { kind: "item"; stack: HtswMinecraftItemStack; mouseX: number; mouseY: number };
 let queuedTooltip: QueuedTooltip | null = null;
 
 function takeQueuedTooltip(): QueuedTooltip | null {
@@ -245,14 +253,38 @@ export function drawLaid(
     if (tooltip !== null) deferredTooltip = tooltip;
 }
 
+// Tooltip text wider than this wraps instead of running off the screen.
+const TOOLTIP_MAX_W = 320;
+
+const loggedItemTooltipErrors = new Set<string>();
+
 function drawTooltip(t: QueuedTooltip): void {
+    if (t.kind === "item") {
+        try {
+            drawItemTooltip(mcItemTooltipLines(t.stack), t.mouseX, t.mouseY);
+        } catch (err) {
+            // Runs every hovered frame, so log each distinct failure once.
+            const key = String(err);
+            if (!loggedItemTooltipErrors.has(key)) {
+                loggedItemTooltipErrors.add(key);
+                debugLogError("item tooltip", err);
+            }
+        }
+        return;
+    }
     const padX = 3;
     const padY = 2;
-    const tw = Renderer.getStringWidth(t.text);
-    const w = tw + padX * 2;
-    const h = LINE_H + padY * 2;
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
+    // Wrap to what the screen can hold: a one-line chip for long text (often a
+    // truncated label's full text) gets pinned to x = 2 and runs off the right edge.
+    const wrap = new TextLayoutWrap(
+        t.text,
+        Math.max(1, Math.min(TOOLTIP_MAX_W, screenW - 4 - padX * 2))
+    );
+    const lines = wrap.render();
+    const w = wrap.getWidth() + padX * 2;
+    const h = LINE_H * lines.length + padY * 2;
     let x;
     let y;
     if (t.inPlace) {
@@ -267,15 +299,20 @@ function drawTooltip(t: QueuedTooltip): void {
     }
     if (x + w > screenW - 2) x = screenW - 2 - w;
     if (x < 2) x = 2;
+    // A wrapped chip can overrun the top or bottom edge.
+    if (y + h > screenH - 2) y = screenH - 2 - h;
+    if (y < 2) y = 2;
     fillRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
     fillRect(COLOR_PANEL, x, y, w, h);
-    getMinecraft().field_71466_p.func_175065_a(
-        t.text,
-        x + padX,
-        y + padY,
-        t.color,
-        false
-    );
+    for (let i = 0; i < lines.length; i++) {
+        getMinecraft().field_71466_p.func_175065_a(
+            lines[i],
+            x + padX,
+            y + padY + i * LINE_H,
+            t.color,
+            false
+        );
+    }
 }
 
 function queueTooltip(
@@ -285,6 +322,7 @@ function queueTooltip(
 ): void {
     if (tooltip.length === 0) return;
     queuedTooltip = {
+        kind: "text",
         text: tooltip,
         color: tooltipColor !== undefined ? tooltipColor : 0xffffffff | 0,
         anchor,
@@ -435,6 +473,7 @@ function renderItem(
             // Truncated label with no explicit tooltip: reveal the full text in
             // place, in the label's own color.
             queuedTooltip = {
+                kind: "text",
                 text: raw,
                 color: color !== undefined ? color : 0xffffffff | 0,
                 anchor: r,
@@ -517,6 +556,18 @@ function renderItem(
                 // nulls `colorized` for us, so untinted draws stay clean.
                 Renderer.colorize(rr, gg, bb, a);
             }
+            // CT's finishDraw() pops and re-pushes the matrix after every
+            // draw, so a push/rotate here and a pop after stays balanced.
+            const spinning = e.spin !== undefined && extract(e.spin);
+            if (spinning) {
+                const cx = r.x + r.w / 2;
+                const cy = r.y + r.h / 2;
+                const degrees = ((Date.now() % SPIN_PERIOD_MS) / SPIN_PERIOD_MS) * 360;
+                GL11.glPushMatrix();
+                GL11.glTranslated(cx, cy, 0);
+                GL11.glRotatef(degrees, 0, 0, 1);
+                GL11.glTranslated(-cx, -cy, 0);
+            }
             try {
                 Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
             } catch (err) {
@@ -533,6 +584,8 @@ function renderItem(
                     /* nothing else to do */
                 }
                 debugLogError(`drawImage icon '${name}'`, err);
+            } finally {
+                if (spinning) GL11.glPopMatrix();
             }
         }
         if (hovered && e.tooltip !== undefined) {
@@ -547,7 +600,13 @@ function renderItem(
             );
         }
     } else {
-        renderMcItem(e.item, e.count, e.metadata, r.x, r.y);
+        renderMcItem(e.item, e.count, e.metadata, r.x, r.y, e.nbt);
+        if (hovered && e.tooltip === true) {
+            const stack = resolveMcItemStack(e.item, e.count, e.metadata, e.nbt);
+            if (stack !== null) {
+                queuedTooltip = { kind: "item", stack, mouseX, mouseY };
+            }
+        }
     }
 }
 

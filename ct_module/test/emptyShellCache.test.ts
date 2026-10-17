@@ -7,7 +7,7 @@ const io = vi.hoisted(() => ({
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     atomicWriteText: io.atomicWriteText,
-    getFileMtimeMs: () => 1,
+    getMtimeMs: () => 1,
 }));
 
 import { readImportableCache } from "../src/importCache";

@@ -4,7 +4,7 @@ import type { Importable } from "htsw/types";
 
 import type { ClickInfo, Element } from "../../lib/layout";
 import { Container, Icon, Text } from "../../lib/components";
-import { Icons } from "../../lib/icons.generated";
+import { Icons, type IconName } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
@@ -12,6 +12,8 @@ import {
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
     COLOR_ROW_HOVER,
+    COLOR_ROW_SELECTED,
+    COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
@@ -27,6 +29,7 @@ import { isHouseTrusted } from "../../state/trust";
 import { canonicalPath, requestParse } from "../../parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
+import { revealInHousesView } from "../../left-panel/houses";
 import { currentSnapshotSegments, parkedSnapshotSegments } from "./progressPanel";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 import {
@@ -35,14 +38,23 @@ import {
     type QueueRowRunState,
 } from "./taskProgress";
 import {
+    canMoveQueueRow,
     dismissQueueRow,
     getQueue,
     getQueueRowBadge,
+    moveQueueRow,
     removeQueueRow,
     retryQueueRow,
+    type QueueMove,
     type QueueRow,
 } from "./queue";
 import { cancelQueue } from "./queueRunner";
+import {
+    isQueueRowDragging,
+    isQueueRowSelected,
+    pressQueueRow,
+    updateQueueDrag,
+} from "./queueDrag";
 
 const collapsedBulkRows = new Set<string>();
 
@@ -206,27 +218,46 @@ function rowHasRunningWork(row: QueueRow): boolean {
         : queueBulkChildren(row).some((child) => child.status === "running");
 }
 
-function rowMenuActions(row: QueueRow): MenuAction[] {
+function moveActions(row: QueueRow): MenuAction[] {
+    const house = getHousingUuid();
+    const action = (label: string, icon: IconName, move: QueueMove): MenuAction => ({
+        label,
+        icon,
+        disabled: !canMoveQueueRow(row.key, move, house),
+        onClick: () => moveQueueRow(row.key, move, getHousingUuid()),
+    });
+    return [
+        action("Move up", Icons.arrowUp, "up"),
+        action("Move down", Icons.arrowDown, "down"),
+        action("Move to top", Icons.arrowUpToLine, "top"),
+        action("Move to bottom", Icons.arrowDownToLine, "bottom"),
+        { kind: "separator" },
+    ];
+}
+
+function rowMenuActions(row: QueueRow, child: boolean): MenuAction[] {
+    if (rowHasRunningWork(row)) {
+        return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
+    }
+    // Bulk children run with their group, so only top-level rows move.
+    const moves = child ? [] : moveActions(row);
     if (row.status === "failed" || row.status === "cancelled") {
-        return [
+        return moves.concat([
             {
                 label: "Retry",
                 icon: Icons.rotateCcw,
                 onClick: () => retryQueueRow(row.key),
             },
             { label: "Dismiss", icon: Icons.x, onClick: () => dismissQueueRow(row.key) },
-        ];
+        ]);
     }
-    if (rowHasRunningWork(row)) {
-        return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
-    }
-    return [
+    return moves.concat([
         {
             label: row.target.kind === "bulk" ? "Remove group" : "Remove",
             icon: Icons.x,
             onClick: () => removeQueueRow(row.key),
         },
-    ];
+    ]);
 }
 
 function rowControls(row: QueueRow): Element {
@@ -315,6 +346,19 @@ function statusIcon(row: QueueRow, runState: QueueRowRunState): Element {
 
 function revealQueueRow(row: QueueRow, info: ClickInfo): void {
     if (info.button !== 0 || info.isDoubleClickSecond) return;
+    if (row.op === "export" && row.house !== null) {
+        const target = row.target;
+        if (target.kind === "importable") {
+            setActiveLeftTab("houses");
+            revealInHousesView(row.house, target.type, target.identity);
+            return;
+        }
+        if (target.scope.kind === "houseType") {
+            setActiveLeftTab("houses");
+            revealInHousesView(row.house, target.scope.type, null);
+            return;
+        }
+    }
     setActiveLeftTab("projects");
     if (row.op === "import" && row.target.kind === "importable") {
         revealInProjectsTree({
@@ -388,6 +432,7 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
                 ? phaseColor(runState.phase)
                 : undefined;
     const labelColor = dimmed ? COLOR_TEXT_FAINT : skip ? ACCENT_TEAL : undefined;
+    const picked = isQueueRowSelected(row.key) || isQueueRowDragging(row.key);
     // The rail, status icon and controls sit beside the text strip so they
     // span the full row height. Only the text strip stacks on the 2px mini
     // bar; a control centered inside that strip would sit 1px high and its
@@ -402,16 +447,27 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
             ],
             gap: 4,
             height: { kind: "px", value: SIZE_ROW_H },
-            background: isCurrentQueueRow(row) ? COLOR_ROW_HOVER : COLOR_ROW,
-            hoverBackground: COLOR_ROW_HOVER,
+            background: picked
+                ? COLOR_ROW_SELECTED
+                : isCurrentQueueRow(row)
+                  ? COLOR_ROW_HOVER
+                  : COLOR_ROW,
+            hoverBackground: picked ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
         onClick: (_rect, info) => {
             if (info.button === 1) {
-                openMenu(info.x, info.y, rowMenuActions(row));
+                openMenu(info.x, info.y, rowMenuActions(row, child));
                 return;
             }
-            revealQueueRow(row, info);
+            if (info.button === 0 && !child) {
+                pressQueueRow(row.key, info.x, info.y, () => revealQueueRow(row, info));
+            } else {
+                revealQueueRow(row, info);
+            }
         },
+        // A child row stands in for its bulk group while another row is dragged.
+        onHover: (_rect, mouseX, mouseY) =>
+            updateQueueDrag(child ? (row.parentKey ?? row.key) : row.key, mouseX, mouseY),
         children: [
             queueStateRail(stateColor),
             child &&

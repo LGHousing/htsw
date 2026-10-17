@@ -1,6 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element, Rect } from "../../lib/layout";
+import { Element, Rect, getScrollState, setScrollOffset } from "../../lib/layout";
 import {
     Button,
     Col,
@@ -15,7 +15,6 @@ import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
 import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "../../state";
 import { requestParse } from "../../parsing/parses";
-import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
 import { getExportDestinationStatus } from "../../export/destinationStatus";
@@ -44,7 +43,11 @@ import {
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { HOUSE_CONTENT_TYPES, type HouseContentType } from "./contentTypes";
+import {
+    HOUSE_CONTENT_TYPES,
+    houseContentTypeFor,
+    type HouseContentType,
+} from "./contentTypes";
 import { type HouseImportable } from "../../../importCache/cache";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import { confirmSelect } from "../../right-panel/selection";
@@ -75,17 +78,75 @@ import {
 } from "./queueActions";
 import {
     buildHouseQueueMenu,
-    declaredOverwriteNames,
     queueNamesForRow,
     type HouseQueueCounts,
     type HouseQueueMenuActionId,
 } from "./queueMenu";
-import { buildOverwriteConfirmation } from "./overwriteConfirmation";
 import { TaskManager } from "../../../tasks/manager";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
 const SEARCH_ROW_H = SIZE_ROW_H + 6;
+const TYPE_SCROLL_ID = "houses-type-scroll";
+const TYPE_SCROLL_GAP = 1;
+
+// A row a queue click asked to show. It stays pending until the list has laid
+// out far enough to scroll to it, which can take a frame after a tab switch.
+let pendingReveal: string | null = null;
+let flashName: string | null = null;
+let flashUntil = 0;
+
+export function revealHouseRow(type: Importable["type"], name: string | null): void {
+    const t = houseContentTypeFor(type);
+    if (t !== null) activeContentType = type;
+    // The Items tab is a single export button with no rows to scroll to.
+    pendingReveal = t !== null && t.standaloneAction === undefined ? name : null;
+    markGuiDirty();
+}
+
+function isFlashing(name: string): boolean {
+    return flashName === name && Date.now() < flashUntil;
+}
+
+function matchesHouseFilters(row: HouseRow, query: string): boolean {
+    const item = row.item;
+    if (
+        query !== "" &&
+        (item.label ?? item.name).toLowerCase().indexOf(query) === -1 &&
+        item.name.toLowerCase().indexOf(query) === -1
+    ) {
+        return false;
+    }
+    return (
+        selectedHouseStatuses.size === 0 ||
+        selectedHouseStatuses.has(HOUSE_LINK_VISUAL[row.state].key)
+    );
+}
+
+function applyPendingReveal(shown: readonly HouseRow[]): void {
+    if (pendingReveal === null) return;
+    const index = shown.findIndex((row) => row.item.name === pendingReveal);
+    if (index === -1) {
+        pendingReveal = null;
+        return;
+    }
+    const state = getScrollState(TYPE_SCROLL_ID);
+    const viewportH = state.viewportRect.h;
+    const contentH = shown.length * (SIZE_ROW_H + TYPE_SCROLL_GAP) - TYPE_SCROLL_GAP;
+    const want = Math.max(
+        0,
+        Math.min(contentH - viewportH, index * (SIZE_ROW_H + TYPE_SCROLL_GAP) - viewportH / 3)
+    );
+    setScrollOffset(TYPE_SCROLL_ID, want);
+    // The offset clamps against the last laid-out list, so retry next frame
+    // until this list has been measured.
+    if (viewportH > 0 && state.contentLength === contentH && state.offset === want) {
+        flashName = pendingReveal;
+        flashUntil = Date.now() + 1500;
+        pendingReveal = null;
+    }
+    markGuiDirty();
+}
 
 const HOUSE_LINK_STATUSES: LinkStatusOption[] = [
     { key: "matches", label: "Matches project" },
@@ -410,21 +471,15 @@ function itemRowMenu(
         icon: Icons.fileUp,
         disabled: destinationPath === null,
         onClick: () => {
-            confirmDestructiveExport(
-                t.label.toLowerCase(),
-                namesAlreadyInDestination(t, queuedNames),
-                () => {
-                    if (destinationPath === null) return;
-                    queueConcrete(
-                        t,
-                        uuid,
-                        destinationPath,
-                        items,
-                        queuedNames,
-                        "export",
-                        clearSelection
-                    );
-                }
+            if (destinationPath === null) return;
+            queueConcrete(
+                t,
+                uuid,
+                destinationPath,
+                items,
+                queuedNames,
+                "export",
+                clearSelection
             );
         },
     });
@@ -636,7 +691,11 @@ function itemRow(
             padding: { side: "x", value: 6 },
             gap: 6,
             height: { kind: "px", value: SIZE_ROW_H },
-            background: selected ? COLOR_ROW_SELECTED : COLOR_ROW,
+            background: selected
+                ? COLOR_ROW_SELECTED
+                : isFlashing(item.name)
+                  ? COLOR_ROW_HOVER
+                  : COLOR_ROW,
             hoverBackground: selected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
         onClick: (_rect, info) => {
@@ -691,52 +750,8 @@ function itemRow(
     });
 }
 
-function namesAlreadyInDestination(
-    t: HouseContentType,
-    names: readonly string[]
-): string[] | null {
-    const sourceMap = loadedSourceImportablesByType(t.type);
-    return declaredOverwriteNames(
-        names,
-        sourceMap === null ? null : new Set(sourceMap.keys())
-    );
-}
-
-function confirmDestructiveExport(
-    noun: string,
-    existingNames: readonly string[] | null,
-    runOverwrite: () => void
-): void {
-    const confirmation = buildOverwriteConfirmation(noun, existingNames);
-    if (confirmation === null) {
-        runOverwrite();
-        return;
-    }
-    openConfirmPopover({
-        title: confirmation.title,
-        lines: confirmation.lines,
-        confirmLabel: "Export anyway",
-        danger: true,
-        onConfirm: runOverwrite,
-    });
-}
-
 function queueableTypes(): QueueableHouseContentType[] {
     return HOUSE_CONTENT_TYPES.filter(isQueueableType);
-}
-
-function wholeHouseOverwriteNames(uuid: string): string[] | null {
-    const existing: string[] = [];
-    for (const type of queueableTypes()) {
-        const source = loadedSourceImportablesByType(type.type);
-        if (source === null) return null;
-        for (const item of type.items(uuid)) {
-            if (source.has(item.name)) {
-                existing.push(`${type.label}: ${item.label ?? item.name}`);
-            }
-        }
-    }
-    return existing;
 }
 
 function queueBulk(
@@ -756,14 +771,10 @@ function runQueueMenuAction(
     uuid: string,
     path: string,
     items: readonly HouseImportable[],
-    allRows: readonly HouseRow[],
     shownRows: readonly HouseRow[]
 ): void {
     const noun = t.label.toLowerCase();
     const shownNames = shownRows.map((row) => row.item.name);
-    const changedNames = allRows
-        .filter((row) => row.state === "differs-from-knowledge")
-        .map((row) => row.item.name);
     switch (id) {
         case "read-all":
             queueBulk(t, uuid, path, "read", "all", `Read all ${noun}`);
@@ -775,53 +786,26 @@ function runQueueMenuAction(
             queueConcrete(t, uuid, path, items, shownNames, "read", false);
             return;
         case "export-all":
-            confirmDestructiveExport(
-                noun,
-                namesAlreadyInDestination(
-                    t,
-                    allRows.map((row) => row.item.name)
-                ),
-                () => queueBulk(t, uuid, path, "export", "all", `Export all ${noun}`)
-            );
+            queueBulk(t, uuid, path, "export", "all", `Export all ${noun}`);
             return;
         case "export-new":
             queueBulk(t, uuid, path, "export", "new", `Export new ${noun}`);
             return;
         case "export-changed":
-            confirmDestructiveExport(
-                noun,
-                namesAlreadyInDestination(t, changedNames),
-                () =>
-                    queueBulk(
-                        t,
-                        uuid,
-                        path,
-                        "export",
-                        "changed",
-                        `Export changed ${noun}`
-                    )
-            );
+            queueBulk(t, uuid, path, "export", "changed", `Export changed ${noun}`);
             return;
         case "export-shown":
-            confirmDestructiveExport(noun, namesAlreadyInDestination(t, shownNames), () =>
-                queueConcrete(t, uuid, path, items, shownNames, "export", false)
-            );
+            queueConcrete(t, uuid, path, items, shownNames, "export", false);
             return;
-        case "export-house": {
-            confirmDestructiveExport(
-                "local entries",
-                wholeHouseOverwriteNames(uuid),
-                () =>
-                    enqueueWholeHouse({
-                        house: uuid,
-                        path,
-                        types: queueableTypes().map((type) => ({
-                            type: type.type,
-                            pluralLabel: type.label,
-                        })),
-                    })
-            );
-        }
+        case "export-house":
+            enqueueWholeHouse({
+                house: uuid,
+                path,
+                types: queueableTypes().map((type) => ({
+                    type: type.type,
+                    pluralLabel: type.label,
+                })),
+            });
     }
 }
 
@@ -849,7 +833,6 @@ function queueAllMenuActions(
                           uuid,
                           destinationPath,
                           items,
-                          allRows,
                           shownRows
                       ),
               }
@@ -943,23 +926,18 @@ function queueActionBar(
                 },
                 tooltip: destinationTooltip ?? "Queue the selected entries to export",
                 tooltipColor: destinationReady ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
-                onClick: () =>
-                    confirmDestructiveExport(
-                        t.label.toLowerCase(),
-                        namesAlreadyInDestination(t, selectedNames),
-                        () => {
-                            if (destinationPath === null) return;
-                            queueConcrete(
-                                t,
-                                uuid,
-                                destinationPath,
-                                items,
-                                selectedNames,
-                                "export",
-                                true
-                            );
-                        }
-                    ),
+                onClick: () => {
+                    if (destinationPath === null) return;
+                    queueConcrete(
+                        t,
+                        uuid,
+                        destinationPath,
+                        items,
+                        selectedNames,
+                        "export",
+                        true
+                    );
+                },
             })
         );
     } else {
@@ -1119,6 +1097,7 @@ export function typeBrowserSection(
             const cachedItems = t.items(uuid);
             const items = scanned ? cachedItems : [];
             const allRows = houseRowsFor(t, uuid, cachedItems);
+            if (!scanned || items.length === 0) pendingReveal = null;
             const shown: HouseRow[] = [];
             // Keep search and filtering available before the first scan and in
             // empty states; Scan itself stays in the bottom action row.
@@ -1162,29 +1141,21 @@ export function typeBrowserSection(
                     })
                 );
             } else {
-                const query = itemSearch.trim().toLowerCase();
-                const statusActive = selectedHouseStatuses.size > 0;
+                let query = itemSearch.trim().toLowerCase();
+                // Clear filters that would hide the row being revealed.
+                const revealRow = allRows.find((row) => row.item.name === pendingReveal);
+                if (revealRow !== undefined && !matchesHouseFilters(revealRow, query)) {
+                    itemSearch = "";
+                    query = "";
+                    selectedHouseStatuses.clear();
+                }
                 for (let i = 0; i < allRows.length; i++) {
-                    const row = allRows[i];
-                    const item = row.item;
-                    if (
-                        query !== "" &&
-                        (item.label ?? item.name).toLowerCase().indexOf(query) === -1 &&
-                        item.name.toLowerCase().indexOf(query) === -1
-                    ) {
-                        continue;
-                    }
-                    if (
-                        statusActive &&
-                        !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[row.state].key)
-                    ) {
-                        continue;
-                    }
-                    shown.push(row);
+                    if (matchesHouseFilters(allRows[i], query)) shown.push(allRows[i]);
                 }
                 const unmatchedFunctionsFirst =
                     t.type === "FUNCTION" && getUnmatchedFunctionsFirst();
                 shown.sort((a, b) => compareHouseRows(a, b, unmatchedFunctionsFirst));
+                applyPendingReveal(shown);
                 if (shown.length === 0) {
                     const noun = t.label.toLowerCase();
                     const message =
@@ -1200,8 +1171,8 @@ export function typeBrowserSection(
                 } else {
                     out.push(
                         Scroll({
-                            id: "houses-type-scroll",
-                            style: { height: { kind: "grow" }, gap: 1 },
+                            id: TYPE_SCROLL_ID,
+                            style: { height: { kind: "grow" }, gap: TYPE_SCROLL_GAP },
                             children: shown.map((s) =>
                                 itemRow(t, uuid, s.item, items, inCurrentHouse, s.state)
                             ),

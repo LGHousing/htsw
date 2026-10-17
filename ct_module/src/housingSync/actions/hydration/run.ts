@@ -8,7 +8,7 @@ import {
     captureItemFromOpenEditorField,
     observeItemFromOpenEditorField,
 } from "../../items/capture";
-import { refreshTruncatedScalarFields } from "../readers";
+import { refreshTruncatedScalarFields } from "../../fields/readScalars";
 import type { ActionHydrationPlan, ActionHydrationWork } from "./plan";
 import type { ChildListName } from "../../actionPath";
 import {
@@ -40,6 +40,7 @@ import {
     type ActionListReadMode,
     type ActionListScan,
 } from "../readList";
+import { errorMessage } from "../../../utils/helpers";
 
 async function readActionList(
     ctx: TaskContext,
@@ -213,7 +214,7 @@ async function hydrateActionDetail(
         return;
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
-        const inner = error instanceof Error ? error.message : String(error);
+        const inner = errorMessage(error);
         const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);
@@ -289,9 +290,8 @@ async function hydrateActionDetailFromEditor(
         }
     } else if (work.childListsToRead.size > 0) {
         throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
-    } else {
-        refreshTruncatedScalarFields(ctx, entry.action, work.scalarFieldsToRead);
     }
+    refreshTruncatedScalarFields(ctx, entry.action, work.scalarFieldsToRead);
 
     const itemCaptures = read.itemReadMode === "sync" ? undefined : read.itemCaptures;
     const itemFieldObservations =

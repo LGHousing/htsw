@@ -1,3 +1,4 @@
+import { rejectBridgeRun } from "../bridge/status";
 import type { Importable } from "htsw/types";
 
 import { autoRunQueueChanged, setAutoRunEnabled } from "../gui/autoRun";
@@ -14,9 +15,11 @@ import {
     getQueue,
     makeBulkQueueRow,
     makeImportableQueueRow,
+    moveQueueRow,
     removeQueueRow,
     retryQueueRow,
     type QueueAddResult,
+    type QueueMove,
     type QueueRow,
 } from "../gui/right-panel/import-tab/queue";
 import {
@@ -54,6 +57,7 @@ export function commandQueue(args: string[]): void {
     else if (action === "read") commandQueueHouseOperation("read", args.slice(1));
     else if (action === "list") commandQueueList();
     else if (action === "remove") commandQueueRemove(args.slice(1));
+    else if (action === "move") commandQueueMove(args.slice(1));
     else if (action === "retry") commandQueueRetry(args.slice(1));
     else if (action === "clear") commandQueueClear();
     else if (action === "run") commandQueueRun();
@@ -70,6 +74,7 @@ function printQueueUsage(): void {
     ChatLib.chat("&7[htsw] /htsw queue read <TYPE> <all|unread|identity...>");
     ChatLib.chat("&7[htsw] /htsw queue list");
     ChatLib.chat("&7[htsw] /htsw queue remove <index>");
+    ChatLib.chat("&7[htsw] /htsw queue move <index> <up|down|top|bottom>");
     ChatLib.chat("&7[htsw] /htsw queue retry <index>");
     ChatLib.chat("&7[htsw] /htsw queue clear");
     ChatLib.chat("&7[htsw] /htsw queue run|pause");
@@ -210,6 +215,12 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         );
         return;
     }
+    if (op === "export" && type === "ITEM") {
+        ChatLib.chat(
+            "&c[htsw] Items export from the held stack. Use Export held item in the Houses tab."
+        );
+        return;
+    }
     const destination = getExportDestinationStatus();
     if (destination.kind !== "ready") {
         ChatLib.chat(
@@ -241,7 +252,10 @@ function commandQueueHouseOperation(op: "export" | "read", args: string[]): void
         return;
     }
     const result =
-        filter === "all" || filter === "new" || filter === "changed" || filter === "unread"
+        filter === "all" ||
+        filter === "new" ||
+        filter === "changed" ||
+        filter === "unread"
             ? addUserRow(
                   makeBulkQueueRow({
                       op,
@@ -315,6 +329,23 @@ function commandQueueRemove(args: string[]): void {
     ChatLib.chat(`&a[htsw] Removed queue item ${index + 1}`);
 }
 
+const QUEUE_MOVES: readonly QueueMove[] = ["up", "down", "top", "bottom"];
+
+function commandQueueMove(args: string[]): void {
+    const move = QUEUE_MOVES.find((candidate) => candidate === args[1]?.toLowerCase());
+    if (args.length !== 2 || move === undefined) {
+        ChatLib.chat("&c[htsw] Usage: /htsw queue move <index> <up|down|top|bottom>");
+        return;
+    }
+    const index = queueIndex(args.slice(0, 1));
+    if (index === null) return;
+    if (!moveQueueRow(getQueue()[index].key, move, getHousingUuid())) {
+        ChatLib.chat(`&c[htsw] Queue item ${index + 1} cannot move ${move}.`);
+        return;
+    }
+    ChatLib.chat(`&a[htsw] Moved queue item ${index + 1} ${move}`);
+}
+
 function commandQueueRetry(args: string[]): void {
     const index = queueIndex(args);
     if (index === null) return;
@@ -338,6 +369,7 @@ function commandQueueClear(): void {
 
 function commandQueueRun(): void {
     if (getQueue().length === 0) {
+        rejectBridgeRun("import", "empty_queue");
         ChatLib.chat("&c[htsw] Queue is empty");
         return;
     }
@@ -371,9 +403,7 @@ function parseImportableType(raw: string | undefined): Importable["type"] | null
 function parseReadableType(raw: string | undefined): HouseReadableType | null {
     const type = parseImportableType(raw);
     if (type === null) return null;
-    return HOUSE_READABLE_TYPES.indexOf(type as HouseReadableType) >= 0
-        ? (type as HouseReadableType)
-        : null;
+    return HOUSE_READABLE_TYPES.indexOf(type) >= 0 ? type : null;
 }
 
 function splitAddArguments(args: string[]): { path: string; remaining: string[] } | null {

@@ -4,7 +4,7 @@ import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { listAllNpcs } from "../../../../importables/npcs/listNpcs";
-import { npcPosIdentity } from "../../../../importables/identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
 import { removedFormatting } from "../../../../utils/helpers";
 import {
     houseTypeScanned,

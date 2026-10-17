@@ -172,18 +172,18 @@ export function commandApplicationPlan(plan: CommandImportPlan): ApplicationPlan
         steps.push(
             workStep(
                 "createShell",
-                COST.commandInterval + COST.commandMenuWait + COST.cacheWrite
+                COST.commandMenuWait + COST.cacheWrite
             )
         );
     }
     if (actionListPlanNeedsApply(plan.actionsPlan)) {
         steps.push(
-            workStep("openActions", COST.commandInterval + COST.commandMenuWait),
+            workStep("openActions", COST.commandMenuWait),
             actionListStep("actions", plan.actionsPlan)
         );
     }
     if (!plan.settingsHandled) {
-        let units = COST.commandInterval + COST.commandMenuWait;
+        let units = COST.commandMenuWait;
         const desired = desiredCommandSettings(plan.importable);
         if (plan.settings === null || plan.settings.mode !== desired.mode) {
             units += COST.menuClickWait;

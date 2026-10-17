@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { javaType, runtimeString } from "./java";
+import { isDirectory, pathExists } from "./filesystem";
 
 // OS shell helpers. The process-spawning helpers (showInExplorer, openInVSCode)
 // run on a daemon thread so spawning doesn't block the MC render thread.
@@ -33,32 +34,12 @@ function toWindowsPath(p: string): string {
     return runtimeString(p).replace(/\//g, "\\");
 }
 
-function isDirectory(p: string): boolean {
-    const Files = javaType("java.nio.file.Files");
-    const Paths = javaType("java.nio.file.Paths");
-    try {
-        return Files.isDirectory(Paths.get(runtimeString(p)));
-    } catch (_e) {
-        return false;
-    }
-}
-
 function osFamily(): "windows" | "mac" | "linux" {
     const System = javaType("java.lang.System");
     const name = String(System.getProperty("os.name")).toLowerCase();
     if (name.indexOf("win") >= 0) return "windows";
     if (name.indexOf("mac") >= 0 || name.indexOf("darwin") >= 0) return "mac";
     return "linux";
-}
-
-function pathExists(p: string): boolean {
-    const Files = javaType("java.nio.file.Files");
-    const Paths = javaType("java.nio.file.Paths");
-    try {
-        return Files.exists(Paths.get(runtimeString(p)));
-    } catch (_e) {
-        return false;
-    }
 }
 
 function parentDir(p: string): string {
@@ -78,12 +59,12 @@ function asPathList(fullPath: string | string[]): string[] {
     return out;
 }
 
-let _GuiScreen: HtswGuiScreenClass | null = null;
-
 export function setClipboardString(text: string): boolean {
     try {
-        if (_GuiScreen === null) _GuiScreen = javaType("net.minecraft.client.gui.GuiScreen");
-        _GuiScreen.setClipboardString(runtimeString(text));
+        const Toolkit = javaType("java.awt.Toolkit");
+        const StringSelection = javaType("java.awt.datatransfer.StringSelection");
+        const selection = new StringSelection(runtimeString(text));
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
         return true;
     } catch (e) {
         try {

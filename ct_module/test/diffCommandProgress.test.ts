@@ -51,7 +51,9 @@ describe("diff command progress", () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        expect(mocks.runTask).toHaveBeenCalledWith("diff", expect.any(Function));
+        expect(mocks.runTask).toHaveBeenCalledWith("diff", expect.any(Function), {
+            diagnostic: "htsw_diff",
+        });
         expect(mocks.progress.clear).toHaveBeenCalledOnce();
         expect(mocks.progress.fail).not.toHaveBeenCalled();
     });

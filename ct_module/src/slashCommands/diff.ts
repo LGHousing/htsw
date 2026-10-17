@@ -1,10 +1,10 @@
-import {
-    Diagnostic,
-    SourceMap,
-    parseImportablesResult,
-    type ImportablesParseResult,
-} from "htsw";
+import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
+import {
+    emitBridgeEvent,
+    rejectBridgeRun,
+    setBridgeConflictDetails,
+} from "../bridge/status";
 
 import { canonicalPath } from "../gui/parsing/parses";
 import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
@@ -34,11 +34,16 @@ import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { stripSurroundingQuotes } from "../utils/helpers";
+import {
+    blockingDiagnostics,
+    errorMessage,
+    stripSurroundingQuotes,
+} from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
 import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
 import {
+    appendGroupDiffReport,
     evaluateDiffReport,
     formatDiffReport,
     matchDiffActionLists,
@@ -47,19 +52,8 @@ import {
 } from "./diffReport";
 
 function diffFailure(reason: string): void {
+    rejectBridgeRun("diff", reason, "htsw_diff");
     ChatLib.chat(`[htsw] Diff failed: ${reason}`);
-}
-
-function errorReason(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
-function countBlockingDiagnostics(diagnostics: readonly Diagnostic[]): number {
-    let count = 0;
-    for (const diagnostic of diagnostics) {
-        if (diagnostic.level === "error" || diagnostic.level === "bug") count++;
-    }
-    return count;
 }
 
 export async function readDiffImportables(
@@ -73,7 +67,11 @@ export async function readDiffImportables(
     const live = new Map<string, LiveDiffImportable>();
     const namesByType = new Map<Importable["type"], string[]>();
     for (const importable of parsed.value) {
-        if (actionListsOfImportable(importable).length === 0) continue;
+        if (
+            importable.type !== "GROUP" &&
+            actionListsOfImportable(importable).length === 0
+        )
+            continue;
         const names = namesByType.get(importable.type);
         if (names === undefined) {
             namesByType.set(importable.type, [importableIdentity(importable)]);
@@ -84,11 +82,12 @@ export async function readDiffImportables(
 
     for (const [type, names] of namesByType) {
         const reader = readers[type];
-        if (reader === null || reader === undefined) continue;
+        if (reader === undefined) continue;
         await reader(ctx, {
             importJsonPath: manifest,
             rootDir: "",
             projectItems: projectItemsFromParsedImportJson(parsed),
+            parsed,
             names,
             quiet: true,
             progress: progress.sinkFor(type),
@@ -273,84 +272,107 @@ export function commandDiff(args: string[]): void {
             manifest
         );
     } catch (error) {
-        diffFailure(errorReason(error));
+        diffFailure(errorMessage(error));
         return;
     }
-    const errorCount = countBlockingDiagnostics(parsed.diagnostics);
+    const errorCount = blockingDiagnostics(parsed.diagnostics).length;
     if (errorCount > 0) {
         diffFailure(`manifest has ${errorCount} error${errorCount === 1 ? "" : "s"}`);
         return;
     }
 
     const progress = createDiffProgressSession(parsed.value, manifest);
-    void runHousingSyncTask("diff", async (ctx) => {
-        progress.start();
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        const live = await readDiffImportables(
-            ctx,
-            manifest,
-            housingUuid,
-            parsed,
-            progress
-        );
-        const matchedLists = matchDiffActionLists(parsed.value, live);
-        const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
-        const existingLock = readHouseLock(manifest);
-        const { report, adoptionLists } = evaluateDiffReport(
-            housingUuid,
-            matchedLists,
-            existingLock,
-            projectItems
-        );
-        for (const line of formatDiffReport(report, manifest)) {
-            ChatLib.chat(line);
-        }
-        try {
-            const detailsPath = writeDiffDetailsFile(
-                report,
+    void runHousingSyncTask(
+        "diff",
+        async (ctx) => {
+            progress.start();
+            const housingUuid = await getCurrentHousingUuid(ctx);
+            const live = await readDiffImportables(
+                ctx,
                 manifest,
-                new Date().toISOString()
+                housingUuid,
+                parsed,
+                progress
             );
-            ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
-        } catch (error) {
-            ChatLib.chat(
-                `[htsw] Diff details not written: ${errorReason(error)}`
+            const matchedLists = matchDiffActionLists(parsed.value, live);
+            const projectItems = createProjectItemIndex(parsed.value, parsed.gcx);
+            const existingLock = readHouseLock(manifest);
+            const { report, adoptionLists } = evaluateDiffReport(
+                housingUuid,
+                matchedLists,
+                existingLock,
+                projectItems
             );
-        }
-        if (adoptionLists.length > 0) {
-            const shouldAdopt =
-                adoptWithoutPrompt ||
-                (await confirmDiffAdoption(ctx, adoptionLists));
-            if (shouldAdopt) {
-                try {
-                    adoptDiffLists(
-                        ctx,
-                        manifest,
-                        housingUuid,
-                        adoptionLists,
-                        createItemDependencyIndex(parsed.value, projectItems)
-                    );
-                    ChatLib.chat(
-                        `[htsw] Adopted ${adoptionLists.length} live action list${adoptionLists.length === 1 ? "" : "s"}`
-                    );
-                } catch (error) {
-                    ChatLib.chat(
-                        `[htsw] Adoption failed: ${errorReason(error)}`
-                    );
+            appendGroupDiffReport(report, parsed.value, live);
+            emitBridgeEvent("htsw_diff", {
+                status: "completed",
+                clean: report.clean,
+                conflicts: report.conflicts.length,
+                unknown: report.unknown,
+                manifest,
+            });
+            setBridgeConflictDetails({
+                conflicts: adoptionLists.map((list) => ({
+                    type: list.source.type,
+                    identity: list.identity,
+                    basePath: list.basePath,
+                })),
+            });
+            for (const line of formatDiffReport(report, manifest)) {
+                ChatLib.chat(line);
+            }
+            try {
+                const detailsPath = writeDiffDetailsFile(
+                    report,
+                    manifest,
+                    new Date().toISOString()
+                );
+                ChatLib.chat(`[htsw] Diff details: ${detailsPath}`);
+                emitBridgeEvent("htsw_diff", { status: "details", path: detailsPath });
+                setBridgeConflictDetails({
+                    conflicts: adoptionLists.map((list) => ({
+                        type: list.source.type,
+                        identity: list.identity,
+                        basePath: list.basePath,
+                    })),
+                    diffPath: detailsPath,
+                });
+            } catch (error) {
+                ChatLib.chat(`[htsw] Diff details not written: ${errorMessage(error)}`);
+            }
+            if (adoptionLists.length > 0) {
+                const shouldAdopt =
+                    adoptWithoutPrompt || (await confirmDiffAdoption(ctx, adoptionLists));
+                if (shouldAdopt) {
+                    try {
+                        adoptDiffLists(
+                            ctx,
+                            manifest,
+                            housingUuid,
+                            adoptionLists,
+                            createItemDependencyIndex(parsed.value, projectItems)
+                        );
+                        ChatLib.chat(
+                            `[htsw] Adopted ${adoptionLists.length} live action list${adoptionLists.length === 1 ? "" : "s"}`
+                        );
+                    } catch (error) {
+                        ChatLib.chat(`[htsw] Adoption failed: ${errorMessage(error)}`);
+                    }
                 }
             }
-        }
-        progress.complete(
-            `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
-        );
-        return true;
-    })
+            progress.complete(
+                `${report.clean} clean / ${report.conflicts.length} conflicts / ${report.unknown} unknown`
+            );
+            return true;
+        },
+        { diagnostic: "htsw_diff" }
+    )
         .then((completed) => {
             if (completed === undefined) progress.clear();
         })
         .catch((error: unknown) => {
-            const reason = errorReason(error);
+            const reason = errorMessage(error);
             progress.fail(reason);
-            diffFailure(reason);
+            ChatLib.chat(`[htsw] Diff failed: ${reason}`);
         });
 }

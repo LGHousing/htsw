@@ -1,14 +1,12 @@
 import { commands, ExtensionContext, ProgressLocation, Uri, window, workspace } from "vscode";
-import { get } from "node:https";
-import { createHash } from "node:crypto";
-import { createWriteStream, promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { download, fetchText } from "./http";
+import { errorMessage } from "./errorMessage";
 
 const BASE_URL = "https://legendarygames.dev/htsw/vscode";
 const MANIFEST_URL = `${BASE_URL}/latest.json`;
-const REQUEST_TIMEOUT_MS = 30000;
-const MAX_REDIRECTS = 5;
 
 interface Manifest {
     version: string;
@@ -32,7 +30,7 @@ export async function checkForUpdates(context: ExtensionContext, options: CheckF
         manifest = parseManifest(await fetchText(MANIFEST_URL));
     } catch (err) {
         if (options.manual) {
-            void window.showErrorMessage(`HTSW++ update check failed: ${err instanceof Error ? err.message : String(err)}`);
+            void window.showErrorMessage(`HTSW++ update check failed: ${errorMessage(err)}`);
         }
         return;
     }
@@ -57,7 +55,7 @@ export async function checkForUpdates(context: ExtensionContext, options: CheckF
             async () => {
                 const vsixPath = join(tmpdir(), manifest.vsix);
                 try {
-                    const hash = await download(`${BASE_URL}/${manifest.vsix}`, vsixPath);
+                    const hash = await download(`${BASE_URL}/${manifest.vsix}`, vsixPath, "sha256");
                     if (hash.toLowerCase() !== manifest.sha256.toLowerCase()) {
                         throw new Error("checksum mismatch");
                     }
@@ -68,7 +66,7 @@ export async function checkForUpdates(context: ExtensionContext, options: CheckF
             }
         );
     } catch (err) {
-        void window.showErrorMessage(`HTSW++ update failed: ${err instanceof Error ? err.message : String(err)}`);
+        void window.showErrorMessage(`HTSW++ update failed: ${errorMessage(err)}`);
         return;
     }
 
@@ -94,75 +92,6 @@ function updatePrompt(manifest: Manifest, current: string): string {
     const notes = manifest.notes?.trim();
     const base = `HTSW++ ${manifest.version} is available (you have ${current}).`;
     return notes ? `${base}\n\nRelease notes: ${notes}` : base;
-}
-
-function fetchText(url: string, redirects = 0): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const req = get(url, (res) => {
-            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
-            if (redirect !== null) {
-                res.resume();
-                if (redirects >= MAX_REDIRECTS) {
-                    reject(new Error("too many redirects"));
-                    return;
-                }
-                fetchText(redirect, redirects + 1).then(resolve, reject);
-                return;
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            let body = "";
-            res.setEncoding("utf8");
-            res.on("data", (chunk) => (body += chunk));
-            res.on("end", () => resolve(body));
-        });
-        req.on("error", reject);
-        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
-            req.destroy(new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`))
-        );
-    });
-}
-
-function download(url: string, destPath: string, redirects = 0): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const req = get(url, (res) => {
-            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
-            if (redirect !== null) {
-                res.resume();
-                if (redirects >= MAX_REDIRECTS) {
-                    reject(new Error("too many redirects"));
-                    return;
-                }
-                download(redirect, destPath, redirects + 1).then(resolve, reject);
-                return;
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            const hash = createHash("sha256");
-            const file = createWriteStream(destPath);
-            res.on("data", (chunk) => hash.update(chunk));
-            res.pipe(file);
-            file.on("finish", () => file.close(() => resolve(hash.digest("hex"))));
-            file.on("error", reject);
-        });
-        req.on("error", reject);
-        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
-            req.destroy(new Error(`download timed out after ${REQUEST_TIMEOUT_MS}ms`))
-        );
-    });
-}
-
-function redirectUrl(currentUrl: string, statusCode: number | undefined, location: string | string[] | undefined): string | null {
-    if (statusCode === undefined || statusCode < 300 || statusCode >= 400) return null;
-    const next = Array.isArray(location) ? location[0] : location;
-    if (typeof next !== "string" || next.length === 0) return null;
-    return new URL(next, currentUrl).toString();
 }
 
 function isNewer(remote: string, current: string): boolean {

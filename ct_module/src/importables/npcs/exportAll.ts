@@ -1,3 +1,4 @@
+import type { ImportablesParseResult } from "htsw";
 import type { ImportableItem } from "htsw/types";
 
 import {
@@ -19,7 +20,7 @@ import { exportNpcWithSharedState } from "./export";
 import { readImportableCache } from "../../importCache/cache";
 import { upsertHouseLockImportable } from "../../importCache/houseLock";
 import { getCurrentHousingUuid } from "../../importCache/housingId";
-import { npcPosIdentity } from "../identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
 import { createExportItemCaptureRegistry } from "../export/projectDestination";
 import {
     createNpcLookupCache,
@@ -38,6 +39,8 @@ export type ExportAllNpcsOptions = {
     entries?: readonly NpcExportEntry[];
     progress?: ExportProgressSink;
     projectItems?: readonly ImportableItem[];
+    /** See `ReadOptions.parsed`. */
+    parsed?: ImportablesParseResult;
     skipExisting?: boolean;
     output: ReadOutput;
     quiet?: boolean;
@@ -103,7 +106,10 @@ async function exportAllNpcsInner(
     const itemCaptures = createExportItemCaptureRegistry(
         importJsonPath,
         lockHousingUuid,
-        options.projectItems
+        rootDir,
+        options.newExportTargetImportJson,
+        options.projectItems,
+        options.parsed
     );
     const npcLookup = createNpcLookupCache();
 
@@ -137,7 +143,10 @@ async function exportAllNpcsInner(
         );
     }
     const labels = exportEntries.map((entry) => npcLabel(entry));
-    options.progress?.start(labels);
+    options.progress?.start(
+        labels,
+        exportEntries.map((entry) => npcPosIdentity(entry.pos))
+    );
 
     let succeeded = 0;
     let failed = 0;

@@ -27,8 +27,8 @@ import {
 } from "../../../importables/import/session";
 import { expandImportDependencies } from "../../../importables/import/dependencyExpansion";
 import { importableIdentity, importableKey } from "../../../importables/identity";
-import { HOUSE_READERS } from "../../../importables/export/readers";
 import { isTaskCancelled } from "../../../tasks/manager";
+import { setTaskActivity } from "../../../tasks/activity";
 import type { Importable } from "htsw/types";
 import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
@@ -44,6 +44,7 @@ import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { playImportSuccessSound } from "../../../housingSync/sideEffects";
+import { formatElapsedSeconds } from "./elapsed";
 import {
     activatePreview,
     applyComplete,
@@ -72,17 +73,7 @@ import type { ImportConflict } from "../../../importables/import/conflicts";
 import type TaskContext from "../../../tasks/context";
 import { conflictAwaitingConfirmationMessage } from "../../../importables/import/conflictChat";
 import { previewSelect } from "../selection";
-
-function formatElapsedSeconds(secs: number): string {
-    const total = Math.max(0, Math.round(secs));
-    if (total < 60) return `${total}s`;
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
+import { emitBridgeEvent, finishBridgeSession } from "../../../bridge/status";
 
 const CONFLICT_TYPE_LABEL: Partial<Record<ImportConflict["type"], string>> = {
     FUNCTION: "Function",
@@ -99,7 +90,7 @@ function conflictListLabel(basePath: string): string {
     if (basePath === "onExitActions") return "exit actions";
     if (basePath === "leftClickActions") return "left-click actions";
     if (basePath === "rightClickActions") return "right-click actions";
-    const slot = basePath.match(/^slots\[(\d+)\]\.actions$/);
+    const slot = basePath.match(/^slot#(\d+)\.actions$/);
     if (slot !== null) return `slot ${slot[1]} actions`;
     return basePath;
 }
@@ -261,7 +252,13 @@ function createSyncEventHandler(args: {
         },
         importableScanCompleted: () => {},
         importableHydrationCompleted: () => {},
-        sessionTotalsLocked: () => {},
+        sessionTotalsLocked: (event) => {
+            emitBridgeEvent("htsw_plan", {
+                status: "completed",
+                rows: event.plannedRows,
+                sessionApplicationUnits: event.sessionApplicationUnits,
+            });
+        },
         sessionApplicationProgress: () => {},
         applicationProgress: () => {},
         sessionFinished: () => {
@@ -440,7 +437,7 @@ function prepareConflictReview(
         (importable) =>
             !retained.has(
                 importableKey(importable.type, importableIdentity(importable))
-            ) && HOUSE_READERS[importable.type] !== null
+            )
     );
     const firstSourcePath =
         importables.length > 0 ? importableSourcePath(importables[0]) : undefined;
@@ -581,6 +578,7 @@ export async function runImportQueueSession(
     );
     if (importRows.length === 0) return { completedKeys: [], failed: [] };
 
+    setTaskActivity("Reading the project");
     const batches = await buildBatches(importRows);
     if (batches === null) {
         const message = "Nothing matched the queued import selection.";
@@ -611,6 +609,7 @@ export async function runImportQueueSession(
 
     const batch = batches[0];
     const trustMode = isCurrentHouseTrusted();
+    setTaskActivity("Working out what the import needs");
     const expansion = expandImportDependencies(
         batch.parsed,
         batch.importables,
@@ -771,6 +770,10 @@ export async function runImportQueueSession(
             failed.push({ key: queueRow.key, error: message });
         }
     }
+    finishBridgeSession(
+        cancelled ? "cancelled" : failed.length > 0 ? "failed" : "completed",
+        { ...counts, elapsedMs: ctx.elapsedMs() }
+    );
     finishTaskProgress(failed[0]?.error ?? null);
     autoTrackRefresh();
     if (reviewState.request !== null) {

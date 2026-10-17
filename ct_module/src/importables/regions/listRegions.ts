@@ -3,7 +3,9 @@ import type { Pos } from "htsw/types";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
+    paginatedEntryName,
     readPaginatedList,
+    withoutNumericNote,
     type PaginatedListConfig,
 } from "../../housingSync/menus/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
@@ -20,28 +22,6 @@ export type RegionListEntry = {
     name: string;
     bounds: { from: Pos; to: Pos } | null;
 };
-
-/**
- * Extract a raw region name from a `/regions` list slot's display name. Filters
- * the list controls and strips a trailing numeric parenthetical if present,
- * preserving names that contain other parentheses.
- */
-function extractRegionNameFromSlot(rawDisplayName: string): string | null {
-    const trimmed = rawDisplayName.trim();
-    if (trimmed.length === 0) return null;
-    const lower = trimmed.toLowerCase();
-    if (
-        lower === "go back" ||
-        lower === "close" ||
-        lower === "create region" ||
-        lower.indexOf("previous page") >= 0 ||
-        lower.indexOf("next page") >= 0
-    ) {
-        return null;
-    }
-    const m = trimmed.match(/^(.+?)\s*\(\d[^)]*\)\s*$/);
-    return m !== null ? m[1] : trimmed;
-}
 
 function parseRegionPos(line: string, label: "From" | "To"): Pos | null {
     const match = line.match(new RegExp(`^${label}:\\s*(-?\\d+),\\s*(-?\\d+),\\s*(-?\\d+)\\s*$`));
@@ -79,13 +59,11 @@ export async function listAllRegions(ctx: TaskContext): Promise<RegionListEntry[
             for (let i = 0; i < slots.length; i++) {
                 if (isEmptyPaginatedPlaceholder(slots[i], REGION_LIST_CONFIG)) continue;
                 const item = slots[i].getItem();
-                const extracted = extractRegionNameFromSlot(
-                    removedFormatting(item.getName())
-                );
-                if (extracted === null) continue;
+                const name = paginatedEntryName(item.getName(), "Create Region");
+                if (name === null) continue;
                 out.push({
                     index: i,
-                    name: extracted,
+                    name: withoutNumericNote(name),
                     bounds: parseRegionBounds(itemLore(item)),
                 });
             }

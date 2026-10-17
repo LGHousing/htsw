@@ -7,6 +7,7 @@ import { openPathInOS } from "../../../utils/osShell";
 import { ActionTreePath } from "../../../housingSync/actionPath";
 import { inspectImportCodeView } from "../importCodeView";
 import { getTaskProgress } from "./taskProgress";
+import { errorMessage } from "../../../utils/helpers";
 
 const TRACE_PATH = "./htsw/import-codeview-trace.jsonl";
 const REPLAY_PATH = "./htsw/import-codeview-replay.html";
@@ -107,7 +108,7 @@ export function sampleImportCodeViewTrace(force: boolean = false): void {
     } catch (error) {
         trace.write({
             kind: "captureError",
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
         });
     }
 }

@@ -158,8 +158,21 @@ describe("readActionListPlan conflict detection", () => {
             name: "Debug",
             actions: [playSound()],
         };
+        const live = observedSlot(0, changeVar());
         mocks.scanActionList.mockResolvedValue({
-            slots: [observedSlot(0, changeVar())],
+            slots: [live],
+            // The live action still needs a second read, so the scan stays
+            // unhydrated.
+            plan: new Map([
+                [
+                    live,
+                    {
+                        childListsToRead: new Set(),
+                        scalarFieldsToRead: [],
+                        itemFieldsToCapture: [],
+                    },
+                ],
+            ]),
         });
         const session = sessionWithLock(importable, [message("baseline")]);
         const reasons: string[] = [];

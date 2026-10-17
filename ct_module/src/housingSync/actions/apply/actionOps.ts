@@ -27,6 +27,7 @@ import {
     isChildAction,
     type ChildAction,
 } from "../childActions";
+import { errorMessage } from "../../../utils/helpers";
 
 type ImportActionCallbacks = {
     onMutationStarted?: () => void;
@@ -227,6 +228,3 @@ async function clickAddActionOption(
     }
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mtimes = new Map<string, number>();
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
 

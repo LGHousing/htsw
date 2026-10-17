@@ -3,13 +3,7 @@
 import { Icons } from "./lib/icons.generated";
 import { type MenuAction } from "./lib/menu";
 import { shortPath } from "./lib/pathDisplay";
-import {
-    canonicalPath,
-    getParseAt,
-    invalidateParseCacheEntry,
-    requestParse,
-    touchParseCacheFile,
-} from "./parsing/parses";
+import { canonicalPath, markParseStale, requestParse } from "./parsing/parses";
 import { openConfirmPopover } from "./popovers/confirm";
 import { getHousingUuid, setExportImportJsonPath } from "./state";
 import { houseDisplayName } from "../importCache/aliases";
@@ -30,15 +24,12 @@ function rebindFile(fullPath: string, rawUuid: string | null): void {
         return;
     }
     const wroteAt = Date.now();
-    const entry = getParseAt(fullPath);
-    if (entry !== null && entry.parsed !== null) {
-        entry.parsed.importJson.houseUuid = uuid;
-        touchParseCacheFile(fullPath);
-        recordHouseBinding(uuid, canonicalPath(fullPath));
-    } else {
-        invalidateParseCacheEntry(fullPath);
-        requestParse(fullPath);
-    }
+    recordHouseBinding(uuid, canonicalPath(fullPath));
+    // Re-parse rather than patch `houseUuid` into the cached parse: the parser
+    // derives more from it (the `dangerouslyDeleteEverythingNotInThisFile`
+    // check and its diagnostic), and the edit moves every span after it.
+    markParseStale(fullPath);
+    requestParse(fullPath);
     const total = Date.now() - startedAt;
     if (total > 250) {
         ChatLib.chat(

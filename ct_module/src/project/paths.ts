@@ -3,9 +3,7 @@ import {
     commandExportReferencesExist as commandExportReferencesExistWithFs,
     eventExportReferencesExist as eventExportReferencesExistWithFs,
     functionExportReferencesExist as functionExportReferencesExistWithFs,
-    htslTargetForCommandExport as htslTargetForCommandExportWithFs,
-    htslTargetForEventExport as htslTargetForEventExportWithFs,
-    htslTargetForFunctionExport as htslTargetForFunctionExportWithFs,
+    htslTargetForExport as htslTargetForExportWithFs,
     htslTargetsForRegionExport as htslTargetsForRegionExportWithFs,
     htslTargetsForNpcExport as htslTargetsForNpcExportWithFs,
     importJsonTargetForSectionEntry as importJsonTargetForSectionEntryWithFs,
@@ -37,7 +35,15 @@ import {
 import { ctProjectFs } from "./projectFs";
 import { isSectionLayoutProject } from "./sectionLayoutProjects";
 
-export { canonicalSlug, type HtslExportTarget, type NpcExportEntry, type NpcHtslExportTargets, type RegionHtslExportTargets, type RestructureResult, type SnbtExportTarget };
+export {
+    canonicalSlug,
+    type HtslExportTarget,
+    type NpcExportEntry,
+    type NpcHtslExportTargets,
+    type RegionHtslExportTargets,
+    type RestructureResult,
+    type SnbtExportTarget,
+};
 
 export function sectionFolderImportJson(
     entryImportJsonPath: string,
@@ -88,10 +94,13 @@ export const PROJECTS_ROOT = "./htsw/projects";
 export function resolveModuleRelativePath(path: string): string {
     if (path.length === 0) return path;
     const normalized = path.split("\\").join("/");
-    if (normalized.charAt(0) === ".") return path;
     if (normalized.charAt(0) === "/") return path;
     if (/^[A-Za-z]:/.test(normalized)) return path;
-    return `${PROJECTS_ROOT}/${normalized}`;
+    if (normalized === PROJECTS_ROOT || normalized.indexOf(`${PROJECTS_ROOT}/`) === 0) {
+        return path;
+    }
+    const stripped = normalized.replace(/^\.\/?/, "");
+    return stripped.length === 0 ? PROJECTS_ROOT : `${PROJECTS_ROOT}/${stripped}`;
 }
 
 export function defaultExportRoot(housingUuid: string): string {
@@ -166,17 +175,11 @@ export function npcExportReferencesExist(
     return npcExportReferencesExistWithFs(ctProjectFs, importJsonPath, entry.pos);
 }
 
-export function menuExportReferencesExist(
-    importJsonPath: string,
-    name: string
-): boolean {
+export function menuExportReferencesExist(importJsonPath: string, name: string): boolean {
     return menuExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
 }
 
-export function teamExportReferencesExist(
-    importJsonPath: string,
-    name: string
-): boolean {
+export function teamExportReferencesExist(importJsonPath: string, name: string): boolean {
     return teamExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
 }
 
@@ -187,42 +190,16 @@ export function regionExportReferencesExist(
     return regionExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
 }
 
-export function htslTargetForFunctionExport(
+export function htslTargetForExport(
+    section: "functions" | "events" | "commands",
     entryImportJsonPath: string,
     identity: string,
     preferredNewTargetImportJson?: string
 ): HtslExportTarget {
-    return htslTargetForFunctionExportWithFs(
+    return htslTargetForExportWithFs(
         ctProjectFs,
         entryImportJsonPath,
-        identity,
-        preferredNewTargetImportJson,
-        exportSectionFolderResolver
-    );
-}
-
-export function htslTargetForEventExport(
-    entryImportJsonPath: string,
-    identity: string,
-    preferredNewTargetImportJson?: string
-): HtslExportTarget {
-    return htslTargetForEventExportWithFs(
-        ctProjectFs,
-        entryImportJsonPath,
-        identity,
-        preferredNewTargetImportJson,
-        exportSectionFolderResolver
-    );
-}
-
-export function htslTargetForCommandExport(
-    entryImportJsonPath: string,
-    identity: string,
-    preferredNewTargetImportJson?: string
-): HtslExportTarget {
-    return htslTargetForCommandExportWithFs(
-        ctProjectFs,
-        entryImportJsonPath,
+        section,
         identity,
         preferredNewTargetImportJson,
         exportSectionFolderResolver

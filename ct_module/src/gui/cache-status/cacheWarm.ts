@@ -8,6 +8,7 @@ import {
 import { importableIdentity } from "../../importables/identity";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 import { markGuiDirty } from "../lib/dirty";
+import { span } from "../../perf/spans";
 
 // A batch that has not reported back after this long is written off: its
 // requests are re-queued and a later completion from it is ignored. The
@@ -58,22 +59,24 @@ export function processImportableCacheWarm(): void {
     const generation = ++batchGeneration;
     loading = true;
     loadingSince = Date.now();
-    loadImportableCachesOffThread(batch, () => {
-        if (generation !== batchGeneration) return;
-        const scanned = new Set<string>();
-        for (let i = 0; i < batch.length; i++) {
-            const request = batch[i];
-            requested.delete(requestKey(request));
-            const scanKey = `${request.housingUuid}|${request.type}`;
-            if (scanned.has(scanKey)) continue;
-            scanned.add(scanKey);
-            houseTypeScanned(request.housingUuid, request.type);
-        }
-        loading = false;
-        revision++;
-        markGuiDirty();
-        for (let i = 0; i < listeners.length; i++) listeners[i]();
-    });
+    loadImportableCachesOffThread(batch, () =>
+        span("cacheWarm.complete", () => {
+            if (generation !== batchGeneration) return;
+            const scanned = new Set<string>();
+            for (let i = 0; i < batch.length; i++) {
+                const request = batch[i];
+                requested.delete(requestKey(request));
+                const scanKey = `${request.housingUuid}|${request.type}`;
+                if (scanned.has(scanKey)) continue;
+                scanned.add(scanKey);
+                houseTypeScanned(request.housingUuid, request.type);
+            }
+            loading = false;
+            revision++;
+            markGuiDirty();
+            for (let i = 0; i < listeners.length; i++) listeners[i]();
+        })
+    );
 }
 
 export function getImportableCacheWarmRevision(): number {

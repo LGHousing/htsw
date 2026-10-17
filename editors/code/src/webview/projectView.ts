@@ -9,9 +9,7 @@ import {
     collectFileRefs,
     addMenuSlot,
     canonicalSlug,
-    htslTargetForCommandExport,
-    htslTargetForEventExport,
-    htslTargetForFunctionExport,
+    htslTargetForExport,
     htslTargetsForNpcExport,
     htslTargetsForRegionExport,
     importableMetadataEntries,
@@ -59,6 +57,7 @@ import type {
     ProjectTextSpan,
     ProjectToHostMessage,
 } from "./protocol";
+import { errorMessage } from "../errorMessage";
 
 type ItemTag = Parameters<typeof itemFieldsFromTag>[0];
 
@@ -157,7 +156,7 @@ async function openItemInEditor(webview: vscode.Webview, snbtPath: string): Prom
             tag,
         } satisfies ItemEditorFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not open item: ${error}`);
     }
@@ -238,7 +237,7 @@ async function moveImportable(
                         normalizeRelativeProjectPath(value);
                         return undefined;
                     } catch (err) {
-                        return err instanceof Error ? err.message : String(err);
+                        return errorMessage(err);
                     }
                 },
             });
@@ -264,7 +263,7 @@ async function moveImportable(
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not move importable: ${error}`);
     }
@@ -403,7 +402,7 @@ async function renameImportable(
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not rename importable: ${error}`);
     }
@@ -419,7 +418,7 @@ async function revealImportable(
         const targetPath = await importablePrimaryPath(importJsonPath, SECTION_BY_KIND[kind], identity);
         await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(targetPath));
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not reveal importable: ${error}`);
     }
@@ -440,7 +439,7 @@ async function copyImportablePath(
             message: "Copied path",
         } satisfies ProjectFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not copy importable path: ${error}`);
     }
@@ -489,7 +488,7 @@ async function deleteImportable(
                 } catch (err) {
                     fileFailures.push(
                         `${vscode.workspace.asRelativePath(filePath, false)}: ` +
-                        (err instanceof Error ? err.message : String(err)),
+                        (errorMessage(err)),
                     );
                 }
             }
@@ -511,7 +510,7 @@ async function deleteImportable(
             } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete importable: ${error}`);
     }
@@ -616,7 +615,7 @@ async function addSlotToMenu(
             message: `Added slot ${slotNumber} to menu "${menuName}".`,
         } satisfies ProjectFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not add menu slot: ${error}`);
     }
@@ -672,7 +671,7 @@ async function setSizeForMenu(
                 : `Set menu "${menuName}" to ${size} rows.`,
         } satisfies ProjectFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not set menu size: ${error}`);
     }
@@ -710,7 +709,7 @@ async function removeSlotFromMenu(
                     if (await deletePathToTrashIfPresent(filePath)) filesDeleted++;
                 } catch (err) {
                     failures.push(`${vscode.workspace.asRelativePath(filePath, false)}: ${
-                        err instanceof Error ? err.message : String(err)
+                        errorMessage(err)
                     }`);
                 }
             }
@@ -722,7 +721,7 @@ async function removeSlotFromMenu(
             : { type: "projectResult", ok: false, error: `Removed the slot, but could not delete: ${failures.join("; ")}` }
         ) satisfies ProjectFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not remove menu slot: ${error}`);
     }
@@ -804,7 +803,7 @@ async function deleteImportJsonProject(
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete import.json project: ${error}`);
     }
@@ -847,7 +846,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
                         normalizeRelativeProjectPath(value);
                         return undefined;
                     } catch (err) {
-                        return err instanceof Error ? err.message : String(err);
+                        return errorMessage(err);
                     }
                 },
             });
@@ -886,7 +885,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
                     moved++;
                 } catch (err) {
                     throw new Error(
-                        `${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`,
+                        `${item.kind} "${item.identity}": ${errorMessage(err)}`,
                     );
                 }
             }
@@ -902,7 +901,7 @@ async function moveImportables(webview: vscode.Webview, items: SelectedImportabl
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not move importables: ${error}`);
     }
@@ -946,7 +945,7 @@ async function deleteImportables(webview: vscode.Webview, items: SelectedImporta
                 } catch (err) {
                     fileFailures.push(
                         `${vscode.workspace.asRelativePath(filePath, false)}: ` +
-                        (err instanceof Error ? err.message : String(err)),
+                        (errorMessage(err)),
                     );
                 }
             }
@@ -966,7 +965,7 @@ async function deleteImportables(webview: vscode.Webview, items: SelectedImporta
             } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete importables: ${error}`);
     }
@@ -1065,7 +1064,7 @@ async function treeRootForImportJson(importJsonPath: string): Promise<string> {
     return found ?? importJsonPath;
 }
 
-const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSection> = {
+const SECTION_BY_KIND = {
     function: "functions",
     event: "events",
     region: "regions",
@@ -1075,7 +1074,7 @@ const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSectio
     npc: "npcs",
     team: "teams",
     group: "groups",
-};
+} as const satisfies Record<ProjectImportableSummary["type"], ImportableSection>;
 
 async function addImportable(
     webview: vscode.Webview,
@@ -1123,11 +1122,7 @@ async function addImportable(
             let openPath: string;
 
             if (kind === "function" || kind === "event" || kind === "command") {
-                const target = kind === "function"
-                    ? htslTargetForFunctionExport(fs, importJsonPath, id)
-                    : kind === "event"
-                        ? htslTargetForEventExport(fs, importJsonPath, id)
-                        : htslTargetForCommandExport(fs, importJsonPath, id);
+                const target = htslTargetForExport(fs, importJsonPath, SECTION_BY_KIND[kind], id);
                 targetImportJson = target.importJsonPath;
                 openPath = target.htslPath;
                 requireNew(fs, targetImportJson, section, id, kind);
@@ -1205,7 +1200,7 @@ async function addImportable(
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not add importable: ${error}`);
     }
@@ -1283,7 +1278,7 @@ async function postProjectTree(webview: vscode.Webview): Promise<void> {
     try {
         roots = await discoverProjectTree();
     } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
+        error = errorMessage(err);
     }
     // Always post a tree (even empty) so the webview clears its loading state
     // instead of hanging on "Loading…" when discovery fails.
@@ -1827,7 +1822,7 @@ async function createIncludedImportJson(
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({
             type: "projectResult",
             ok: false,
@@ -1849,7 +1844,7 @@ async function createProjectImportJson(
             createdPath,
         } satisfies ProjectFromHostMessage);
     } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
+        const error = errorMessage(err);
         await webview.postMessage({ type: "projectImportJsonCreated" } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not create import.json: ${error}`);
     }

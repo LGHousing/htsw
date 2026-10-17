@@ -1,7 +1,12 @@
 import { SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 import { normalizePathSeparators } from "htsw-editor-common/project";
 
-import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
+import {
+    blockingDiagnostics,
+    chatSeparator,
+    errorMessage,
+    stripSurroundingQuotes,
+} from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 import { recompile } from "./recompile";
@@ -33,12 +38,15 @@ import {
     setProgressTraceEnabled,
 } from "../housingSync/trace/progressTrace";
 import {
+    DEFAULT_STALL_MS,
     clearLagProbeSamples,
     getLagProbeSamples,
+    getLagProbeThresholdMs,
     getStallStacks,
     isLagProbeEnabled,
     setLagProbeEnabled,
 } from "../perf/lagProbe";
+import { getSlowSpans } from "../perf/spans";
 import { commandTest } from "../inGameTests/command";
 import {
     canonicalPath,
@@ -49,7 +57,8 @@ import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
-import { giveItem, saveItem, clearInv } from "./debugItems";
+import { giveItem, saveItem, clearInv, viewItem } from "./debugItems";
+import { commandOpen } from "./openPath";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandCaches } from "./debugCaches";
 import { commandHeap } from "./debugHeap";
@@ -62,6 +71,7 @@ import { commandWorkspace } from "./workspace";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
 import { answerConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { bridgeStatus, rejectBridgeRun } from "../bridge/status";
 import { appendRawHtslFile } from "../rawHtslImport";
 import { addQueueRow, makeBulkQueueRow } from "../gui/right-panel/import-tab/queue";
 import { startQueue } from "../gui/right-panel/import-tab/queueRunner";
@@ -138,6 +148,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         hidden: true,
     },
     {
+        name: "status",
+        summary: "Print structured HTSW run status",
+        run: () => ChatLib.chat(JSON.stringify(bridgeStatus())),
+        hidden: true,
+    },
+    {
         name: "queue",
         summary: "Manage the import queue",
         run: commandQueue,
@@ -162,10 +178,22 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         usage: "saveitem <path>",
     },
     {
+        name: "viewitem",
+        summary: "Print an item's NBT into chat: held, a .snbt file, or a folder listing",
+        run: viewItem,
+        usage: "viewitem [path|@hand]",
+    },
+    {
         name: "clearinv",
         summary: "Clear main inventory slots 9-35 (debug)",
         run: clearInv,
         hidden: true,
+    },
+    {
+        name: "open",
+        summary: "Reveal a projects-relative path in your file explorer",
+        run: commandOpen,
+        usage: "open [path]",
     },
     {
         name: "projects",
@@ -268,7 +296,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         name: "lagprobe",
         summary: "Recent main-thread stall samples",
         run: commandLagProbe,
-        usage: "lagprobe [on|off|clear]",
+        usage: "lagprobe [on [ms]|off|clear]",
     },
     {
         name: "eta",
@@ -438,7 +466,7 @@ function commandCodeViewTrace(args: string[]): void {
     } catch (error) {
         ChatLib.chat(
             `&c[htsw] import CodeView replay failed: ` +
-                (error instanceof Error ? error.message : String(error))
+                (errorMessage(error))
         );
     }
 }
@@ -679,9 +707,17 @@ function shortPerfPath(path: string): string {
 
 function commandLagProbe(args: string[]): void {
     if (args[0] === "on") {
+        const requested = args.length < 2 ? DEFAULT_STALL_MS : Number(args[1]);
+        if (!Number.isFinite(requested)) {
+            ChatLib.chat("&cUsage: /htsw lagprobe on [ms]");
+            return;
+        }
         clearLagProbeSamples();
-        setLagProbeEnabled(true);
-        ChatLib.chat("&a[lagprobe] enabled; samples cleared.");
+        setLagProbeEnabled(true, requested);
+        ChatLib.chat(
+            `&a[lagprobe] enabled at ${getLagProbeThresholdMs()}ms; samples cleared. ` +
+                "Stalls and slow spans go to gui-debug.log."
+        );
         return;
     }
     if (args[0] === "off") {
@@ -694,13 +730,24 @@ function commandLagProbe(args: string[]): void {
         ChatLib.chat("&a[lagprobe] cleared samples.");
         return;
     }
-    ChatLib.chat(`&7[lagprobe] ${isLagProbeEnabled() ? "&aenabled" : "&8disabled"}&7.`);
+    const threshold = getLagProbeThresholdMs();
+    ChatLib.chat(
+        `&7[lagprobe] ${isLagProbeEnabled() ? `&aenabled &7at ${threshold}ms` : "&8disabled"}&7.`
+    );
+    const spans = getSlowSpans();
+    if (spans.length > 0) {
+        ChatLib.chat("&7[lagprobe] slowest recent spans:");
+        const slowest = spans.slice().sort((a, b) => b.ms - a.ms);
+        for (let i = 0; i < Math.min(slowest.length, 6); i++) {
+            ChatLib.chat(`&7  &f${slowest[i].ms}ms&7 ${slowest[i].path}`);
+        }
+    }
     const samples = getLagProbeSamples();
     if (samples.length === 0) {
-        ChatLib.chat("&7[lagprobe] no >250ms main-thread gaps recorded.");
+        ChatLib.chat(`&7[lagprobe] no >${threshold}ms main-thread gaps recorded.`);
         return;
     }
-    ChatLib.chat("&7[lagprobe] recent >250ms main-thread gaps:");
+    ChatLib.chat(`&7[lagprobe] recent >${threshold}ms main-thread gaps:`);
     for (let i = 0; i < samples.length; i++) {
         const s = samples[i];
         const age = Math.max(0, Math.round((Date.now() - s.at) / 1000));
@@ -757,6 +804,7 @@ function commandEta(args: string[]): void {
 function commandImport(args: string[]) {
     const commandArgs = args;
     if (commandArgs.length === 0) {
+        rejectBridgeRun("import", "expected_import_path");
         ChatLib.chat(`&7${chatSeparator()}`);
         const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(ChatLib.getCenteredText(title));
@@ -771,6 +819,7 @@ function commandImport(args: string[]) {
 
     const rawMode = isRawImportToken(commandArgs[0]);
     if (rawMode && commandArgs.length === 1) {
+        rejectBridgeRun("import", "expected_htsl_path", "htsw_raw_import");
         ChatLib.chat("&cUsage: /htsw import raw <actions.htsl>");
         return;
     }
@@ -780,6 +829,11 @@ function commandImport(args: string[]) {
         stripSurroundingQuotes(pathArgs.join(" "))
     );
     if (!FileLib.exists(importPath)) {
+        rejectBridgeRun(
+            "import",
+            `file does not exist '${importPath}'`,
+            rawMode ? "htsw_raw_import" : undefined
+        );
         ChatLib.chat(`&cFile does not exist '${importPath}'`);
         return;
     }
@@ -787,6 +841,7 @@ function commandImport(args: string[]) {
     const lowerPath = importPath.toLowerCase();
     if (rawMode || lowerPath.endsWith(".htsl")) {
         if (!lowerPath.endsWith(".htsl")) {
+            rejectBridgeRun("import", "expected_htsl_path", "htsw_raw_import");
             ChatLib.chat("&cRaw imports require a .htsl file.");
             return;
         }
@@ -807,6 +862,7 @@ function commandImport(args: string[]) {
         })
     );
     if (result.kind === "duplicate" || result.kind === "absorbed") {
+        rejectBridgeRun("import", result.message);
         ChatLib.chat(`&e[htsw] ${result.message}`);
         return;
     }
@@ -852,7 +908,7 @@ function commandSimulator(args: string[]) {
 
         printDiagnostics(sm, result.diagnostics);
 
-        const errCount = countBlockingDiagnostics(result.diagnostics);
+        const errCount = blockingDiagnostics(result.diagnostics).length;
         if (errCount > 0) {
             printDiagnostic(
                 sm,
@@ -883,6 +939,3 @@ function commandSimulator(args: string[]) {
     }
 }
 
-function countBlockingDiagnostics(diagnostics: Diagnostic[]): number {
-    return diagnostics.filter((it) => it.level === "error" || it.level === "bug").length;
-}

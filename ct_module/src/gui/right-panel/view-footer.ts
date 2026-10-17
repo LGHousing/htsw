@@ -51,6 +51,7 @@ import {
     queueRowCanExpand,
 } from "./import-tab/queueRows";
 import { queueControl } from "./import-tab/importButtons";
+import { QUEUE_SCROLL_ID } from "./import-tab/queueDrag";
 import {
     failedTaskFooterPanel,
     finishedTaskFooterPanel,
@@ -60,7 +61,6 @@ import {
 let queueExpanded = true;
 let queueFollowRequested = false;
 let queueFollowEngaged = false;
-const QUEUE_SCROLL_ID = "right-import-queue-scroll";
 const QUEUE_SCROLL_H = 120;
 const QUEUE_ROW_GAP = 2;
 const QUEUE_OVERSCAN_PX = 60;

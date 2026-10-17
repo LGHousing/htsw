@@ -1,6 +1,7 @@
 import type TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/cancellation";
 import { closeConfirmPopover, openConfirmPopover } from "./confirm";
+import { openBridgePrompt, closeBridgePrompt } from "../../bridge/status";
 
 export type AnswerableConflictPromptOptions = {
     chatMessage: string;
@@ -58,9 +59,17 @@ export async function openAnswerableConflictPrompt(
         handled = true;
         decision = value;
         if (activePrompt?.id === id) activePrompt = null;
+        closeBridgePrompt(id);
         closeConfirmPopover();
     };
     activePrompt = { id, answer };
+    openBridgePrompt({
+        promptId: id,
+        confirmAction: options.chatConfirmAction,
+        refuseAction: options.chatRefuseAction,
+        answerYesCommand: `/htsw answer ${id} yes`,
+        answerNoCommand: `/htsw answer ${id} no`,
+    });
 
     ChatLib.chat(options.chatMessage);
     ChatLib.chat(

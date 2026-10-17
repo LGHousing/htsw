@@ -28,7 +28,6 @@ vi.mock("../src/utils/mainThread", () => ({
 }));
 
 vi.mock("../src/gui/lib/java", () => ({
-    getMtimeMs: () => 2,
     javaType: (name: string) => {
         if (name === "java.lang.Runnable") {
             return class {
@@ -49,6 +48,10 @@ vi.mock("../src/gui/lib/java", () => ({
             }
         };
     },
+}));
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
+    getMtimeMs: () => 2,
 }));
 
 vi.mock("../src/gui/parsing/importablePaths", () => ({
@@ -91,6 +94,10 @@ test("profiles the worker phases and main-thread callback delay", async () => {
         fingerprint: {
             "/project/import.json": 1,
             "/project/actions.htsl": 2,
+        },
+        canonicalPaths: {
+            "/project/import.json": "/project/import.json",
+            "/project/actions.htsl": "/project/actions.htsl",
         },
         hashes: ["hash"],
         profile: {

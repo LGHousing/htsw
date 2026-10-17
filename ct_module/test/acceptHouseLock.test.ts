@@ -1,13 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 
-import { acceptHouseLockAsCurrent } from "../src/importCache/acceptHouseLock";
+import {
+    acceptHouseLockAsCurrent,
+    houseLockCurrentEntryFor,
+} from "../src/importCache/acceptHouseLock";
+import type { HouseLock } from "../src/importCache/houseLock";
 import { importableHash } from "../src/importCache/hash";
 import type TaskContext from "../src/tasks/context";
 import type {
     ItemDependencyIndex,
     ItemDependencySnapshot,
 } from "../src/importables/items/dependencyIndex";
+
+// No Java in the test runner: report a file's mtime from the stubbed FileLib.
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
+    getMtimeMs: (path: string) => (FileLib.exists(path) ? 1 : 0),
+}));
 
 function fn(name: string, message: string): ImportableFunction {
     const actions: Action[] = [{ type: "MESSAGE", message }];
@@ -19,6 +29,30 @@ afterEach(() => {
 });
 
 describe("acceptHouseLockAsCurrent", () => {
+    it("invalidates a stale ITEM lock hash and accepts a freshly normalized one", () => {
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "cookie",
+            nbt: {
+                type: "compound",
+                value: { id: { type: "string", value: "minecraft:cookie" } },
+            },
+        };
+        const entry = {
+            type: "ITEM" as const,
+            identity: "cookie",
+            hash: "old-item-NBT-hash",
+        };
+        const lock: HouseLock = {
+            schemaVersion: 1,
+            houseUuid: "house",
+            importables: { "ITEM:cookie": entry },
+        };
+        expect(houseLockCurrentEntryFor(lock, "house", item)).toBeNull();
+        entry.hash = importableHash(item);
+        expect(houseLockCurrentEntryFor(lock, "house", item)?.entry).toBe(entry);
+    });
+
     it("hydrates only source entries certified by the selected house lock", () => {
         const uuid = "accepted-lock-house";
         const importJsonPath = "./projects/demo/import.json";
@@ -68,7 +102,11 @@ describe("acceptHouseLockAsCurrent", () => {
         expect(result.skipped).toBe(0);
         expect(result.failed).toBe(0);
         expect(
-            JSON.parse(files[`./htsw/.cache/${uuid}/function/Accepted~1530ac92e449d6.knowledge.json`]!)
+            JSON.parse(
+                files[
+                    `./htsw/.cache/${uuid}/function/Accepted~1530ac92e449d6.knowledge.json`
+                ]!
+            )
         ).toMatchObject({
             writer: "project-lock",
             importable: accepted,
@@ -245,11 +283,15 @@ describe("acceptHouseLockAsCurrent", () => {
             failed: 0,
         });
         expect(
-            files[`./htsw/.cache/${uuid}/item/Missing_0020Blob~118fd761abf0af.knowledge.json`]
+            files[
+                `./htsw/.cache/${uuid}/item/Missing_0020Blob~118fd761abf0af.knowledge.json`
+            ]
         ).toBeDefined();
         expect(
             JSON.parse(
-                files[`./htsw/.cache/${uuid}/item/Cached_0020Blob~11e73fa307cc3b.knowledge.json`]!
+                files[
+                    `./htsw/.cache/${uuid}/item/Cached_0020Blob~11e73fa307cc3b.knowledge.json`
+                ]!
             )
         ).toMatchObject({ importable: cached, writer: "project-lock" });
     });

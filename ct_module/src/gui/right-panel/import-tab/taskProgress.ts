@@ -34,6 +34,7 @@ import {
 import { markGuiDirty } from "../../lib/dirty";
 import { getActiveTaskElapsedMs } from "../../../tasks/activeTask";
 import { observeTaskRunning } from "../../../tasks/runningState";
+import { beginBridgeSession, finishBridgeSession } from "../../../bridge/status";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -279,6 +280,7 @@ export function startTaskProgress(options: TaskProgressStart): void {
     setSessionVerb(options.verb);
     setEtaRough(options.etaRough === true);
     setActiveTaskPath(options.path);
+    beginBridgeSession(options.verb);
 }
 
 export function setTaskProgress(p: TaskProgress): void {
@@ -289,6 +291,12 @@ export function finishTaskProgress(
     failure: string | null,
     summary: FinishedTaskSummary | null = null
 ): void {
+    finishBridgeSession(
+        failure !== null || taskProgress?.rows.some((row) => row.status === "failed")
+            ? "failed"
+            : "completed",
+        { reason: failure }
+    );
     setActiveTaskPath(null);
     finishedTaskFailure = failure;
     finishedTaskSummary = summary;
@@ -365,11 +373,7 @@ export function getQueueRowRunState(item: QueueRow): QueueRowRunState {
         // Bulk headers aren't tracked individually; their real child rows are.
         return { kind: "queued" };
     }
-    const progressKey = queueRowKey(
-        item.target.type,
-        item.target.identity,
-        item.path
-    );
+    const progressKey = queueRowKey(item.target.type, item.target.identity, item.path);
     const rows = useLastFinished ? lastFinishedTaskRows : taskProgressRows;
     // Import sessions still key reducer rows by importable/path. Export and read
     // sessions use the operation queue's stable key so opposite-direction rows
@@ -387,10 +391,7 @@ export function getQueueRowRunState(item: QueueRow): QueueRowRunState {
     }
     if (row.status === "queued") return { kind: "queued" };
     const current = progress.active;
-    if (
-        current === null ||
-        (current.key !== item.key && current.key !== progressKey)
-    ) {
+    if (current === null || (current.key !== item.key && current.key !== progressKey)) {
         const parked =
             parkedTaskFor(progress, item.key) ?? parkedTaskFor(progress, progressKey);
         if (parked !== undefined) {

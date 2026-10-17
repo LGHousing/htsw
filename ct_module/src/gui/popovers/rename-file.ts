@@ -1,142 +1,43 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Element, Rect } from "../lib/layout";
-import { Button, Col, Input, Row, Text } from "../lib/components";
-import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
+import { pathExists } from "../../utils/filesystem";
 import { javaType } from "../lib/java";
 import { basename, dirname } from "../lib/pathDisplay";
+import { openTextPromptPopover } from "./text-prompt";
 
-let editingValue = "";
-let editingPath = "";
-let onDoneCallback: (() => void) | null = null;
-let activeHandle: PopoverHandle | null = null;
-
-function closeSelf(): void {
-    if (activeHandle !== null) {
-        closePopover(activeHandle);
-        activeHandle = null;
-    }
-}
-
-function syncFor(fullPath: string): void {
-    if (editingPath !== fullPath) {
-        editingPath = fullPath;
-        editingValue = basename(fullPath);
-    }
-}
-
-function save(fullPath: string): void {
-    const trimmed = editingValue.trim();
-    if (trimmed.length === 0) {
-        ChatLib.chat("&c[htsw] Name can't be empty.");
-        return;
-    }
-    if (trimmed === basename(fullPath)) {
-        editingPath = "";
-        editingValue = "";
-        closeSelf();
-        return;
-    }
+// False when the rename failed and the prompt should reopen.
+function renameFile(fullPath: string, name: string): boolean {
+    if (name === basename(fullPath)) return true;
     const dir = dirname(fullPath);
-    const target = dir.length === 0 ? trimmed : `${dir}/${trimmed}`;
+    const target = dir.length === 0 ? name : `${dir}/${name}`;
+    if (pathExists(target)) {
+        ChatLib.chat(`&c[htsw] ${name} already exists.`);
+        return false;
+    }
     try {
         const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        const src = Paths.get(fullPath);
-        const dst = Paths.get(target);
-        if (Files.exists(dst)) {
-            ChatLib.chat(`&c[htsw] ${trimmed} already exists.`);
-            return;
-        }
-        Files.move(src, dst);
-        ChatLib.chat(`&a[htsw] Renamed → ${trimmed}`);
+        javaType("java.nio.file.Files").move(Paths.get(fullPath), Paths.get(target));
     } catch (err) {
         ChatLib.chat(`&c[htsw] Rename failed: ${String(err)}`);
-        return;
+        return false;
     }
-    editingPath = "";
-    editingValue = "";
-    if (onDoneCallback !== null) {
-        try {
-            onDoneCallback();
-        } catch (_e) {
-            /* ignore */
-        }
-    }
-    closeSelf();
-}
-
-function popoverContent(fullPath: string): Element {
-    syncFor(fullPath);
-    return Col({
-        style: { padding: 6, gap: 4 },
-        children: [
-            Text({
-                text: `Rename ${basename(fullPath)}`,
-                style: { width: { kind: "grow" } },
-            }),
-            Input({
-                id: "rename-file-input",
-                value: () => editingValue,
-                onChange: (v) => {
-                    editingValue = v;
-                },
-                onSubmit: () => save(fullPath),
-                placeholder: "new filename…",
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: 18 },
-                },
-            }),
-            Row({
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: 18 },
-                    gap: 4,
-                },
-                children: [
-                    Button({
-                        text: "Save",
-                        style: {
-                            width: { kind: "grow" },
-                            height: { kind: "px", value: 18 },
-                        },
-                        onClick: () => save(fullPath),
-                    }),
-                    Button({
-                        text: "Cancel",
-                        style: {
-                            width: { kind: "grow" },
-                            height: { kind: "px", value: 18 },
-                        },
-                        onClick: () => {
-                            editingPath = "";
-                            editingValue = "";
-                            closeSelf();
-                        },
-                    }),
-                ],
-            }),
-        ],
-    });
+    ChatLib.chat(`&a[htsw] Renamed → ${name}`);
+    return true;
 }
 
 export function openRenameFilePopover(
-    anchor: Rect,
     fullPath: string,
-    onDone?: () => void
+    prefill: string = basename(fullPath)
 ): void {
-    syncFor(fullPath);
-    onDoneCallback = onDone ?? null;
-    activeHandle = openPopover({
-        anchor,
-        content: popoverContent(fullPath),
-        width: 240,
-        height: 64,
-        key: `rename-file:${fullPath}`,
-        placement: "modal",
-        onClose: () => {
-            activeHandle = null;
+    openTextPromptPopover({
+        title: `Rename ${basename(fullPath)}`,
+        placeholder: "new filename…",
+        prefill,
+        submitLabel: "Save",
+        onEmptySubmit: () => ChatLib.chat("&c[htsw] Name can't be empty."),
+        onSubmit: (name) => {
+            // Reopen with what was typed so a clash can be fixed in place.
+            if (!renameFile(fullPath, name)) openRenameFilePopover(fullPath, name);
         },
     });
 }

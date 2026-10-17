@@ -1,6 +1,12 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
+import {
+    emitBridgeEvent,
+    finishBridgeRun,
+    rejectBridgeRun,
+    setBridgeOperation,
+} from "../../../bridge/status";
 
 import { buildCacheStatusRow } from "../../../importCache/status";
 import { recordHouseScan } from "../../../importCache/cache";
@@ -14,13 +20,17 @@ import {
 } from "../../../importables/export/readers";
 import { listAllFunctionNames } from "../../../importables/functions/listFunctions";
 import { listAllGroupNames } from "../../../importables/groups/listGroups";
-import { importableIdentity, npcPosIdentity } from "../../../importables/identity";
+import { npcPosIdentity } from "htsw-editor-common/project";
+import { importableIdentity, parseNpcPosIdentity } from "../../../importables/identity";
 import { listAllMenuNames } from "../../../importables/menus/listMenus";
 import { listAllNpcs } from "../../../importables/npcs/listNpcs";
 import { readProjectExportDestination } from "../../../importables/export/projectDestination";
 import { listAllRegionNames } from "../../../importables/regions/listRegions";
 import { listAllTeamNames } from "../../../importables/teams/listTeams";
 import { exportHeldItem } from "../../../importables/items/export";
+import { beginProjectRun, finishProjectRun } from "../../../prune/projectRun";
+import { setTaskActivity } from "../../../tasks/activity";
+import { shortPath } from "../../lib/pathDisplay";
 import { isTaskCancelled, TaskManager } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
 import { cancelActiveTask } from "../../../tasks/activeTask";
@@ -31,14 +41,19 @@ import { setHousingUuid } from "../../state";
 import { getNewExportTarget } from "../../state/newExportTarget";
 import { isHouseTrusted } from "../../state/trust";
 import { holdAutoRunUntilReparse } from "../../autoRun";
+import { openAnswerableConflictPrompt } from "../../popovers/conflictPrompt";
 import { showToast } from "../../toast";
 import { runImportQueueSession } from "./taskController";
+import { formatElapsedSeconds } from "./elapsed";
 import {
     completeQueueRows,
     expandBulkQueueRow,
     getQueue,
+    getQueueRow,
     isBulkQueueRowExpanded,
+    isProjectQueueRow,
     isRestoredQueueRow,
+    isUnfinishedProjectRow,
     makeImportableQueueRow,
     setQueueRowStatus,
     type QueueRow,
@@ -46,6 +61,7 @@ import {
     type BulkFilter,
     type QueueOp,
 } from "./queue";
+import { errorMessage } from "../../../utils/helpers";
 
 export type QueueRunState = "idle" | "running" | "paused";
 export type QueueStartOptions = { autoRun?: boolean };
@@ -60,6 +76,7 @@ export type QueueSessionResult = {
 };
 
 type CompletionHook = { remaining: Set<string>; callback: () => void };
+export type QueueRunTally = { completed: number; failed: number; reason?: string };
 const completionHooks: CompletionHook[] = [];
 
 export function onQueueRowsCompleted(
@@ -89,6 +106,13 @@ export type QueueRunnerDependencies = {
         row: QueueRow,
         currentHouse: string
     ): Promise<readonly QueueRowInput[]>;
+    /** Runs before a project row is expanded into its importables. */
+    beginProject(ctx: TaskContext, row: QueueRow, currentHouse: string): Promise<void>;
+    /**
+     * Runs once every importable of a project row is done. Throwing fails the
+     * row and stops the queue, like a failed import.
+     */
+    finishProject(ctx: TaskContext, row: QueueRow, currentHouse: string): Promise<void>;
     runImport(
         ctx: TaskContext,
         rows: readonly QueueRow[],
@@ -179,44 +203,123 @@ export function queueSessionFromHead(
     return rows;
 }
 
-function resetSessionRows(rows: readonly QueueRow[]): void {
+// Completed rows stay "running" until scheduleDone removes them, so the
+// done state stays visible briefly. They are no longer part of any session.
+// Held by row object: a row removed and queued again under the same key is
+// a new object, so it is neither skipped nor removed by the old completion.
+const awaitingRemoval = new WeakSet<QueueRow>();
+
+/** Where a bulk row's work comes from, for the activity line. */
+function bulkSource(row: QueueRow): string {
+    if (row.target.kind !== "bulk") return row.target.label;
+    return row.target.scope.kind === "file" ? shortPath(row.target.scope.path) : "the house";
+}
+
+/** A project row for this house whose importables are all done. */
+function projectRowToFinish(currentHouse: string): QueueRow | null {
+    const queue = getQueue();
+    for (const row of queue) {
+        if (row.status !== "running" || !isProjectQueueRow(row)) continue;
+        if (awaitingRemoval.has(row)) continue;
+        if (row.house !== null && row.house !== currentHouse) continue;
+        // Children waiting for removal are done too.
+        const pending = queue.some(
+            (child) => child.parentKey === row.key && !awaitingRemoval.has(child)
+        );
+        if (!pending) return row;
+    }
+    return null;
+}
+
+/** False when the queue should stop. */
+async function finishProjectRow(
+    ctx: TaskContext,
+    dependencies: QueueRunnerDependencies,
+    row: QueueRow,
+    currentHouse: string,
+    tally?: QueueRunTally
+): Promise<boolean> {
+    setBridgeOperation(row.op);
+    setTaskActivity(`Finishing ${shortPath(row.path)}`);
+    try {
+        await dependencies.finishProject(ctx, row, currentHouse);
+    } catch (error) {
+        if (isTaskCancelled(error)) throw error;
+        const message = errorMessage(error);
+        setQueueRowStatus(row.key, "failed", message);
+        if (tally !== undefined) {
+            tally.failed++;
+            tally.reason ??= message;
+        }
+        ChatLib.chat(`&c[htsw] ${row.target.label} failed: ${message}`);
+        return false;
+    }
+    const finished = getQueueRow(row.key);
+    if (finished !== null) {
+        awaitingRemoval.add(finished);
+        dependencies.scheduleDone(() => {
+            if (getQueueRow(finished.key) === finished) completeQueueRows([finished.key]);
+        });
+    }
+    return true;
+}
+
+/** The session's rows plus any dependency rows it added or pulled in. */
+function runningSessionRows(rows: readonly QueueRow[]): QueueRow[] {
     const head = rows[0];
-    for (const current of getQueue()) {
-        if (
+    return getQueue().filter(
+        (current) =>
             current.target.kind === "importable" &&
             current.op === head.op &&
             current.path === head.path &&
             current.house === head.house &&
-            current.status === "running"
-        ) {
-            setQueueRowStatus(current.key, "queued");
-        }
+            current.status === "running" &&
+            !awaitingRemoval.has(current)
+    );
+}
+
+function resetSessionRows(rows: readonly QueueRow[]): void {
+    for (const current of runningSessionRows(rows)) {
+        setQueueRowStatus(current.key, "queued");
     }
 }
 
 function applySessionResult(
     rows: readonly QueueRow[],
     result: QueueSessionResult,
-    scheduleDone: (callback: () => void) => void
+    scheduleDone: (callback: () => void) => void,
+    tally?: QueueRunTally
 ): boolean {
     const completed = new Set(result.completedKeys);
     const failed = new Map(result.failed.map((failure) => [failure.key, failure.error]));
     for (const [key, error] of failed) setQueueRowStatus(key, "failed", error);
+    if (tally !== undefined) {
+        tally.completed += completed.size;
+        tally.failed += failed.size;
+        if (result.failed.length > 0) tally.reason ??= result.failed[0].error;
+    }
     const cancelled = new Set(result.cancelledKeys ?? []);
     for (const key of cancelled) {
         setQueueRowStatus(key, "cancelled", "Cancelled for conflict review");
     }
-    for (const row of rows) {
-        if (!failed.has(row.key) && !completed.has(row.key) && !cancelled.has(row.key)) {
-            setQueueRowStatus(row.key, "queued");
-        }
+    const done: QueueRow[] = [];
+    for (const key of completed) {
+        const row = getQueueRow(key);
+        if (row === null) continue;
+        awaitingRemoval.add(row);
+        done.push(row);
     }
+    resetSessionRows(rows);
     for (const hook of result.completionHooks ?? []) {
         onQueueRowsCompleted(hook.keys, hook.callback);
     }
     fireQueueRowsCompleted(completed);
-    if (completed.size > 0) {
-        scheduleDone(() => completeQueueRows(Array.from(completed)));
+    if (done.length > 0) {
+        scheduleDone(() =>
+            completeQueueRows(
+                done.filter((row) => getQueueRow(row.key) === row).map((row) => row.key)
+            )
+        );
     }
     return failed.size > 0;
 }
@@ -224,27 +327,73 @@ function applySessionResult(
 export async function drainQueue(
     ctx: TaskContext,
     dependencies: QueueRunnerDependencies,
-    options: QueueStartOptions = {}
+    options: QueueStartOptions = {},
+    tally?: QueueRunTally
 ): Promise<QueueRunState> {
+    try {
+        return await drainQueueInner(ctx, dependencies, options, tally);
+    } finally {
+        setTaskActivity(null);
+    }
+}
+
+async function drainQueueInner(
+    ctx: TaskContext,
+    dependencies: QueueRunnerDependencies,
+    options: QueueStartOptions,
+    tally?: QueueRunTally
+): Promise<QueueRunState> {
+    setTaskActivity("Checking which house you're in");
     const currentHouse = await dependencies.currentHouse(ctx);
     let preparedImport = false;
     for (;;) {
         ctx.checkCancelled();
+        setTaskActivity(null);
+        const finishing = projectRowToFinish(currentHouse);
+        if (finishing !== null) {
+            try {
+                const proceed = await finishProjectRow(
+                    ctx,
+                    dependencies,
+                    finishing,
+                    currentHouse,
+                    tally
+                );
+                if (!proceed) return "idle";
+            } catch (error) {
+                if (isTaskCancelled(error)) return "paused";
+                throw error;
+            }
+            continue;
+        }
         const head = headRunnableQueueRow(currentHouse, options);
         if (head === null) return "idle";
+        setBridgeOperation(head.op);
         if (head.target.kind === "bulk") {
             let children: readonly QueueRowInput[];
             try {
+                if (isProjectQueueRow(head)) {
+                    setTaskActivity(`Preparing ${shortPath(head.path)}`);
+                    await dependencies.beginProject(ctx, head, currentHouse);
+                }
+                setTaskActivity(
+                    `Working out what to ${head.op} from ${bulkSource(head)}`
+                );
                 children = await dependencies.expandBulk(ctx, head, currentHouse);
             } catch (error) {
                 if (isTaskCancelled(error)) return "paused";
-                const message = error instanceof Error ? error.message : String(error);
+                const message = errorMessage(error);
                 setQueueRowStatus(head.key, "failed", message);
+                if (tally !== undefined) {
+                    tally.failed++;
+                    tally.reason ??= message;
+                }
                 if (head.op === "import") return "idle";
+                ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
                 continue;
             }
             const inserted = expandBulkQueueRow(head.key, children);
-            if (inserted.length === 0) {
+            if (inserted.length === 0 && !isProjectQueueRow(head)) {
                 showToast(`${head.target.label}: nothing to do`, 0xffe5bc4b);
             }
             continue;
@@ -253,9 +402,11 @@ export async function drainQueue(
         const session = queueSessionFromHead(head, currentHouse, options);
         if (session.length === 0) return "idle";
         if (head.op === "import" && !preparedImport) {
+            setTaskActivity("Switching to creative mode");
             await dependencies.beforeFirstImport(ctx);
             preparedImport = true;
         }
+        setTaskActivity(null);
 
         for (const row of session) setQueueRowStatus(row.key, "running");
         let result: QueueSessionResult;
@@ -267,27 +418,47 @@ export async function drainQueue(
         } catch (error) {
             if (isTaskCancelled(error)) {
                 resetSessionRows(session);
+                if (head.op !== "import") {
+                    ChatLib.chat(
+                        `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f0&e ${queueOpVerb(head.op)}`
+                    );
+                }
                 return "paused";
             }
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
+            resetSessionRows(session);
             setQueueRowStatus(head.key, "failed", message);
-            for (let i = 1; i < session.length; i++) {
-                setQueueRowStatus(session[i].key, "queued");
+            if (tally !== undefined) {
+                tally.failed++;
+                tally.reason ??= message;
             }
             if (head.op === "import") {
                 ChatLib.chat(`&c[htsw] Import failed: ${String(error)}`);
                 return "idle";
             }
+            ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
             continue;
         }
 
         if (result.cancelled === true) {
+            if (tally !== undefined) {
+                tally.completed += result.completedKeys.length;
+                tally.failed += result.failed.length;
+            }
             resetSessionRows(session);
+            if (head.op !== "import") {
+                ChatLib.chat(
+                    `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f${result.completedKeys.length}&e ${queueOpVerb(head.op)}`
+                );
+            }
             return "paused";
         }
         if (result.parseError === true) holdAutoRunUntilReparse();
-        const failed = applySessionResult(session, result, (callback) =>
-            dependencies.scheduleDone(callback)
+        const failed = applySessionResult(
+            session,
+            result,
+            (callback) => dependencies.scheduleDone(callback),
+            tally
         );
         if (head.op === "import" && failed) {
             showToast("Queue stopped after import failure", 0xffe85c5c, 8000);
@@ -297,22 +468,51 @@ export async function drainQueue(
 }
 
 export function startQueue(options: QueueStartOptions = {}): boolean {
-    if (state === "running" || TaskManager.isBusy()) return false;
-    const eligible = getQueue().some(
+    if (state === "running" || TaskManager.isBusy()) {
+        rejectBridgeRun("import", "busy");
+        return false;
+    }
+    const queue = getQueue();
+    const eligible = queue.find(
         (row) =>
-            row.status === "queued" && (!options.autoRun || !isRestoredQueueRow(row.key))
+            (row.status === "queued" &&
+                (!options.autoRun || !isRestoredQueueRow(row.key))) ||
+            (!awaitingRemoval.has(row) && isUnfinishedProjectRow(row, queue))
     );
-    if (!eligible) return false;
+    if (!eligible) {
+        rejectBridgeRun("import", "empty_queue");
+        return false;
+    }
     state = "running";
     pauseRequested = false;
-    void runHousingSyncTask("queue", (ctx) =>
-        drainQueue(ctx, defaultDependencies, options)
+    const tally: QueueRunTally = { completed: 0, failed: 0 };
+    const approvedOverwritePaths = new Set<string>();
+    const dependencies: QueueRunnerDependencies = {
+        ...defaultDependencies,
+        runExport: async (ctx, rows, currentHouse) =>
+            (await confirmExportOverwrites(ctx, rows, approvedOverwritePaths))
+                ? runQueuedExportSession(ctx, rows, currentHouse)
+                : { completedKeys: [], failed: [], cancelled: true },
+    };
+    void runHousingSyncTask(
+        "queue",
+        (ctx) => drainQueue(ctx, dependencies, options, tally),
+        { operation: eligible.op }
     )
         .then((next) => {
-            state = next ?? (pauseRequested ? "paused" : "idle");
+            state = next ?? "paused";
+            printQueueRunEnd(state, tally);
         })
         .catch((error: unknown) => {
             state = "idle";
+            emitBridgeEvent("htsw_queue", {
+                scope: "queue",
+                phase: "finished",
+                state: "failed",
+                reason: String(error),
+                ...tally,
+            });
+            finishBridgeRun("failed", { reason: String(error), ...tally });
             ChatLib.chat(`&c[htsw] Queue failed: ${String(error)}`);
             showToast(`Queue failed: ${String(error)}`, 0xffe85c5c, 8000);
         })
@@ -321,6 +521,33 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
             notifyQueueRunEnded();
         });
     return true;
+}
+
+export function printQueueRunEnd(runState: QueueRunState, tally: QueueRunTally): void {
+    const queued = getQueue().filter((row) => row.status === "queued").length;
+    const label = runState === "paused" ? "paused" : "finished";
+    const colour = runState === "paused" ? "&e" : "&a";
+    const status =
+        runState === "paused" ? "paused" : tally.failed > 0 ? "failed" : "completed";
+    emitBridgeEvent("htsw_queue", {
+        scope: "queue",
+        phase: "finished",
+        state: status === "failed" ? "failed" : runState,
+        ...tally,
+        queued,
+    });
+    finishBridgeRun(status, { ...tally, queued });
+    ChatLib.chat(
+        `${colour}[htsw] Queue ${label} &7· &f${tally.completed}${colour} completed, &f${tally.failed}${colour} failed, &f${queued}&7 queued`
+    );
+}
+
+function queueOpLabel(op: QueueOp): "Export" | "Read" {
+    return op === "read" ? "Read" : "Export";
+}
+
+function queueOpVerb(op: QueueOp): "exported" | "read" {
+    return op === "read" ? "read" : "exported";
 }
 
 export function resumeQueue(): boolean {
@@ -332,6 +559,7 @@ export function resumeQueue(): boolean {
 export function pauseQueue(): "requested" | "forced" | null {
     if (state !== "running") return null;
     pauseRequested = true;
+    emitBridgeEvent("htsw_queue", { scope: "queue", phase: "pausing" });
     return cancelActiveTask();
 }
 export function cancelQueue(): "requested" | "forced" | null {
@@ -380,6 +608,9 @@ async function listHouseType(
     if (type === "EVENT") return { names: knownEventNames() };
     if (type === "TEAM") return { names: await listAllTeamNames(ctx) };
     if (type === "GROUP") return { names: await listAllGroupNames(ctx) };
+    // Items can be read by project NBT from inventory, but Housing cannot
+    // enumerate them by name. Keep the held-item export entry point.
+    if (type === "ITEM") return { names: [] };
     const entries = await listAllNpcs(ctx);
     const labels = new Map<string, string>();
     const names = entries.map((entry) => {
@@ -401,8 +632,7 @@ function selectedImportables(
     const filter = row.target.filter;
     return values.filter((importable) => {
         if (type !== null && importable.type !== type) return false;
-        // Items have no house reader and export only from the held stack.
-        if (row.op !== "import" && importable.type === "ITEM") return false;
+        if (row.op === "export" && importable.type === "ITEM") return false;
         const identity = importableIdentity(importable);
         if (liveNames !== undefined && !liveNames.has(identity)) return false;
         const status = buildCacheStatusRow(house, importable).state;
@@ -410,7 +640,7 @@ function selectedImportables(
     });
 }
 
-async function expandBulkDefault(
+export async function expandBulkDefault(
     ctx: TaskContext,
     row: QueueRow,
     house: string
@@ -427,7 +657,15 @@ async function expandBulkDefault(
     let selected: Array<{ type: Importable["type"]; identity: string; label: string }> =
         [];
 
-    if (row.target.scope.kind === "houseType") {
+    if (row.target.scope.kind === "houseType" && row.target.scope.type === "ITEM") {
+        // There is no Housing directory of item names. Read every selected
+        // project item so missing inventory copies fail instead of disappearing.
+        selected = selectedImportables(values, row, house).map((importable) => ({
+            type: importable.type,
+            identity: importableIdentity(importable),
+            label: importable.type === "EVENT" ? importable.event : importable.name,
+        }));
+    } else if (row.target.scope.kind === "houseType") {
         const type = row.target.scope.type;
         const listed = await listHouseType(ctx, type);
         recordHouseScan(house, type, listed.names, listed.labels);
@@ -527,40 +765,110 @@ export async function runQueuedExportSession(
     }
     const completedKeys: string[] = [];
     const failed: QueueSessionFailure[] = [];
-    await runSession(
-        ctx,
-        first.op === "read"
-            ? { kind: "cache", housingUuid: currentHouse, importJsonPath: first.path }
-            : {
-                  kind: "project",
-                  project: readProjectExportDestination({
-                      rootDir: directoryOf(first.path),
-                      importJsonPath: first.path,
-                  }),
-              },
-        Array.from(batches.entries()).map(([type, batchRows]) => ({
-            type,
-            reader: type === "ITEM" ? exportHeldItem : undefined,
-            names:
-                type === "ITEM"
-                    ? undefined
-                    : batchRows.map((row) =>
-                          row.target.kind === "importable" ? row.target.identity : ""
-                      ),
-            newExportTargetImportJson:
-                first.op === "export" ? (newExportTarget() ?? undefined) : undefined,
-            queueRows: batchRows,
-            onQueueRowFinished: (key: string, error?: string) => {
-                if (error === undefined) completedKeys.push(key);
-                else failed.push({ key, error });
-            },
-        }))
-    );
-    const itemRows = batches.get("ITEM") ?? [];
+    try {
+        await runSession(
+            ctx,
+            first.op === "read"
+                ? { kind: "cache", housingUuid: currentHouse, importJsonPath: first.path }
+                : {
+                      kind: "project",
+                      project: readProjectExportDestination({
+                          rootDir: directoryOf(first.path),
+                          importJsonPath: first.path,
+                      }),
+                  },
+            Array.from(batches.entries()).map(([type, batchRows]) => ({
+                type,
+                reader:
+                    first.op === "export" && type === "ITEM" ? exportHeldItem : undefined,
+                names:
+                    first.op === "export" && (type === "ITEM" || type === "NPC")
+                        ? undefined
+                        : batchRows.map((row) =>
+                              row.target.kind === "importable" ? row.target.identity : ""
+                          ),
+                npcEntries:
+                    first.op === "export" && type === "NPC"
+                        ? batchRows.map((row) => ({
+                              name: row.target.label,
+                              pos: parseNpcPosIdentity(
+                                  row.target.kind === "importable"
+                                      ? row.target.identity
+                                      : ""
+                              ),
+                          }))
+                        : undefined,
+                newExportTargetImportJson:
+                    first.op === "export" ? (newExportTarget() ?? undefined) : undefined,
+                queueRows: batchRows,
+                onQueueRowFinished: (key: string, error?: string) => {
+                    if (error === undefined) completedKeys.push(key);
+                    else failed.push({ key, error });
+                },
+            }))
+        );
+    } catch (error) {
+        if (!isTaskCancelled(error)) throw error;
+        return { completedKeys, failed, cancelled: true };
+    }
+    const itemRows = first.op === "export" ? (batches.get("ITEM") ?? []) : [];
     for (const itemRow of itemRows) {
         if (completedKeys.indexOf(itemRow.key) < 0) completedKeys.push(itemRow.key);
     }
+    for (const failure of failed) {
+        const row = rows.find((candidate) => candidate.key === failure.key);
+        if (row?.target.kind !== "importable") continue;
+        ChatLib.chat(
+            `&c[htsw] ${queueOpLabel(first.op)} failed on ${row.target.type} ${row.target.identity}: ${failure.error}`
+        );
+    }
+    const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
+    ChatLib.chat(
+        `&a[htsw] ${queueOpLabel(first.op)} complete in ${elapsed} &7· &f${completedKeys.length}&a ${queueOpVerb(first.op)}, &f${failed.length}&c failed`
+    );
     return { completedKeys, failed };
+}
+
+// An export replaces local entries with the house versions, so a session that
+// would overwrite declared entries asks first. "Export anyway" covers that file
+// for the rest of the run, so a whole-house export asks once, not once per type.
+async function confirmExportOverwrites(
+    ctx: TaskContext,
+    rows: readonly QueueRow[],
+    approvedPaths: Set<string>
+): Promise<boolean> {
+    const path = rows[0].path;
+    if (rows[0].op !== "export" || approvedPaths.has(path)) return true;
+    const declared = new Set(
+        ((await parseImportJsonCurrent(path)).parsed?.value ?? []).map(
+            (importable) => `${importable.type}:${importableIdentity(importable)}`
+        )
+    );
+    const names: string[] = [];
+    for (const row of rows) {
+        if (row.target.kind !== "importable") continue;
+        if (declared.has(`${row.target.type}:${row.target.identity}`)) {
+            names.push(`${row.target.type} ${row.target.label}`);
+        }
+    }
+    if (names.length === 0) return true;
+    const entries = names.length === 1 ? "entry" : "entries";
+    const lines = names.slice(0, 5).map((name) => `• ${name}`);
+    if (names.length > 5) lines.push(`…and ${names.length - 5} more`);
+    lines.push("Export replaces the local versions with the house versions.");
+    const proceed = await openAnswerableConflictPrompt(ctx, {
+        chatMessage:
+            `[htsw] Export would overwrite ${names.length} local ${entries} — awaiting confirmation\n` +
+            names.map((name) => `[htsw] Overwrite: ${name}`).join("\n"),
+        chatConfirmAction: "export anyway",
+        chatRefuseAction: "cancel the export",
+        title: `Overwrite existing ${entries} (${names.length})?`,
+        lines,
+        confirmLabel: "Export anyway",
+        danger: true,
+    });
+    if (proceed) approvedPaths.add(path);
+    return proceed;
 }
 
 function directoryOf(path: string): string {
@@ -576,7 +884,7 @@ const defaultDependencies: QueueRunnerDependencies = {
         return uuid;
     },
     async beforeFirstImport(ctx) {
-        gmcOnImportStart();
+        await gmcOnImportStart(ctx);
         if (!(await waitForCreativeMode(ctx))) {
             ChatLib.chat(
                 "&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot."
@@ -584,6 +892,8 @@ const defaultDependencies: QueueRunnerDependencies = {
         }
     },
     expandBulk: expandBulkDefault,
+    beginProject: beginProjectRun,
+    finishProject: finishProjectRun,
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {

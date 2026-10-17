@@ -1,5 +1,6 @@
 import * as json from "jsonc-parser";
 import { findDeclaringImportJson, walkImportJsonTree } from "./includeWalk";
+import type { PosLike } from "./exportTargets";
 import type { ProjectFs } from "./fs";
 
 const FORMATTING: json.FormattingOptions = {
@@ -24,7 +25,7 @@ export function identityField(section: Section): "name" | "event" {
 }
 
 export function npcPosIdentity(pos: PosLike): string {
-    return posIdentity(pos);
+    return `${pos.x},${pos.y},${pos.z}`;
 }
 
 export function importableEntryMatchesIdentity(
@@ -41,7 +42,7 @@ export function importableEntryIdentity(
 ): string | null {
     if (section === "npcs") {
         const pos = readPosNode(json.findNodeAtLocation(node, ["pos"]));
-        return pos !== null ? posIdentity(pos) : null;
+        return pos !== null ? npcPosIdentity(pos) : null;
     }
     const idNode = json.findNodeAtLocation(node, [identityField(section)]);
     if (idNode === undefined || idNode.type !== "string") return null;
@@ -373,7 +374,7 @@ function identityForEntry(
         if (!isPosLike(pos)) {
             throw new Error('upsertImportableEntry: NPC entry is missing numeric "pos" field');
         }
-        return posIdentity(pos);
+        return npcPosIdentity(pos);
     }
 
     const idField = identityField(section);
@@ -394,15 +395,13 @@ function entryNodeMatchesIdentity(
     if (section === "npcs") {
         const posNode = json.findNodeAtLocation(node, ["pos"]);
         const pos = readPosNode(posNode);
-        return pos !== null && posIdentity(pos) === identity;
+        return pos !== null && npcPosIdentity(pos) === identity;
     }
 
     const idField = identityField(section);
     const idNode = json.findNodeAtLocation(node, [idField]);
     return idNode !== undefined && idNode.type === "string" && idNode.value === identity;
 }
-
-type PosLike = { x: number; y: number; z: number };
 
 function isPosLike(value: unknown): value is PosLike {
     if (typeof value !== "object" || value === null) return false;
@@ -430,10 +429,6 @@ function readPosNode(node: json.Node | undefined): PosLike | null {
         return null;
     }
     return { x: Number(x.value), y: Number(y.value), z: Number(z.value) };
-}
-
-function posIdentity(pos: PosLike): string {
-    return `${pos.x},${pos.y},${pos.z}`;
 }
 
 function ensureTrailingNewline(text: string): string {

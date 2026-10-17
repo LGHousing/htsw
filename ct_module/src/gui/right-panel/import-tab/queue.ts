@@ -1,3 +1,4 @@
+import { activeBridgeRunId, emitBridgeEvent } from "../../../bridge/status";
 /// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
@@ -99,6 +100,29 @@ function normalizeQueueRow(input: QueueRowInput | QueueRow): QueueRow {
     };
     row.key = queueRowKey(row);
     return row;
+}
+
+/**
+ * A whole project queued for import: the entry import.json, scoped to itself.
+ * Unlike other bulk rows it outlives its children, because its run ends with a
+ * finishing step once every child is done.
+ */
+export function isProjectQueueRow(row: QueueRow): boolean {
+    return (
+        row.op === "import" &&
+        row.target.kind === "bulk" &&
+        row.target.scope.kind === "file" &&
+        row.target.scope.path === row.path
+    );
+}
+
+/** A project row whose children are all done but whose finishing step is not. */
+export function isUnfinishedProjectRow(
+    row: QueueRow,
+    rows: readonly QueueRow[]
+): boolean {
+    if (row.status !== "running" || !isProjectQueueRow(row)) return false;
+    return !rows.some((child) => child.parentKey === row.key);
 }
 
 export function makeImportableQueueRow(args: {
@@ -264,6 +288,26 @@ export function setQueueRowStatus(
 ): boolean {
     const current = byKey.get(key);
     if (current === undefined) return false;
+    if (
+        activeBridgeRunId() !== null &&
+        current.status !== status &&
+        status === "failed"
+    ) {
+        emitBridgeEvent("htsw_importable", {
+            op: current.op,
+            key,
+            importableType:
+                current.target.kind === "importable"
+                    ? current.target.type
+                    : "IMPORT_JSON",
+            identity:
+                current.target.kind === "importable"
+                    ? current.target.identity
+                    : current.target.label,
+            status,
+            reason: error,
+        });
+    }
     const next: QueueRow = {
         ...current,
         status,
@@ -307,6 +351,7 @@ function removeEmptyParents(): void {
             if (
                 row.target.kind === "bulk" &&
                 row.status === "running" &&
+                !isProjectQueueRow(row) &&
                 !parentsWithChildren.has(row.key)
             ) {
                 emptyParents.add(row.key);
@@ -352,7 +397,7 @@ export function expandBulkQueueRow(
         seen.add(child.key);
         inserted.push(child);
     }
-    if (inserted.length === 0) {
+    if (inserted.length === 0 && !isProjectQueueRow(parent)) {
         completeQueueRows([parentKey]);
         return [];
     }
@@ -368,6 +413,11 @@ export function expandBulkQueueRow(
     queueChanged();
     return inserted;
 }
+/**
+ * A row already queued further down is moved up to the insertion point
+ * instead of being skipped, so a dependency the session pulls in joins that
+ * session rather than importing a second time later.
+ */
 export function insertQueueRowsAfter(
     afterKey: string,
     rows: readonly QueueRowInput[]
@@ -377,15 +427,18 @@ export function insertQueueRowsAfter(
     const inserted: QueueRow[] = [];
     for (let i = 0; i < rows.length; i++) {
         const result = addToQueue(rows[i]);
-        if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection") {
-            continue;
-        }
-        const added = byKey.get(result.row.key);
-        if (added === undefined) continue;
-        const appendedIndex = items.findIndex((row) => row.key === added.key);
-        if (appendedIndex >= 0) items.splice(appendedIndex, 1);
-        items.splice(++insertAt, 0, added);
-        inserted.push(added);
+        const row =
+            result.kind === "added" || result.kind === "alsoQueuedOtherDirection"
+                ? result.row
+                : result.kind === "duplicate" && result.existing.status === "queued"
+                  ? result.existing
+                  : null;
+        if (row === null) continue;
+        const index = items.findIndex((candidate) => candidate.key === row.key);
+        items.splice(index, 1);
+        if (index <= insertAt) insertAt--;
+        items.splice(++insertAt, 0, row);
+        inserted.push(row);
     }
     if (inserted.length > 0) {
         rebuildLookup();
@@ -413,6 +466,112 @@ export function insertQueueRowsBefore(
     }
     return inserted;
 }
+export type QueueMove = "up" | "down" | "top" | "bottom";
+
+/** Top-level rows, each followed by its bulk children, in queue order. */
+function queueUnits(): QueueRow[][] {
+    const units: QueueRow[][] = [];
+    const unitByKey = new Map<string, QueueRow[]>();
+    for (const row of items) {
+        if (row.parentKey !== null && byKey.has(row.parentKey)) continue;
+        const unit = [row];
+        units.push(unit);
+        unitByKey.set(row.key, unit);
+    }
+    for (const row of items) {
+        if (row.parentKey !== null) unitByKey.get(row.parentKey)?.push(row);
+    }
+    return units;
+}
+
+// Rows only move among the rows shown in the same house group.
+function houseGroup(row: QueueRow, currentHouse: string | null): string | null {
+    return row.house === null || row.house === currentHouse ? null : row.house;
+}
+
+/** Keys of the top-level rows in the same house group as `key`, in queue order. */
+export function queuePeerKeys(key: string, currentHouse: string | null): string[] {
+    const row = byKey.get(key);
+    if (row === undefined) return [];
+    const group = houseGroup(row, currentHouse);
+    return queueUnits()
+        .filter((unit) => houseGroup(unit[0], currentHouse) === group)
+        .map((unit) => unit[0].key);
+}
+
+function stepTarget(key: string, move: QueueMove, currentHouse: string | null): string | null {
+    const peers = queuePeerKeys(key, currentHouse);
+    const from = peers.indexOf(key);
+    const to =
+        move === "top"
+            ? 0
+            : move === "bottom"
+              ? peers.length - 1
+              : from + (move === "up" ? -1 : 1);
+    return from < 0 || to < 0 || to >= peers.length || to === from ? null : peers[to];
+}
+
+/**
+ * The queue with the top-level rows `keys` (and their bulk children) moved as
+ * one block into the slot of `targetKey`: after it when it sits below the
+ * block, before it otherwise. Null when the move is not allowed.
+ */
+function planRowsOnto(
+    keys: readonly string[],
+    targetKey: string,
+    currentHouse: string | null
+): QueueRow[][] | null {
+    const units = queueUnits();
+    const moving = units.filter((unit) => keys.indexOf(unit[0].key) >= 0);
+    const target = units.find((unit) => unit[0].key === targetKey);
+    if (moving.length === 0 || target === undefined || moving.indexOf(target) >= 0) {
+        return null;
+    }
+    const group = houseGroup(target[0], currentHouse);
+    for (const unit of moving) {
+        if (houseGroup(unit[0], currentHouse) !== group) return null;
+        if (unit.some((row) => row.target.kind === "importable" && row.status === "running")) {
+            return null;
+        }
+    }
+    const after = units.indexOf(target) > units.indexOf(moving[0]);
+    const rest = units.filter((unit) => moving.indexOf(unit) < 0);
+    const at = rest.indexOf(target);
+    rest.splice(after ? at + 1 : at, 0, ...moving);
+    return rest;
+}
+
+export function moveQueueRowsOnto(
+    keys: readonly string[],
+    targetKey: string,
+    currentHouse: string | null
+): boolean {
+    const units = planRowsOnto(keys, targetKey, currentHouse);
+    if (units === null) return false;
+    items = [];
+    for (const unit of units) for (const row of unit) items.push(row);
+    queueChanged();
+    return true;
+}
+
+export function canMoveQueueRow(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): boolean {
+    const target = stepTarget(key, move, currentHouse);
+    return target !== null && planRowsOnto([key], target, currentHouse) !== null;
+}
+
+export function moveQueueRow(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): boolean {
+    const target = stepTarget(key, move, currentHouse);
+    return target !== null && moveQueueRowsOnto([key], target, currentHouse);
+}
+
 export function isBulkQueueRowExpanded(key: string): boolean {
     const parent = byKey.get(key);
     if (parent?.target.kind !== "bulk") return false;
@@ -469,9 +628,44 @@ export function restoreQueueItems(saved: readonly QueueRowInput[]): void {
         }
     }
 }
+/**
+ * A project row whose last run stopped short: it failed, or an importable under
+ * it did. Only meaningful while the queue is not running.
+ */
+function isStoppedProjectRow(row: QueueRow): boolean {
+    if (!isProjectQueueRow(row)) return false;
+    if (row.status === "failed" || row.status === "cancelled") return true;
+    return (
+        row.status === "running" &&
+        items.some(
+            (child) =>
+                child.parentKey === row.key &&
+                (child.status === "failed" || child.status === "cancelled")
+        )
+    );
+}
+
+/** Back to queued, without what its last run left under it. */
+function requeueProjectRow(row: QueueRow): void {
+    const children = new Set<string>();
+    for (const child of items) {
+        if (child.parentKey === row.key) children.add(child.key);
+    }
+    removeRows(children);
+    const next: QueueRow = { ...row, status: "queued", error: null };
+    items = items.map((current) => (current.key === row.key ? next : current));
+    rebuildLookup();
+    queueChanged();
+}
+
+/**
+ * `retryStopped` requeues auto-tracked project rows that stopped short. Pass it
+ * only while the queue is not running.
+ */
 export function reconcileAutoTrackedQueue(
     desiredItems: readonly QueueRow[],
-    removeStale = true
+    removeStale = true,
+    retryStopped = false
 ): ReadonlySet<string> {
     const desired = desiredItems.map((row) =>
         normalizeQueueRow({ ...row, origin: "autotrack" })
@@ -481,10 +675,7 @@ export function reconcileAutoTrackedQueue(
         const stale = new Set<string>();
         for (const key of autoTrackedKeys) {
             const row = byKey.get(key);
-            if (
-                !desiredKeys.has(key) &&
-                row?.status !== "running"
-            ) {
+            if (!desiredKeys.has(key) && row?.status !== "running") {
                 stale.add(key);
             }
         }
@@ -497,6 +688,16 @@ export function reconcileAutoTrackedQueue(
     for (let i = 0; i < desired.length; i++) {
         const row = desired[i];
         if (restoredKeys.delete(row.key)) autoTrackedKeys.add(row.key);
+        const existing = byKey.get(row.key);
+        if (
+            retryStopped &&
+            existing !== undefined &&
+            autoTrackedKeys.has(row.key) &&
+            isStoppedProjectRow(existing)
+        ) {
+            requeueProjectRow(existing);
+            continue;
+        }
         const result = addToQueue(row);
         if (result.kind !== "added" && result.kind !== "alsoQueuedOtherDirection")
             continue;
@@ -553,12 +754,8 @@ export function runnableQueueRowCount(
 ): number {
     let count = 0;
     for (const row of rows) {
-        if (
-            row.status === "queued" &&
-            (row.house === null || row.house === currentHouse)
-        ) {
-            count++;
-        }
+        if (row.house !== null && row.house !== currentHouse) continue;
+        if (row.status === "queued" || isUnfinishedProjectRow(row, rows)) count++;
     }
     return count;
 }

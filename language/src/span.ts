@@ -19,12 +19,14 @@ export class Span {
         return Span.at(-1);
     }
 
+    /** A zero-width insertion point immediately before this span. */
     startSpan(): Span {
-        return Span.single(this.start);
+        return Span.at(this.start);
     }
 
+    /** A zero-width insertion point immediately after this span. */
     endSpan(): Span {
-        return Span.single(this.end - 1);
+        return Span.at(this.end);
     }
 
     to(other: Span) {

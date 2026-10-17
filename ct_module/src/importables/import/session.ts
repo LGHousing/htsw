@@ -8,7 +8,9 @@ import type { Importable } from "htsw/types";
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
+import { setBridgeConflictDetails } from "../../bridge/status";
 import { isTaskCancelled } from "../../tasks/manager";
+import { setTaskActivity } from "../../tasks/activity";
 import { isTaskTraceEnabled, traceNote } from "../../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
@@ -86,6 +88,7 @@ import {
     diffDetailsReportForImportConflicts,
     writeDiffDetailsFile,
 } from "../../housingSync/actions/diffDetails";
+import { errorMessage } from "../../utils/helpers";
 
 export { orderImportablesForSession } from "./dependencyExpansion";
 
@@ -134,7 +137,7 @@ function toImportDiagnostic(
 ): Diagnostic {
     if (error instanceof Diagnostic) return error;
     const verb = phase === "read" ? "read" : "import";
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return Diagnostic.error(`Failed to ${verb} ${type}: ${message}`);
 }
 
@@ -168,6 +171,7 @@ export async function runImportSession(
     try {
         await runImportSessionInner(ctx, selection);
     } catch (error) {
+        setTaskActivity(null);
         if (isTaskCancelled(error)) {
             reportCancellationCache(ctx, error, {
                 savedCount: 0,
@@ -189,12 +193,14 @@ async function runImportSessionInner(
     resetMenuNameSession();
     resetCommandNameSession();
 
+    setTaskActivity("Reading the project");
     const parsed =
         selection.parsed ??
         parseImportablesResult(
             new SourceMap(new FileSystemFileLoader()),
             selection.sourcePath
         );
+    setTaskActivity("Working out what the import needs");
     const expansion = expandImportDependencies(
         parsed,
         selection.importables,
@@ -227,8 +233,10 @@ async function runImportSessionInner(
     }
 
     const orderedImportables = expansion.importables;
+    setTaskActivity("Loading what htsw knows about this house");
     await warmImportableCaches(selection.housingUuid, orderedImportables);
     await ctx.sleep(1);
+    setTaskActivity("Checking what is already up to date");
     // Building a trust plan hashes every importable and all of its actions,
     // which is slow. Pass only the ones we're importing this run, not the
     // whole project, so we don't hash things we aren't going to touch.
@@ -240,6 +248,7 @@ async function runImportSessionInner(
         itemDependencies
     );
 
+    setTaskActivity("Matching item references");
     const itemFieldObservations = selection.trustMode
         ? undefined
         : createItemFieldObservationRecorder();
@@ -261,6 +270,7 @@ async function runImportSessionInner(
         itemVerification
     );
 
+    setTaskActivity("Listing functions, menus and regions in the house");
     const referencedShellPlan = await planMissingReferencedShells(
         ctx,
         orderedImportables
@@ -306,6 +316,7 @@ async function runImportSessionInner(
             ),
         },
     };
+    setTaskActivity("Estimating the work");
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
@@ -316,7 +327,7 @@ async function runImportSessionInner(
             rowIndex,
             trustPlan: tp,
             units:
-                tp?.wholeImportableTrusted === true && importable.type !== "ITEM"
+                tp?.wholeImportableTrusted === true
                     ? 1
                     : estimateImportableUnits(
                           importable,
@@ -337,6 +348,8 @@ async function runImportSessionInner(
         status: "queued",
         totalUnits: row.units,
     }));
+    // Per-importable progress rows take over from here.
+    setTaskActivity(null);
     let initialTotalUnits = 0;
     for (const row of rowsMeta) initialTotalUnits += row.units;
     if (initialTotalUnits === 0) initialTotalUnits = 1;
@@ -381,7 +394,10 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 cached: cacheEntry === null ? null : cacheEntry.importable,
             });
-            if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
+            // A trusted ITEM has nothing left to do in the house. Handing the
+            // player a copy is the projects panel's Give action, not an import
+            // side effect.
+            if (row.trustPlan?.wholeImportableTrusted) {
                 emitKnowledgeSource(events, "cache", "whole-importable", row.trustPlan);
                 events?.emit({
                     kind: "importableScanCompleted",
@@ -524,6 +540,7 @@ async function runImportSessionInner(
         }
     }
 
+    setTaskActivity("Planning changes");
     for (const { row, read } of reads) {
         const plan = read.plan(session);
         plannedApplicationUnits.set(row.key, plan.applicationUnits);
@@ -542,6 +559,15 @@ async function runImportSessionInner(
             session.actions.conflicts,
             session.actions.conflictEvidence
         );
+        setBridgeConflictDetails({
+            conflicts: session.actions.conflicts.map(({ type, identity, basePath }) => ({
+                type,
+                identity,
+                basePath,
+            })),
+            ...(diffDetailsPath === null ? {} : { diffPath: diffDetailsPath }),
+        });
+        setTaskActivity("Waiting for your answer on conflicts");
         const decision =
             selection.conflictHandling.kind === "proceed"
                 ? "proceed"
@@ -603,6 +629,7 @@ async function runImportSessionInner(
     // interrupted — a crash, disconnect or Housing kick skips every handler
     // that would have corrected it — so the next import reports this import's
     // own writes as someone else's Housing edits.
+    setTaskActivity("Saving what was read");
     await writeObservedPlanCaches(
         ctx,
         observedPlans,
@@ -610,8 +637,11 @@ async function runImportSessionInner(
         new Map(),
         verifiedDependencyContext
     );
+    setTaskActivity(null);
 
     let activePlanIndex: number | null = null;
+    let activeBaselineDropped = false;
+    let lockedAppliedCount = 0;
     try {
         events?.emit({
             kind: "sessionTotalsLocked",
@@ -716,6 +746,12 @@ async function runImportSessionInner(
                 rowIndex: row.rowIndex,
                 phase: "applying",
             });
+            // Housing is about to diverge from this importable's cache and
+            // lock entry. A session that dies mid-import (crash, closed game,
+            // /ct reload) runs no handler, so a surviving baseline would make
+            // the next import blame Housing for this session's own writes.
+            // With no baseline the next import reads it fresh.
+            activeBaselineDropped = dropVerifiedState(selection, row);
             try {
                 const application = new ApplicationProgress(plan.applicationPlan, events);
                 await plan.apply(ctx, session, application);
@@ -732,12 +768,24 @@ async function runImportSessionInner(
                 );
                 application.assertComplete();
                 if (cacheSaved) {
-                    setPendingHouseLockEntry(pendingHouseLockEntries, {
+                    const entry = {
                         importable: row.importable,
                         itemDependencies: itemDependencies.snapshotOf(row.importable),
                         itemContent: itemDiff.fieldContent,
-                    });
+                    };
+                    if (
+                        await upsertHouseLockImportablesOffThread(
+                            selection.sourcePath,
+                            selection.housingUuid,
+                            [entry]
+                        )
+                    ) {
+                        lockedAppliedCount++;
+                    } else {
+                        setPendingHouseLockEntry(pendingHouseLockEntries, entry);
+                    }
                 }
+                activePlanIndex = null;
                 events?.emit({
                     kind: "importableFinished",
                     key: row.key,
@@ -753,21 +801,6 @@ async function runImportSessionInner(
                     pendingHouseLockEntries,
                     verifiedDependencyContext
                 );
-                if (!partialSaved) {
-                    removePendingHouseLockEntry(
-                        pendingHouseLockEntries,
-                        row.importable.type,
-                        row.identity
-                    );
-                    deleteImportableCache(
-                        selection.housingUuid,
-                        row.importable.type,
-                        row.identity
-                    );
-                    removeHouseLockImportables(selection.sourcePath, [
-                        { type: row.importable.type, identity: row.identity },
-                    ]);
-                }
                 const diag = toImportDiagnostic(error, "import", row.importable.type);
                 events?.emit({
                     kind: "importableFinished",
@@ -801,10 +834,8 @@ async function runImportSessionInner(
         await session.itemPlacement.restore(ctx);
     } catch (error) {
         if (!isTaskCancelled(error)) {
-            // Importables applied above already hold their post-apply lock
-            // entries in the pending map. Dropping them here would leave the
-            // house ahead of its baseline, so the next import blames Housing
-            // for the actions this session wrote.
+            // Applied importables wrote their lock entries as they finished;
+            // the pending map holds unchanged rows and any retried writes.
             await flushHouseLockEntries(
                 selection.sourcePath,
                 selection.housingUuid,
@@ -826,28 +857,12 @@ async function runImportSessionInner(
                 verifiedDependencyContext
             );
             if (!partialSaved) {
-                removePendingHouseLockEntry(
-                    pendingHouseLockEntries,
-                    active.row.importable.type,
-                    active.row.identity
-                );
-                const invalidated = deleteImportableCache(
-                    selection.housingUuid,
-                    active.row.importable.type,
-                    active.row.identity
-                );
-                removeHouseLockImportables(selection.sourcePath, [
-                    {
-                        type: active.row.importable.type,
-                        identity: active.row.identity,
-                    },
-                ]);
-                invalidatedCurrent = invalidated;
-                invalidationFailed = !invalidated;
+                invalidatedCurrent = activeBaselineDropped;
+                invalidationFailed = !activeBaselineDropped;
             }
         }
 
-        const savedCount = pendingHouseLockEntries.size;
+        const savedCount = lockedAppliedCount + pendingHouseLockEntries.size;
         const lockUpdated = await flushHouseLockEntries(
             selection.sourcePath,
             selection.housingUuid,
@@ -894,7 +909,7 @@ function writeImportConflictDiff(
         );
         return path;
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = errorMessage(error);
         ctx.displayMessage(
             `&e[htsw] Housing conflict detected, but the diff file could not be saved: ${reason}`
         );
@@ -1054,13 +1069,9 @@ async function writeObservedPlanCaches(
         if (observed === null) continue;
         const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
         if (
-            !(await tryWriteImportableCache(
-                ctx,
-                observed,
-                "importer",
-                housingUuid,
-                { itemDependencies }
-            ))
+            !(await tryWriteImportableCache(ctx, observed, "importer", housingUuid, {
+                itemDependencies,
+            }))
         ) {
             continue;
         }
@@ -1110,12 +1121,19 @@ function setPendingHouseLockEntry(
     );
 }
 
-function removePendingHouseLockEntry(
-    entries: PendingHouseLockEntries,
-    type: Importable["type"],
-    identity: string
-): void {
-    entries.delete(importableKey(type, identity));
+function dropVerifiedState(
+    selection: ImportSessionRequest,
+    row: { importable: Importable; identity: string }
+): boolean {
+    const type = row.importable.type;
+    // A lock entry without a cache is safe (trust refuses it); a cache without
+    // a lock entry is trusted. Keep the lock entry if the cache survived.
+    return (
+        deleteImportableCache(selection.housingUuid, type, row.identity) &&
+        removeHouseLockImportables(selection.sourcePath, [
+            { type, identity: row.identity },
+        ])
+    );
 }
 
 type CancellationCacheOutcome = {

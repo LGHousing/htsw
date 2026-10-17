@@ -20,6 +20,14 @@ function actionsCompareEqual(a: Action | Observed, b: Action): boolean {
     return actionsEqual(a, b);
 }
 
+describe("value formatting read-back", () => {
+    test("a reset-only title matches the empty Housing value", () => {
+        expect(actionsEqual({ type: "TITLE", title: "" }, { type: "TITLE", title: "&r" })).toBe(true);
+        expect(actionsEqual({ type: "TITLE", title: "&cRed" }, { type: "TITLE", title: "&r" })).toBe(false);
+        expect(actionsEqual({ type: "TITLE", title: "Red" }, { type: "TITLE", title: "&r&cRed" })).toBe(false);
+    });
+});
+
 describe("action comparison — value-kind numeric coercion", () => {
     // Lore parsing produces strings; HTSL source produces numbers. These
     // tests pin the rule: equal-magnitude string/number pairs compare equal

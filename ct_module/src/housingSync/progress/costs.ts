@@ -1,4 +1,10 @@
-import type { Action, Condition, Importable } from "htsw/types";
+import type {
+    Action,
+    Condition,
+    Importable,
+    ImportableMenu,
+    MenuSlot,
+} from "htsw/types";
 
 import type { ActionHydrationWork, ActionHydrationPlan } from "../actions/hydration/plan";
 import type {
@@ -41,6 +47,7 @@ import { matchByHash } from "../../importCache/actionMatch";
 import { cacheEntryListHashes } from "../../importCache/status";
 import { trustedChildListPathsForImportable } from "../../importCache/trust";
 import { regionBoundsEqual } from "../../importables/regions/bounds";
+import { menuSlotNbtCompareKey } from "../../importables/menus/slotComparison";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
@@ -64,7 +71,6 @@ import { regionBoundsEqual } from "../../importables/regions/bounds";
  * target band rate to get the new unit value.
  */
 export const COST = {
-    commandInterval: 1,
     commandMenuWait: 2.3,
     commandMessageWait: 2,
 
@@ -97,9 +103,18 @@ export const ITEM_CAPTURE_FIELD_UNITS =
     COST.menuClickWait + COST.itemSelect + COST.goBackWait;
 
 export const REGION_BOUNDS_CHANGE_UNITS =
-    (COST.commandInterval + COST.commandMessageWait) * 4 +
-    (COST.commandInterval + COST.commandMenuWait) * 2 +
+    COST.commandMessageWait * 4 +
+    COST.commandMenuWait * 2 +
     COST.messageClickWait;
+
+// Writing one menu slot's item: RIGHT-click opens the picker, then one pick.
+export const MENU_ITEM_WRITE_UNITS = COST.menuClickWait + COST.itemSelect;
+// Emptying one menu slot: RIGHT-click opens the picker, then "Clear Item".
+export const MENU_SLOT_CLEAR_UNITS = COST.menuClickWait * 2;
+// Reaching one slot's action list from anywhere: `/menu edit`, the elements
+// grid, then the slot itself (see `openMenuSlotActions`).
+export const MENU_SLOT_VISIT_UNITS =
+    COST.commandMenuWait + COST.menuClickWait * 2;
 
 const LIST_ITEMS_PER_PAGE = 21;
 
@@ -1073,7 +1088,6 @@ function exactKnownChildListUnits(actions: readonly Action[] | undefined): numbe
 export function estimateImportableReadUnits(importable: Importable): number {
     if (importable.type === "FUNCTION") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1083,7 +1097,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "COMMAND") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListReadCost(importable.actions ?? []) +
             COST.menuClickWait +
@@ -1092,7 +1105,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "EVENT") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(importable.actions) +
@@ -1101,7 +1113,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "REGION") {
         return (
-            COST.commandInterval * 4 +
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
             actionListReadCost(importable.onEnterActions ?? []) +
@@ -1115,7 +1126,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
         if (left.length === 0 && right.length === 0) return COST.cacheWrite;
         return (
             COST.itemInject +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(left) +
@@ -1126,7 +1136,7 @@ export function estimateImportableReadUnits(importable: Importable): number {
         );
     }
     if (importable.type === "MENU") {
-        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             total += actionListReadCost(slots[i].actions ?? []);
@@ -1135,7 +1145,6 @@ export function estimateImportableReadUnits(importable: Importable): number {
     }
     if (importable.type === "NPC") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait * 3 +
             COST.chatInput +
@@ -1172,7 +1181,6 @@ export function estimateImportableCost(
 
     if (importable.type === "FUNCTION") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1186,7 +1194,6 @@ export function estimateImportableCost(
     }
     if (importable.type === "COMMAND") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             actionListCost(
                 importable.actions ?? [],
@@ -1201,7 +1208,6 @@ export function estimateImportableCost(
     }
     if (importable.type === "EVENT") {
         return (
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1247,7 +1253,6 @@ export function estimateImportableCost(
         return (
             COST.itemInject +
             COST.guaranteedSleep1000 +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1275,12 +1280,11 @@ export function estimateImportableCost(
         // list, and go back (see readLiveMenu). Price that walk per slot;
         // pricing only the click (as this branch once did) undercounts a
         // menu's work by the entire cost of its action lists.
-        let total = COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+        let total = COST.commandMenuWait + COST.menuClickWait;
         const slots = importable.slots;
         for (let i = 0; i < slots.length; i++) {
             const actions = slots[i].actions ?? [];
             total +=
-                COST.commandInterval +
                 COST.commandMenuWait +
                 COST.menuClickWait * 2 +
                 pageTurnUnitsForListItemCount(actions.length) +
@@ -1297,7 +1301,6 @@ export function estimateImportableCost(
             importable.leftClickRedirect === undefined ? 0 : COST.menuClickWait;
         const renameUnits = COST.chatInput;
         return (
-            COST.commandInterval * 3 +
             COST.commandMenuWait * 3 +
             COST.menuClickWait * 9 +
             renameUnits +
@@ -1323,6 +1326,83 @@ export function estimateImportableCost(
 }
 
 /**
+ * Work estimate for a menu whose last-known state is cached. Follows the
+ * importer: one grid snapshot, then per declared slot an item write when the
+ * item differs and an action sync when the list differs, both matched to the
+ * cache by Housing slot number. Trust mode plans every slot from the cache and
+ * opens only changed lists, once, for the lock check. Without trust each
+ * cached slot is opened and scanned, and reopened to hydrate when it has to.
+ */
+function estimateCachedMenuUnits(
+    importable: ImportableMenu,
+    cached: ImportableMenu,
+    trustMode: boolean
+): number {
+    const cachedBySlot = new Map<number, MenuSlot>();
+    for (const slot of cached.slots) cachedBySlot.set(slot.slot, slot);
+
+    let reading = 0;
+    let slotWork = 0;
+    const declared = new Set<number>();
+    for (const slot of importable.slots) {
+        declared.add(slot.slot);
+        const cachedSlot = cachedBySlot.get(slot.slot);
+        // A slot the cache has never seen is taken as empty in the house.
+        const baseline = cachedSlot?.actions ?? [];
+        if (
+            cachedSlot === undefined ||
+            menuSlotNbtCompareKey(cachedSlot.nbt) !== menuSlotNbtCompareKey(slot.nbt)
+        ) {
+            slotWork += MENU_ITEM_WRITE_UNITS;
+        }
+        const actionUnits = baselineAwareApplyUnits(slot.actions ?? [], baseline);
+        const visit =
+            MENU_SLOT_VISIT_UNITS + pageTurnUnitsForListItemCount(baseline.length);
+        if (!trustMode && cachedSlot !== undefined) {
+            reading += visit;
+            const hydrate = topLevelHydrateUnits(baseline);
+            if (hydrate > 0) reading += MENU_SLOT_VISIT_UNITS + hydrate;
+        } else if (actionUnits > 0 && baseline.length > 0) {
+            // A changed list that house.lock.json covers is opened once to
+            // check it against the lock before the cache is believed.
+            reading += visit;
+        }
+        if (actionUnits > 0) {
+            slotWork += COST.menuClickWait + actionUnits + COST.goBackWait;
+        }
+    }
+    let clears = 0;
+    for (const slot of cached.slots) {
+        if (!declared.has(slot.slot)) clears += MENU_SLOT_CLEAR_UNITS;
+    }
+    // An undeclared size is Housing's default of six rows.
+    const resize =
+        importable.size !== undefined && importable.size !== (cached.size ?? 6);
+
+    // Same step order as `menuApplicationPlan`: a resize clears stale slots
+    // first and returns to the settings screen; otherwise clears share the
+    // elements grid with the item and action work.
+    let applying = 0;
+    if (slotWork > 0 || clears > 0 || resize) {
+        applying += COST.commandMenuWait;
+        if (resize) {
+            if (clears > 0) applying += COST.menuClickWait + clears + COST.goBackWait;
+            applying += COST.menuClickWait * 2;
+            if (slotWork > 0) applying += COST.menuClickWait + slotWork;
+        } else {
+            applying += COST.menuClickWait + clears + slotWork;
+        }
+    }
+    return (
+        COST.commandMenuWait +
+        COST.menuClickWait +
+        reading +
+        applying +
+        COST.cacheWrite
+    );
+}
+
+/**
  * Work estimate in units for one importable, given its last-known saved
  * state (or null when there's none). When a saved state exists, its action
  * lists feed the cache-aware estimate so unchanged work is priced cheaply.
@@ -1338,6 +1418,9 @@ export function estimateImportableUnits(
     }
     if (cacheEntry === null) {
         return estimateImportableCost(importable);
+    }
+    if (importable.type === "MENU" && cacheEntry.importable.type === "MENU") {
+        return estimateCachedMenuUnits(importable, cacheEntry.importable, trustMode);
     }
     const getCached = (basePath: string) =>
         readCachedActionList(cacheEntry.importable, basePath);

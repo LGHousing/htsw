@@ -4,7 +4,6 @@ import { defineConfig } from "vite";
 
 const languageDistPath = fileURLToPath(new URL("../../language/dist/", import.meta.url));
 const commonItemSrcPath = fileURLToPath(new URL("../common/src/item/", import.meta.url));
-const commonTextSrcPath = fileURLToPath(new URL("../common/src/text/", import.meta.url));
 
 export default defineConfig({
     resolve: {
@@ -14,10 +13,6 @@ export default defineConfig({
             {
                 find: /^htsw-editor-common\/item\/buildItemNbt$/,
                 replacement: path.resolve(commonItemSrcPath, "buildItemNbt.ts"),
-            },
-            {
-                find: /^htsw-editor-common\/text\/colorCodes$/,
-                replacement: path.resolve(commonTextSrcPath, "colorCodes.ts"),
             },
         ],
     },

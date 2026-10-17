@@ -1,6 +1,6 @@
 import TaskContext from "../../tasks/context";
 import { ItemSlot } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { plainItemName } from "../../utils/helpers";
 import { timedWaitForMenu } from "./menuWait";
 
 const ITEMS_PER_PAGE = 21;
@@ -32,13 +32,36 @@ export function isEmptyPaginatedPlaceholder(
     const rawItem: unknown = slot.getItem();
     const item = rawItem as Item | null | undefined;
     if (item === null || item === undefined) return false;
-    const actual = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
+    const actual = plainItemName(item.getName());
     const expected = config.emptyPlaceholderName.trim();
     return actual.toLowerCase() === expected.toLowerCase();
 }
 
-function stripTooltipDebugSuffix(name: string): string {
-    return name.replace(/\s*\(#[0-9a-fA-F]+\)\s*$/, "").trim();
+/**
+ * An entry's name from its list slot, or null for the list's own controls
+ * (Go Back, Close, the Create button, page arrows).
+ */
+export function paginatedEntryName(displayName: string, createLabel: string): string | null {
+    const name = plainItemName(displayName);
+    if (name.length === 0) return null;
+    const lower = name.toLowerCase();
+    if (
+        lower === "go back" ||
+        lower === "close" ||
+        lower === createLabel.toLowerCase() ||
+        lower.indexOf("previous page") >= 0 ||
+        lower.indexOf("next page") >= 0
+    ) {
+        return null;
+    }
+    return name;
+}
+
+// Not confirmed in-game: the menu and region lists may show a trailing numeric
+// note such as "(12 slots)"; drop it, keeping names with other parentheses.
+export function withoutNumericNote(name: string): string {
+    const m = name.match(/^(.+?)\s*\(\d[^)]*\)$/);
+    return m !== null ? m[1] : name;
 }
 
 export function parsePaginatedTitlePage(

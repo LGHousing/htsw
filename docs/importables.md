@@ -18,6 +18,7 @@ htsw check import.json
 | Field | Required | Value |
 | --- | --- | --- |
 | `houseUuid` | No | UUID string |
+| `dangerouslyDeleteEverythingNotInThisFile` | No | boolean |
 | `include` | No | array of path ending in `import.json` or `.import.json` |
 | `functions` | No | array of function object |
 | `events` | No | array of event object |
@@ -221,6 +222,37 @@ An item's `name` is its stable project identifier, used by item fields such as
 `giveItem "Magic Wand"`. It is separate from the display name stored in the
 SNBT. `leftClickActions` and `rightClickActions` attach Housing interaction
 scripts to the item.
+
+`/htsw diff` reads an item's left and right click actions from a live copy in
+your inventory (hotbar or main inventory), using `/edit` and its Edit Actions
+menu. It matches the project's item NBT using the existing Housing normalization,
+not the display name or cached click actions. For a declared custom item, a unique
+signed copy takes precedence only over plain vanilla copies with default NBT.
+Unsigned custom copies and competing signatures remain ambiguous. HTSW selects
+an existing hotbar stack or swaps a main-inventory stack into the hotbar, then restores the selection/swap.
+Disconnecting during a swap leaves both stacks in the inventory. Diff requires
+an existing inventory copy and never injects one.
+Custom-item dependency export retains its existing creative-copy placement from
+main, including borrowing the first slot when the hotbar is full. Reading nested
+item fields requires creative mode and spare inventory space. Creative mode is
+checked before every inventory packet; if it is revoked, cleanup stops and reports
+unrestored changes. Legacy dependency export and server-returned field captures
+can leave copies after interrupted cleanup; this reader adds no fallback copies.
+HTSW reports unmet prerequisites as unknown. A missing copy, ambiguous NBT match,
+or incomplete action read also counts as unknown.
+
+Housing has no list of project item names. If an item exists only in an action
+such as Give Item, obtain a copy from the house before running diff. Menu-slot
+actions and NPC click actions belong to those importables and are read separately;
+they are not the item's own click actions. Diff verifies the lists of the matched
+inventory copy, not every copy stored elsewhere in the house. NBT that Housing
+does not expose (such as `ItemModel` on 1.8.9) is not verified by this read.
+
+Housing can refuse `/edit` for protected items such as its built-in cookie
+(`ExtraAttributes.COOKIE_ITEM`). Declared click lists on a refused item stay
+unknown. When exporting a referenced item with no `interact_data`, HTSW writes
+its NBT directly without opening the item editor; built-in behavior remains in
+the NBT. Items with custom action data still require a successful menu read.
 
 ```json
 {

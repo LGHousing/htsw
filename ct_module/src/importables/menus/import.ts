@@ -15,13 +15,19 @@ import {
     scanActionListSync,
     type ActionListSyncScanResult,
 } from "../../housingSync/actions/prepareSync";
-import { COST } from "../../housingSync/progress/costs";
+import {
+    COST,
+    MENU_ITEM_WRITE_UNITS,
+    MENU_SLOT_CLEAR_UNITS,
+    MENU_SLOT_VISIT_UNITS,
+} from "../../housingSync/progress/costs";
 import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/itemPicker";
 import { canonicalItemShellKey, snbtFromItem } from "../../housingSync/items/itemNbt";
 import type { ImportableTrustPlan } from "../../importCache";
+import { menuSlotActionsPath } from "../../importCache/actionLists";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { createProgressGroup } from "../../housingSync/progress/group";
 import TaskContext from "../../tasks/context";
@@ -54,8 +60,6 @@ type MenuSlotOp = {
     slot: number;
     setItem?: Item;
     syncActions?: Action[];
-    /** Trust/baseline path for `syncActions` (e.g. `slots[3].actions`). */
-    actionsPath?: string;
     clear?: boolean;
     /** Diagnostic only: read-back vs desired item SNBT when the item differs,
      * so a residual can show exactly what changed instead of just "item differs". */
@@ -64,11 +68,6 @@ type MenuSlotOp = {
     itemLabel?: string | null;
     actionsPlan?: ActionListPlan;
 };
-
-// Writing one slot's item: RIGHT-click opens the picker, then one pick.
-const ITEM_WRITE_UNITS = COST.menuClickWait + COST.itemSelect;
-// Emptying one slot: RIGHT-click opens the picker, then click "Clear Item".
-const SLOT_CLEAR_UNITS = COST.menuClickWait * 2;
 
 function menuItemLabel(item: Item | null | undefined): string | null {
     if (item === null || item === undefined) return null;
@@ -171,7 +170,7 @@ export async function scanImportableMenu(
             index: i + 1,
             count: importable.slots.length,
         });
-        const basePath = `slots[${i}].actions`;
+        const basePath = menuSlotActionsPath(desired.slot);
         const actions = await scanActionListSync(ctx, {
             desired: desired.actions ?? [],
             sync: session.actions,
@@ -183,7 +182,10 @@ export async function scanImportableMenu(
                 identity: importableIdentity(importable),
                 basePath,
             },
-            open: () => openMenuSlotActions(ctx, importable.name, desired.slot),
+            open: async () => {
+                await openMenuSlotActions(ctx, importable.name, desired.slot);
+                progress.visited(i, MENU_SLOT_VISIT_UNITS);
+            },
             progress: progress.part(i),
         });
         slots.push({ desiredIndex: i, slot: desired.slot, label, actions });
@@ -246,7 +248,6 @@ export function menuActionBaseline(
     actionPlan: ActionListPlan | null,
     cached: Action[] | undefined,
     menuName: string,
-    path: string,
     slot: number,
     declared: boolean
 ): { actions: Action[]; actionsKnown: boolean } {
@@ -261,7 +262,7 @@ export function menuActionBaseline(
             return { actions: [], actionsKnown: true };
         }
         throw new Error(
-            `Menu "${menuName}" has no usable baseline for ${path} ` +
+            `Menu "${menuName}" has no usable baseline for ${menuSlotActionsPath(slot)} ` +
                 `(Housing slot ${slot}; unhydrated action indexes/types: ` +
                 "unavailable because no action plan exists)."
         );
@@ -294,18 +295,12 @@ export function planImportableMenu(
         const actionPlan =
             actionRead === undefined ? null : actionListPlanFromRead(actionRead);
         const cached = cachedBySlot.get(slot.slot);
-        const desiredIndex = actionReadBySlot.get(slot.slot)?.desiredIndex;
-        const path =
-            desiredIndex === undefined
-                ? "slots[unknown].actions"
-                : `slots[${desiredIndex}].actions`;
         const actionBaseline = menuActionBaseline(
             actionPlan,
             cached,
             read.importable.name,
-            path,
             slot.slot,
-            desiredIndex !== undefined
+            actionReadBySlot.has(slot.slot)
         );
         return {
             slot: slot.slot,
@@ -321,12 +316,9 @@ export function planImportableMenu(
         session.items,
         session.actions.itemDiff
     );
-    const readsByPath = new Map(
-        read.slots.map((slot) => [`slots[${slot.desiredIndex}].actions`, slot])
-    );
     for (const op of diff.ops) {
         const actionRead =
-            op.actionsPath === undefined ? undefined : readsByPath.get(op.actionsPath);
+            op.syncActions === undefined ? undefined : actionReadBySlot.get(op.slot);
         if (actionRead !== undefined) {
             const actionPlan = actionListPlanFromRead(actionRead.actions);
             if (actionPlan !== null) {
@@ -396,7 +388,6 @@ function buildMenuDiff(
         }
         if (change.setActions) {
             op.syncActions = slot.actions ?? [];
-            op.actionsPath = `slots[${change.desiredIndex}].actions`;
         }
         ops.push(op);
     }
@@ -572,8 +563,7 @@ export function menuApplicationPlan(
     steps.push(
         workStep(
             "menu",
-            COST.commandInterval +
-                (exists ? COST.commandMenuWait : COST.commandMessageWait)
+            (exists ? COST.commandMenuWait : COST.commandMessageWait)
         )
     );
 
@@ -582,7 +572,7 @@ export function menuApplicationPlan(
     if (plan.diff.setSize !== null && clearOps.length > 0) {
         steps.push(workStep("clear:prepare", COST.menuClickWait));
         for (const op of clearOps) {
-            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+            steps.push(workStep(clearStepKey(op.slot), MENU_SLOT_CLEAR_UNITS));
         }
         steps.push(workStep("clear:back", COST.goBackWait));
         remainingOps = plan.diff.ops.filter((op) => op.clear !== true);
@@ -596,9 +586,9 @@ export function menuApplicationPlan(
 
     for (const op of remainingOps) {
         if (op.clear === true) {
-            steps.push(workStep(clearStepKey(op.slot), SLOT_CLEAR_UNITS));
+            steps.push(workStep(clearStepKey(op.slot), MENU_SLOT_CLEAR_UNITS));
         } else if (op.setItem !== undefined) {
-            steps.push(workStep(itemStepKey(op.slot), ITEM_WRITE_UNITS));
+            steps.push(workStep(itemStepKey(op.slot), MENU_ITEM_WRITE_UNITS));
         }
     }
     for (const op of remainingOps) {

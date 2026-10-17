@@ -71,6 +71,7 @@ import {
 } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
+import { giveAllItemsMenuAction, giveItemMenuAction } from "../../menus/giveItemMenu";
 import { autoTrackRefresh, needsModifiedQueue } from "../../autoTrack";
 import { autoRunQueueChanged } from "../../autoRun";
 import { autoTrackBlock, autoTrackBoundHouse } from "../../autoTrackScope";
@@ -112,7 +113,6 @@ import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
 import { itemChanges } from "../../../importables/items/changes";
 import { showToast } from "../../toast";
-import { HOUSE_READERS } from "../../../importables/export/readers";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { importableMatchesFilters } from "./filter";
 
@@ -709,6 +709,7 @@ function reExportImportableAction(
         label: "Queue export",
         icon: Icons.refreshCw,
         disabled: () => getHousingUuid() === null,
+        tooltip: joinHouseFirstTooltip,
         onClick: () => {
             openConfirmPopover({
                 title: "Re-export 1 declared from the house?",
@@ -728,15 +729,12 @@ function deepReadSpecs(importables: readonly Importable[]): DeepReadSpec[] {
     const namesByType = new Map<Importable["type"], string[]>();
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
-        if (HOUSE_READERS[imp.type] === null) continue;
         const names = namesByType.get(imp.type) ?? [];
         names.push(importableIdentity(imp));
         namesByType.set(imp.type, names);
     }
     const specs: DeepReadSpec[] = [];
     namesByType.forEach((names, type) => {
-        const read = HOUSE_READERS[type];
-        if (read === null) return;
         specs.push({ type, label: type.toLowerCase(), names });
     });
     return specs;
@@ -802,14 +800,6 @@ function houseExportCount(importables: readonly Importable[]): number {
     return count;
 }
 
-function deepReadableCount(importables: readonly Importable[]): number {
-    let count = 0;
-    for (let i = 0; i < importables.length; i++) {
-        if (HOUSE_READERS[importables[i].type] !== null) count++;
-    }
-    return count;
-}
-
 function runProjectDeepRead(
     parent: ResultImport,
     importJsonPath: string,
@@ -823,7 +813,7 @@ function runProjectDeepRead(
             "read",
             housingUuid,
             importJsonPath,
-            importables.filter((imp) => HOUSE_READERS[imp.type] !== null),
+            importables,
             "reads"
         );
         return;
@@ -846,12 +836,17 @@ function runProjectDeepRead(
     autoRunQueueChanged();
 }
 
+// For menu entries that need a joined house: the grey state alone doesn't say
+// why. An empty tooltip draws nothing, so the enabled state has no chip.
+const joinHouseFirstTooltip = (): string =>
+    getHousingUuid() === null ? "Join a house first" : "";
+
 function readImportableAction(parent: ResultImport, imp: Importable): MenuAction | null {
-    if (HOUSE_READERS[imp.type] === null) return null;
     return {
         label: "Queue read",
         icon: Icons.scanEye,
         disabled: () => getHousingUuid() === null,
+        tooltip: joinHouseFirstTooltip,
         onClick: () => {
             const housingUuid = getHousingUuid();
             if (housingUuid === null) return;
@@ -899,6 +894,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                 if (toggleQueue(item)) autoRunQueueChanged();
             },
         },
+        ...(imp.type === "ITEM" ? [giveItemMenuAction(imp)] : []),
         ...(reExport !== null ? [reExport] : []),
         ...(deepRead !== null ? [deepRead] : []),
         { kind: "separator" },
@@ -909,11 +905,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
             label: "Rename",
             icon: Icons.pencil,
             onClick: () => {
-                openRenameImportablePopover(
-                    { x: 0, y: 0, w: 0, h: 0 },
-                    parent.fullPath,
-                    imp
-                );
+                openRenameImportablePopover(parent.fullPath, imp);
             },
         },
         // Offered even in a project with no includes yet — the picker's
@@ -1479,6 +1471,7 @@ export function resultRow(
                       label: `Queue export from house (${exportCount})`,
                       icon: Icons.refreshCw,
                       disabled: () => getHousingUuid() === null,
+                      tooltip: joinHouseFirstTooltip,
                       onClick: () =>
                           confirmProjectReExport(
                               r,
@@ -1488,12 +1481,14 @@ export function resultRow(
                           ),
                   },
                   {
-                      label: `Queue read from house (${deepReadableCount(filteredImportables)})`,
+                      label: `Queue read from house (${filteredImportables.length})`,
                       icon: Icons.scanEye,
                       disabled: () => getHousingUuid() === null,
+                      tooltip: joinHouseFirstTooltip,
                       onClick: () =>
                           runProjectDeepRead(r, r.fullPath, filteredImportables, narrowed),
                   },
+                  ...giveAllItemsMenuAction(filteredImportables),
                   { kind: "separator" },
                   openInViewAction(r.fullPath, importJsonPath),
                   { kind: "separator" },
@@ -1644,16 +1639,19 @@ export function includeGroupRow(
                 label: `Queue export from house (${count})`,
                 icon: Icons.refreshCw,
                 disabled: () => getHousingUuid() === null,
+                tooltip: joinHouseFirstTooltip,
                 onClick: () =>
                     confirmProjectReExport(parent, fullPath, declaredImportables, narrowed),
             },
             {
-                label: `Queue read from house (${deepReadableCount(declaredImportables)})`,
+                label: `Queue read from house (${declaredImportables.length})`,
                 icon: Icons.scanEye,
                 disabled: () => getHousingUuid() === null,
+                tooltip: joinHouseFirstTooltip,
                 onClick: () =>
                     runProjectDeepRead(parent, fullPath, declaredImportables, narrowed),
             },
+            ...giveAllItemsMenuAction(declaredImportables),
             { kind: "separator" },
             openInViewAction(fullPath, parent.fullPath),
             { kind: "separator" },
@@ -1818,6 +1816,18 @@ function diagnosticBadge(counts: SeverityCounts): Element {
 }
 
 /**
+ * Badge for diagnostics in a child row's own file. Inline data (no own file)
+ * gets no badge: its file is the import.json, whose count covers every
+ * importable declared there.
+ */
+function fileDiagnosticBadge(parent: ResultImport, path: string | undefined): Element[] {
+    if (path === undefined) return [];
+    const counts = diagnosticCountsForFile(parent.parse, path);
+    if (counts.errors === 0 && counts.warnings === 0) return [];
+    return [rowSlot(INNER_GAP), diagnosticBadge(counts)];
+}
+
+/**
  * Toggle an importable's queue membership from a Projects row. Adding (an
  * unchecked importable → checked) is always allowed, even mid-import — the
  * queue session tracks late adds as "pending" and they survive the run.
@@ -1961,6 +1971,7 @@ export function childListRow(
                 color: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
+            ...fileDiagnosticBadge(parent, importableChildListPath(imp, kind)),
         ],
     });
 }
@@ -2061,7 +2072,7 @@ export function menuSlotRow(
         onDoubleClick: () => confirmSelect(target, parent.fullPath),
         children: [
             itemId !== undefined
-                ? McItem({ item: itemId, count: 1 })
+                ? McItem({ item: itemId, count: 1, nbt: slot.nbt, tooltip: true })
                 : Icon({
                       name: Icons.fileCode,
                       color: IMPORTABLE_TYPE_COLORS[imp.type],
@@ -2213,6 +2224,9 @@ export function metadataRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            ...(fileTarget === null
+                ? []
+                : fileDiagnosticBadge(parent, importableSourcePath(imp))),
         ],
     });
 }

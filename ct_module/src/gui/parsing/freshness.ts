@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { getMtimeMs } from "../lib/java";
+import { getMtimeMs } from "../../utils/filesystem";
 
 /**
  * Settle-debounced change detection over a path→mtime fingerprint.

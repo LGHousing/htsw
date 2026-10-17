@@ -81,9 +81,13 @@ export function parseImportablesResult(
             filesWithParseErrors.add(gcx.sourceMap.getFileByPos(primary.span.start).path);
         } catch (_error) {}
     }
-    check(gcx, gcx.importables.filter(importable =>
-        importableFilePaths(importable).every(file => !filesWithParseErrors.has(file))
-    ));
+    check(
+        gcx,
+        gcx.importables.filter(importable =>
+            importableFilePaths(importable).every(file => !filesWithParseErrors.has(file))
+        ),
+        { importJson }
+    );
     return {
         value: gcx.importables,
         spans: gcx.spans,

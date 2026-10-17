@@ -48,6 +48,7 @@ import {
     type ApplicationProgress,
     type ApplicationStep,
 } from "../import/applicationProgress";
+import { errorMessage } from "../../utils/helpers";
 
 export type FunctionImportPlan = {
     kind: "FUNCTION";
@@ -189,8 +190,7 @@ export function functionApplicationPlan(
         steps.push(
             workStep(
                 "createShell",
-                COST.commandInterval * 2 +
-                    COST.commandMessageWait +
+                COST.commandMessageWait +
                     COST.commandMenuWait +
                     COST.goBackWait +
                     COST.cacheWrite
@@ -200,7 +200,7 @@ export function functionApplicationPlan(
     if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
         let units = 0;
         for (const change of plan.settingsPlan ?? []) {
-            units += COST.commandInterval + COST.commandMenuWait + COST.menuClickWait;
+            units += COST.commandMenuWait + COST.menuClickWait;
             units +=
                 change.key === "icon"
                     ? COST.menuClickWait + COST.itemSelect
@@ -212,7 +212,7 @@ export function functionApplicationPlan(
     }
     if (actionListPlanNeedsApply(plan.actionsPlan)) {
         steps.push(
-            workStep("openActions", COST.commandInterval + COST.commandMenuWait),
+            workStep("openActions", COST.commandMenuWait),
             actionListStep("actions", plan.actionsPlan),
             workStep("closeActions", COST.goBackWait)
         );
@@ -238,7 +238,7 @@ async function functionImportStep<T>(label: string, run: () => Promise<T>): Prom
     try {
         return await run();
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }
 }

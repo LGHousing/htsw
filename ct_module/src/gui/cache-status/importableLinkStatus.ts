@@ -1,6 +1,5 @@
 import type { Importable } from "htsw/types";
 
-import { HOUSE_READERS } from "../../importables/export/readers";
 import {
     getImportCachePresenceRevision,
     getImportCacheWriteRevision,
@@ -68,7 +67,9 @@ function importableLinkStatus(imp: Importable): ImportableLinkStatus | null {
         return null;
     }
     const baseline = buildCacheStatusRowFromEntry(imp, cached.entry).state;
-    if (HOUSE_READERS[imp.type] === null) {
+    // Items have no enumerable house presence; their reads match project NBT
+    // against inventory instead. Keep their status based on known content.
+    if (imp.type === "ITEM") {
         if (baseline === "current") {
             return { key: "matches", tooltip: "Files match this house" };
         }
@@ -80,10 +81,7 @@ function importableLinkStatus(imp: Importable): ImportableLinkStatus | null {
         }
         return {
             key: "oneSided",
-            tooltip:
-                imp.type === "ITEM"
-                    ? "Not found in cached house content"
-                    : "Not listed from a house — import to place it",
+            tooltip: "Not found in cached house content",
         };
     }
     let presence: HousePresenceState;

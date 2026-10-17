@@ -5,11 +5,14 @@ import type {
     ImportableCommand,
     ImportableFunction,
     ImportableItem,
+    ImportableMenu,
     ImportableNpc,
+    MenuSlot,
 } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
 import { importableHash, listHashes } from "../src/importCache/hash";
+import { readCachedActionList } from "../src/importCache/actionLists";
 import {
     buildTrustPlan,
     trustedChildListPathsForImportable,
@@ -639,5 +642,38 @@ describe("trusted action-list planning", () => {
         expect(
             knownEmpty.plan.diff.operations.map((operation) => operation.kind)
         ).toEqual(["add"]);
+    });
+});
+
+describe("menu slot trust", () => {
+    const nbt = { type: "compound", value: {} } as MenuSlot["nbt"];
+    const menu = (slots: MenuSlot[]): ImportableMenu => ({
+        type: "MENU",
+        name: "Shop",
+        slots,
+    });
+    const cached = menu([
+        { slot: 0, nbt },
+        { slot: 4, nbt, actions: [chat("buy")] },
+        { slot: 5, nbt, actions: [chat("sell")] },
+    ]);
+
+    it("keeps unchanged slots trusted when a slot is inserted before them", () => {
+        const desired = menu([
+            { slot: 0, nbt },
+            { slot: 2, nbt, actions: [chat("new")] },
+            { slot: 4, nbt, actions: [chat("buy")] },
+            { slot: 5, nbt, actions: [chat("sell v2")] },
+        ]);
+
+        expect(trustedChildListPathsForImportable(desired, listHashes(cached))).toEqual(
+            new Set(["slot#4.actions"])
+        );
+        expect(readCachedActionList(cached, "slot#5.actions")).toEqual([chat("sell")]);
+    });
+
+    it("reads a cached slot without actions as an empty list", () => {
+        expect(readCachedActionList(cached, "slot#0.actions")).toEqual([]);
+        expect(readCachedActionList(cached, "slot#1.actions")).toBeUndefined();
     });
 });

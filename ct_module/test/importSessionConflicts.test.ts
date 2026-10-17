@@ -391,7 +391,7 @@ describe("import conflict gate", () => {
         );
     });
 
-    it("saves a safe partial state and flushes the lock when apply is cancelled", async () => {
+    it("locks each applied importable as it finishes and saves a safe partial state on cancel", async () => {
         const importables: ImportableFunction[] = [
             { type: "FUNCTION", name: "First", actions: [message("first")] },
             { type: "FUNCTION", name: "Second", actions: [message("second")] },
@@ -436,13 +436,15 @@ describe("import conflict gate", () => {
             })
         ).rejects.toMatchObject({ __taskCancelled: true });
 
+        expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenCalledWith(
+            "./project/import.json",
+            "test-house",
+            [expect.objectContaining({ importable: importables[0] })]
+        );
         expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenLastCalledWith(
             "./project/import.json",
             "test-house",
-            expect.arrayContaining([
-                expect.objectContaining({ importable: importables[0] }),
-                expect.objectContaining({ importable: importables[1] }),
-            ])
+            [expect.objectContaining({ importable: importables[1] })]
         );
         expect(messages).toContain(
             "&a[htsw] Cancellation saved verified house state for &f2&a importables; retry can reuse the cache."

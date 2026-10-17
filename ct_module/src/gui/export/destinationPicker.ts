@@ -58,10 +58,7 @@ import { openNewProjectPopover } from "./newProjectPopover";
 import { showToast } from "../toast";
 import { getAlias } from "../../importCache/aliases";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
-import {
-    createEmptyProjectFiles,
-    normalizePathSeparators,
-} from "htsw-editor-common/project";
+import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../project/projectFs";
 import {
     PROJECTS_ROOT,
@@ -223,12 +220,6 @@ const exportSubExpansion: Set<string> = new Set();
 // across those), but not on every frame (which would wipe expansion state).
 let exportSubSig = "";
 
-function dirOfPath(p: string): string {
-    const s = normalizePathSeparators(p);
-    const i = s.lastIndexOf("/");
-    return i < 0 ? s : s.substring(0, i);
-}
-
 function baseIncludeTree(base: string): IncludeNode | null {
     const cached = requestParse(base);
     return cached !== null && cached.parsed !== null
@@ -248,7 +239,7 @@ function rebuildExportSubTree(base: string): void {
         return;
     }
     const root = baseIncludeTree(base) ?? { path: base, importables: [], includes: [] };
-    const projectDir = dirOfPath(canonicalPath(root.path));
+    const projectDir = dirname(canonicalPath(root.path));
     exportSubRoots = [buildPickerNode(root, projectDir, 0, null)];
     exportSubExpansion.clear();
     for (let i = 0; i < exportSubRoots.length; i++) {

@@ -118,7 +118,7 @@ export function eventApplicationPlan(plan: EventImportPlan): ApplicationPlan {
     return defineApplicationPlan([
         workStep(
             "openActions",
-            COST.commandInterval + COST.commandMenuWait + COST.menuClickWait
+            COST.commandMenuWait + COST.menuClickWait
         ),
         actionListStep("actions", actionsPlan),
         workStep("cache", COST.cacheWrite),

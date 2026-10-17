@@ -256,7 +256,7 @@ export function npcApplicationPlan(plan: NpcImportPlan): ApplicationPlan {
         return defineApplicationPlan([workStep("cache", COST.cacheWrite)]);
     }
     const openEditorUnits =
-        COST.commandInterval + COST.commandMenuWait + COST.menuClickWait * 3;
+        COST.commandMenuWait + COST.menuClickWait * 3;
     if (!plan.nameHandled) {
         steps.push(workStep("rename", openEditorUnits + COST.chatInput));
     }

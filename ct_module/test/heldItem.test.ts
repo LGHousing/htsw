@@ -9,10 +9,53 @@ type MockStack = {
     func_82833_r(): string;
 };
 
+// A 45-slot container (the vanilla player container layout): hotbar last.
+function containerSlotOf(slotId: number): number {
+    return slotId < 9 ? 45 - 9 + slotId : 45 - 36 + (slotId - 9);
+}
+
 const mocks = vi.hoisted(() => ({
     selectedSlot: 4,
+    failNextPoll: false,
+    swaps: [] as number[][],
+    connected: true,
+    creative: true,
     slots: [] as Array<MockStack | null>,
     restoreInventorySlots: vi.fn(),
+    // Server-side script for a creative edit: what the server acks (null =
+    // never acks) and what the slot holds by the time the poll runs.
+    onCreativeAction: null as
+        null | ((packetSlot: number, value: unknown) => { ack: unknown; slot: unknown }),
+    ackWaiters: [] as Array<{
+        accepts: (windowId: number, slot: number, stack: unknown) => boolean;
+        resolve: () => void;
+    }>,
+    // Window the server echoes the edit on: 0 with nothing open, the open
+    // container's own id (with its own slot index) when a menu is up.
+    ackWindowId: 0,
+    cleanedWaiters: 0,
+    sentCreative: [] as Array<{ packetSlot: number; value: unknown }>,
+}));
+
+vi.mock("../src/utils/java", async (original) => ({
+    ...(await original<typeof import("../src/utils/java")>()),
+    getPlayer: () => ({}),
+    getMinecraft: () => ({
+        field_71442_b: {
+            func_78753_a: (
+                window: number,
+                slot: number,
+                hotbar: number,
+                mode: number
+            ) => {
+                mocks.swaps.push([window, slot, hotbar, mode]);
+                [mocks.slots[slot], mocks.slots[hotbar]] = [
+                    mocks.slots[hotbar],
+                    mocks.slots[slot],
+                ];
+            },
+        },
+    }),
 }));
 
 vi.mock("../src/tasks/poll", () => ({
@@ -21,12 +64,19 @@ vi.mock("../src/tasks/poll", () => ({
             _ctx: unknown,
             _ticks: number,
             predicate: () => boolean | Promise<boolean>
-        ) => predicate()
+        ) => {
+            if (mocks.failNextPoll) {
+                mocks.failNextPoll = false;
+                return false;
+            }
+            return predicate();
+        }
     ),
 }));
 
 vi.mock("../src/housingSync/sideEffects", () => ({
     closeOpenScreen: vi.fn(async () => undefined),
+    isInCreativeMode: () => mocks.creative,
     ensurePlayerInventoryScreen: vi.fn(async () => undefined),
 }));
 
@@ -40,19 +90,53 @@ vi.mock("../src/housingSync/menus/packets", () => ({
     SET_SLOT_ACK_MAX_TICKS: 40,
     selectedHotbarSlot: () => mocks.selectedSlot,
     sendCreativeInventoryAction: (_ctx: unknown, packetSlot: number, value: unknown) => {
-        mocks.slots[packetSlot - 36] = value as ReturnType<typeof stack> | null;
+        mocks.sentCreative.push({ packetSlot, value });
+        const script = mocks.onCreativeAction;
+        if (script === null) {
+            mocks.slots[packetSlot - 36] = value as ReturnType<typeof stack> | null;
+            return;
+        }
+        const outcome = script(packetSlot, value);
+        const ackSlot =
+            mocks.ackWindowId === 0 ? packetSlot : containerSlotOf(packetSlot - 36);
+        for (const waiter of mocks.ackWaiters) {
+            if (waiter.accepts(mocks.ackWindowId, ackSlot, outcome.ack)) {
+                waiter.resolve();
+            }
+        }
+        mocks.slots[packetSlot - 36] = outcome.slot as ReturnType<typeof stack> | null;
+    },
+    waitForSetSlotAck: (
+        _ctx: unknown,
+        accepts: (windowId: number, slot: number, stack: unknown) => boolean
+    ) => {
+        let resolve: () => void = () => undefined;
+        const promise = new Promise<void>((r) => {
+            resolve = r;
+        }) as Promise<void> & { cleanupWaiter?: () => void };
+        mocks.ackWaiters.push({ accepts, resolve });
+        promise.cleanupWaiter = () => {
+            mocks.cleanedWaiters++;
+        };
+        return promise;
     },
 }));
 
+vi.mock("../src/tasks/specifics/slots", () => ({
+    getOpenContainerWindowId: () => mocks.ackWindowId,
+}));
+
 vi.mock("../src/housingSync/items/playerInventory", () => ({
-    inventorySlotToPacketSlot: (slotId: number) => slotId + 36,
+    inventorySlotToPacketSlot: (slotId: number) => (slotId < 9 ? slotId + 36 : slotId),
+    inventorySlotToOpenContainerSlot: (slotId: number) => containerSlotOf(slotId),
+    heldItem: () => {
+        const value = mocks.slots[mocks.selectedSlot];
+        return value === null ? null : { getItemStack: () => value };
+    },
     readInventorySlot: (slotId: number) => ({
         slotId,
         nbt: mocks.slots[slotId] === null ? null : `{name:${mocks.slots[slotId].name}}`,
         count: mocks.slots[slotId] === null ? 0 : 1,
-    }),
-    clearInventorySlot: vi.fn(async (_ctx, slotId: number) => {
-        mocks.slots[slotId] = null;
     }),
     restoreInventorySlots: vi.fn(
         async (_ctx: unknown, entries: InventorySlotSnapshot[]) => {
@@ -67,11 +151,21 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     }),
 }));
 
+vi.mock("../src/housingSync/items/itemNbt", () => ({
+    canonicalLiveItemKey: (item: { getItemStack(): MockStack }) =>
+        item.getItemStack().name,
+}));
+
 import {
+    holdInventoryItem,
+    restoreHeldInventoryItem,
+    assertHeldStackIs,
     createImportedItemPlacementSession,
     restoreTemporarilyHeldItem,
     temporarilyHoldItem,
 } from "../src/housingSync/items/heldItem";
+
+import { readClickActions } from "../src/importables/items/readClickActions";
 
 function stack(name: string): MockStack {
     const itemType = {};
@@ -92,18 +186,32 @@ const ctx = {
 
 describe("held item placement", () => {
     beforeEach(() => {
+        mocks.failNextPoll = false;
+        mocks.swaps = [];
+        mocks.connected = true;
+        mocks.creative = true;
         mocks.selectedSlot = 4;
-        mocks.slots = Array.from({ length: 9 }, (_, slotId) =>
-            stack(`original-${slotId}`)
+        mocks.slots = Array.from({ length: 36 }, (_, slotId) =>
+            slotId < 9 ? stack(`original-${slotId}`) : null
         );
         mocks.restoreInventorySlots.mockClear();
+        mocks.onCreativeAction = null;
+        mocks.ackWaiters = [];
+        mocks.cleanedWaiters = 0;
+        mocks.ackWindowId = 0;
+        mocks.sentCreative = [];
         vi.stubGlobal("Player", {
-            getInventory: () => ({
-                getStackInSlot: (slotId: number) => {
-                    const value = mocks.slots[slotId];
-                    return value === null ? null : { getItemStack: () => value };
-                },
-            }),
+            getInventory: () =>
+                mocks.connected
+                    ? {
+                          getStackInSlot: (slotId: number) => {
+                              const value = mocks.slots[slotId];
+                              return value === null
+                                  ? null
+                                  : { getItemStack: () => value };
+                          },
+                      }
+                    : null,
         });
     });
 
@@ -153,6 +261,120 @@ describe("held item placement", () => {
         expect(mocks.selectedSlot).toBe(4);
     });
 
+    test("overwrites a borrowed slot without clearing it first", async () => {
+        // Clearing first would abort the import if the server refilled the slot
+        // (Housing handing back its menu item) before the item went in.
+        const placement = createImportedItemPlacementSession();
+        await placement.place(
+            ctx as never,
+            { getItemStack: () => stack("first") } as never
+        );
+
+        expect(mocks.sentCreative).toHaveLength(1);
+        expect(mocks.sentCreative[0].packetSlot).toBe(36);
+        expect((mocks.sentCreative[0].value as MockStack).name).toBe("first");
+    });
+
+    test("a disconnect during a read never overwrites a full hotbar", async () => {
+        const before = mocks.slots.slice();
+        const held = await holdInventoryItem(
+            ctx as never,
+            { getItemStack: () => mocks.slots[4] } as never
+        );
+        mocks.connected = false;
+        await restoreHeldInventoryItem(ctx as never, held);
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+    });
+
+    test("reads an existing hotbar stack in survival without creative packets", async () => {
+        mocks.creative = false;
+        const before = mocks.slots.slice();
+        const held = await holdInventoryItem(
+            ctx as never,
+            { getItemStack: () => mocks.slots[2] } as never
+        );
+        expect(mocks.selectedSlot).toBe(2);
+        await restoreHeldInventoryItem(ctx as never, held);
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+        expect(mocks.selectedSlot).toBe(4);
+    });
+
+    test.each([false, true])(
+        "main inventory swaps preserve both stacks (disconnect=%s)",
+        async (disconnect) => {
+            mocks.creative = false;
+            mocks.slots[20] = stack("custom");
+            const originalHotbar = mocks.slots[4];
+            const originalMain = mocks.slots[20];
+            const held = await holdInventoryItem(
+                ctx as never,
+                { getItemStack: () => originalMain } as never
+            );
+            expect(mocks.slots[4]).toBe(originalMain);
+            expect(mocks.slots[20]).toBe(originalHotbar);
+            if (disconnect) mocks.connected = false;
+            await restoreHeldInventoryItem(ctx as never, held);
+            expect(mocks.slots[4]).toBe(disconnect ? originalMain : originalHotbar);
+            expect(mocks.slots[20]).toBe(disconnect ? originalHotbar : originalMain);
+            expect(mocks.sentCreative).toEqual([]);
+            expect(mocks.swaps).toEqual(
+                Array.from({ length: disconnect ? 1 : 2 }, () => [0, 20, 4, 2])
+            );
+        }
+    );
+
+    test("restores both stacks when swap confirmation fails", async () => {
+        mocks.slots[20] = stack("custom");
+        const before = mocks.slots.slice();
+        mocks.failNextPoll = true;
+        await expect(
+            holdInventoryItem(ctx as never, { getItemStack: () => before[20] } as never)
+        ).rejects.toThrow("did not confirm the inventory swap");
+        expect(mocks.slots).toEqual(before);
+        expect(mocks.sentCreative).toEqual([]);
+    });
+
+    test.each(["disconnect", "creative revocation"])(
+        "a live read with no inventory copy never manufactures residue on %s",
+        async (failure) => {
+            mocks.slots[2] = null;
+            const before = mocks.slots.slice();
+            const readCtx = {
+                ...ctx,
+                runCommand: vi.fn(() => {
+                    if (failure === "disconnect") mocks.connected = false;
+                    else mocks.creative = false;
+                    throw new Error(failure);
+                }),
+                expectAfter: async (run: () => unknown) => run(),
+            };
+            await expect(
+                readClickActions(
+                    readCtx as never,
+                    { getItemStack: () => stack("captured") } as never,
+                    { itemReadMode: "export" } as never
+                )
+            ).rejects.toThrow("No live inventory copy");
+            expect(readCtx.runCommand).not.toHaveBeenCalled();
+            expect(mocks.slots).toEqual(before);
+            expect(mocks.sentCreative).toEqual([]);
+        }
+    );
+
+    test("dependency export retains main's borrowed-slot copy placement", async () => {
+        const held = await temporarilyHoldItem(
+            ctx as never,
+            { getItemStack: () => stack("captured") } as never
+        );
+        expect(mocks.slots[0]?.name).toBe("captured");
+        expect(mocks.sentCreative.map(({ packetSlot }) => packetSlot)).toEqual([36]);
+        await restoreTemporarilyHeldItem(ctx as never, held);
+        expect(mocks.slots[0]?.name).toBe("restored");
+        expect(mocks.selectedSlot).toBe(4);
+    });
+
     test("temporary holding restores an initially empty slot", async () => {
         mocks.slots[2] = null;
 
@@ -170,5 +392,67 @@ describe("held item placement", () => {
 
         expect(mocks.slots[2]).toBeNull();
         expect(mocks.selectedSlot).toBe(4);
+    });
+    test("counts the server ack as acceptance when the house swaps the slot before the poll", async () => {
+        mocks.slots[3] = null;
+        const injected = stack("plain fish");
+        const swappedIn = stack("healing fish");
+        mocks.onCreativeAction = () => ({ ack: injected, slot: swappedIn });
+        const placement = createImportedItemPlacementSession();
+
+        await placement.place(ctx as never, { getItemStack: () => injected } as never);
+
+        expect(mocks.slots[3]).toBe(swappedIn);
+        expect(mocks.selectedSlot).toBe(3);
+        expect(mocks.cleanedWaiters).toBe(1);
+    });
+
+    test("names the replacing item when no ack ever arrives", async () => {
+        mocks.slots[3] = null;
+        const injected = stack("plain fish");
+        mocks.onCreativeAction = () => ({ ack: null, slot: stack("healing fish") });
+        const placement = createImportedItemPlacementSession();
+
+        await expect(
+            placement.place(ctx as never, { getItemStack: () => injected } as never)
+        ).rejects.toThrow(/slot 3 now holds .*healing fish.*replaced it/);
+        expect(mocks.cleanedWaiters).toBe(1);
+    });
+
+    test("keeps the SNBT hint when the slot stays empty", async () => {
+        mocks.slots[3] = null;
+        mocks.onCreativeAction = () => ({ ack: null, slot: null });
+        const placement = createImportedItemPlacementSession();
+
+        await expect(
+            placement.place(ctx as never, { getItemStack: () => stack("bad") } as never)
+        ).rejects.toThrow(/did not accept this item.*SNBT/);
+    });
+
+    test("assertHeldStackIs rejects a swapped held item before /edit", () => {
+        const placed = stack("plain fish");
+        mocks.slots[mocks.selectedSlot] = placed;
+        expect(() =>
+            assertHeldStackIs({ getItemStack: () => placed } as never, "Plain Fish")
+        ).not.toThrow();
+
+        mocks.slots[mocks.selectedSlot] = stack("healing fish");
+        expect(() =>
+            assertHeldStackIs({ getItemStack: () => placed } as never, "Plain Fish")
+        ).toThrow(/replaced 'Plain Fish'.*healing fish/);
+    });
+
+    test("accepts the ack echoed on an open container's own window", async () => {
+        mocks.slots[3] = null;
+        mocks.ackWindowId = 97;
+        const injected = stack("plain fish");
+        // The house also swaps the item, so only the container-window ack
+        // proves Hypixel took it.
+        mocks.onCreativeAction = () => ({ ack: injected, slot: stack("healing fish") });
+        const placement = createImportedItemPlacementSession();
+
+        await placement.place(ctx as never, { getItemStack: () => injected } as never);
+
+        expect((mocks.slots[3] as MockStack | null)?.name).toBe("healing fish");
     });
 });

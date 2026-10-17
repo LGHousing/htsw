@@ -171,8 +171,12 @@ export type ExportProgressSink = {
     events?: SyncEventHandler;
     /** Scopes sibling action lists that each number their actions from zero. */
     eventsForList?: (label: string) => SyncEventHandler;
-    /** Called once the full list of names to export is known. */
-    start(names: readonly string[]): void;
+    /**
+     * Called once the full list of display names to export is known. When a
+     * display name is not the importable identity, `identities` supplies the
+     * stable identity at the same index.
+     */
+    start(names: readonly string[], identities?: readonly string[]): void;
     scanStarted?(): void;
     /** Called as item `index` (0-based) begins exporting. */
     item(index: number, name: string): void;

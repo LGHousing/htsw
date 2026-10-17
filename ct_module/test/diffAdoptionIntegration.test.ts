@@ -153,7 +153,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
         mocks.files.set(path, content);
         return true;
     },
-    getFileMtimeMs: (path: string) =>
+    getMtimeMs: (path: string) =>
         mocks.files.has(path) ? (mocks.files.get(path)?.length ?? 1) : 0,
 }));
 

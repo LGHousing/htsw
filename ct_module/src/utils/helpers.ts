@@ -1,4 +1,4 @@
-import { helpers } from "htsw";
+import { helpers, type Diagnostic } from "htsw";
 import { getMinecraft } from "./java";
 
 export function removedFormatting(str: string): string {
@@ -9,10 +9,49 @@ export function normalizeFormattingCodes(str: string): string {
     return helpers.sectionToAmp(str);
 }
 
-export function chatWidth(string: string, removeFormatting: boolean = true): number {
-    const raw = removeFormatting
-        ? ChatLib.removeFormatting(ChatLib.replaceFormatting(string))
-        : string;
+// Advanced tooltips (F3+H) append the item id to names, e.g. "Stone (#0001)"
+// or "Wool (#0035/14)", sometimes after a color code.
+export function stripTooltipDebugSuffix(name: string): string {
+    return name
+        .replace(/\s*(?:&[0-9a-fklmnor])*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/i, "")
+        .trim();
+}
+
+/** Item name with formatting codes and the F3+H id suffix removed. */
+export function plainItemName(name: string): string {
+    return stripTooltipDebugSuffix(removedFormatting(name));
+}
+
+export function errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (
+        error !== null &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+    ) {
+        return error.message;
+    }
+    return String(error);
+}
+
+/** Errors and bugs: the diagnostics that stop an import. */
+export function blockingDiagnostics(diagnostics: readonly Diagnostic[]): Diagnostic[] {
+    return diagnostics.filter((it) => it.level === "error" || it.level === "bug");
+}
+
+/**
+ * Rendered width of `string` in the Minecraft font.
+ *
+ * With `hasFormatCodes`, `&x` codes go through `ChatLib.addColor` (`&` to `§`), so
+ * the font renderer skips them and charges the extra pixel per character that
+ * `&l` bold costs. `removeFormatting` would measure bold too narrow, and
+ * `replaceFormatting` (`§` to `&`) would measure the codes as glyphs, far too wide.
+ *
+ * Pass `false` for literal text, where `&` is just an ampersand.
+ */
+export function chatWidth(string: string, hasFormatCodes: boolean = true): number {
+    const raw = hasFormatCodes ? ChatLib.addColor(string) : string;
     return getMinecraft().field_71466_p.func_78256_a(raw);
 }
 

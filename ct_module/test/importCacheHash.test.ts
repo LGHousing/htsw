@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 
-import { cacheEntryHash, type ImportableCacheEntry } from "../src/importCache/cache";
+import {
+    cacheEntryHash,
+    cacheEntryHashesAreCurrent,
+    type ImportableCacheEntry,
+} from "../src/importCache/cache";
 import { importableHash, listHashes } from "../src/importCache/hash";
 import { cacheEntryListHashes } from "../src/importCache/status";
 import { functionIconsEqual } from "../src/importables/functions/iconComparison";
@@ -15,6 +19,28 @@ function fn(icon: ImportableFunction["icon"]): ImportableFunction {
 }
 
 describe("importableHash function icons", () => {
+    test("recomputes ITEM hashes stored before NBT normalization", () => {
+        const item: ImportableItem = {
+            type: "ITEM",
+            name: "cookie",
+            nbt: {
+                type: "compound",
+                value: { id: { type: "string", value: "minecraft:cookie" } },
+            },
+        };
+        const entry = {
+            schemaVersion: 2,
+            version: 3,
+            writtenAt: "2026-10-11T00:00:00Z",
+            writer: "importer",
+            importable: item,
+            hash: "old-item-NBT-hash",
+            lists: {},
+        } as ImportableCacheEntry;
+        expect(cacheEntryHashesAreCurrent(entry)).toBe(false);
+        expect(cacheEntryHash(entry)).toBe(importableHash(item));
+    });
+
     test("includes enchant glint", () => {
         expect(importableHash(fn({ item: "minecraft:map" }))).not.toBe(
             importableHash(fn({ item: "minecraft:map", enchanted: true }))
@@ -252,7 +278,7 @@ describe("cache entry hashes", () => {
     test("uses stored list hashes from a current cache entry", () => {
         const entry = {
             schemaVersion: 2,
-            version: 2,
+            version: 4,
             writtenAt: "2026-07-30T00:00:00.000Z",
             writer: "importer",
             importable,

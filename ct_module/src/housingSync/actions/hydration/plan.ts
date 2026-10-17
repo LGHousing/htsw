@@ -6,7 +6,7 @@ import {
     getChildListFields,
 } from "../../fields/actionMappings";
 import type { UiFieldKind } from "../../fields/loreSpecs";
-import { isTruncatableKind, looksTruncated } from "../../fields/loreParsing";
+import { scalarFieldLooksTruncated } from "../../fields/loreParsing";
 import type {
     ChildListsToRead,
     Observed,
@@ -155,40 +155,12 @@ export function addItemCaptureEntries(
 export function scalarFieldsNeedingHydration(
     action: Observed
 ): ActionScalarFieldToRead[] {
-    const fields = getActionScalarLoreFields(action.type);
-    const out: ActionScalarFieldToRead[] = [];
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        if (!isTruncatableKind(field.kind)) continue;
-        const value = (action as Record<string, unknown>)[field.prop];
-        if (typeof value === "string" && looksTruncated(value)) {
-            out.push(field);
-            continue;
-        }
-        if (
-            field.kind === "location" &&
-            typeof value === "object" &&
-            value !== null &&
-            (value as { type?: unknown }).type === "Custom Coordinates"
-        ) {
-            const coord = (value as { value?: unknown }).value;
-            if (typeof coord === "string" && looksTruncated(coord)) {
-                out.push(field);
-            }
-        }
-    }
-    if (action.type === "CHANGE_VAR" && action.holder?.type === "Team") {
-        const team = action.holder.team;
-        if (typeof team === "string" && looksTruncated(team)) {
-            for (let i = 0; i < fields.length; i++) {
-                if (fields[i].prop === "holder") {
-                    out.push(fields[i]);
-                    break;
-                }
-            }
-        }
-    }
-    return out;
+    return getActionScalarLoreFields(action.type).filter((field) =>
+        scalarFieldLooksTruncated(
+            (action as Record<string, unknown>)[field.prop],
+            field.kind
+        )
+    );
 }
 
 export function buildFullHydrationPlan(

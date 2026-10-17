@@ -18,6 +18,7 @@ import {
     itemInteractDataMatches,
     type InteractDataExpectation,
 } from "./interactDataCache";
+import { slugForUnnamedItem } from "./itemSlug";
 
 export type CapturedItem = {
     name: string;
@@ -40,6 +41,10 @@ type RegistryItem = CapturedItem & {
 };
 
 export type ItemCaptureIdentity = "live" | "shell";
+
+export type ItemCaptureRegistryOptions = {
+    existingSnbt?: (itemName: string) => string | null;
+};
 
 export class ItemCaptureRegistry {
     private readonly entriesByName = Object.create(null) as Partial<
@@ -66,7 +71,10 @@ export class ItemCaptureRegistry {
     private readonly capturedNames = Object.create(null) as Record<string, true>;
     private hintLines: string[] = [];
 
-    public constructor(private readonly identity: ItemCaptureIdentity) {}
+    public constructor(
+        private readonly identity: ItemCaptureIdentity,
+        private readonly options: ItemCaptureRegistryOptions = {}
+    ) {}
 
     seedExportItem(
         item: ImportableItem,
@@ -213,7 +221,7 @@ export class ItemCaptureRegistry {
             }
         }
 
-        const name = this.availableName(displayNameHint);
+        const name = this.availableName(displayNameHint, normalizedSnbt, exactKey);
         const displayName = removedFormatting(displayNameHint).trim().toLowerCase();
         const owner = this.seededDisplayNames[displayName];
         if (owner !== undefined) {
@@ -379,15 +387,34 @@ export class ItemCaptureRegistry {
         this.addName(this.singleExactNamesByKey, entry.singleExactKey, entry.name);
     }
 
-    private availableName(displayNameHint: string): string {
-        const preferred = slugForDisplayName(displayNameHint);
-        let name = preferred;
-        let suffix = 2;
-        while (this.entriesByName[name] !== undefined && suffix < 1000) {
-            name = `${preferred}_${suffix}`;
+    private availableName(
+        displayNameHint: string,
+        normalizedSnbt: string,
+        exactKey: string
+    ): string {
+        const preferred = slugForDisplayName(displayNameHint, normalizedSnbt);
+        let suffix = 1;
+        while (suffix < 1000) {
+            const name = suffix === 1 ? preferred : `${preferred}_${suffix}`;
+            if (this.entriesByName[name] === undefined) {
+                const existing = this.options.existingSnbt?.(name) ?? null;
+                if (existing === null || this.canonicalSnbtKey(existing) === exactKey) {
+                    return name;
+                }
+            }
             suffix++;
         }
-        return name;
+        throw new Error(`Could not choose an item filename for '${displayNameHint}'`);
+    }
+
+    private canonicalSnbtKey(snbt: string): string | null {
+        try {
+            return this.identity === "shell"
+                ? canonicalItemShellSnbtKey(snbt)
+                : canonicalLiveItemSnbtKey(snbt);
+        } catch (_error) {
+            return null;
+        }
     }
 
     private addName(
@@ -470,9 +497,9 @@ function displayNameFromTag(root: unknown): string | null {
     return stripped.length > 0 ? stripped : null;
 }
 
-function slugForDisplayName(displayName: string): string {
+function slugForDisplayName(displayName: string, snbt: string): string {
     const stripped = removedFormatting(displayName).trim().toLowerCase();
-    if (stripped.length === 0) return "captured_item";
+    if (stripped.length === 0) return slugForUnnamedItem(snbt);
     const slug = canonicalSlug(stripped);
     return slug.length > 0 ? slug : "captured_item";
 }

@@ -6,6 +6,7 @@ import {
     DECIMAL_DISPLAY_VALUE_PATTERN,
     INTEGER_DISPLAY_VALUE_PATTERN,
     normalizeNoteText,
+    normalizeLoreValueFormatting,
     stripHousingEditorValuePrefix,
     stripRedundantLeadingFormattingCodes,
 } from "../fields/loreParsing";
@@ -238,6 +239,9 @@ function canonicalizeFieldValue(type: string, prop: string, value: unknown): unk
         value = normalizeMessageFormatting(value);
     }
     const kind = getFieldKind(type, prop);
+    if (kind === "value" && typeof value === "string") {
+        value = normalizeLoreValueFormatting(value);
+    }
     if (kind === "value" && shouldCoerceNumericField(type, prop)) {
         if (typeof value === "string" && value !== "") {
             const num = Number(value);

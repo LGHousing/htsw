@@ -1,4 +1,5 @@
 import type { ProjectExportTarget } from "../importables/export/projectDestination";
+import { normalizePathSeparators, parentDir } from "htsw-editor-common/project";
 import { defaultExportRoot, resolveModuleRelativePath } from "../project/paths";
 
 type ExportDestinationPath = ProjectExportTarget;
@@ -11,17 +12,6 @@ function trimTrailingSlashes(path: string): string {
         end--;
     }
     return path.substring(0, end);
-}
-
-function normalizeSlashes(path: string): string {
-    return path.split("\\").join("/");
-}
-
-function dirname(path: string): string {
-    const norm = normalizeSlashes(path);
-    const slash = norm.lastIndexOf("/");
-    if (slash <= 0) return ".";
-    return norm.substring(0, slash);
 }
 
 function endsWithIgnoreCase(value: string, suffix: string): boolean {
@@ -38,9 +28,9 @@ function exportDestination(
     if (explicitPath === undefined) return null;
     const path = resolveModuleRelativePath(trimTrailingSlashes(explicitPath));
     if (endsWithIgnoreCase(path, ".json")) {
-        return { rootDir: dirname(path), importJsonPath: normalizeSlashes(path) };
+        return { rootDir: parentDir(path), importJsonPath: normalizePathSeparators(path) };
     }
-    const rootDir = normalizeSlashes(path);
+    const rootDir = normalizePathSeparators(path);
     return { rootDir, importJsonPath: `${rootDir}/import.json` };
 }
 

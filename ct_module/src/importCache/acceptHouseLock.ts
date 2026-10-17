@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 
 import type TaskContext from "../tasks/context";
 import { importableIdentity } from "../importables/identity";
-import { importableHash } from "./hash";
+import { memoizedImportableHash } from "./hashMemo";
 import {
     houseLockEntryFor,
     readHouseLock,
@@ -49,7 +49,7 @@ export function houseLockCurrentEntryFor(
     itemDependencies?: ItemDependencyIndex
 ): HouseLockCurrentEntry | null {
     const entry = houseLockEntryFor(lock, importable.type, importableIdentity(importable));
-    if (entry === null || entry.hash !== importableHash(importable)) return null;
+    if (entry === null || entry.hash !== memoizedImportableHash(importable)) return null;
     const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
     const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
     const dependenciesMatch =

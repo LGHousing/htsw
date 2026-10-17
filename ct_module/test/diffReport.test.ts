@@ -3,6 +3,7 @@ import type {
     Action,
     Importable,
     ImportableFunction,
+    ImportableGroup,
     ImportableRegion,
 } from "htsw/types";
 
@@ -13,6 +14,7 @@ import {
 import type { HouseLock } from "../src/importCache/houseLock";
 import { formatDiffDetailsFile } from "../src/housingSync/actions/diffDetails";
 import {
+    appendGroupDiffReport,
     evaluateDiffReport,
     formatDiffReport,
     matchDiffActionLists,
@@ -368,7 +370,7 @@ describe("diff report", () => {
                         {
                             type: "MENU",
                             identity: "Shop",
-                            basePath: "slots[3].actions",
+                            basePath: "slot#3.actions",
                             differences: [difference],
                             moreCount: 2,
                             canonicalDifferences: [difference],
@@ -392,12 +394,65 @@ describe("diff report", () => {
             )
         ).toEqual([
             "[htsw] Diff complete: 0 clean, 1 conflicts, 0 unknown · ./htsw/projects/shop/import.json",
-            '[htsw] Conflict: MENU "Shop" · slots[3].actions',
+            '[htsw] Conflict: MENU "Shop" · slot#3.actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
             "[htsw]   …and 2 more differences",
             "[htsw] Pending changes: 1",
             '[htsw] Pending: FUNCTION "Debug" · actions',
             '[htsw]   ≠ action 1 (message) · message: live="live" · source="source"',
         ]);
+    });
+});
+
+describe("group settings diff", () => {
+    it("compares supplied settings and permissions, ignoring unspecified values", () => {
+        const report = evaluate([], liveMap(), null);
+        appendGroupDiffReport(
+            report,
+            [
+                {
+                    type: "GROUP",
+                    name: "Helper",
+                    tag: "HELPER",
+                    permissions: { Fly: true } as ImportableGroup["permissions"],
+                },
+            ],
+            liveMap({
+                type: "GROUP",
+                name: "Helper",
+                tag: "GUEST",
+                color: "Red",
+                permissions: { Fly: false, Build: true } as ImportableGroup["permissions"],
+            })
+        );
+        expect(report.conflicts[0]).toMatchObject({
+            type: "GROUP",
+            identity: "Helper",
+            basePath: "settings",
+            canonicalDifferences: [
+                { path: "tag", source: '"HELPER"', live: '"GUEST"' },
+                { path: "permissions.Fly", source: "true", live: "false" },
+            ],
+        });
+        expect(formatDiffDetailsFile(report, "import.json", "now")).toContain(
+            '# GROUP "Helper" · settings'
+        );
+    });
+
+    it("counts matched groups as clean and missing or unreadable groups as unknown", () => {
+        const report = evaluate([], liveMap(), null);
+        appendGroupDiffReport(
+            report,
+            [
+                { type: "GROUP", name: "Clean", tag: "TEST", priority: 1 },
+                { type: "GROUP", name: "Missing", tag: "TEST" },
+                { type: "GROUP", name: "Unreadable", tag: "TEST" },
+            ],
+            liveMap(
+                { type: "GROUP", name: "Clean", tag: "TEST", priority: 1, color: "Red" },
+                { type: "GROUP", name: "Unreadable" }
+            )
+        );
+        expect(report).toEqual({ clean: 1, conflicts: [], pending: [], unknown: 2 });
     });
 });

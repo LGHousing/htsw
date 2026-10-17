@@ -26,7 +26,7 @@ import {
     describeRecentWindowOpens,
     type WaitForPromise,
 } from "../../tasks/specifics/waitFor";
-import { removedFormatting } from "../../utils/helpers";
+import { errorMessage, removedFormatting } from "../../utils/helpers";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
@@ -228,7 +228,7 @@ function wrapMenuWaitTimeout(
     state: MenuWaitState
 ): WaitForPromise<void> {
     const wrapped = promise.catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         if (
             message.indexOf("Timeout after") !== -1 &&
             visibleGuiMatchesOpenedWindow(state, false)

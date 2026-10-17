@@ -1,6 +1,8 @@
 import type { Importable } from "htsw/types";
 
-import { ensureParentDirs } from "../utils/filesystem";
+import { parentDir } from "htsw-editor-common/project";
+
+import { atomicWriteText } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { importableIdentity, importableKey } from "../importables/identity";
@@ -43,14 +45,6 @@ export type HouseLock = {
     contentHashVersion?: number;
     importables: Record<string, HouseLockEntry>;
 };
-
-function parentDir(path: string): string {
-    const norm = path.split("\\").join("/");
-    const slash = norm.lastIndexOf("/");
-    if (slash < 0) return ".";
-    if (slash === 0) return "/";
-    return norm.substring(0, slash);
-}
 
 export function houseLockPathForImportJson(importJsonPath: string): string {
     return `${parentDir(importJsonPath)}/${HOUSE_LOCK_FILE}`;
@@ -223,6 +217,47 @@ export function houseLockEntryFor(
     return lock.importables[importableKey(type, identity)] ?? null;
 }
 
+/**
+ * Every importable the lock records for this project. The lock is the
+ * last-import baseline, so this is what a prune may treat as its own work.
+ */
+export function houseLockOwnedImportables(
+    lock: HouseLock | null
+): { type: Importable["type"]; identity: string }[] {
+    const owned: { type: Importable["type"]; identity: string }[] = [];
+    if (lock === null) return owned;
+    for (const key in lock.importables) {
+        if (!Object.prototype.hasOwnProperty.call(lock.importables, key)) continue;
+        const entry = lock.importables[key];
+        owned.push({ type: entry.type, identity: entry.identity });
+    }
+    return owned;
+}
+
+/**
+ * Moves a baseline entry to a new identity, keeping its hashes. A Housing rename
+ * changes only the name, so the old baseline still holds and the next import
+ * diffs instead of rewriting. Refuses when the destination is already recorded,
+ * which would merge two baselines.
+ */
+export function renameHouseLockImportable(
+    importJsonPath: string,
+    type: Importable["type"],
+    from: string,
+    to: string
+): boolean {
+    const lock = readHouseLock(importJsonPath);
+    if (lock === null) return false;
+    const fromKey = importableKey(type, from);
+    const toKey = importableKey(type, to);
+    if (!Object.prototype.hasOwnProperty.call(lock.importables, fromKey)) return false;
+    if (Object.prototype.hasOwnProperty.call(lock.importables, toKey)) return false;
+    const entry = lock.importables[fromKey];
+    delete lock.importables[fromKey];
+    lock.importables[toKey] = { ...entry, identity: to };
+    return writeHouseLock(houseLockPathForImportJson(importJsonPath), lock);
+}
+
 export function houseLockAcceptsUpdate(
     importJsonPath: string,
     housingUuid: string
@@ -240,6 +275,10 @@ export function houseLockAcceptsUpdate(
     );
 }
 
+/**
+ * Drop importables from the baseline after they have left the house. Writes
+ * nothing when none of the keys were recorded.
+ */
 export function removeHouseLockImportables(
     importJsonPath: string,
     keys: ReadonlyArray<{ type: Importable["type"]; identity: string }>
@@ -259,17 +298,11 @@ export function removeHouseLockImportables(
 }
 
 function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
-    try {
-        ensureParentDirs(lockPath);
-        FileLib.write(lockPath, JSON.stringify(lock, null, 4), true);
-        return true;
-    } catch (error) {
-        recordRuntimeDebug("houseLockWriteFailed", {
-            path: lockPath,
-            error: formatHouseLockError(error),
-        });
-        return false;
-    }
+    // Atomic: a crash mid-write must not leave truncated JSON, which reads as
+    // no lock at all and silently drops every baseline.
+    if (atomicWriteText(lockPath, JSON.stringify(lock, null, 4))) return true;
+    recordRuntimeDebug("houseLockWriteFailed", { path: lockPath });
+    return false;
 }
 
 export type HouseLockImportableUpdate = {

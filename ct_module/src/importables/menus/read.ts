@@ -10,7 +10,7 @@ import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+import { plainItemName, removedFormatting } from "../../utils/helpers";
 import { snbtFromItem } from "../../housingSync/items/itemNbt";
 import { openMenuElements } from "./housing";
 import { itemLore } from "../../utils/itemLore";
@@ -105,9 +105,7 @@ function snapshotMenuSlots(
         if (typeof raw !== "string" || raw.length === 0) continue;
         const snbt = stripMenuItemFooter(raw);
 
-        const nameHint = removedFormatting(item.getName())
-            .replace(/\s*\(#[^)]*\)\s*$/, "")
-            .trim();
+        const nameHint = plainItemName(item.getName());
 
         result.push({ slotId, snbt, nameHint });
     }

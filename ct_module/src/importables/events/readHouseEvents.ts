@@ -17,7 +17,7 @@ import { ctProjectFs } from "../../project/projectFs";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     eventExportReferencesExist,
-    htslTargetForEventExport,
+    htslTargetForExport,
 } from "../../project/paths";
 import { defineHouseExporter, type ExportReadState } from "../export/exporter";
 import type { ReadOptions } from "../export/reader";
@@ -127,7 +127,8 @@ async function writeEventResult(
         return;
     }
 
-    const target = htslTargetForEventExport(
+    const target = htslTargetForExport(
+        "events",
         options.importJsonPath,
         name,
         options.newExportTargetImportJson

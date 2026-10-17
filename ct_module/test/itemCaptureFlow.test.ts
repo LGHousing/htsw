@@ -4,9 +4,10 @@ import type { InventorySlotSnapshot } from "../src/housingSync/items/playerInven
 
 const inventory = vi.hoisted(() => ({
     slots: [] as InventorySlotSnapshot[],
-    clearedSlots: [] as number[],
     restoredSlots: [] as number[],
 }));
+
+vi.mock("../src/housingSync/sideEffects", () => ({ isInCreativeMode: () => true }));
 
 vi.mock("../src/tasks/context", () => ({ default: vi.fn() }));
 vi.mock("../src/housingSync/menus/menuUtils", () => ({
@@ -25,10 +26,6 @@ vi.mock("../src/housingSync/items/itemNbt", () => ({
     snbtFromItem: (item: { snbt: string }) => item.snbt,
 }));
 vi.mock("../src/housingSync/items/playerInventory", () => ({
-    clearInventorySlot: async (_ctx: unknown, slotId: number, _view: "openContainer") => {
-        inventory.clearedSlots.push(slotId);
-        inventory.slots[slotId] = { slotId, nbt: null, count: 0 };
-    },
     inventoryIsFull: () => inventory.slots.every((entry) => entry.nbt !== null),
     restoreInventorySlots: async (
         _ctx: unknown,
@@ -82,7 +79,6 @@ function context(currentSnbt: string, actionItemCount: number, give: () => void)
 
 beforeEach(() => {
     inventory.slots = EMPTY_INVENTORY.map((entry) => ({ ...entry }));
-    inventory.clearedSlots = [];
     inventory.restoredSlots = [];
 });
 
@@ -104,16 +100,13 @@ describe("editor item capture inventory handling", () => {
             };
         });
 
-        const register = vi.fn(
-            (_snbt: string, _displayNameHint: string) => "captured"
-        );
+        const register = vi.fn((_snbt: string, _displayNameHint: string) => "captured");
         await expect(
             captureItemFromOpenEditorField(ctx as never, "Item", { register }, "item")
         ).resolves.toBe("captured");
 
         expect(register).toHaveBeenCalledOnce();
         expect(register.mock.calls[0][0]).toContain("Count:2b");
-        expect(inventory.clearedSlots).toEqual([]);
         expect(inventory.slots[4]).toEqual({ slotId: 4, nbt: existing, count: 63 });
         expect(inventory.slots[5]).toEqual({ slotId: 5, nbt: null, count: 0 });
     });
@@ -144,14 +137,14 @@ describe("editor item capture inventory handling", () => {
             )
         ).resolves.toBe("captured");
 
-        expect(inventory.clearedSlots).toEqual([]);
         expect(otherAtClick).toEqual({ slotId: 2, nbt: other, count: 1 });
         expect(inventory.slots[1]).toEqual({ slotId: 1, nbt: target, count: 1 });
         expect(inventory.slots[2]).toEqual({ slotId: 2, nbt: other, count: 1 });
     });
 
     test("captures a give that merges into an exact-identity stack and restores it", async () => {
-        const target = '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{display:{Name:"x"}}}';
+        const target =
+            '{id:"minecraft:stone",Count:1b,Damage:0s,tag:{display:{Name:"x"}}}';
         const existing =
             '{id:"minecraft:stone",Count:32b,Damage:0s,tag:{display:{Name:"x"}}}';
         inventory.slots[7] = { slotId: 7, nbt: existing, count: 32 };
@@ -172,7 +165,6 @@ describe("editor item capture inventory handling", () => {
             )
         ).resolves.toBe("captured");
 
-        expect(inventory.clearedSlots).toEqual([]);
         expect(inventory.restoredSlots).toEqual([7]);
         expect(inventory.slots[7]).toEqual({ slotId: 7, nbt: existing, count: 32 });
     });
@@ -200,7 +192,7 @@ describe("editor item capture inventory handling", () => {
         expect(register).not.toHaveBeenCalled();
     });
 
-    test("borrows the scratch slot when the inventory is full", async () => {
+    test("leaves a full inventory untouched and reports the prerequisite", async () => {
         inventory.slots = Array.from({ length: 36 }, (_, slotId) => ({
             slotId,
             nbt: `{id:"minecraft:stone",Count:1b,Damage:${slotId}s}`,
@@ -211,22 +203,23 @@ describe("editor item capture inventory handling", () => {
             inventory.slots[0] = { slotId: 0, nbt: captured, count: 1 };
         });
 
-        await captureItemFromOpenEditorField(
-            ctx as never,
-            "Item",
-            { register: () => "captured" },
-            "item"
-        );
-
-        expect(inventory.clearedSlots).toEqual([0]);
-        expect(inventory.restoredSlots).toEqual([0]);
+        const before = inventory.slots.map((slot) => ({ ...slot }));
+        await expect(
+            captureItemFromOpenEditorField(
+                ctx as never,
+                "Item",
+                { register: () => "captured" },
+                "item"
+            )
+        ).rejects.toThrow("Free an inventory slot");
+        expect(inventory.slots).toEqual(before);
+        expect(inventory.restoredSlots).toEqual([]);
     });
 
     test("keys observations from the recaptured item instead of editor chrome", async () => {
         const editorSnbt =
             '{id:"minecraft:wool",Damage:0s,tag:{overrideMeta:1b,HideFlags:255,display:{Name:"§aItem",Lore:["Current Value:","Wool","Click to change!"]},AttributeModifiers:[]}}';
-        const recapturedSnbt =
-            '{id:"minecraft:wool",Count:1b,Damage:0s}';
+        const recapturedSnbt = '{id:"minecraft:wool",Count:1b,Damage:0s}';
         const ctx = context(editorSnbt, 1, () => {
             inventory.slots[5] = {
                 slotId: 5,

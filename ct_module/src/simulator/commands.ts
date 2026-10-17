@@ -9,8 +9,11 @@ import {
 } from "./session";
 import { StringFileLoader } from "../utils/fileLoaders";
 import { printDiagnostic } from "../tui/diagnostics";
-import { printUI, UIElementText } from "../tui/elements";
-import { UIElementTable } from "../tui/tables";
+import {
+    TextLayoutCanvas,
+    TextLayoutText,
+    TextLayoutVStack,
+} from "../diagnostics/textLayout";
 
 export function registerCommandTriggers(): CommandTrigger[] {
     return [
@@ -152,16 +155,26 @@ function printVarTable(
         ChatLib.chat(`&7No ${label.toLowerCase()} variables match filter "&f${filter}&7".`);
         return;
     }
-    const table = new UIElementTable(["Name", "Type", "Value"]);
-    for (const e of entries) {
-        const typeColor = e.type === "long" ? "&e" : e.type === "double" ? "&d" : "&b";
-        table.addRow([
-            new UIElementText(`&f${e.key}`),
-            new UIElementText(`${typeColor}${e.type}`),
-            new UIElementText(`&f${e.display}`),
-        ]);
+    printTable(
+        ["Name", "Type", "Value"],
+        entries.map((e) => {
+            const typeColor = e.type === "long" ? "&e" : e.type === "double" ? "&d" : "&b";
+            return [`&f${e.key}`, `${typeColor}${e.type}`, `&f${e.display}`];
+        })
+    );
+}
+
+function printTable(columns: string[], rows: string[][]): void {
+    const canvas = new TextLayoutCanvas();
+    let x = 0;
+    for (let c = 0; c < columns.length; c++) {
+        const column = new TextLayoutVStack();
+        column.add(new TextLayoutText(`&7${columns[c]}`));
+        for (const row of rows) column.add(new TextLayoutText(row[c]));
+        canvas.addElement(x, 0, column);
+        x += column.getWidth() + 4;
     }
-    printUI(table);
+    for (const line of canvas.render()) ChatLib.chat(line);
 }
 
 function parseVarOp(op: string): VarOperation | undefined {

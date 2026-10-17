@@ -90,7 +90,6 @@ describe("planMenuChanges", () => {
             actionPlan,
             undefined,
             "Shop",
-            "slots[0].actions",
             4,
             true
         );
@@ -107,15 +106,15 @@ describe("planMenuChanges", () => {
 
     it("treats an undeclared live slot without a plan as an empty baseline", () => {
         expect(
-            menuActionBaseline(null, undefined, "Shop", "slots[unknown].actions", 40, false)
+            menuActionBaseline(null, undefined, "Shop", 40, false)
         ).toEqual({ actions: [], actionsKnown: true });
     });
 
     it("identifies a missing menu action baseline with its menu and path", () => {
         expect(() =>
-            menuActionBaseline(null, undefined, "Shop", "slots[2].actions", 7, true)
+            menuActionBaseline(null, undefined, "Shop", 7, true)
         ).toThrow(
-            'Menu "Shop" has no usable baseline for slots[2].actions ' +
+            'Menu "Shop" has no usable baseline for slot#7.actions ' +
                 "(Housing slot 7; unhydrated action indexes/types: " +
                 "unavailable because no action plan exists)."
         );

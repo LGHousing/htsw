@@ -330,7 +330,7 @@ export function regionApplicationPlan(
             boundsChange
                 ? REGION_BOUNDS_CHANGE_UNITS +
                       (plan.liveRegion === null && !shellPlanned ? COST.cacheWrite : 0)
-                : COST.commandInterval + COST.commandMenuWait
+                : COST.commandMenuWait
         )
     );
     if (actionListPlanNeedsApply(plan.enterPlan)) {
@@ -342,7 +342,7 @@ export function regionApplicationPlan(
     if (actionListPlanNeedsApply(plan.exitPlan)) {
         if (actionListPlanNeedsApply(plan.enterPlan)) {
             steps.push(
-                workStep("reopenForExit", COST.commandInterval + COST.commandMenuWait)
+                workStep("reopenForExit", COST.commandMenuWait)
             );
         }
         steps.push(

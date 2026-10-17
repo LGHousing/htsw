@@ -1,7 +1,7 @@
 import { COLORS, type Color, type FunctionIcon, type Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { atomicWriteText, getFileMtimeMs } from "../utils/filesystem";
+import { atomicWriteText, getMtimeMs } from "../utils/filesystem";
 import { traceNote } from "../housingSync/trace/taskTrace";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
@@ -32,8 +32,10 @@ const CACHE_SCHEMA_VERSION = 2;
 // key it uses): `cacheEntryHashesAreCurrent` trusts stored hashes for the
 // current version, so a stale version keeps reporting "modified" against
 // hashes the new spec would judge equal. 2: notes wrapped across lore lines
-// now normalize to single-line notes (659904a0).
-const CACHE_ENTRY_VERSION = 2;
+// now normalize to single-line notes (659904a0). 3: menu list keys name the
+// Housing slot number instead of the array position. 4: ITEM NBT uses the
+// same Housing normalization as item comparisons and live inventory reads.
+const CACHE_ENTRY_VERSION = 4;
 const ACCEPTED_SCHEMA_VERSIONS = [1, 2];
 
 export type CacheWriter = "exporter" | "importer" | "reader" | "project-lock";
@@ -66,6 +68,34 @@ const readCache = new Map<string, ReadCacheMemo>();
 // resolver is only called on the main thread, including before worker plans.
 const legacyMigrationChecked = new Set<string>();
 
+// File names in each cache directory, listed once per session. The legacy-layout
+// check below runs on the render path, where a stat per importable froze the
+// client on a big project's first draw. Null when listing failed (falls back to
+// the filesystem).
+const cacheDirListings = new Map<string, Set<string> | null>();
+
+function cacheDirListing(dir: string): Set<string> | null {
+    const known = cacheDirListings.get(dir);
+    if (known !== undefined) return known;
+    let names: Set<string> | null = null;
+    try {
+        const File = javaType("java.io.File");
+        const listed = new File(dir).list();
+        names = new Set<string>();
+        if (listed !== null) {
+            for (let i = 0; i < listed.length; i++) names.add(String(listed[i]));
+        }
+    } catch (_e) {
+        names = null;
+    }
+    cacheDirListings.set(dir, names);
+    return names;
+}
+
+function fileName(path: string): string {
+    return path.substring(path.lastIndexOf("/") + 1);
+}
+
 function resolvedCachePath(
     housingUuid: string,
     type: Importable["type"],
@@ -75,6 +105,10 @@ function resolvedCachePath(
     if (legacyMigrationChecked.has(path)) return path;
     legacyMigrationChecked.add(path);
     const legacyPath = legacyCachePathForId(housingUuid, type, identity);
+    // A listing taken before this session's writes can only miss new files, never
+    // legacy ones, so "no legacy file" is safe to trust.
+    const listing = cacheDirListing(cacheTypeDir(housingUuid, type));
+    if (listing !== null && !listing.has(fileName(legacyPath))) return path;
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
@@ -311,7 +345,7 @@ function commitImportableCacheWrite(
                 icon: importable.type === "FUNCTION" ? importable.icon : undefined,
                 color: houseDisplayColor(importable),
             },
-            mtime: getFileMtimeMs(path),
+            mtime: getMtimeMs(path),
             checkedAt: Date.now(),
         });
         contentWriteRevision++;
@@ -504,7 +538,7 @@ export function writePresence(
                 icon,
                 color,
             },
-            mtime: getFileMtimeMs(path),
+            mtime: getMtimeMs(path),
             checkedAt: Date.now(),
         });
         indexUpsert(housingUuid, type, {
@@ -563,7 +597,7 @@ export function readImportableCache(
     const memo = readCache.get(path);
     if (memo !== undefined) {
         if (now - memo.checkedAt < 1000) return memo.entry;
-        const mtime = getFileMtimeMs(path);
+        const mtime = getMtimeMs(path);
         if (mtime === memo.mtime) {
             memo.checkedAt = now;
             return memo.entry;
@@ -573,7 +607,7 @@ export function readImportableCache(
     // post-read stat, we'd store the new mtime with the old content and serve
     // stale until the next write. Stale-mtime-with-new-content (the other
     // ordering's failure) just re-reads on the next check.
-    const mtimeBeforeRead = getFileMtimeMs(path);
+    const mtimeBeforeRead = getMtimeMs(path);
     let raw: string | null;
     try {
         raw = FileLib.read(path);
@@ -690,7 +724,7 @@ export function loadImportableCachesOffThread(
         }
     };
     const loadOne = (plan: (typeof plans)[number]): LoadedCacheFile => {
-        const mtime = getFileMtimeMs(plan.path);
+        const mtime = getMtimeMs(plan.path);
         if (plan.memo !== undefined && plan.memo.mtime === mtime) {
             return {
                 path: plan.path,
@@ -737,7 +771,7 @@ export function loadImportableCachesOffThread(
                                     type: plan.type,
                                     entry: null,
                                     house: null,
-                                    mtime: getFileMtimeMs(plan.path),
+                                    mtime: getMtimeMs(plan.path),
                                 });
                             }
                         }

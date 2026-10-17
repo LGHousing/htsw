@@ -1,6 +1,13 @@
 import TaskContext from "../../tasks/context";
-import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../../utils/packets";
+import {
+    C10PacketCreativeInventoryAction,
+    S2FPacketSetSlot,
+    setSlotPacketSlot,
+    setSlotPacketStack,
+    setSlotPacketWindowId,
+} from "../../utils/packets";
 import { getPlayer, sendPacket } from "../../utils/java";
+import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -14,11 +21,41 @@ export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
     return ctx.waitFor("packetReceived", (packet) => packet instanceof S2FPacketSetSlot);
 }
 
+/**
+ * Waiter for the S2FPacketSetSlot acknowledging a creative inventory edit.
+ * Register it before sending the edit: a house loop can overwrite the slot in
+ * the same tick the ack lands, so a once-per-tick inventory poll may never see
+ * the accepted stack. The ack's window depends on what is open, hence the
+ * caller's predicate. Callers must `cleanupWaiter` it.
+ */
+export function waitForSetSlotAck(
+    ctx: TaskContext,
+    accepts: (
+        windowId: number | null,
+        slot: number | null,
+        stack: HtswMinecraftItemStack | null
+    ) => boolean
+): WaitForPromise<[Packet]> {
+    return ctx.waitFor(
+        "packetReceived",
+        (packet) =>
+            packet instanceof S2FPacketSetSlot &&
+            accepts(
+                setSlotPacketWindowId(packet),
+                setSlotPacketSlot(packet),
+                setSlotPacketStack(packet)
+            )
+    );
+}
+
 export function sendCreativeInventoryAction(
     ctx: TaskContext,
     packetSlot: number,
     stack: HtswMinecraftItemStack | null
 ): void {
+    if (!getPlayer().field_71075_bZ.field_75098_d) {
+        throw new Error("Creative mode is required; no inventory packet was sent.");
+    }
     sendPacket(new C10PacketCreativeInventoryAction(packetSlot, stack));
 }
 

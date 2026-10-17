@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type TaskContext from "../src/tasks/context";
 import { getActiveTaskKind } from "../src/tasks/activeTask";
@@ -7,6 +7,7 @@ import {
     addToQueue,
     clearQueue,
     getQueue,
+    insertQueueRowsAfter,
     insertQueueRowsBefore,
     makeBulkQueueRow,
     makeImportableQueueRow,
@@ -18,14 +19,18 @@ import {
 } from "../src/gui/right-panel/import-tab/queue";
 import {
     bulkFilterAllowed,
+    expandBulkDefault,
     drainQueue,
     matchesBulkCacheState,
     namesNotDeclared,
+    printQueueRunEnd,
     runQueuedExportSession,
     type QueueRunnerDependencies,
     type QueueSessionResult,
 } from "../src/gui/right-panel/import-tab/queueRunner";
 import { exportHeldItem } from "../src/importables/items/export";
+import * as parses from "../src/gui/parsing/parses";
+import { getTaskActivity } from "../src/tasks/activity";
 import type { runExportSession } from "../src/importables/export/session";
 import { createExportProgressSink } from "../src/gui/export/progressSink";
 import {
@@ -33,7 +38,14 @@ import {
     getTaskProgress,
 } from "../src/gui/right-panel/import-tab/taskProgress";
 
-const ctx = { checkCancelled: () => undefined } as unknown as TaskContext;
+const ctx = {
+    checkCancelled: () => undefined,
+    elapsedMs: () => 12_000,
+} as unknown as TaskContext;
+
+function chatSpy() {
+    return vi.spyOn(ChatLib, "chat");
+}
 
 function row(
     label: string,
@@ -48,6 +60,17 @@ function row(
         type: "FUNCTION",
         identity: label,
         label,
+    });
+}
+
+function projectRow(path: string): QueueRow {
+    return makeBulkQueueRow({
+        op: "import",
+        house: "house-a",
+        path,
+        scope: { kind: "file", path },
+        filter: "modified",
+        label: "project",
     });
 }
 
@@ -67,6 +90,8 @@ function dependencies(
         currentHouse: async () => "house-a",
         beforeFirstImport: async () => undefined,
         expandBulk: async () => [],
+        beginProject: async () => undefined,
+        finishProject: async () => undefined,
         runImport: async (_ctx, rows) => complete(rows),
         runExport: async (_ctx, rows) => complete(rows),
         scheduleDone: (callback) => callback(),
@@ -75,11 +100,76 @@ function dependencies(
 }
 
 afterEach(() => {
+    vi.restoreAllMocks();
     clearQueue();
     clearTaskProgress();
 });
 
 describe("operation queue drain", () => {
+    it("does not requeue completed rows that are still waiting for removal", async () => {
+        enqueue(row("import-a"));
+        enqueue(row("read-a", "read", "/read/import.json"));
+        enqueue(row("import-b"));
+        const calls: string[] = [];
+        const removals: Array<() => void> = [];
+        const deps = dependencies({
+            runImport: async (_ctx, rows) => {
+                calls.push(rows.map((r) => r.target.label).join(","));
+                if (calls.length > 2) throw new Error("a completed row ran again");
+                return complete(rows);
+            },
+            scheduleDone: (callback) => removals.push(callback),
+        });
+
+        await expect(drainQueue(ctx, deps)).resolves.toBe("idle");
+        for (const remove of removals) remove();
+        expect(calls).toEqual(["import-a", "import-b"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("leaves a row queued again before the old completion's removal alone", async () => {
+        const a = row("import-a");
+        enqueue(a);
+        const removals: Array<() => void> = [];
+        await drainQueue(
+            ctx,
+            dependencies({ scheduleDone: (callback) => removals.push(callback) })
+        );
+
+        clearQueue();
+        enqueue(a);
+        for (const remove of removals) remove();
+        expect(getQueue().map((queued) => queued.status)).toEqual(["queued"]);
+    });
+
+    it("returns a pulled-in dependency to queued when the session fails", async () => {
+        const uses = row("uses sword");
+        const unrelated = row("unrelated", "read", "/read/import.json");
+        const sword = row("sword");
+        enqueue(uses);
+        enqueue(unrelated);
+        enqueue(sword);
+        const deps = dependencies({
+            runImport: async (_ctx, rows) => {
+                for (const pulled of insertQueueRowsAfter(rows[0].key, [sword])) {
+                    setQueueRowStatus(pulled.key, "running");
+                }
+                return {
+                    completedKeys: [],
+                    failed: [{ key: rows[0].key, error: "Import dependency has errors" }],
+                    parseError: true,
+                };
+            },
+        });
+
+        await expect(drainQueue(ctx, deps)).resolves.toBe("idle");
+        expect(getQueue().map((queued) => [queued.target.label, queued.status])).toEqual([
+            ["uses sword", "failed"],
+            ["sword", "queued"],
+            ["unrelated", "queued"],
+        ]);
+    });
+
     it("preserves mixed order and groups only consecutive op/path/house rows", async () => {
         enqueue(row("import-a"));
         enqueue(row("import-b"));
@@ -164,6 +254,126 @@ describe("operation queue drain", () => {
             "fresh-new",
             "fresh-changed",
             "fresh-unread",
+        ]);
+    });
+
+    it("finishes a project row after its importables, and only then", async () => {
+        const path = "/project/import.json";
+        const project = projectRow(path);
+        enqueue(project);
+        const calls: string[] = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                beginProject: async () => {
+                    calls.push("begin");
+                },
+                expandBulk: async (_ctx, parent) => {
+                    calls.push("expand");
+                    return [{ ...row("child", "import", path), parentKey: parent.key }];
+                },
+                runImport: async (_ctx, rows) => {
+                    calls.push(`import ${rows.map((r) => r.target.label).join(",")}`);
+                    return complete(rows);
+                },
+                finishProject: async (_ctx, finished) => {
+                    calls.push(`finish ${finished.target.label}`);
+                },
+            })
+        );
+        expect(calls).toEqual(["begin", "expand", "import child", "finish project"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("says what it is doing while it works, and clears it when done", async () => {
+        const path = "/project/import.json";
+        enqueue(projectRow(path));
+        const seen: Array<string | null> = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                beginProject: async () => {
+                    seen.push(getTaskActivity());
+                },
+                expandBulk: async () => {
+                    seen.push(getTaskActivity());
+                    return [];
+                },
+                finishProject: async () => {
+                    seen.push(getTaskActivity());
+                },
+            })
+        );
+        expect(seen).toEqual([
+            "Preparing /project",
+            "Working out what to import from /project",
+            "Finishing /project",
+        ]);
+        expect(getTaskActivity()).toBeNull();
+    });
+
+    it("still finishes a project row that has nothing to import", async () => {
+        enqueue(projectRow("/project/import.json"));
+        const finished: string[] = [];
+        await drainQueue(
+            ctx,
+            dependencies({
+                finishProject: async (_ctx, finishing) => {
+                    finished.push(finishing.target.label);
+                },
+            })
+        );
+        expect(finished).toEqual(["project"]);
+        expect(getQueue()).toEqual([]);
+    });
+
+    it("does not finish a project row whose import failed", async () => {
+        const path = "/project/import.json";
+        const project = projectRow(path);
+        enqueue(project);
+        const child = { ...row("child", "import", path), parentKey: project.key };
+        let finished = 0;
+        await drainQueue(
+            ctx,
+            dependencies({
+                expandBulk: async () => [child],
+                runImport: async (_ctx, rows) => ({
+                    completedKeys: [],
+                    failed: [{ key: rows[0].key, error: "boom" }],
+                }),
+                finishProject: async () => {
+                    finished++;
+                },
+            })
+        );
+        expect(finished).toBe(0);
+        expect(getQueue().map((r) => [r.target.label, r.status])).toEqual([
+            ["project", "running"],
+            ["child", "failed"],
+        ]);
+    });
+
+    it("fails the project row and stops when finishing throws", async () => {
+        const later = row("later", "import", "/later/import.json");
+        enqueue(projectRow("/project/import.json"));
+        enqueue(later);
+        let imports = 0;
+        await drainQueue(
+            ctx,
+            dependencies({
+                runImport: async (_ctx, rows) => {
+                    imports++;
+                    return complete(rows);
+                },
+                finishProject: async () => {
+                    throw new Error("scan broke");
+                },
+            })
+        );
+        expect(imports).toBe(0);
+        expect(getQueue().map((r) => [r.target.label, r.status, r.error])).toEqual([
+            ["project", "failed", "scan broke"],
+            ["later", "queued", null],
         ]);
     });
 
@@ -344,6 +554,61 @@ describe("bulk filter semantics", () => {
 });
 
 describe("queued held-item export", () => {
+    it.each(["all", "unread"] as const)(
+        "expands ITEM %s reads from project declarations",
+        async (filter) => {
+            vi.spyOn(parses, "parseImportJsonCurrent").mockResolvedValue({
+                parsed: {
+                    value: [
+                        {
+                            type: "ITEM",
+                            name: "cookie",
+                            nbt: { type: "compound", value: {} },
+                        },
+                        { type: "FUNCTION", name: "unrelated" },
+                    ],
+                },
+            } as never);
+            const bulk = makeBulkQueueRow({
+                op: "read",
+                house: "house-a",
+                path: "/items/import.json",
+                scope: { kind: "houseType", type: "ITEM" },
+                filter,
+                label: `Read ${filter} items`,
+            });
+            const rows = await expandBulkDefault(ctx, bulk, "house-a");
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({
+                op: "read",
+                target: { type: "ITEM", identity: "cookie" },
+            });
+        }
+    );
+
+    it("reads selected project items and leaves failed reads failed", async () => {
+        const item = makeImportableQueueRow({
+            op: "read",
+            house: "house-a",
+            path: "/items/import.json",
+            type: "ITEM",
+            identity: "cookie",
+        });
+        const fakeSession = (async (_ctx, destination, batches) => {
+            expect(destination.kind).toBe("cache");
+            expect(batches[0].reader).toBeUndefined();
+            expect(batches[0].names).toEqual(["cookie"]);
+            batches[0].onQueueRowFinished?.(item.key, "No live copy");
+            return { total: 1, succeeded: 0, failed: 1 };
+        }) as typeof runExportSession;
+
+        const result = await runQueuedExportSession(ctx, [item], "house-a", fakeSession);
+        expect(result).toEqual({
+            completedKeys: [],
+            failed: [{ key: item.key, error: "No live copy" }],
+        });
+    });
+
     it("captures at run time without passing the synthetic queue identity as a name", async () => {
         const held = makeImportableQueueRow({
             op: "export",
@@ -364,6 +629,31 @@ describe("queued held-item export", () => {
         expect(reader).toBe(exportHeldItem);
         expect(names).toBeUndefined();
         expect(result).toEqual({ completedKeys: [held.key], failed: [] });
+    });
+});
+
+describe("queued NPC export", () => {
+    it("passes only the selected NPC to the position-keyed exporter", async () => {
+        const npc = makeImportableQueueRow({
+            op: "export",
+            house: "house-a",
+            path: "/npcs/import.json",
+            type: "NPC",
+            identity: "12,64,-8",
+            label: "Guide",
+        });
+        let names: readonly string[] | undefined;
+        let entries: unknown;
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            names = batches[0].names;
+            entries = batches[0].npcEntries;
+            return { total: 1, succeeded: 1, failed: 0 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(ctx, [npc], "house-a", fakeSession);
+
+        expect(names).toBeUndefined();
+        expect(entries).toEqual([{ name: "Guide", pos: { x: 12, y: 64, z: -8 } }]);
     });
 });
 
@@ -389,6 +679,76 @@ describe("queued export destination", () => {
     });
 });
 
+describe("queued export and read chat", () => {
+    it("prints each export failure before the exact completion line", async () => {
+        const first = row("first", "export");
+        const second = row("second", "export");
+        const broken = row("broken", "export");
+        const chat = chatSpy();
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            batches[0].onQueueRowFinished?.(first.key);
+            batches[0].onQueueRowFinished?.(second.key);
+            batches[0].onQueueRowFinished?.(broken.key, "Housing menu closed");
+            return { total: 3, succeeded: 2, failed: 1 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(
+            ctx,
+            [first, second, broken],
+            "house-a",
+            fakeSession
+        );
+
+        expect(chat.mock.calls.map(([message]) => message)).toEqual([
+            "&c[htsw] Export failed on FUNCTION broken: Housing menu closed",
+            "&a[htsw] Export complete in 12s &7· &f2&a exported, &f1&c failed",
+        ]);
+    });
+
+    it("prints the exact read completion line", async () => {
+        const queued = row("cached", "read");
+        const chat = chatSpy();
+        const fakeSession = (async (_ctx, _destination, batches) => {
+            batches[0].onQueueRowFinished?.(queued.key);
+            return { total: 1, succeeded: 1, failed: 0 };
+        }) as typeof runExportSession;
+
+        await runQueuedExportSession(ctx, [queued], "house-a", fakeSession);
+
+        expect(chat).toHaveBeenCalledWith(
+            "&a[htsw] Read complete in 12s &7· &f1&a read, &f0&c failed"
+        );
+    });
+});
+
+describe("queue terminal chat", () => {
+    it("prints the exact idle and paused summaries", () => {
+        const chat = chatSpy();
+        enqueue(row("still queued", "import", "/other/import.json", "house-b"));
+
+        printQueueRunEnd("idle", { completed: 2, failed: 1 });
+        printQueueRunEnd("paused", { completed: 3, failed: 4 });
+
+        expect(chat.mock.calls.map(([message]) => message)).toEqual([
+            "&a[htsw] Queue finished &7· &f2&a completed, &f1&a failed, &f1&7 queued",
+            "&e[htsw] Queue paused &7· &f3&e completed, &f4&e failed, &f1&7 queued",
+        ]);
+    });
+
+    it("prints zero run counts when no rows are runnable for the current house", async () => {
+        enqueue(row("other house", "export", "/other/import.json", "house-b"));
+        const chat = chatSpy();
+        const tally = { completed: 0, failed: 0 };
+
+        await expect(drainQueue(ctx, dependencies(), {}, tally)).resolves.toBe("idle");
+        printQueueRunEnd("idle", tally);
+
+        expect(chat).toHaveBeenCalledWith(
+            "&a[htsw] Queue finished &7· &f0&a completed, &f0&a failed, &f1&7 queued"
+        );
+    });
+});
+
 describe("queued export progress", () => {
     it("uses the stable QueueRow key through reducer and completion", () => {
         const queued = row("exported", "export", "/exports/import.json");
@@ -405,6 +765,30 @@ describe("queued export progress", () => {
         );
         sink.start(["exported"]);
         sink.item(0, "exported");
+        sink.itemFinished?.(0);
+        sink.done();
+
+        expect(getTaskProgress()?.rows[0].key).toBe(queued.key);
+        expect(finished).toEqual([queued.key]);
+    });
+
+    it("completes an NPC queue row when its display label differs from its identity", () => {
+        const queued = makeImportableQueueRow({
+            op: "export",
+            house: "house-a",
+            path: "/npcs/import.json",
+            type: "NPC",
+            identity: "12,64,-8",
+            label: "Guide",
+        });
+        const finished: string[] = [];
+        const sink = createExportProgressSink("NPC", queued.path, "export", undefined, {
+            queueRows: [queued],
+            onFinished: (key) => finished.push(key),
+        });
+
+        sink.start(["Guide @ 12,64,-8"], ["12,64,-8"]);
+        sink.item(0, "Guide @ 12,64,-8");
         sink.itemFinished?.(0);
         sink.done();
 

@@ -6,6 +6,8 @@ import { ItemCaptureRegistry } from "../items/captureRegistry";
 import { createProjectItemIndex } from "../items/projectItems";
 import { createItemDependencyIndex } from "../items/dependencyIndex";
 import { expectedInteractData } from "../items/interactDataCache";
+import { snbtTargetForItemExport } from "../../project/paths";
+import { readTextFileOrNull } from "../../utils/filesystem";
 
 export type ProjectExportDestination = {
     rootDir: string;
@@ -73,10 +75,28 @@ export function readParsedImportablesForExport(
 export function createExportItemCaptureRegistry(
     importJsonPath: string,
     housingUuid: string,
-    fallbackItems: readonly ImportableItem[] = []
+    rootDir: string,
+    newExportTargetImportJson?: string,
+    fallbackItems: readonly ImportableItem[] = [],
+    warmParse?: ImportablesParseResult
 ): ItemCaptureRegistry {
-    const captures = new ItemCaptureRegistry("live");
-    const parsed = readParsedImportablesForExport(importJsonPath);
+    const captures = new ItemCaptureRegistry("live", {
+        existingSnbt: (name) => {
+            try {
+                const target = snbtTargetForItemExport(
+                    importJsonPath,
+                    rootDir,
+                    name,
+                    undefined,
+                    newExportTargetImportJson
+                );
+                return readTextFileOrNull(target.snbtPath);
+            } catch (_error) {
+                return null;
+            }
+        },
+    });
+    const parsed = warmParse ?? readParsedImportablesForExport(importJsonPath);
     if (parsed !== null) {
         const items = createProjectItemIndex(parsed.value, parsed.gcx);
         const dependencies = createItemDependencyIndex(parsed.value, items);

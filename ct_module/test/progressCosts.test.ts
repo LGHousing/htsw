@@ -320,7 +320,6 @@ describe("progress cost estimates", () => {
         const expectedWithoutActionList =
             COST.itemInject +
             COST.guaranteedSleep1000 * 2 +
-            COST.commandInterval +
             COST.commandMenuWait +
             COST.menuClickWait +
             COST.nbtCapture +
@@ -415,15 +414,62 @@ describe("progress cost estimates", () => {
         ).toBeCloseTo(COST.signInput);
     });
 
-    test("unrelated function action pricing only gains its command interval", () => {
+    test("trusted menu prices only the slots that differ from the cache", () => {
+        const nbt = { type: "compound", value: {} } as never;
+        const menuWith = (sell: string): ImportableMenu => ({
+            type: "MENU",
+            name: "m",
+            slots: [
+                { slot: 0, nbt },
+                { slot: 1, nbt },
+                { slot: 4, nbt, actions: [message("buy")] },
+                { slot: 5, nbt, actions: [message(sell)] },
+            ],
+        });
+        const cache = (importable: ImportableMenu): ImportableCacheEntry =>
+            ({
+                importable,
+                lists: {},
+            }) as ImportableCacheEntry;
+        const snapshot =
+            COST.commandMenuWait + COST.menuClickWait;
+        const editOneMessage = actionListDiffApplyUnits(
+            diffActionList(baselineActionListFromActions([message("old")]), [
+                message("new"),
+            ]),
+            editUnitsWithChildLists,
+            1
+        );
+
+        // One grid snapshot, the changed slot's lock check, reopen for the
+        // apply, one slot's edit. No unchanged slot is opened.
+        expect(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true)
+        ).toBeCloseTo(
+            snapshot * 2 +
+                (COST.commandMenuWait + COST.menuClickWait * 2) +
+                COST.menuClickWait +
+                editOneMessage +
+                COST.goBackWait +
+                COST.cacheWrite
+        );
+        // Trust off opens all four cached slots to read them.
+        expect(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), false)
+        ).toBeGreaterThan(
+            estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true) +
+                4 * COST.commandMenuWait
+        );
+    });
+
+    test("function estimate prices its editor open, its actions and the cache write", () => {
         const importable: ImportableFunction = {
             type: "FUNCTION",
             name: "f",
             actions: [message("hi")],
         };
         expect(estimateImportableCost(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 actionListDiffApplyUnits(
                     diffActionList(
                         baselineActionListFromActions([]),
@@ -444,8 +490,7 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 (COST.menuClickWait +
                     COST.goBackWait +
@@ -545,8 +590,7 @@ describe("progress cost estimates", () => {
         };
 
         expect(estimateImportableReadUnits(importable)).toBeCloseTo(
-            COST.commandInterval +
-                COST.commandMenuWait +
+            COST.commandMenuWait +
                 COST.menuClickWait +
                 COST.goBackWait +
                 COST.menuClickWait +

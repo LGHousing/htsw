@@ -8,6 +8,7 @@ import type {
     SoundPreviewToHostMessage,
     SoundMode,
 } from "./protocol";
+import { errorMessage } from "../errorMessage";
 
 const VERSION_KEY = "htsw.soundPreviewer.version";
 const PITCH_KEY = "htsw.soundPreviewer.pitch";
@@ -87,7 +88,7 @@ export class SoundPreviewController {
                 ok: false,
                 mode,
                 soundPath,
-                error: err instanceof Error ? err.message : String(err),
+                error: errorMessage(err),
             });
         }
     }
@@ -100,7 +101,7 @@ export class SoundPreviewController {
             await this.post(webview, {
                 type: "copyResult",
                 ok: false,
-                error: err instanceof Error ? err.message : String(err),
+                error: errorMessage(err),
             });
         }
     }

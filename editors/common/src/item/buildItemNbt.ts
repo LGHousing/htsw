@@ -1,5 +1,5 @@
 import type { Tag, TagCompound, TagList } from "htsw/nbt";
-import { ampToSection, sectionToAmp } from "../text/colorCodes";
+import { helpers } from "htsw";
 
 export type BuildItemNbtForm = {
     itemName: string;
@@ -127,9 +127,9 @@ export function itemFieldsFromTag(tag: Tag): ItemFields | null {
         count: numberValue(fields.Count) ?? 1,
         metadata: numberValue(fields.Damage) ?? 0,
         displayName: stringValue(display?.Name) !== undefined
-            ? sectionToAmp(stringValue(display?.Name) as string)
+            ? helpers.sectionToAmp(stringValue(display?.Name) as string)
             : "",
-        lore: stringListValue(display?.Lore).map((line) => sectionToAmp(line)),
+        lore: stringListValue(display?.Lore).map((line) => helpers.sectionToAmp(line)),
         enchants: enchantsFromTag(tagCompound?.ench),
     };
 }
@@ -156,11 +156,11 @@ export function applyItemEditsToTag(original: Tag, form: BuildItemNbtForm): TagC
     const display = { ...(compoundValue(originalInnerTag.display) ?? {}) };
 
     const displayName = form.displayName?.trim();
-    if (displayName) display.Name = stringTag(ampToSection(displayName));
+    if (displayName) display.Name = stringTag(helpers.ampToSection(displayName));
     else delete display.Name;
 
     const lore = trimTrailingEmptyLines(form.lore ?? []);
-    if (lore.length > 0) display.Lore = listTag("string", lore.map((line) => ampToSection(line)));
+    if (lore.length > 0) display.Lore = listTag("string", lore.map((line) => helpers.ampToSection(line)));
     else delete display.Lore;
 
     if (hasAnyValue(display)) innerTag.display = compoundTag(display);
@@ -233,9 +233,9 @@ function buildDisplayTag(form: BuildItemNbtForm): TagCompound | undefined {
     if (!displayName && lore.length === 0) return undefined;
 
     return compoundTag({
-        Name: displayName ? stringTag(ampToSection(displayName)) : undefined,
+        Name: displayName ? stringTag(helpers.ampToSection(displayName)) : undefined,
         Lore: lore.length > 0
-            ? listTag("string", lore.map((line) => ampToSection(line)))
+            ? listTag("string", lore.map((line) => helpers.ampToSection(line)))
             : undefined,
     });
 }
@@ -254,7 +254,7 @@ function buildEnchantList(enchants: BuildItemEnchant[]): TagList | undefined {
     return listTag("compound", entries.map((entry) => entry.value));
 }
 
-function trimTrailingEmptyLines(lines: readonly string[]): string[] {
+export function trimTrailingEmptyLines(lines: readonly string[]): string[] {
     const out = [...lines];
     while (out.length > 0 && out[out.length - 1] === "") out.pop();
     return out;

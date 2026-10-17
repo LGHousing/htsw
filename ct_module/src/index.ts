@@ -13,7 +13,9 @@ import "./gui/persistence/workspaceSlices";
 import { initAutoUpdate } from "./autoUpdate";
 import { initSessionHeartbeat } from "./runtimeDebug/sessionHeartbeat";
 import { initPersistence } from "./persistence/tick";
+import { initStatusBridge } from "./bridge/runtime";
 
+initStatusBridge();
 registerSlashCommands();
 initHtswGui();
 initAutoUpdate();

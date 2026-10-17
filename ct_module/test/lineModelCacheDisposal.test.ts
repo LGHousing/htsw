@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/filesystem", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     getMtimeMs: () => 1,
     pathExists: () => true,
 }));

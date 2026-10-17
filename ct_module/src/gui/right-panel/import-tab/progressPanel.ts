@@ -55,6 +55,7 @@ import {
     isTaskTotalEtaReady,
     type MenuSlotFocus,
 } from "../../../housingSync/progress/types";
+import { formatElapsedSeconds } from "./elapsed";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;
@@ -79,17 +80,6 @@ function useCompactProgressBar(rowCount: number): boolean {
 
 // ── Time formatting ────────────────────────────────────────────────────
 
-function formatEtaSeconds(secs: number): string {
-    const total = Math.max(0, Math.round(secs));
-    if (total < 60) return `${total}s`;
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
-
 function formatClockTime(ms: number): string {
     const d = new Date(ms);
     let h = d.getHours();
@@ -106,7 +96,7 @@ function formatClockTime(ms: number): string {
 function progressElapsedText(): string {
     const ms = getTaskElapsedMs();
     if (ms === null) return "";
-    return `§7${formatEtaSeconds(ms / 1000)}`;
+    return `§7${formatElapsedSeconds(ms / 1000)}`;
 }
 
 const PHASE_LABELS: { [k: string]: { title: string } | undefined } = {
@@ -150,7 +140,7 @@ function phaseEtaText(): string {
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
     const context = phase === "hydrating" ? "hydrating" : "for this importable";
-    return `${formatEtaSeconds(secs)} left ${context}`;
+    return `${formatElapsedSeconds(secs)} left ${context}`;
 }
 
 function currentPhaseLabel(): string {
@@ -509,7 +499,7 @@ function progressTotalEtaLine(): string {
     // "~" marks a session whose item sizes are pure fallbacks (nothing cached
     // or parsed to size from), so the total is a guess, not an estimate.
     const rough = isEtaRough() ? "~" : "";
-    return `total ${rough}${formatEtaSeconds(secs)}${etcText}`;
+    return `total ${rough}${formatElapsedSeconds(secs)}${etcText}`;
 }
 
 function knowledgeStatusText(): string {

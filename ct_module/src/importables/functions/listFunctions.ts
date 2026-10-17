@@ -5,13 +5,12 @@ import {
     getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
+    paginatedEntryName,
     readPaginatedList,
     type PaginatedListConfig,
 } from "../../housingSync/menus/paginatedList";
 import type { ItemSlot } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
-import { extractFunctionNameFromSlot } from "./housing";
 import { functionListOpened } from "../waiters";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
@@ -157,7 +156,7 @@ function readFunctionEntryFromSlot(
     index: number
 ): FunctionListEntry | null {
     const item = slot.getItem();
-    const name = extractFunctionNameFromSlot(removedFormatting(item.getName()));
+    const name = paginatedEntryName(item.getName(), "Create Function");
     if (name === null) return null;
     return {
         index,
