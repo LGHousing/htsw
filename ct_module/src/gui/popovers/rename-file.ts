@@ -1,8 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { pathExists } from "../../utils/filesystem";
-import { javaType } from "../lib/java";
-import { basename, dirname } from "../lib/pathDisplay";
+import { javaType } from "../../utils/java";
+import { basename, dirname } from "../../project/pathDisplay";
 import { openTextPromptPopover } from "./text-prompt";
 
 // False when the rename failed and the prompt should reopen.

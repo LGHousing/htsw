@@ -9,7 +9,7 @@ import type {
     SpanTable,
 } from "htsw";
 
-import { shortPath } from "../lib/pathDisplay";
+import { shortPath } from "../../project/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
     actionLineRange,
@@ -17,8 +17,8 @@ import {
     parseHtslFile,
     type HtslLine,
 } from "./htslParse";
-import { getSelectedParsedResult } from "../parsing/selectedParse";
-import { getParseAt, onParseCacheEntryChanged } from "../parsing/parses";
+import { getSelectedParsedResult } from "../../runtime/parsing/selectedParse";
+import { getParseAt, onParseCacheEntryChanged } from "../../runtime/parsing/parses";
 import {
     tokenizeHtsl,
     tokenizeJson,
@@ -31,7 +31,7 @@ import {
     type DiagnosticLineSpan,
 } from "../../diagnostics/spans";
 import { ActionListPath, ActionPath } from "../../housingSync/actionPath";
-import { BoundedMap } from "../lib/boundedLruMap";
+import { BoundedMap } from "../../utils/boundedLruMap";
 import { getMtimeMs, pathExists } from "../../utils/filesystem";
 import { splitTokensAtSpans } from "./tokenMarks";
 

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createExportProgressSink } from "../src/gui/export/progressSink";
+import { createExportProgressSink } from "../src/runtime/exportProgress";
 import {
     clearTaskProgress,
     getTaskProgress,
-} from "../src/gui/right-panel/import-tab/taskProgress";
+} from "../src/runtime/taskProgress";
 import { runHousingSyncTask } from "../src/housingSync/taskRunner";
 import { cancelActiveTask } from "../src/tasks/activeTask";
 import { isTaskRunning } from "../src/tasks/runningState";

@@ -12,12 +12,12 @@ import {
 } from "../../lib/theme";
 import { markGuiDirty } from "../../lib/dirty";
 import { TaskManager } from "../../../tasks/manager";
-import { getHousingUuid } from "../../state";
+import { getHousingUuid } from "../../../runtime/state/index";
 import {
     cachedStatusForImportable,
     importableLinkStatusContextKey,
 } from "../../cache-status";
-import { canonicalPath } from "../../parsing/parses";
+import { canonicalPath } from "../../../runtime/parsing/parses";
 import {
     houseLockPathForImportJson,
     readHouseLock,

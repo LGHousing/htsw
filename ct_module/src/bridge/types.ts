@@ -40,6 +40,8 @@ export interface HtswRunStatus {
     currentImportable: { key: string; type: string; identity: string } | null;
     /** Current session's progress and ETA, NOT an estimate of pending queue sessions. */
     progressFraction: number | null;
+    /** Refined current/last session work, including conditional inventory work. */
+    plannedUnits: number | null;
     elapsedMs: number;
     etaSeconds: number | null;
     estimatedFinishAt: number | null;

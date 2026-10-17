@@ -21,7 +21,7 @@ import {
 import { javaType, sendPacket } from "../utils/java";
 import { setClipboardString } from "../utils/osShell";
 import { chatLine, colouredComponent, rawComponent } from "../utils/chat";
-import { basename, dirname } from "../gui/lib/pathDisplay";
+import { basename, dirname } from "../project/pathDisplay";
 
 function chatPath(path: string): string {
     const norm = path.split("\\").join("/");

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const AUTO_TRACK_FILE = "./htsw/.settings/auto-track.json";
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path.replace(/\\/g, "/").toLowerCase(),
 }));
 
@@ -32,7 +32,7 @@ describe("auto-track persistence", () => {
     });
 
     test("restores enabled base import.json paths after reload", async () => {
-        const firstLoad = await import("../src/gui/state/autoTrack");
+        const firstLoad = await import("../src/runtime/state/autoTrack");
 
         expect(firstLoad.toggleAutoTrackSource("C:\\Projects\\House\\import.json")).toBe(true);
         expect(JSON.parse(files.get(AUTO_TRACK_FILE) ?? "[]")).toEqual([
@@ -40,7 +40,7 @@ describe("auto-track persistence", () => {
         ]);
 
         vi.resetModules();
-        const reloaded = await import("../src/gui/state/autoTrack");
+        const reloaded = await import("../src/runtime/state/autoTrack");
 
         expect(reloaded.isAutoTrackSource("C:/PROJECTS/HOUSE/import.json")).toBe(true);
         expect(reloaded.isAnyAutoTrackEnabled()).toBe(true);
@@ -48,14 +48,14 @@ describe("auto-track persistence", () => {
 
     test("persists disabling a tracked path", async () => {
         files.set(AUTO_TRACK_FILE, JSON.stringify(["c:/projects/house/import.json"]));
-        const state = await import("../src/gui/state/autoTrack");
+        const state = await import("../src/runtime/state/autoTrack");
 
         expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBe(false);
         expect(JSON.parse(files.get(AUTO_TRACK_FILE) ?? "null")).toEqual([]);
     });
 
     test("changes revision after toggling a tracked path", async () => {
-        const state = await import("../src/gui/state/autoTrack");
+        const state = await import("../src/runtime/state/autoTrack");
         const revision = state.getAutoTrackRevision();
 
         expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBe(true);
@@ -64,7 +64,7 @@ describe("auto-track persistence", () => {
 
     test("does not replace a malformed settings file", async () => {
         files.set(AUTO_TRACK_FILE, "not json");
-        const state = await import("../src/gui/state/autoTrack");
+        const state = await import("../src/runtime/state/autoTrack");
 
         expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBeNull();
         expect(files.get(AUTO_TRACK_FILE)).toBe("not json");
@@ -80,7 +80,7 @@ describe("auto-track persistence", () => {
             },
             delete: () => false,
         });
-        const state = await import("../src/gui/state/autoTrack");
+        const state = await import("../src/runtime/state/autoTrack");
 
         expect(state.toggleAutoTrackSource("C:/Projects/House/import.json")).toBeNull();
         expect(writes).toBe(0);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CachedParse } from "../src/gui/parsing/parses";
+import type { CachedParse } from "../src/runtime/parsing/parses";
 
 const spies = vi.hoisted(() => ({
     invalidateProjectItems: vi.fn(),
@@ -31,7 +31,8 @@ function mockPath(path: string): MockPath {
     };
 }
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/java", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/java")>()),
     runtimeString: (value: string) => value,
     javaType: (name: string) => {
         if (name === "java.util.concurrent.ConcurrentLinkedQueue") {
@@ -65,7 +66,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 1,
 }));
 
-vi.mock("../src/gui/parsing/parseSnapshot", () => ({
+vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: (path: string) => ({
         importJsonPath: path,
@@ -91,7 +92,7 @@ vi.mock("../src/gui/parsing/parseSnapshot", () => ({
     }),
 }));
 
-vi.mock("../src/gui/parsing/offThreadParse", () => ({
+vi.mock("../src/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => ({}),
     parseImportJsonOffThread: () => undefined,
 }));
@@ -126,7 +127,7 @@ vi.mock("../src/gui/left-panel/projects/rowModel", () => ({
     bumpTreeRevision: spies.bumpTreeRevision,
 }));
 
-vi.mock("../src/gui/state", () => ({
+vi.mock("../src/runtime/state/index", () => ({
     getImportJsonPath: () => "",
     setImportJsonPath: () => undefined,
 }));
@@ -139,7 +140,7 @@ vi.mock("../src/gui/lib/framePerf", () => ({
     recordPhase: () => undefined,
 }));
 
-type ParsesModule = typeof import("../src/gui/parsing/parses");
+type ParsesModule = typeof import("../src/runtime/parsing/parses");
 
 let parses: ParsesModule;
 
@@ -151,7 +152,9 @@ beforeEach(async () => {
     spies.markGuiDirty.mockClear();
     spies.disposeLineModels.mockClear();
     spies.bumpTreeRevision.mockClear();
-    parses = await import("../src/gui/parsing/parses");
+    const { runtimeChanges } = await import("../src/runtime/events");
+    runtimeChanges.observe(spies.markGuiDirty);
+    parses = await import("../src/runtime/parsing/parses");
 });
 
 describe("parse cache retention and disposal", () => {

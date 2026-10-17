@@ -188,7 +188,7 @@ describe("progress cost estimates", () => {
         ).toBeCloseTo(COST.menuClickWait + nestedTotal + COST.goBackWait);
     });
 
-    test("item field writes include picker open, selection, and injection", () => {
+    test("item field writes defer conditional injection to runtime", () => {
         const add: Extract<ActionListOperation, { kind: "add" }> = {
             kind: "add",
             desiredIndex: 0,
@@ -202,7 +202,6 @@ describe("progress cost estimates", () => {
             COST.menuClickWait * 2 +
                 COST.menuClickWait +
                 COST.itemSelect +
-                COST.itemInject +
                 COST.goBackWait
         );
     });
@@ -310,7 +309,7 @@ describe("progress cost estimates", () => {
         ).toBeCloseTo(actionApply);
     });
 
-    test("items with click actions price both guaranteed sleeps", () => {
+    test("items with click actions omit the replaced fixed sleeps", () => {
         const item: ImportableItem = {
             type: "ITEM",
             name: "wand",
@@ -319,7 +318,6 @@ describe("progress cost estimates", () => {
         };
         const expectedWithoutActionList =
             COST.itemInject +
-            COST.guaranteedSleep1000 * 2 +
             COST.commandMenuWait +
             COST.menuClickWait +
             COST.nbtCapture +
@@ -338,14 +336,25 @@ describe("progress cost estimates", () => {
         );
     });
 
-    test("codeless items still price placement and its held-item wait", () => {
+    test("codeless items price placement without a fixed sleep", () => {
         const item: ImportableItem = {
             type: "ITEM",
             name: "plain",
             nbt: null as never,
         };
         expect(estimateImportableCost(item)).toBeCloseTo(
-            COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite
+            COST.itemInject + COST.cacheWrite
+        );
+    });
+
+    test("ITEM reading has no fixed one-second signing sleep", () => {
+        const item: ImportableItem = {
+            type: "ITEM", name: "wand", nbt: null as never,
+            leftClickActions: [message("click")],
+        };
+        expect(estimateImportableReadUnits(item)).toBeCloseTo(
+            COST.commandMenuWait + COST.menuClickWait +
+            2 * (COST.menuClickWait + COST.goBackWait) + COST.nbtCapture + COST.cacheWrite
         );
     });
 
@@ -357,7 +366,7 @@ describe("progress cost estimates", () => {
             leftClickActions: [message("click")],
         };
         expect(estimateImportableUnits(item, null, false, true)).toBeCloseTo(
-            COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite
+            COST.itemInject + COST.cacheWrite
         );
     });
 

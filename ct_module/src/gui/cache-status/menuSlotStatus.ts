@@ -3,11 +3,11 @@ import type { Importable, MenuSlot } from "htsw/types";
 import { menuSlotCompareKey } from "../../importables/menus/slotComparison";
 import { peekImportableCache } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
-import { getHousingUuid } from "../state/housing";
-import { isHouseTrusted } from "../state/trust";
+import { getHousingUuid } from "../../runtime/state/housing";
+import { isHouseTrusted } from "../../runtime/state/trust";
 import type { LinkStatusKey } from "./linkStatus";
 import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
-import { requestImportableCacheWarm } from "./cacheWarm";
+import { requestImportableCacheWarm } from "../../importCache/cacheWarm";
 
 export type MenuSlotCacheStatus = { key: LinkStatusKey; tooltip: string };
 

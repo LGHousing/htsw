@@ -31,7 +31,8 @@ function parsedProject() {
     };
 }
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/java", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/java")>()),
     javaType: () => ({
         get: (path: string) => ({
             toAbsolutePath: () => ({
@@ -47,7 +48,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
 
-vi.mock("../src/gui/parsing/offThreadParse", () => ({
+vi.mock("../src/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => currentFingerprint(),
     parseImportJsonOffThread: (
         _path: string,
@@ -63,7 +64,7 @@ vi.mock("../src/gui/parsing/offThreadParse", () => ({
         }),
 }));
 
-vi.mock("../src/gui/parsing/parseSnapshot", () => ({
+vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: () => null,
     restoreParseFromSnapshot: () => null,
@@ -86,7 +87,6 @@ vi.mock("../src/importables/items/dependencyIndex", () => ({
 vi.mock("../src/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
-vi.mock("../src/gui/lib/dirty", () => ({ markGuiDirty: () => undefined }));
 vi.mock("../src/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
@@ -95,11 +95,11 @@ vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
 }));
 
 vi.mock("../src/gui/lib/icons.generated", () => ({ Icons: { house: "house" } }));
-vi.mock("../src/gui/lib/pathDisplay", () => ({ shortPath: (path: string) => path }));
+vi.mock("../src/project/pathDisplay", () => ({ shortPath: (path: string) => path }));
 vi.mock("../src/gui/popovers/confirm", () => ({
     openConfirmPopover: (options: { onConfirm: () => void }) => options.onConfirm(),
 }));
-vi.mock("../src/gui/state", () => ({
+vi.mock("../src/runtime/state/index", () => ({
     getHousingUuid: () => houseUuid,
     setExportImportJsonPath: () => undefined,
 }));
@@ -114,12 +114,12 @@ vi.mock("../src/project/importJsonMutations", () => ({
     },
 }));
 
-let parseImportJsonCurrent: typeof import("../src/gui/parsing/parses").parseImportJsonCurrent;
+let parseImportJsonCurrent: typeof import("../src/runtime/parsing/parses").parseImportJsonCurrent;
 let confirmRebind: typeof import("../src/gui/houseBinding").confirmRebind;
 
 beforeAll(async () => {
     vi.stubGlobal("ChatLib", { chat: () => undefined });
-    ({ parseImportJsonCurrent } = await import("../src/gui/parsing/parses"));
+    ({ parseImportJsonCurrent } = await import("../src/runtime/parsing/parses"));
     ({ confirmRebind } = await import("../src/gui/houseBinding"));
 });
 

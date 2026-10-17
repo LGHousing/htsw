@@ -5,11 +5,12 @@ import {
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
-} from "../gui/right-panel/import-tab/taskProgress";
+} from "../runtime/taskProgress";
 import { isTaskTotalEtaReady } from "../housingSync/progress/types";
 import { javaType } from "../utils/java";
 import { connectBridge, disconnectBridge, publishBridgeStatus } from "./status";
 import { HTSW_STATUS_PROPERTY, type HtswRunStatus } from "./types";
+import { getSessionTimingUnits } from "../housingSync/progress/timing";
 import { span } from "../perf/spans";
 
 export function sampleBridgeProgress(): Partial<HtswRunStatus> {
@@ -24,6 +25,7 @@ export function sampleBridgeProgress(): Partial<HtswRunStatus> {
             ? candidate
             : null;
     const active = progress?.active;
+    const operations = getSessionTimingUnits();
     return {
         phase: active?.phase ?? "preparing",
         currentImportable:
@@ -31,6 +33,9 @@ export function sampleBridgeProgress(): Partial<HtswRunStatus> {
                 ? null
                 : { key: active.key, type: active.type, identity: active.identity },
         progressFraction: progress === null ? null : getTaskProgressFraction(),
+        plannedUnits: progress?.totalsLocked
+            ? progress.totalUnits + (operations.itemInject || 0) + (operations.inventoryRestore || 0)
+            : null,
         etaSeconds,
         estimatedFinishAt:
             etaSeconds === null ? null : Date.now() + Math.round(etaSeconds * 1000),

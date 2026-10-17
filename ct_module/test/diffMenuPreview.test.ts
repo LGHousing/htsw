@@ -48,13 +48,13 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     restorePlayerInventory: async () => undefined,
 }));
 
-import { createDiffProgressSession } from "../src/gui/right-panel/import-tab/diffProgress";
+import { createDiffProgressSession } from "../src/runtime/diffProgress";
 import { previewLinesForFile, resetPreview } from "../src/gui/right-panel/import-tab/livePreview";
 import {
     clearTaskProgress,
     getActiveTaskListLabel,
     getActiveTaskPath,
-} from "../src/gui/right-panel/import-tab/taskProgress";
+} from "../src/runtime/taskProgress";
 import type { SyncEventHandler } from "../src/housingSync/syncEvents";
 import { ActionListPath, ActionPath } from "../src/housingSync/actionPath";
 import { readMenus } from "../src/importables/menus/readHouseMenus";
@@ -164,3 +164,7 @@ describe("diff menu preview", () => {
         progress.clear();
     });
 });
+
+import { readSessions } from "../src/runtime/readProgress";
+import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
+readSessions.observe(({ type, basePath, observe }) => observe(createReadLivePreview(type, basePath)));

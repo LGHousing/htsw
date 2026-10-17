@@ -23,8 +23,12 @@ vi.mock("htsw", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
+    parseImportJsonCurrent: async () => ({
+        parsed: { value: [], diagnostics: [] },
+        error: null,
+    }),
 }));
 
 vi.mock("../src/project/paths", async (importOriginal) => {
@@ -44,8 +48,8 @@ vi.mock("../src/tasks/manager", () => ({
 vi.mock("../src/housingSync/taskRunner", () => ({
     runHousingSyncTask: (
         _kind: string,
-        task: (ctx: Record<string, never>) => Promise<void>
-    ) => Promise.resolve().then(() => task({})),
+        task: (ctx: { checkCancelled(): void }) => Promise<void>
+    ) => Promise.resolve().then(() => task({ checkCancelled: () => undefined })),
 }));
 
 vi.mock("../src/importCache/housingId", () => ({
@@ -61,7 +65,7 @@ vi.mock("../src/importCache/houseLock", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/gui/right-panel/import-tab/diffProgress", () => ({
+vi.mock("../src/runtime/diffProgress", () => ({
     createDiffProgressSession: () => ({
         start: state.start,
         sinkFor: () => undefined,

@@ -11,7 +11,7 @@ import {
     isAutoTrackSource,
     isCurrentHouseTrusted,
     toggleAutoTrackSource,
-} from "../../state";
+} from "../../../runtime/state/index";
 import {
     ACCENT_DANGER,
     ACCENT_INFO,
@@ -21,7 +21,7 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
-import { BoundedMap } from "../../lib/boundedLruMap";
+import { BoundedMap } from "../../../utils/boundedLruMap";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
     cachedImportableLinkStatus,
@@ -29,14 +29,14 @@ import {
     linkStatusIcon,
 } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
-import { requestImportableCacheWarm } from "../../cache-status/cacheWarm";
+import { requestImportableCacheWarm } from "../../../importCache/cacheWarm";
 import {
     hasChildList,
     importableDeclaringPath,
     importableSourcePath,
     importableChildListPath,
     type ImportableChildListName,
-} from "../../parsing/importablePaths";
+} from "../../../runtime/parsing/importablePaths";
 import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
@@ -50,8 +50,8 @@ import {
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
-} from "../../parsing/parses";
-import { shortPath } from "../../lib/pathDisplay";
+} from "../../../runtime/parsing/parses";
+import { shortPath } from "../../../project/pathDisplay";
 import { peekImportableCache } from "../../../importCache/cache";
 import {
     importableMetadataComparisonValue,
@@ -68,13 +68,13 @@ import {
     removeFromQueue,
     removeFromQueueKey,
     toggleQueue,
-} from "../../right-panel/import-tab/queue";
+} from "../../../runtime/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
 import { giveAllItemsMenuAction, giveItemMenuAction } from "../../menus/giveItemMenu";
-import { autoTrackRefresh, needsModifiedQueue } from "../../autoTrack";
-import { autoRunQueueChanged } from "../../autoRun";
-import { autoTrackBlock, autoTrackBoundHouse } from "../../autoTrackScope";
+import { autoTrackRefresh, needsModifiedQueue } from "../../../runtime/autoTrack";
+import { autoRunQueueChanged } from "../../../runtime/autoRun";
+import { autoTrackBlock, autoTrackBoundHouse } from "../../../runtime/autoTrackScope";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import {
     type IncludeNode,

@@ -21,8 +21,9 @@ import {
     asStringArray,
     type ValueParser,
 } from "../../persistence/store";
-import { canonicalPath } from "../parsing/parses";
-import { getImportJsonPath, setImportJsonPath } from "../state/paths";
+import { canonicalPath } from "../../runtime/parsing/parses";
+import { pathExists } from "../../utils/filesystem";
+import { getImportJsonPath, setImportJsonPath } from "../../runtime/state/paths";
 import { restoreSourcePaths, sourcePaths } from "../left-panel/projects/source";
 import {
     getExpansionState,
@@ -53,8 +54,7 @@ import {
     type QueueOrigin,
     type QueueRow,
     type QueueStatus,
-} from "../right-panel/import-tab/queue";
-import { pathExists } from "../../utils/filesystem";
+} from "../../runtime/queue";
 
 const IMPORTABLE_TYPES: readonly Importable["type"][] = [
     "FUNCTION",

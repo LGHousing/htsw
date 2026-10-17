@@ -6,7 +6,7 @@ import { javaType, runtimeString, type RuntimeString } from "../../../utils/java
 import { openPathInOS } from "../../../utils/osShell";
 import { ActionTreePath } from "../../../housingSync/actionPath";
 import { inspectImportCodeView } from "../importCodeView";
-import { getTaskProgress } from "./taskProgress";
+import { getTaskProgress } from "../../../runtime/taskProgress";
 import { errorMessage } from "../../../utils/helpers";
 
 const TRACE_PATH = "./htsw/import-codeview-trace.jsonl";

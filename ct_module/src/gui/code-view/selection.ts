@@ -258,4 +258,3 @@ function wordBounds(text: string, col: number): [number, number] {
     }
     return [s, Math.min(s + 1, text.length)];
 }
-

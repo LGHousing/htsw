@@ -3,17 +3,15 @@
 import type { FunctionIcon } from "htsw/types";
 
 import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../state";
+import { getHousingUuid } from "../../../../runtime/state/index";
 import { showToast } from "../../../toast";
 import { markGuiDirty } from "../../../lib/dirty";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
 import { functionIconFromSnapshot } from "../../../../importables/functions/icon";
 import {
-    deleteImportableCache,
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
-    writePresence,
     type HouseImportable,
 } from "../../../../importCache/cache";
 
@@ -64,36 +62,3 @@ export function scanHouseFunctions(): void {
         ChatLib.chat(`&c[htsw] Function scan failed: ${String(err)}`);
     });
 }
-
-// Liveness: Hypixel announces create/delete/rename in chat. Only the house we're
-// standing in can change, so every mutation targets the current UUID.
-// Read the event through a declared parameter only: on this Rhino build,
-// pulling a ClientChatReceivedEvent out of `arguments` (which is what a
-// `...args` rest parameter compiles to) throws
-// "InternalError: Invalid JavaScript value" and silently kills the handler.
-register("chat", (event) => {
-    // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
-    const msg = ChatLib.getChatMessage(event, false);
-    if (typeof msg !== "string") return;
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-
-    let m = msg.match(/^Created function (.+)!$/);
-    if (m !== null) {
-        writePresence(uuid, "FUNCTION", m[1]);
-        return;
-    }
-    m = msg.match(/^Deleted the function (.+)$/);
-    if (m !== null) {
-        deleteImportableCache(uuid, "FUNCTION", m[1]);
-        return;
-    }
-    m = msg.match(/^Renamed function (.+) to (.+)$/);
-    if (m !== null) {
-        // A name containing " to " makes the split ambiguous; leave it for a
-        // rescan rather than trust the heuristic.
-        if (m[1].indexOf(" to ") !== -1 || m[2].indexOf(" to ") !== -1) return;
-        deleteImportableCache(uuid, "FUNCTION", m[1]);
-        writePresence(uuid, "FUNCTION", m[2]);
-    }
-});

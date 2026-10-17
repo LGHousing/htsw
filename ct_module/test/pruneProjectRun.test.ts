@@ -42,17 +42,17 @@ const mocks = vi.hoisted(() => ({
     confirmCalls: 0,
 }));
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: async (path: string) => ({
         canonicalPath: path,
         parsed: mocks.parsed,
     }),
 }));
-vi.mock("../src/gui/state/autoTrack", () => ({
+vi.mock("../src/runtime/state/autoTrack", () => ({
     getAutoTrackSources: () => mocks.tracked,
 }));
-vi.mock("../src/gui/autoTrackScope", () => ({
+vi.mock("../src/runtime/autoTrackScope", () => ({
     autoTrackBoundHouse: (path: string) => mocks.boundHouses.get(path) ?? null,
 }));
 vi.mock("../src/prune/apply", () => ({
@@ -112,7 +112,7 @@ import {
     needsArmingScan,
     resetArmingScans,
 } from "../src/prune/projectRun";
-import { makeBulkQueueRow } from "../src/gui/right-panel/import-tab/queue";
+import { makeBulkQueueRow } from "../src/runtime/queue";
 import type TaskContext from "../src/tasks/context";
 
 const manifest = "./projects/demo/import.json";

@@ -95,8 +95,8 @@ import { importableHash } from "../src/importCache/hash";
 import { exportCapturedItems } from "../src/importables/items/exportCapturedItems";
 import { ItemCaptureRegistry } from "../src/importables/items/captureRegistry";
 import * as projectDestination from "../src/importables/export/projectDestination";
-import { runQueuedExportSession } from "../src/gui/right-panel/import-tab/queueRunner";
-import { makeImportableQueueRow } from "../src/gui/right-panel/import-tab/queue";
+import { runQueuedExportSession } from "../src/runtime/queueRunner";
+import { makeImportableQueueRow } from "../src/runtime/queue";
 import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
 import { message } from "./utils";
 

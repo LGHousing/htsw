@@ -14,26 +14,15 @@ import {
     setCurrent,
     setObservedTopLevel,
 } from "./livePreview";
-import { setActiveTaskListLabel, setActiveTaskPath } from "./taskProgress";
-
-export type ReadLivePreview = {
-    events: SyncEventHandler;
-    eventsForList: (label: string) => SyncEventHandler;
-    start(names: readonly string[]): void;
-    activate(index: number, reset: boolean): void;
-    finish(index: number): void;
-    fail(index: number): void;
-    clear(): void;
-};
-
-function previewPath(basePath: string, type: Importable["type"], index: number): string {
-    return `${basePath}.live-${type.toLowerCase()}-${index}.htsl`;
-}
+import {
+    readPreviewPath,
+    type ReadProgressObserver,
+} from "../../../runtime/readProgress";
 
 export function createReadLivePreview(
     type: Importable["type"],
     basePath: string
-): ReadLivePreview {
+): ReadProgressObserver {
     let paths: string[] = [];
     let activeIndex: number | null = null;
     const latestSnapshots: Array<readonly ObservedNode[] | null | undefined> = [];
@@ -57,7 +46,7 @@ export function createReadLivePreview(
         }
     };
 
-    const eventHandler = (listLabel: string | null): SyncEventHandler => ({
+    const events: SyncEventHandler = {
         emit(event) {
             const path = activePath();
             const index = activeIndex;
@@ -67,7 +56,6 @@ export function createReadLivePreview(
                     latestSnapshots[index] = null;
                     completedPaths[index].clear();
                     resetPreview(path);
-                    setActiveTaskListLabel(listLabel);
                 }
                 setCurrent(path, null);
             } else if (event.kind === "childListReadStarted") {
@@ -87,16 +75,15 @@ export function createReadLivePreview(
                 setCurrent(path, null);
             }
         },
-    });
-    const events = eventHandler(null);
+    };
 
     return {
         events,
-        eventsForList: eventHandler,
+        eventsForList: () => events,
         start(names) {
-            paths = names.map((_name, index) => previewPath(basePath, type, index));
+            paths = names.map((_name, index) => readPreviewPath(basePath, type, index));
             activeIndex = null;
-            setActiveTaskListLabel(null);
+
             latestSnapshots.length = names.length;
             completedPaths.length = names.length;
             for (let i = 0; i < latestSnapshots.length; i++) latestSnapshots[i] = null;
@@ -106,7 +93,6 @@ export function createReadLivePreview(
             if (paths.length > 0) {
                 activatePreview(paths[0]);
                 resetPreview(paths[0]);
-                setActiveTaskPath(paths[0]);
             }
         },
         activate(index, reset) {
@@ -122,7 +108,6 @@ export function createReadLivePreview(
                 restore(index, path);
             }
             setCurrent(path, null);
-            setActiveTaskPath(path);
         },
         finish(index) {
             if (index < 0 || index >= paths.length) return;
@@ -140,7 +125,6 @@ export function createReadLivePreview(
             latestSnapshots[index] = null;
             completedPaths[index].clear();
             resetPreview(paths[index]);
-            if (activeIndex === index) setActiveTaskListLabel(null);
         },
         clear() {
             disposePreviewOperation(paths);
@@ -148,8 +132,6 @@ export function createReadLivePreview(
             latestSnapshots.length = 0;
             completedPaths.length = 0;
             activeIndex = null;
-            setActiveTaskListLabel(null);
-            setActiveTaskPath(null);
         },
     };
 }

@@ -18,6 +18,7 @@ import type { ItemDependencySnapshot } from "../importables/items/dependencyInde
 import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { rememberImportableHash } from "./hashMemo";
+import { isRecord, validStoredImportable } from "./structure";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
 
 /**
@@ -318,53 +319,159 @@ export function writeImportableCache(
         writer,
         options.itemDependencies
     );
-    return commitImportableCacheWrite(ctx, housingUuid, importable, prepared);
+    return commitImportableCacheWrite(ctx, housingUuid, prepared);
 }
 
 function commitImportableCacheWrite(
     ctx: TaskContext,
     housingUuid: string,
-    importable: Importable,
     prepared: PreparedImportableCacheWrite
 ): boolean {
-    const { path, entry, serialized } = prepared;
-    entryHashCache.set(entry, entry.hash);
-    rememberImportableHash(importable, entry.hash);
     try {
-        if (!atomicWriteText(path, serialized)) {
-            throw new Error("write failed");
-        }
-        readCache.set(path, {
-            entry,
-            house: {
-                name: importableIdentity(importable),
-                type: importable.type,
-                verified: true,
-                importable,
-                label: houseDisplayLabel(importable),
-                icon: importable.type === "FUNCTION" ? importable.icon : undefined,
-                color: houseDisplayColor(importable),
-            },
-            mtime: getMtimeMs(path),
-            checkedAt: Date.now(),
-        });
-        contentWriteRevision++;
-        indexUpsert(housingUuid, importable.type, {
-            name: importableIdentity(importable),
-            type: importable.type,
-            verified: true,
-            importable,
-            label: houseDisplayLabel(importable),
-            icon: importable.type === "FUNCTION" ? importable.icon : undefined,
-            color: houseDisplayColor(importable),
-        });
+        persistImportableCacheWrite(housingUuid, prepared);
         return true;
     } catch (error) {
         ctx.displayMessage(
-            `&7[cache] &eFailed to write cache at ${path}: ${String(error)}`
+            `&7[cache] &eFailed to write cache at ${prepared.path}: ${String(error)}`
         );
         return false;
     }
+}
+
+function persistImportableCacheWrite(
+    housingUuid: string,
+    { path, entry, serialized }: PreparedImportableCacheWrite
+): void {
+    if (!atomicWriteText(path, serialized)) {
+        throw new Error(`Could not install cache at ${path}`);
+    }
+    // Publish only after persistence succeeds, including the hash memo.
+    const importable = entry.importable;
+    const house: HouseImportable = {
+        name: importableIdentity(importable),
+        type: importable.type,
+        verified: true,
+        importable,
+        label: houseDisplayLabel(importable),
+        icon: importable.type === "FUNCTION" ? importable.icon : undefined,
+        color: houseDisplayColor(importable),
+    };
+    entryHashCache.set(entry, entry.hash);
+    rememberImportableHash(importable, entry.hash);
+    readCache.set(path, {
+        entry,
+        house,
+        mtime: getMtimeMs(path),
+        checkedAt: Date.now(),
+    });
+    contentWriteRevision++;
+    indexUpsert(housingUuid, importable.type, house);
+}
+
+/**
+ * Install a baseline already verified by the headless store. Call on the main
+ * thread while idle, after the caller has checked the store's clean status and
+ * epoch. This checks the envelope and AST structure, not the content against
+ * Housing or its hash.
+ * Explicit verification and current hash versions are required; presence-only
+ * and old entries cannot become trusted content through this API.
+ *
+ * serializedEntry is the complete cache JSON (for the engine,
+ * JSON.stringify(entry, null, 4)). Preserve it byte for byte with one atomic
+ * write, without rebuilding hashes or changing metadata. Throws on invalid
+ * input or persistence failure; memory is published only after a successful write.
+ */
+export function installVerifiedCacheEntry(
+    housingUuid: string,
+    serializedEntry: string
+): void {
+    if (typeof housingUuid !== "string" || !/^[a-zA-Z0-9_-]+$/.test(housingUuid)) {
+        throw new Error("Invalid cache housing UUID");
+    }
+    let parsed: unknown;
+    try {
+        if (typeof serializedEntry !== "string") throw new Error("not JSON text");
+        parsed = JSON.parse(serializedEntry);
+    } catch (_error) {
+        throw new Error("Invalid verified cache entry: expected JSON text");
+    }
+    if (!validVerifiedCacheEntry(parsed)) {
+        throw new Error(
+            "Invalid verified cache entry: expected current, explicitly verified content with matching identity and hashes"
+        );
+    }
+    const path = cachePathForId(housingUuid, parsed.importable.type, parsed.name);
+    // Do not resolve/migrate a legacy file first. This complete replacement
+    // takes precedence even if a previous baseline exists only at the old path.
+    persistImportableCacheWrite(housingUuid, {
+        path,
+        entry: parsed,
+        serialized: serializedEntry,
+    });
+    legacyMigrationChecked.add(path);
+}
+
+function isStoredHash(value: unknown): value is string {
+    return typeof value === "string" && /^0x[0-9a-f]{1,14}$/.test(value);
+}
+
+function validVerifiedCacheEntry(
+    value: unknown
+): value is ImportableCacheEntry & { name: string; verified: true } {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== CACHE_SCHEMA_VERSION ||
+        value.version !== CACHE_ENTRY_VERSION ||
+        value.verified !== true ||
+        typeof value.name !== "string" ||
+        value.name.length === 0 ||
+        typeof value.writtenAt !== "string" ||
+        !Number.isFinite(Date.parse(value.writtenAt)) ||
+        typeof value.writer !== "string" ||
+        ["exporter", "importer", "reader", "project-lock"].indexOf(value.writer) === -1 ||
+        !isStoredHash(value.hash) ||
+        !isRecord(value.lists) ||
+        !validStoredImportable(value.importable)
+    )
+        return false;
+    if (importableIdentity(value.importable) !== value.name) return false;
+    for (const path of Object.keys(value.lists)) {
+        const hashes = value.lists[path];
+        if (!Array.isArray(hashes) || !hashes.every(isStoredHash)) return false;
+    }
+    const snapshot = value.itemDependencies;
+    if (snapshot !== undefined) {
+        if (
+            !isRecord(snapshot) ||
+            snapshot.version !== 1 ||
+            !Array.isArray(snapshot.dependencies)
+        )
+            return false;
+        for (const dependency of snapshot.dependencies) {
+            if (
+                !isRecord(dependency) ||
+                !isStoredHash(dependency.fingerprint) ||
+                !isRecord(dependency.target)
+            )
+                return false;
+            const target = dependency.target;
+            const key =
+                target.kind === "named"
+                    ? "name"
+                    : target.kind === "snbtPath"
+                      ? "path"
+                      : target.kind === "vanilla"
+                        ? "id"
+                        : null;
+            if (
+                key === null ||
+                typeof target[key] !== "string" ||
+                target[key].length === 0
+            )
+                return false;
+        }
+    }
+    return true;
 }
 
 function writeImportableCacheOffThread(
@@ -410,12 +517,7 @@ function writeImportableCacheOffThread(
                                 return;
                             }
                             resolve(
-                                commitImportableCacheWrite(
-                                    ctx,
-                                    housingUuid,
-                                    importable,
-                                    prepared
-                                )
+                                commitImportableCacheWrite(ctx, housingUuid, prepared)
                             );
                         });
                     },
@@ -959,20 +1061,20 @@ function parseStoredColor(value: unknown): Color | undefined {
 }
 
 function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] {
-    const out: HouseImportable[] = [];
+    const records = new Map<string, HouseImportable>();
     const dirRel = cacheTypeDir(uuid, type);
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
         const dir = Paths.get(dirRel);
-        if (!Files.exists(dir) || !Files.isDirectory(dir)) return out;
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) return [];
         const stream = Files.newDirectoryStream(dir);
         try {
             const it = stream.iterator();
             while (it.hasNext()) {
-                const fileName = it.next().getFileName();
-                if (fileName === null) continue;
-                const fname = String(fileName.toString());
+                const listedName = it.next().getFileName();
+                if (listedName === null) continue;
+                const fname = String(listedName.toString());
                 const suffix = ".knowledge.json";
                 if (
                     fname.length < suffix.length ||
@@ -987,7 +1089,16 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
                     raw = null;
                 }
                 const parsed = parseHouseRecord(raw, type);
-                if (parsed !== null) out.push(parsed);
+                if (parsed !== null) {
+                    // A restored current file supersedes a retained legacy
+                    // sibling, regardless of directory iteration order.
+                    if (
+                        !records.has(parsed.name) ||
+                        fname === fileName(cachePathForId(uuid, type, parsed.name))
+                    ) {
+                        records.set(parsed.name, parsed);
+                    }
+                }
             }
         } finally {
             try {
@@ -999,8 +1110,7 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
     } catch (_e) {
         // best-effort
     }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    return out;
+    return Array.from(records.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function ensureEnumLoaded(uuid: string, type: Importable["type"]): HouseImportable[] {

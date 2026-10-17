@@ -9,7 +9,7 @@ import {
     type ChildActionListName,
     ActionListPath,
 } from "../../housingSync/actionPath";
-import { BoundedMap } from "../lib/boundedLruMap";
+import { BoundedMap } from "../../utils/boundedLruMap";
 import { errorMessage } from "../../utils/helpers";
 import { getMtimeMs } from "../../utils/filesystem";
 
