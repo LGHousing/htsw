@@ -13,7 +13,7 @@ export type PaginatedListConfig = {
 };
 
 export type PaginatedListReadOptions = {
-    /** Require full non-final pages before using this read to clear a conflict. */
+    /** Check page titles, controls and entry counts before clearing a conflict. */
     requireFullPages?: boolean;
 };
 
@@ -125,7 +125,7 @@ function getCurrentPaginatedListPageState(
     if (parsedTitle === null) {
         return {
             currentPage: 1,
-            totalPages: hasNext || hasPrev ? null : 1,
+            totalPages: null,
             hasNext,
             hasPrev,
         };
@@ -300,16 +300,18 @@ export async function readPaginatedList<T extends { index: number }>(
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
-    const totalPages = getCurrentPaginatedListPageState(ctx, config).totalPages;
+    let totalPages: number | null = null;
     let pagesRead = 0;
     const requireCompletePage = () => {
         const state = getCurrentPaginatedListPageState(ctx, config);
+        // Housing can omit the first page's marker even when Next is present.
+        // Learn the total from a numbered page, if one is encountered.
+        if (totalPages === null) totalPages = state.totalPages;
         if (
-            totalPages === null ||
-            state.totalPages !== totalPages ||
+            (state.totalPages !== null && state.totalPages !== totalPages) ||
             state.currentPage !== pagesRead + 1 ||
             state.hasPrev !== state.currentPage > 1 ||
-            state.hasNext !== state.currentPage < totalPages
+            (totalPages !== null && state.hasNext !== state.currentPage < totalPages)
         ) {
             throw new Error(
                 `Incomplete paginated ${config.label} list: expected page ${pagesRead + 1}/${totalPages}, found ${state.currentPage}/${state.totalPages} (previous: ${state.hasPrev}, next: ${state.hasNext}).`
@@ -317,15 +319,15 @@ export async function readPaginatedList<T extends { index: number }>(
         }
     };
     for (;;) {
-        requireCompletePage();
+        if (requireFullPages) requireCompletePage();
         const pageEntries = await readPage();
-        requireCompletePage();
         if (requireFullPages) {
-            const isFinalPage = pagesRead + 1 === totalPages;
+            requireCompletePage();
+            const isFinalPage = !hasNextPage(ctx);
             // A multi-page list must end with 1..ITEMS_PER_PAGE entries.
-            // This checks the advertised page count, but cannot detect a
-            // partially rendered final page; conflict clearing also compares
-            // the full read's count and summaries with the initial scan.
+            // This cannot detect a partially rendered final page; conflict
+            // clearing also compares the full read's count and summaries
+            // with the initial scan.
             const minEntries = isFinalPage ? (pagesRead === 0 ? 0 : 1) : ITEMS_PER_PAGE;
             if (pageEntries.length < minEntries || pageEntries.length > ITEMS_PER_PAGE) {
                 throw new Error(
@@ -339,10 +341,20 @@ export async function readPaginatedList<T extends { index: number }>(
         }
         pagesRead++;
         onPageRead?.({ totalEntries: entries.length, pagesRead, entries });
-        if (pagesRead === totalPages) break;
+        const stateBefore = getCurrentPaginatedListPageState(ctx, config);
+        if (!stateBefore.hasNext) break;
 
         clickPaginatedNextPage(ctx);
         await timedWaitForMenu(ctx, "pageTurnWait");
+
+        // Conflict reads check the exact next page at the top of the loop.
+        // Ordinary reads retain their original forward-progress guard.
+        const stateAfter = getCurrentPaginatedListPageState(ctx, config);
+        if (!requireFullPages && stateAfter.currentPage <= stateBefore.currentPage) {
+            throw new Error(
+                `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+            );
+        }
     }
     return entries;
 }
