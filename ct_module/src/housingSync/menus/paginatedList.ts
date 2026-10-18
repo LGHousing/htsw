@@ -323,8 +323,9 @@ export async function readPaginatedList<T extends { index: number }>(
         if (requireFullPages) {
             const isFinalPage = pagesRead + 1 === totalPages;
             // A multi-page list must end with 1..ITEMS_PER_PAGE entries.
-            // Together with full preceding pages, this also proves that the
-            // total entry count agrees with the advertised page count.
+            // This checks the advertised page count, but cannot detect a
+            // partially rendered final page; conflict clearing also compares
+            // the full read's count and summaries with the initial scan.
             const minEntries = isFinalPage ? (pagesRead === 0 ? 0 : 1) : ITEMS_PER_PAGE;
             if (pageEntries.length < minEntries || pageEntries.length > ITEMS_PER_PAGE) {
                 throw new Error(

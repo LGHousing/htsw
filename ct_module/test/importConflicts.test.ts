@@ -490,16 +490,18 @@ describe("readActionListPlan conflict detection", () => {
         expect(session.conflicts).toEqual([]);
     });
     it.each([
-        ["baseline", true, 0],
-        ["source", true, 0],
-        ["outside edit", true, 1],
-        ["baseline", false, 1],
-        ["outside edit", false, 1],
+        ["baseline", true, "known", 0],
+        ["source", true, "known", 1],
+        ["outside edit", true, "known", 1],
+        ["baseline", false, "known", 1],
+        ["outside edit", false, "known", 1],
+        ["baseline", true, "unknown", 1],
+        ["baseline", true, "missing", 1],
     ] as const)(
-        "checks full live content after a summary mismatch: %s, content baseline %s",
-        async (liveValue, includeContentHashes, expectedConflicts) => {
+        "checks full live content: %s, content baseline %s, initial summaries %s",
+        async (liveValue, includeContentHashes, summaries, expectedConflicts) => {
             const baseline = [conditional({ ifActions: [message("baseline")] })];
-            const desired = [conditional({ ifActions: [message("source")] })];
+            const desired = [conditional({ ifActions: [message("source")] }), message("new")];
             const importable: ImportableFunction = {
                 type: "FUNCTION",
                 name: "Debug",
@@ -507,7 +509,11 @@ describe("readActionListPlan conflict detection", () => {
             };
             const shallow = observedSlot(0, conditional());
             shallow.hydrated = false;
-            shallow.childListSummaries = { ifActions: ["UNKNOWN"] };
+            shallow.childListSummaries = summaries === "missing" ? undefined : {
+                conditions: [],
+                ifActions: [summaries === "unknown" ? "UNKNOWN" : "MESSAGE"],
+                elseActions: [],
+            };
             const full = observedSlot(0, conditional());
             full.hydrated = false;
             mocks.scanActionList
@@ -518,6 +524,9 @@ describe("readActionListPlan conflict detection", () => {
                 full.hydrated = true;
             });
             const session = sessionWithLock(importable, baseline, true, "always", includeContentHashes);
+            session.trust.importables.get("FUNCTION:Debug")!.lockListScanHashes = {
+                actions: "different scan",
+            };
 
             await readActionListPlan(null as unknown as TaskContext, desired, {
                 sync: session,

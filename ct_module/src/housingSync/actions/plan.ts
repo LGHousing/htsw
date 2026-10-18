@@ -33,6 +33,13 @@ import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
 import { createItemFieldObservationRecorder } from "../items/fieldObservations";
+import { getChildListFields } from "../fields/actionMappings";
+import {
+    actionListScanHashFromActions,
+    actionListScanHashFromSlots,
+} from "./scanHash";
+
+type InitialScanSummary = { entryCount: number; hash: string };
 
 export type ActionListApplyOptions = {
     reopenList?: () => Promise<void>;
@@ -72,6 +79,7 @@ export type ActionListPlanScan =
           readOptions: ListReadOptions;
           phaseUnits: PhaseUnits;
           liveItemContent?: ItemFieldContent;
+          initialScanSummary?: InitialScanSummary;
       };
 
 export async function readActionListPlan(
@@ -156,7 +164,25 @@ export async function scanActionListForPlan(
         return { kind: "planned", plan };
     }
     let liveItemContent: ItemFieldContent | undefined;
+    let initialScanSummary: InitialScanSummary | undefined;
     if (conflictVerdict === "conflict") {
+        // Preserve independent count/type evidence before replacing the scan.
+        // Missing child summaries cannot establish that a later read is complete.
+        if (
+            scan.slots.every(
+                (entry) =>
+                    entry.action !== null &&
+                    getChildListFields(entry.action.type).every((field) => {
+                        const types = entry.childListSummaries?.[field.prop];
+                        return types !== undefined && !types.includes("UNKNOWN");
+                    })
+            )
+        ) {
+            initialScanSummary = {
+                entryCount: scan.slots.length,
+                hash: actionListScanHashFromSlots(scan.slots),
+            };
+        }
         // A summary mismatch is provisional. Re-read without trusted child
         // snapshots so the content check below uses only live Housing values,
         // including lists the project is about to remove.
@@ -174,6 +200,7 @@ export async function scanActionListForPlan(
         readOptions,
         phaseUnits,
         liveItemContent,
+        initialScanSummary,
     };
 }
 
@@ -208,7 +235,8 @@ export async function hydrateActionListForPlan(
                     snapshot.actions as Action[],
                     desired,
                     options,
-                    snapshot.itemContent
+                    snapshot.itemContent,
+                    pending.initialScanSummary
                 );
             }
         }
@@ -368,7 +396,8 @@ function recordKnownConflictEvidence(
     liveActions: readonly Action[],
     desired: readonly Action[],
     options: ActionListPlanOptions,
-    liveItemContent?: ItemFieldContent
+    liveItemContent?: ItemFieldContent,
+    initialScanSummary?: InitialScanSummary
 ): void {
     const target = options.conflictTarget;
     if (
@@ -387,7 +416,13 @@ function recordKnownConflictEvidence(
         importableKey(target.type, target.identity)
     );
     const contentHash = trustPlan?.lockListContentHashes?.[target.basePath];
-    if (liveItemContent !== undefined && contentHash !== undefined) {
+    if (
+        liveItemContent !== undefined &&
+        contentHash !== undefined &&
+        initialScanSummary !== undefined &&
+        liveActions.length === initialScanSummary.entryCount &&
+        actionListScanHashFromActions(liveActions) === initialScanSummary.hash
+    ) {
         const itemRead = { complete: true };
         const verdict = actionListConflictVerdict(
             { actions: liveActions },
@@ -409,10 +444,7 @@ function recordKnownConflictEvidence(
             },
             itemContent
         );
-        if (
-            itemRead.complete &&
-            (verdict === "unchanged" || verdict === "already-applied")
-        ) {
+        if (itemRead.complete && verdict === "unchanged") {
             const index = options.sync.conflicts.indexOf(target);
             if (index !== -1) options.sync.conflicts.splice(index, 1);
             return;

@@ -172,7 +172,7 @@ describe("full conflict re-read completeness", () => {
     );
 
     it.each([1, 21, 42])(
-        "allows a complete conflict re-read with %i entries",
+        "keeps the conflict when a re-read changes an entry type among %i entries",
         async (count) => {
             const baseline = Array<Action>(count).fill(heal);
             const live = [...baseline.slice(0, -1), kill];
@@ -192,6 +192,54 @@ describe("full conflict re-read completeness", () => {
                 },
             });
             const sync = session(baseline);
+            const plan = await read(ui.ctx, sync, baseline);
+            expect(plan.observed.map((entry) => entry.action)).toEqual(baseline);
+            expect(sync.conflicts).toEqual([target]);
+        }
+    );
+
+    it.each([1, 22])(
+        "keeps the conflict when the re-read drops a trailing HEAL after %i baseline entries",
+        async (count) => {
+            const baseline = [...Array<Action>(count - 1).fill(heal), kill];
+            const live = [...baseline, heal];
+            let rereading = false;
+            let scans = 0;
+            const ui = menus({
+                title: "Actions: Proof",
+                pages: Math.ceil(live.length / 21),
+                entries: () => {
+                    scans++;
+                    return actionSlots(
+                        rereading || (count === 1 && scans > 1) ? baseline : live
+                    );
+                },
+                onPrevious: () => {
+                    rereading = true;
+                },
+            });
+            const sync = session(baseline);
+            const plan = await read(ui.ctx, sync, baseline);
+            expect(plan.observed.map((entry) => entry.action)).toEqual(baseline);
+            expect(sync.conflicts).toEqual([target]);
+        }
+    );
+
+    it.each([1, 21, 35, 42])(
+        "clears a scan conflict after consistent complete reads of %i entries",
+        async (count) => {
+            const baseline = [...Array<Action>(count - 1).fill(heal), kill];
+            const ui = menus({
+                title: "Actions: Proof",
+                pages: Math.ceil(count / 21),
+                entries: () => actionSlots(baseline),
+            });
+            const sync = session(baseline);
+            // The lock's scan disagrees, but both independent live reads and
+            // the lock's full content agree (the Team Apply 3 recovery shape).
+            sync.trust.importables.get("FUNCTION:Proof")!.lockListScanHashes = {
+                actions: "different scan",
+            };
             const plan = await read(ui.ctx, sync, baseline);
             expect(plan.observed.map((entry) => entry.action)).toEqual(baseline);
             expect(sync.conflicts).toEqual([]);
@@ -281,7 +329,7 @@ describe("full conflict re-read completeness", () => {
     );
 
     it.each(["summary", "child editor"])(
-        "clears only after explicitly observing an empty %s",
+        "keeps the conflict without an initial empty-list summary: %s",
         async (where) => {
             let scans = 0;
             const openEditor = vi.fn(() => ui.open(editor));
@@ -328,7 +376,7 @@ describe("full conflict re-read completeness", () => {
             const baseline = [conditional()];
             const sync = session(baseline);
             await read(ui.ctx, sync, baseline);
-            expect(sync.conflicts).toEqual([]);
+            expect(sync.conflicts).toEqual([target]);
             expect(openEditor).toHaveBeenCalledTimes(where === "summary" ? 0 : 1);
         }
     );
@@ -354,14 +402,14 @@ describe("full conflict re-read completeness", () => {
         expect(sync.conflicts).toEqual([target]);
     });
 
-    it.each(["equal", "outside edit", "missing Next", "short page", "nested conditional"])(
+    it.each(["equal", "count mismatch", "outside edit", "missing Next", "short page", "nested conditional"])(
         "checks a conditional's paginated children before clearing: %s",
         async (scenario) => {
-            const baselineChildren = Array<Action>(22).fill(heal);
+            const baselineChildren = [...Array<Action>(21).fill(heal), kill];
             const live =
                 scenario === "equal" || scenario === "nested conditional"
                     ? baselineChildren
-                    : [...baselineChildren, kill];
+                    : [...baselineChildren, heal];
             const child: Menu = {
                 title: "If Actions",
                 pages: live.length > 21 ? 2 : 1,
@@ -377,7 +425,9 @@ describe("full conflict re-read completeness", () => {
                         : actionSlots(
                               scenario === "short page" && page === 1
                                   ? live.slice(0, 20)
-                                  : live
+                                  : scenario === "count mismatch"
+                                    ? baselineChildren
+                                    : live
                           ),
                 missingNext: () => scenario === "missing Next",
             };
@@ -404,7 +454,9 @@ describe("full conflict re-read completeness", () => {
                             "- None",
                             "",
                             "If Actions:",
-                            "- unreadable summary",
+                            ...live.map((action) =>
+                                action.type === "KILL" ? "- Kill Player" : "- Full Heal"
+                            ),
                             "",
                             "Else Actions:",
                             "- None",
@@ -416,6 +468,11 @@ describe("full conflict re-read completeness", () => {
             const ui = menus(root);
             const baseline = [conditional({ ifActions: baselineChildren })];
             const sync = session(baseline);
+            if (scenario === "equal" || scenario === "nested conditional") {
+                sync.trust.importables.get("FUNCTION:Proof")!.lockListScanHashes = {
+                    actions: "different scan",
+                };
+            }
             if (
                 scenario === "missing Next" ||
                 scenario === "short page" ||
@@ -430,7 +487,9 @@ describe("full conflict re-read completeness", () => {
                 );
             } else {
                 const plan = await read(ui.ctx, sync, baseline);
-                expect(plan.observed[0].action).toEqual(conditional({ ifActions: live }));
+                expect(plan.observed[0].action).toEqual(conditional({
+                    ifActions: scenario === "count mismatch" ? baselineChildren : live,
+                }));
             }
             expect(sync.conflicts).toHaveLength(scenario === "equal" ? 0 : 1);
         }
