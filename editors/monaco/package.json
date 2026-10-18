@@ -8,7 +8,7 @@
         "knip": "knip"
     },
     "overrides": {
-        "dompurify": "3.4.13"
+        "dompurify": "3.4.16"
     },
     "dependencies": {
         "htsw": "file:../../language",

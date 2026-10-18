@@ -102,7 +102,11 @@ test("other failures and enclosing writers are not retried", async () => {
     ).rejects.toBe(holder);
     expect(slot.click).not.toHaveBeenCalled();
 });
-for (const malformed of [null, { getItem: () => ({ getLore: () => [] }) }]) {
+for (const malformed of [
+    null,
+    { getItem: () => ({ getLore: () => [] }) },
+    { getItem: () => ({ getLore: () => ["Player", "Global", "Team"] }) },
+]) {
     test("never cycles a missing or malformed Holder, including the first render", async () => {
         await expect(
             setCycleValue(
@@ -114,19 +118,26 @@ for (const malformed of [null, { getItem: () => ({ getLore: () => [] }) }]) {
         ).rejects.toBeInstanceOf(HolderReadError);
     });
 }
-test("cycles only the genuine Holder and rereads it after the click", async () => {
-    let selected = "Player";
-    const cycle = {
-        getItem: () => ({ getLore: () => ["Player", "Global", "Team", `➠ ${selected}`] }),
-        click: vi.fn(() => {
-            selected = "Team";
-        }),
-    };
-    await setCycleValue(
-        { tryGetMenuItemSlot: () => cycle } as never,
-        "Holder",
-        ["Player", "Global", "Team"],
-        "Team"
-    );
-    expect(cycle.click).toHaveBeenCalledExactlyOnceWith(MouseButton.RIGHT);
-});
+test.each(["Holder", "Variable Requirement"])(
+    "cycles only the genuine %s and rereads it after the click",
+    async (label) => {
+        let selected = "Player";
+        const cycle = {
+            getItem: () => ({
+                getLore: () => ["Player", "Global", "Team", `➠ ${selected}`],
+            }),
+            click: vi.fn(() => {
+                selected = "Team";
+            }),
+        };
+        await setCycleValue(
+            {
+                tryGetMenuItemSlot: (name: string) => name === label ? cycle : null,
+            } as never,
+            "Holder",
+            ["Player", "Global", "Team"],
+            "Team"
+        );
+        expect(cycle.click).toHaveBeenCalledExactlyOnceWith(MouseButton.RIGHT);
+    }
+);
