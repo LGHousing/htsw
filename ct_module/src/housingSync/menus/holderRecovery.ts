@@ -3,6 +3,7 @@ import { isTaskCancelled } from "../../tasks/manager";
 import { errorMessage, removedFormatting } from "../../utils/helpers";
 import { clickGoBack, HolderReadError } from "./menuUtils";
 import { timedWaitForMenu } from "./menuWait";
+import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import {
     getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
@@ -83,8 +84,14 @@ export async function withHolderRecovery(
                     slot.click();
                     break;
                 }
+                // A malformed render can contain an action icon even in a
+                // condition list. Refresh through the owner; never click it.
                 if (
-                    (name === "Head" || name.trim() === "") &&
+                    (name === "Head" ||
+                        name.trim() === "" ||
+                        Object.values(ACTION_MAPPINGS).some(
+                            (action) => action.displayName === name
+                        )) &&
                     entry.reopenList !== undefined &&
                     refresh < 2
                 ) {

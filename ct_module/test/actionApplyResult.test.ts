@@ -13,7 +13,7 @@ import {
     baselineActionListFromSlots,
     diffActionList,
 } from "../src/housingSync/actions/diff";
-import { message, observedSlot } from "./utils";
+import { conditional, message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
     clickGoBack: vi.fn(async () => undefined),
@@ -162,6 +162,48 @@ describe("ActionListApplyResult", () => {
 
         expect(thrown).toBeInstanceOf(Error);
         expect(actionListApplyResultFromError(thrown)).toBeNull();
+    });
+
+    test("a nested failure cannot publish its child snapshot or the stale enclosing function", async () => {
+        const { applyActionListPlan, actionListApplyResultFromError } =
+            await import("../src/housingSync/actions/apply");
+        const { throwWithActionListApplyResult } =
+            await import("../src/housingSync/actions/apply/run");
+        const observed = conditional({ ifActions: [message("before")] });
+        const desired = conditional({ ifActions: [message("after")] });
+        const failure = new Error('Could not find "Holder" in "Settings"');
+        mocks.writeOpenAction
+            .mockResolvedValueOnce(undefined)
+            .mockImplementationOnce(async () => {
+                // A nested list may have confirmed work before a later
+                // condition fails. It is not a snapshot of the root list.
+                throwWithActionListApplyResult(failure, {
+                    currentSnapshot: [message("after")],
+                    mutationStarted: true,
+                });
+            });
+        let thrown: unknown;
+        try {
+            await applyActionListPlan(
+                {
+                    checkCancelled: () => undefined,
+                    finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
+                } as never,
+                addPlan(
+                    [observedSlot(0, oldAction), observedSlot(1, observed)],
+                    [newAction, desired]
+                ),
+                { sync: syncContext() }
+            );
+        } catch (error) {
+            thrown = error;
+        }
+        expect(mocks.writeOpenAction).toHaveBeenCalledTimes(2);
+        expect(thrown).toBe(failure);
+        expect(actionListApplyResultFromError(thrown)).toBeNull();
+        const { reconstructPartialFunction } =
+            await import("../src/importables/functions/import");
+        expect(reconstructPartialFunction({} as never, actionListApplyResultFromError(thrown))).toBeNull();
     });
 
     test("preserves nested direct-item content in a completed snapshot", async () => {
