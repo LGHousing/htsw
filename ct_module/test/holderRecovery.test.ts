@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ back: vi.fn(), slotAt: vi.fn() }));
+const mocks = vi.hoisted(() => ({ back: vi.fn() }));
 vi.mock("../src/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
@@ -7,10 +7,6 @@ vi.mock("../src/housingSync/menus/menuWait", () => ({
 vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
     ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
     clickGoBack: mocks.back,
-}));
-vi.mock("../src/housingSync/menus/paginatedList", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/menus/paginatedList")>()),
-    getPaginatedListSlotAtIndex: mocks.slotAt,
 }));
 vi.mock("../src/tasks/specifics/slots", async (original) => ({
     ...(await original<typeof import("../src/tasks/specifics/slots")>()),
@@ -25,15 +21,59 @@ const diagnostic =
 const failure = () => new HolderReadError(diagnostic);
 let title = "Action Settings";
 let name = "Change Variable";
+let length = 26;
+let page = 2;
+let listTitle = "Actions: Proof";
+const showList = (targetPage = 2) => {
+    page = targetPage;
+    title = `(${page}/${Math.ceil(length / 21)}) ${listTitle}`;
+};
 const slot = {
+    getSlotId: () => 14,
     getItem: () => ({ getName: () => name }),
     click: vi.fn(() => {
         title = "Action Settings";
     }),
 };
-const ctx = { getOpenContainerTitle: () => title };
+const pageSlot = (id: number, target: number) => ({
+    getSlotId: () => id,
+    click: () => showList(target),
+});
+const ctx = {
+    getOpenContainerTitle: () => title,
+    getAllItemSlots: () =>
+        Array.from(
+            { length: Math.max(0, Math.min(21, length - (page - 1) * 21)) },
+            (_, localIndex) =>
+                (page - 1) * 21 + localIndex === entry.index
+                    ? slot
+                    : {
+                          getSlotId: () =>
+                              10 + Math.floor(localIndex / 7) * 9 + (localIndex % 7),
+                          getItem: () => ({ getName: () => "Send a Chat Message" }),
+                          click: vi.fn(() => {
+                              throw new Error("Clicked the wrong entry");
+                          }),
+                      }
+        ),
+    tryGetItemSlot: (matches: (slot: { getSlotId: () => number }) => boolean) => {
+        if (page < Math.ceil(length / 21) && matches(pageSlot(53, page + 1)))
+            return pageSlot(53, page + 1);
+        if (page > 1 && matches(pageSlot(45, page - 1))) return pageSlot(45, page - 1);
+        return null;
+    },
+    getItemSlot: (matches: (slot: { getSlotId: () => number }) => boolean) => {
+        const result = ctx.tryGetItemSlot(matches);
+        if (result === null) throw new Error("Missing page arrow");
+        return result;
+    },
+};
+const reopenList = vi.fn(async () => {
+    showList(1);
+});
 const entry = {
     listTitle: "Actions: Proof",
+    reopenList,
     index: 25,
     listLength: 26,
     displayName: "Change Variable",
@@ -44,10 +84,15 @@ beforeEach(() => {
     vi.clearAllMocks();
     title = "Action Settings";
     name = "Change Variable";
+    length = 26;
+    page = 2;
+    listTitle = "Actions: Proof";
     mocks.back.mockImplementation(async () => {
-        title = "(2/2) Actions: Proof";
+        showList();
     });
-    mocks.slotAt.mockResolvedValue(slot);
+    reopenList.mockImplementation(async () => {
+        showList(1);
+    });
     slot.click.mockImplementation(() => {
         title = "Action Settings";
     });
@@ -65,7 +110,7 @@ for (const editorTitle of ["Action Settings", "Settings"]) {
             .mockResolvedValue(undefined);
         await withHolderRecovery(ctx as never, { ...entry, editorTitle }, write);
         expect(write).toHaveBeenCalledTimes(3);
-        expect(mocks.slotAt).toHaveBeenCalledWith(ctx, 25, 26, entry.config);
+        expect(reopenList).not.toHaveBeenCalled();
         expect(slot.click.mock.calls).toEqual([[], []]);
     });
 }
@@ -132,7 +177,7 @@ test.each(["Holder", "Variable Requirement"])(
         };
         await setCycleValue(
             {
-                tryGetMenuItemSlot: (name: string) => name === label ? cycle : null,
+                tryGetMenuItemSlot: (name: string) => (name === label ? cycle : null),
             } as never,
             "Holder",
             ["Player", "Global", "Team"],
@@ -141,3 +186,96 @@ test.each(["Holder", "Variable Requirement"])(
         expect(cycle.click).toHaveBeenCalledExactlyOnceWith(MouseButton.RIGHT);
     }
 );
+
+for (const condition of [false, true]) {
+    test(`refreshes a malformed parent once before reopening the ${condition ? "condition" : "action"} editor`, async () => {
+        const editorTitle = condition ? "Settings" : "Action Settings";
+        const displayName = condition ? "Variable Requirement" : "Change Variable";
+        title = editorTitle;
+        listTitle = condition ? "Conditions" : "Actions: Proof";
+        name = "Head";
+        reopenList.mockImplementation(async () => {
+            expect(slot.click).not.toHaveBeenCalled();
+            showList(1);
+            name = displayName;
+        });
+        slot.click.mockImplementation(() => {
+            title = editorTitle;
+        });
+        const write = vi
+            .fn()
+            .mockRejectedValueOnce(failure())
+            .mockResolvedValue(undefined);
+        await withHolderRecovery(
+            ctx as never,
+            {
+                ...entry,
+                listTitle,
+                editorTitle,
+                displayName,
+                config: condition
+                    ? { label: "condition", emptyPlaceholderName: "No Conditions!" }
+                    : entry.config,
+            },
+            write
+        );
+        expect(reopenList).toHaveBeenCalledTimes(1);
+        expect(slot.click).toHaveBeenCalledTimes(1);
+        expect(write).toHaveBeenCalledTimes(2);
+    });
+}
+
+test("refuses a parent that stays malformed after two refreshes without clicking it", async () => {
+    name = "Head";
+    await expect(
+        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+    ).rejects.toThrow(
+        'held "Head" at index 25 (length 26); expected "Change Variable" after 2 parent list reopens.'
+    );
+    expect(reopenList).toHaveBeenCalledTimes(2);
+    expect(slot.click).not.toHaveBeenCalled();
+});
+
+test.each(["before", "after"])(
+    "refuses a changed list length %s refreshing",
+    async (when) => {
+        if (when === "before") length = 27;
+        else {
+            name = "Head";
+            reopenList.mockImplementation(async () => {
+                length = 27;
+                name = entry.displayName;
+                showList(1);
+            });
+        }
+        await expect(
+            withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+        ).rejects.toThrow("length changed: expected 26, found 27 (index 25)");
+        expect(slot.click).not.toHaveBeenCalled();
+        expect(reopenList).toHaveBeenCalledTimes(when === "before" ? 0 : 1);
+    }
+);
+
+test("rechecks the parent title after refreshing", async () => {
+    name = "Head";
+    reopenList.mockImplementation(async () => {
+        title = "Actions: Someone else";
+    });
+    await expect(
+        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+    ).rejects.toThrow('returned to "Actions: Someone else"');
+    expect(slot.click).not.toHaveBeenCalled();
+});
+
+test("refuses an unknown parent when no owning navigation was supplied", async () => {
+    name = "Head";
+    await expect(
+        withHolderRecovery(
+            ctx as never,
+            { ...entry, reopenList: undefined },
+            vi.fn().mockRejectedValue(failure())
+        )
+    ).rejects.toThrow('held "Head"');
+    expect(slot.click).not.toHaveBeenCalled();
+    expect(reopenList).not.toHaveBeenCalled();
+});

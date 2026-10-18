@@ -112,7 +112,16 @@ async function applyRegionActionPlans(
             "enterActions",
             enterPlan,
             session.actions,
-            (sync) => applyActionListPlan(ctx, enterPlan, { sync })
+            (sync) =>
+                applyActionListPlan(ctx, enterPlan, {
+                    sync,
+                    reopenList: () =>
+                        openRegionActionList(
+                            ctx,
+                            plan.importable.name,
+                            "Entry Actions"
+                        ),
+                })
         );
     }
 
@@ -135,7 +144,16 @@ async function applyRegionActionPlans(
             "exitActions",
             exitPlan,
             session.actions,
-            (sync) => applyActionListPlan(ctx, exitPlan, { sync })
+            (sync) =>
+                applyActionListPlan(ctx, exitPlan, {
+                    sync,
+                    reopenList: () =>
+                        openRegionActionList(
+                            ctx,
+                            plan.importable.name,
+                            "Exit Actions"
+                        ),
+                })
         );
     }
 }

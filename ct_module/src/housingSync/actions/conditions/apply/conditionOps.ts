@@ -49,7 +49,8 @@ export async function addConditionToOpenConditionList(
     ctx: TaskContext,
     condition: Condition,
     resolveItem: ResolveItemField,
-    listLength: number
+    listLength: number,
+    reopenList?: () => Promise<void>
 ): Promise<void> {
     const listTitle =
         condition.type === "COMPARE_VAR" ? ctx.getOpenContainerTitle() : null;
@@ -72,6 +73,7 @@ export async function addConditionToOpenConditionList(
         condition.type === "COMPARE_VAR"
             ? {
                   listTitle,
+                  reopenList,
                   index: listLength,
                   listLength: listLength + 1,
                   displayName: spec.displayName,
@@ -91,7 +93,8 @@ export async function addConditionToOpenConditionList(
 export async function appendConditionsToOpenConditionList(
     ctx: TaskContext,
     desired: Condition[],
-    resolveItem: ResolveItemField
+    resolveItem: ResolveItemField,
+    reopenList?: () => Promise<void>
 ): Promise<void> {
     if (desired.length === 0) return;
     const existing = await readPaginatedList(ctx, CONDITION_LIST_CONFIG, async () =>
@@ -104,20 +107,19 @@ export async function appendConditionsToOpenConditionList(
             ctx,
             desired[i],
             resolveItem,
-            existing.length + i
+            existing.length + i,
+            reopenList
         );
     }
 }
 
 export async function deleteObservedCondition(
     ctx: TaskContext,
-    index: number,
-    listLength: number
+    index: number
 ): Promise<void> {
     const slot = await getPaginatedListSlotAtIndex(
         ctx,
         index,
-        listLength,
         CONDITION_LIST_CONFIG
     );
     slot.click(MouseButton.RIGHT);

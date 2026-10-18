@@ -147,7 +147,7 @@ async function hydrateScalarConditions(
 
     for (const entry of entries) {
         emit(`reading condition ${entry.condition?.type ?? ""}`);
-        await hydrateScalarCondition(ctx, entry, observed.length);
+        await hydrateScalarCondition(ctx, entry);
         completed++;
         completedHydrateUnits += SCALAR_CONDITION_HYDRATION_UNITS;
         emit(`${completed}/${entries.length} conditions read`);
@@ -156,8 +156,7 @@ async function hydrateScalarConditions(
 
 async function hydrateScalarCondition(
     ctx: TaskContext,
-    entry: ObservedConditionSlot,
-    listLength: number
+    entry: ObservedConditionSlot
 ): Promise<void> {
     if (entry.condition === null) return;
     const fields = truncatedConditionFields(entry.condition);
@@ -171,7 +170,6 @@ async function hydrateScalarCondition(
     const slot = await getPaginatedListSlotAtIndex(
         ctx,
         entry.index,
-        listLength,
         CONDITION_LIST_CONFIG
     );
     entry.slot = slot;
@@ -262,7 +260,6 @@ async function captureConditionItems(
         await captureConditionItemFields(
             ctx,
             entries[i],
-            observed.length,
             registry,
             observations,
             options.itemReadMode === "export"
@@ -276,7 +273,6 @@ async function captureConditionItems(
 async function captureConditionItemFields(
     ctx: TaskContext,
     entry: ObservedConditionSlot,
-    listLength: number,
     registry: ItemCaptureSink | undefined,
     observations: ItemFieldObservationRecorder | undefined,
     captureRequired: boolean
@@ -290,7 +286,6 @@ async function captureConditionItemFields(
     const slot = await getPaginatedListSlotAtIndex(
         ctx,
         entry.index,
-        listLength,
         CONDITION_LIST_CONFIG
     );
     entry.slot = slot;

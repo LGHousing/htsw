@@ -482,9 +482,7 @@ export async function applyImportableMenuPlan(
         // Back to the settings screen for the resize below. The elements grid
         // is exactly `rows * 9` element slots plus the player inventory — it
         // has no "Go Back" button, so re-open the editor instead of clicking.
-        await application.run("clear:back", () =>
-            openMenuEditor(ctx, importable.name)
-        );
+        await application.run("clear:back", () => openMenuEditor(ctx, importable.name));
         workDone++;
         remainingOps = diff.ops.filter((op) => op.clear !== true);
     }
@@ -533,7 +531,14 @@ export async function applyImportableMenuPlan(
             actionsPlan,
             session.actions,
             async (sync) => {
-                await applyActionListPlan(ctx, actionsPlan, { sync });
+                await applyActionListPlan(ctx, actionsPlan, {
+                    sync,
+                    reopenList: async () => {
+                        await clickGoBack(ctx);
+                        menuGridClick(op.slot, "LEFT");
+                        await timedWaitForMenu(ctx, "menuClickWait");
+                    },
+                });
             }
         );
         await application.run(actionBackStepKey(op.slot), () => clickGoBack(ctx));
@@ -560,12 +565,7 @@ export function menuApplicationPlan(
         plan.exists ||
         (session?.plannedReferencedShells.menus.has(plan.importable.name.toLowerCase()) ??
             false);
-    steps.push(
-        workStep(
-            "menu",
-            (exists ? COST.commandMenuWait : COST.commandMessageWait)
-        )
-    );
+    steps.push(workStep("menu", exists ? COST.commandMenuWait : COST.commandMessageWait));
 
     let remainingOps = plan.diff.ops;
     const clearOps = plan.diff.ops.filter((op) => op.clear === true);

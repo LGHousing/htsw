@@ -351,7 +351,15 @@ async function applyItemActionPlans(
             "leftActions",
             leftPlan,
             session.actions,
-            (sync) => applyActionListPlan(ctx, leftPlan, { sync })
+            (sync) =>
+                applyActionListPlan(ctx, leftPlan, {
+                    sync,
+                    reopenList: async () => {
+                        await clickGoBack(ctx);
+                        ctx.getItemSlot("Left Click Actions").click();
+                        await timedWaitForMenu(ctx, "menuClickWait");
+                    },
+                })
         );
         if (plan.rightPlan !== null) {
             await application.run("leaveLeftActions", () => clickGoBack(ctx));
@@ -368,7 +376,15 @@ async function applyItemActionPlans(
             "rightActions",
             rightPlan,
             session.actions,
-            (sync) => applyActionListPlan(ctx, rightPlan, { sync })
+            (sync) =>
+                applyActionListPlan(ctx, rightPlan, {
+                    sync,
+                    reopenList: async () => {
+                        await clickGoBack(ctx);
+                        ctx.getItemSlot("Right Click Actions").click();
+                        await timedWaitForMenu(ctx, "menuClickWait");
+                    },
+                })
         );
     }
 }

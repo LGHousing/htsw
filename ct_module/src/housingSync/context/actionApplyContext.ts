@@ -25,16 +25,18 @@ import {
     childActionListDiffApplyUnits,
     conditionListDiffApplyUnits,
 } from "../progress/costs";
-import type { PlannedChildActionList } from "../actions/apply/types";
+import type { ApplyChildActionList } from "../actions/apply/types";
 import type { ApplyPlannedConditionListOptions } from "../actions/conditions/apply";
 
 type ChildActionApplyArgs = {
+    reopenList: () => Promise<void>;
     desired: Action[];
     observed?: ReadonlyArray<Observed | null>;
     offset?: number;
 };
 
 type ConditionApplyArgs = {
+    reopenList: () => Promise<void>;
     desired: Condition[];
     observed?: ReadonlyArray<Condition | null>;
     offset?: number;
@@ -52,16 +54,6 @@ export type ActionApplyContext = {
         args: ConditionApplyArgs
     ): Promise<void>;
 };
-
-type ApplyChildActionList = (
-    ctx: TaskContext,
-    plan: PlannedChildActionList,
-    options: {
-        sync: ActionSyncContext;
-        listPath: ActionListPath;
-        progressScope: ProgressScope;
-    }
-) => Promise<unknown>;
 
 type ApplyConditionList = (
     ctx: TaskContext,
@@ -201,6 +193,7 @@ export function createActionApplyContext({
                 },
                 {
                     sync,
+                    reopenList: args.reopenList,
                     listPath: path,
                     progressScope: scopeAt(path, offset),
                 }
@@ -214,6 +207,7 @@ export function createActionApplyContext({
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.observed?.length ?? 0, diff, {
                 resolveItem: sync.resolveItem,
+                reopenList: args.reopenList,
                 progress: progressFromScope(events, scopeAt(path, offset)),
             });
             nextOffset = offset + conditionListDiffApplyUnits(diff);

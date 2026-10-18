@@ -17,6 +17,7 @@ export type ApplyChildActionList = (
     ctx: TaskContext,
     plan: PlannedChildActionList,
     options: {
+        reopenList?: () => Promise<void>;
         sync: ActionSyncContext;
         progressScope: ProgressScope;
         listPath: import("../../actionPath").ActionListPath;

@@ -97,7 +97,6 @@ export async function getSessionFunctionListSlot(
             const slot = await getPaginatedListSlotAtIndex(
                 ctx,
                 cached.index,
-                cached.index + 1,
                 FUNCTION_LIST_CONFIG
             );
             const live = readFunctionEntryFromSlot(slot, cached.index);

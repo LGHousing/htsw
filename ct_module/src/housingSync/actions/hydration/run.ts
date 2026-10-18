@@ -161,7 +161,6 @@ async function hydrateActionDetails(
             ctx,
             entry,
             work,
-            observed.length,
             read,
             entryPath,
             subStepSnapshot,
@@ -194,7 +193,6 @@ async function hydrateActionDetail(
     ctx: TaskContext,
     entry: ObservedActionSlot,
     work: ActionHydrationWork,
-    listLength: number,
     read: ListReadOptions,
     entryPath: ActionPath,
     emitSnapshot?: () => void,
@@ -205,7 +203,6 @@ async function hydrateActionDetail(
             ctx,
             entry,
             work,
-            listLength,
             read,
             entryPath,
             emitSnapshot,
@@ -225,7 +222,6 @@ async function hydrateActionDetailFromEditor(
     ctx: TaskContext,
     entry: ObservedActionSlot,
     work: ActionHydrationWork,
-    listLength: number,
     read: ListReadOptions,
     entryPath: ActionPath,
     emitSnapshot?: () => void,
@@ -244,7 +240,6 @@ async function hydrateActionDetailFromEditor(
     const actionSlot = await getPaginatedListSlotAtIndex(
         ctx,
         entry.index,
-        listLength,
         ACTION_LIST_CONFIG
     );
     entry.slot = actionSlot;

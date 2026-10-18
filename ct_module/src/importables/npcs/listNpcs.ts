@@ -196,7 +196,6 @@ async function tryOpenCachedNpcEditor(
         const slot = await getPaginatedListSlotAtIndex(
             ctx,
             cached.index,
-            cached.index + 1,
             NPC_LIST_CONFIG
         );
         const live = readNpcEntryFromSlot(slot, cached.index);

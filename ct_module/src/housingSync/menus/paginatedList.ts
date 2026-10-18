@@ -196,21 +196,20 @@ export async function goToPaginatedListPage(
 export async function getPaginatedListSlotAtIndex(
     ctx: TaskContext,
     index: number,
-    listLength: number,
     config: PaginatedListConfig
 ): Promise<ItemSlot> {
-    if (listLength <= 0 || index < 0 || index >= listLength) {
-        throw new Error(
-            `${capitalize(config.label)} index ${index} is out of bounds for list length ${listLength}.`
-        );
+    if (!Number.isInteger(index) || index < 0) {
+        throw new Error(`Invalid ${config.label} index: ${index}.`);
     }
 
     await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(index), config);
-    const visibleSlots = getVisiblePaginatedItemSlots(ctx);
+    const visibleSlots = getVisiblePaginatedItemSlots(ctx).filter(
+        (slot) => !isEmptyPaginatedPlaceholder(slot, config)
+    );
     const localIndex = getPaginatedListLocalIndex(index);
-    if (localIndex < 0 || localIndex >= visibleSlots.length) {
+    if (localIndex >= visibleSlots.length) {
         throw new Error(
-            `Could not resolve visible ${config.label} slot ${localIndex} for global index ${index}.`
+            `Could not resolve visible ${config.label} slot ${localIndex} for global index ${index} (page holds ${visibleSlots.length} entries).`
         );
     }
 
