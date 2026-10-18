@@ -56,7 +56,7 @@ function slot(id: number, name: string, lore: string[] = [], click = () => {}) {
 
 type Menu = {
     title: string;
-    entries: () => ItemSlot[];
+    entries: (page: number) => ItemSlot[];
     fields?: () => Record<string, ItemSlot>;
     pages?: number;
     missingNext?: () => boolean;
@@ -94,7 +94,7 @@ function menus(root: Menu) {
             current.pages === undefined
                 ? current.title
                 : `(${page}/${current.pages}) ${current.title}`,
-        getAllItemSlots: () => current.entries().slice((page - 1) * 21, page * 21),
+        getAllItemSlots: () => current.entries(page).slice((page - 1) * 21, page * 21),
         tryGetItemSlot: (matches: (item: ItemSlot) => boolean) =>
             controls().find(matches) ?? null,
         getItemSlot: (matches: (item: ItemSlot) => boolean) => {
@@ -141,6 +141,63 @@ function read(
 }
 
 describe("full conflict re-read completeness", () => {
+    it.each(["short first page", "empty final page"])(
+        "keeps the conflict when a %s hides an extra HEAL",
+        async (incomplete) => {
+            const baseline = [...Array<Action>(20).fill(heal), kill];
+            const live = [...Array<Action>(21).fill(heal), kill];
+            let rereading = false;
+            const ui = menus({
+                title: "Actions: Proof",
+                pages: 2,
+                entries: (page) => {
+                    if (!rereading) return actionSlots(live);
+                    if (incomplete === "empty final page") {
+                        return page === 1
+                            ? actionSlots(baseline)
+                            : [...actionSlots(baseline), slot(10, "No Actions!")];
+                    }
+                    return actionSlots(page === 1 ? baseline.slice(0, 20) : live);
+                },
+                onPrevious: () => {
+                    rereading = true;
+                },
+            });
+            const sync = session(baseline);
+            await expect(read(ui.ctx, sync, baseline)).rejects.toThrow(
+                "Incomplete paginated action list"
+            );
+            expect(sync.conflicts).toEqual([target]);
+        }
+    );
+
+    it.each([1, 21, 42])(
+        "allows a complete conflict re-read with %i entries",
+        async (count) => {
+            const baseline = Array<Action>(count).fill(heal);
+            const live = [...baseline.slice(0, -1), kill];
+            let rereading = false;
+            let scans = 0;
+            const ui = menus({
+                title: "Actions: Proof",
+                pages: Math.ceil(count / 21),
+                entries: () => {
+                    scans++;
+                    return actionSlots(
+                        rereading || (count <= 21 && scans > 1) ? baseline : live
+                    );
+                },
+                onPrevious: () => {
+                    rereading = true;
+                },
+            });
+            const sync = session(baseline);
+            const plan = await read(ui.ctx, sync, baseline);
+            expect(plan.observed.map((entry) => entry.action)).toEqual(baseline);
+            expect(sync.conflicts).toEqual([]);
+        }
+    );
+
     it.each([
         "heading only",
         "missing section",
@@ -297,7 +354,7 @@ describe("full conflict re-read completeness", () => {
         expect(sync.conflicts).toEqual([target]);
     });
 
-    it.each(["equal", "outside edit", "missing Next", "nested conditional"])(
+    it.each(["equal", "outside edit", "missing Next", "short page", "nested conditional"])(
         "checks a conditional's paginated children before clearing: %s",
         async (scenario) => {
             const baselineChildren = Array<Action>(22).fill(heal);
@@ -308,7 +365,7 @@ describe("full conflict re-read completeness", () => {
             const child: Menu = {
                 title: "If Actions",
                 pages: live.length > 21 ? 2 : 1,
-                entries: () =>
+                entries: (page) =>
                     scenario === "nested conditional"
                         ? [
                               ...actionSlots(baselineChildren.slice(0, 21)),
@@ -317,7 +374,11 @@ describe("full conflict re-read completeness", () => {
                                   ...Array<string>(22).fill("- Full Heal"),
                               ]),
                           ]
-                        : actionSlots(live),
+                        : actionSlots(
+                              scenario === "short page" && page === 1
+                                  ? live.slice(0, 20)
+                                  : live
+                          ),
                 missingNext: () => scenario === "missing Next",
             };
             const editor: Menu = {
@@ -355,13 +416,17 @@ describe("full conflict re-read completeness", () => {
             const ui = menus(root);
             const baseline = [conditional({ ifActions: baselineChildren })];
             const sync = session(baseline);
-            if (scenario === "missing Next" || scenario === "nested conditional") {
+            if (
+                scenario === "missing Next" ||
+                scenario === "short page" ||
+                scenario === "nested conditional"
+            ) {
                 // Nested containers are unsupported; an unread inner list must
                 // preserve the conflict just as an incomplete page does.
                 await expect(read(ui.ctx, sync, baseline)).rejects.toThrow(
-                    scenario === "missing Next"
-                        ? "Incomplete paginated action list"
-                        : "CONDITIONAL action cannot appear inside an action child list"
+                    scenario === "nested conditional"
+                        ? "CONDITIONAL action cannot appear inside an action child list"
+                        : "Incomplete paginated action list"
                 );
             } else {
                 const plan = await read(ui.ctx, sync, baseline);

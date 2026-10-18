@@ -162,6 +162,7 @@ export async function scanActionListForPlan(
         // including lists the project is about to remove.
         const observations = createItemFieldObservationRecorder();
         readOptions.itemFieldObservations = observations;
+        readOptions.requireFullPages = true;
         liveItemContent = (owner, prop) => observations.get(owner, prop)?.canonicalKey;
         scan = await scanActionList(ctx, { kind: "full" }, readOptions);
     }

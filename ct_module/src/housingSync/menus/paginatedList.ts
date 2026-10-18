@@ -12,6 +12,11 @@ export type PaginatedListConfig = {
     emptyPlaceholderName: string;
 };
 
+export type PaginatedListReadOptions = {
+    /** Require full non-final pages before using this read to clear a conflict. */
+    requireFullPages?: boolean;
+};
+
 export function getVisiblePaginatedItemSlots(ctx: TaskContext): ItemSlot[] {
     const slots = ctx.getAllItemSlots((slot) => {
         const slotId = slot.getSlotId();
@@ -290,7 +295,8 @@ export async function readPaginatedList<T extends { index: number }>(
         totalEntries: number;
         pagesRead: number;
         entries: readonly T[];
-    }) => void
+    }) => void,
+    { requireFullPages = false }: PaginatedListReadOptions = {}
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
@@ -314,6 +320,18 @@ export async function readPaginatedList<T extends { index: number }>(
         requireCompletePage();
         const pageEntries = await readPage();
         requireCompletePage();
+        if (requireFullPages) {
+            const isFinalPage = pagesRead + 1 === totalPages;
+            // A multi-page list must end with 1..ITEMS_PER_PAGE entries.
+            // Together with full preceding pages, this also proves that the
+            // total entry count agrees with the advertised page count.
+            const minEntries = isFinalPage ? (pagesRead === 0 ? 0 : 1) : ITEMS_PER_PAGE;
+            if (pageEntries.length < minEntries || pageEntries.length > ITEMS_PER_PAGE) {
+                throw new Error(
+                    `Incomplete paginated ${config.label} list: page ${pagesRead + 1}/${totalPages} has ${pageEntries.length} entries; expected ${minEntries}..${ITEMS_PER_PAGE}.`
+                );
+            }
+        }
         for (const entry of pageEntries) {
             entry.index = entries.length;
             entries.push(entry);

@@ -231,7 +231,8 @@ export async function scanActionList(
                     parent: null,
                 },
             });
-        }
+        },
+        read
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isRootList = read.listPath === undefined;
