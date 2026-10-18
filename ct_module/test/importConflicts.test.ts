@@ -12,6 +12,8 @@ import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
+import type { ListReadOptions } from "../src/housingSync/context/actionReadContext";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -487,5 +489,158 @@ describe("readActionListPlan conflict detection", () => {
         expect(plan.phaseUnits.hydrating).toBe(0);
         expect(session.conflicts).toEqual([]);
     });
+    it.each([
+        ["baseline", true, "known", 0],
+        ["source", true, "known", 1],
+        ["outside edit", true, "known", 1],
+        ["baseline", false, "known", 1],
+        ["outside edit", false, "known", 1],
+        ["baseline", true, "unknown", 1],
+        ["baseline", true, "missing", 1],
+    ] as const)(
+        "checks full live content: %s, content baseline %s, initial summaries %s",
+        async (liveValue, includeContentHashes, summaries, expectedConflicts) => {
+            const baseline = [conditional({ ifActions: [message("baseline")] })];
+            const desired = [conditional({ ifActions: [message("source")] }), message("new")];
+            const importable: ImportableFunction = {
+                type: "FUNCTION",
+                name: "Debug",
+                actions: desired,
+            };
+            const shallow = observedSlot(0, conditional());
+            shallow.hydrated = false;
+            shallow.childListSummaries = summaries === "missing" ? undefined : {
+                conditions: [],
+                ifActions: [summaries === "unknown" ? "UNKNOWN" : "MESSAGE"],
+                elseActions: [],
+            };
+            const full = observedSlot(0, conditional());
+            full.hydrated = false;
+            mocks.scanActionList
+                .mockResolvedValueOnce({ slots: [shallow] })
+                .mockResolvedValueOnce({ slots: [full] });
+            mocks.hydrateActionListScan.mockImplementationOnce(async () => {
+                full.action = conditional({ ifActions: [message(liveValue)] });
+                full.hydrated = true;
+            });
+            const session = sessionWithLock(importable, baseline, true, "always", includeContentHashes);
+            session.trust.importables.get("FUNCTION:Debug")!.lockListScanHashes = {
+                actions: "different scan",
+            };
 
+            await readActionListPlan(null as unknown as TaskContext, desired, {
+                sync: session,
+                baselineCurrent: baseline,
+                conflictTarget: {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                },
+            });
+
+            expect(mocks.scanActionList.mock.calls[1][1]).toEqual({ kind: "full" });
+            const fullRead = mocks.scanActionList.mock.calls[1][2] as ListReadOptions;
+            expect(fullRead.itemFieldObservations).toBeDefined();
+            expect(session.conflicts).toHaveLength(expectedConflicts);
+            if (liveValue === "outside edit") {
+                expect(session.conflictEvidence[0].liveActions).toEqual([
+                    conditional({ ifActions: [message(liveValue)] }),
+                ]);
+            }
+        }
+    );
+
+    it("keeps a summary conflict when the full live list remains unreadable", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        const unreadable: ObservedActionSlot = {
+            ...observedSlot(0, message("baseline")),
+            action: null,
+            hydrated: false,
+        };
+        mocks.scanActionList.mockResolvedValue({ slots: [unreadable] });
+        const session = sessionWithLock(importable, [message("baseline")]);
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        });
+
+        expect(session.conflicts).toHaveLength(1);
+        expect(session.conflictEvidence).toEqual([]);
+    });
+
+    it("does not clear a summary conflict using unread live item contents", async () => {
+        const actions = [{ type: "GIVE_ITEM", itemName: "stone" } as Action];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions,
+        };
+        const live = observedSlot(0, actions[0]);
+        mocks.scanActionList.mockResolvedValue({ slots: [live] });
+        const session = sessionWithLock(importable, actions);
+        session.trust.importables.get("FUNCTION:Debug")!.lockListScanHashes = {
+            actions: "old scan",
+        };
+        // Change the desired structure so the first scan cannot classify it as
+        // already applied; neither side has captured item contents.
+        const desired = [...actions, message("new")];
+
+        await readActionListPlan(null as unknown as TaskContext, desired, {
+            sync: session,
+            conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        });
+
+        expect(session.conflicts).toHaveLength(1);
+    });
+
+    it.each(["baseline item", "outside item"])(
+        "preserves captured item contents through conflict snapshots: %s",
+        async (canonicalKey) => {
+            const item = { type: "GIVE_ITEM", itemName: "stone" } as Action;
+            const desired = [item, message("new")];
+            const importable: ImportableFunction = {
+                type: "FUNCTION", name: "Debug", actions: desired,
+            };
+            const live = observedSlot(0, { ...item });
+            mocks.scanActionList.mockResolvedValue({ slots: [live] });
+            mocks.hydrateActionListScan.mockImplementationOnce(async (...args: unknown[]) => {
+                const read = args[2] as ListReadOptions;
+                read.itemFieldObservations!.record(live.action as Action, "itemName", {
+                    snbt: "{}",
+                    canonicalKey,
+                });
+            });
+            const session = sessionWithLock(importable, [item]);
+            const trustPlan = session.trust.importables.get("FUNCTION:Debug")!;
+            trustPlan.lockListScanHashes = { actions: "old scan" };
+            trustPlan.lockListContentHashes = {
+                actions: actionListContentHashFromActions([item], () => "baseline item"),
+            };
+            session.itemDiff = {
+                hasActionList: () => false,
+                actionsDiffer: () => false,
+                conditionsDiffer: () => false,
+                fieldContent: (owner) => owner === item ? "baseline item" : undefined,
+            };
+
+            await readActionListPlan(null as unknown as TaskContext, desired, {
+                sync: session,
+                conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+            });
+
+            expect(session.conflicts).toHaveLength(canonicalKey === "baseline item" ? 0 : 1);
+            if (canonicalKey === "outside item") {
+                expect(session.conflictEvidence[0].canonicalDifferences).toContainEqual({
+                    path: "action 1 (give item) · itemName",
+                    live: "outside item",
+                    source: "baseline item",
+                });
+            }
+        }
+    );
 });

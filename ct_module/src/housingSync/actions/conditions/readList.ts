@@ -27,6 +27,7 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
+    type PaginatedListReadOptions,
 } from "../../menus/paginatedList";
 import { timedWaitForMenu } from "../../menus/menuWait";
 import { clickGoBack } from "../../menus/menuUtils";
@@ -43,7 +44,13 @@ import type { ProgressHandler } from "../../progress/types";
 async function readConditionsListPage(
     ctx: TaskContext
 ): Promise<ObservedConditionSlot[]> {
-    return getVisiblePaginatedItemSlots(ctx)
+    const visible = getVisiblePaginatedItemSlots(ctx);
+    if (visible.length === 0) {
+        throw new Error(
+            "Incomplete condition list: no entries or empty-list placeholder."
+        );
+    }
+    return visible
         .filter((slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG))
         .map((slot, index) => {
             const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
@@ -68,7 +75,7 @@ async function readConditionsListPage(
         });
 }
 
-export type ReadConditionListOptions = ItemReadOptions & {
+export type ReadConditionListOptions = ItemReadOptions & PaginatedListReadOptions & {
     phaseUnits?: PhaseUnits;
     progress?: ProgressHandler;
 };
@@ -77,8 +84,12 @@ export async function readConditionList(
     ctx: TaskContext,
     options: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
-    const observed = await readPaginatedList(ctx, CONDITION_LIST_CONFIG, () =>
-        readConditionsListPage(ctx)
+    const observed = await readPaginatedList(
+        ctx,
+        CONDITION_LIST_CONFIG,
+        () => readConditionsListPage(ctx),
+        undefined,
+        options
     );
     await hydrateScalarConditions(ctx, observed, options);
     await captureConditionItems(ctx, observed, options);

@@ -22,6 +22,7 @@ import {
 } from "../actionPath";
 import type { ItemCaptureSink } from "../items/capture";
 import type { ItemFieldObservationRecorder } from "../items/fieldObservations";
+import type { PaginatedListReadOptions } from "../menus/paginatedList";
 
 export type ItemReadOptions =
     | {
@@ -42,7 +43,7 @@ export type ItemReadOptions =
           itemFieldObservations?: never;
       };
 
-export type ListReadOptions = ItemReadOptions & {
+export type ListReadOptions = ItemReadOptions & PaginatedListReadOptions & {
     events?: SyncEventHandler;
     listPath?: ActionListPath;
     emitSnapshot?: () => void;
@@ -71,7 +72,7 @@ type ReadConditions = (
     options: ReadConditionListOptions
 ) => Promise<ObservedConditionSlot[]>;
 
-export type CreateActionReadContextArgs = {
+export type CreateActionReadContextArgs = PaginatedListReadOptions & {
     ctx: TaskContext;
     actionPath: ActionPath;
     actionType: Action["type"];
@@ -96,6 +97,7 @@ export function createActionReadContext({
     actionPath,
     actionType,
     itemRead,
+    requireFullPages,
     events,
     emitSnapshot,
     readChildActions,
@@ -117,6 +119,7 @@ export function createActionReadContext({
             const actions: Array<Observed | null> = [];
             const entries = await readChildActions(ctx, mode, {
                 ...itemRead,
+                requireFullPages,
                 events,
                 listPath: path,
                 emitSnapshot,
@@ -133,6 +136,7 @@ export function createActionReadContext({
             const conditions: Array<Condition | null> = [];
             const entries = await readConditionList(ctx, {
                 ...itemRead,
+                requireFullPages,
                 ...(childListProgress?.(prop) ?? {}),
             });
             for (const entry of entries) {

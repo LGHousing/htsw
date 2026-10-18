@@ -25,10 +25,21 @@ import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
-import type { ItemFieldContent } from "../items/fieldContent";
+import {
+    cloneActionsWithItemFieldContent,
+    type ItemFieldContent,
+} from "../items/fieldContent";
 import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
+import { createItemFieldObservationRecorder } from "../items/fieldObservations";
+import { getChildListFields } from "../fields/actionMappings";
+import {
+    actionListScanHashFromActions,
+    actionListScanHashFromSlots,
+} from "./scanHash";
+
+type InitialScanSummary = { entryCount: number; hash: string };
 
 export type ActionListApplyOptions = {
     reopenList?: () => Promise<void>;
@@ -67,6 +78,8 @@ export type ActionListPlanScan =
           options: ActionListPlanOptions;
           readOptions: ListReadOptions;
           phaseUnits: PhaseUnits;
+          liveItemContent?: ItemFieldContent;
+          initialScanSummary?: InitialScanSummary;
       };
 
 export async function readActionListPlan(
@@ -115,14 +128,14 @@ export async function scanActionListForPlan(
                   canonicalizeItemName: options.sync.canonicalizeItemName,
                   itemCaptures: options.sync.itemRead.captures,
               };
-    const readOptions = {
+    const readOptions: ListReadOptions = {
         ...itemRead,
         progress,
         phaseUnits,
         listPath: options.listPath,
         events: options.sync.events,
     };
-    const scan = await scanActionList(
+    let scan = await scanActionList(
         ctx,
         {
             kind: "sync",
@@ -150,6 +163,35 @@ export async function scanActionListForPlan(
         }
         return { kind: "planned", plan };
     }
+    let liveItemContent: ItemFieldContent | undefined;
+    let initialScanSummary: InitialScanSummary | undefined;
+    if (conflictVerdict === "conflict") {
+        // Preserve independent count/type evidence before replacing the scan.
+        // Missing child summaries cannot establish that a later read is complete.
+        if (
+            scan.slots.every(
+                (entry) =>
+                    entry.action !== null &&
+                    getChildListFields(entry.action.type).every((field) => {
+                        const types = entry.childListSummaries?.[field.prop];
+                        return types !== undefined && !types.includes("UNKNOWN");
+                    })
+            )
+        ) {
+            initialScanSummary = {
+                entryCount: scan.slots.length,
+                hash: actionListScanHashFromSlots(scan.slots),
+            };
+        }
+        // A summary mismatch is provisional. Re-read without trusted child
+        // snapshots so the content check below uses only live Housing values,
+        // including lists the project is about to remove.
+        const observations = createItemFieldObservationRecorder();
+        readOptions.itemFieldObservations = observations;
+        readOptions.requireFullPages = true;
+        liveItemContent = (owner, prop) => observations.get(owner, prop)?.canonicalKey;
+        scan = await scanActionList(ctx, { kind: "full" }, readOptions);
+    }
     return {
         kind: "hydrate",
         desired,
@@ -157,6 +199,8 @@ export async function scanActionListForPlan(
         options,
         readOptions,
         phaseUnits,
+        liveItemContent,
+        initialScanSummary,
     };
 }
 
@@ -164,7 +208,7 @@ export async function hydrateActionListForPlan(
     ctx: TaskContext,
     pending: Extract<ActionListPlanScan, { kind: "hydrate" }>
 ): Promise<ActionListPlan> {
-    const { desired, scan, options, readOptions, phaseUnits } = pending;
+    const { desired, scan, options, readOptions, phaseUnits, liveItemContent } = pending;
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
@@ -178,7 +222,23 @@ export async function hydrateActionListForPlan(
     if (options.sync.trust.trustMode) {
         const liveActions = fullyHydratedActionsFromSlots(observed);
         if (liveActions !== null) {
-            recordKnownConflictEvidence(liveActions, desired, options);
+            if (liveItemContent === undefined) {
+                recordKnownConflictEvidence(liveActions, desired, options);
+            } else {
+                // Hydration records item observations on the original owners.
+                // Carry them onto the copied actions used as conflict evidence.
+                const snapshot = cloneActionsWithItemFieldContent(
+                    observed.map((entry) => entry.action as Action),
+                    liveItemContent
+                );
+                recordKnownConflictEvidence(
+                    snapshot.actions as Action[],
+                    desired,
+                    options,
+                    snapshot.itemContent,
+                    pending.initialScanSummary
+                );
+            }
         }
     }
     if (!options.sync.trust.trustMode) {
@@ -335,7 +395,9 @@ function recordActionListConflict(
 function recordKnownConflictEvidence(
     liveActions: readonly Action[],
     desired: readonly Action[],
-    options: ActionListPlanOptions
+    options: ActionListPlanOptions,
+    liveItemContent?: ItemFieldContent,
+    initialScanSummary?: InitialScanSummary
 ): void {
     const target = options.conflictTarget;
     if (
@@ -350,7 +412,51 @@ function recordKnownConflictEvidence(
         return;
     }
     const itemContent = options.sync.itemDiff?.fieldContent;
-    upsertConflictEvidence(liveActions, desired, options, itemContent, itemContent);
+    const trustPlan = options.sync.trust.importables.get(
+        importableKey(target.type, target.identity)
+    );
+    const contentHash = trustPlan?.lockListContentHashes?.[target.basePath];
+    if (
+        liveItemContent !== undefined &&
+        contentHash !== undefined &&
+        initialScanSummary !== undefined &&
+        liveActions.length === initialScanSummary.entryCount &&
+        actionListScanHashFromActions(liveActions) === initialScanSummary.hash
+    ) {
+        const itemRead = { complete: true };
+        const verdict = actionListConflictVerdict(
+            { actions: liveActions },
+            {
+                contentHash,
+                scanHash: undefined,
+            },
+            desired,
+            "content",
+            (owner, prop) => {
+                const content = liveItemContent(owner, prop);
+                if (
+                    content === undefined &&
+                    typeof (owner as Record<string, unknown>)[prop] === "string"
+                ) {
+                    itemRead.complete = false;
+                }
+                return content;
+            },
+            itemContent
+        );
+        if (itemRead.complete && verdict === "unchanged") {
+            const index = options.sync.conflicts.indexOf(target);
+            if (index !== -1) options.sync.conflicts.splice(index, 1);
+            return;
+        }
+    }
+    upsertConflictEvidence(
+        liveActions,
+        desired,
+        options,
+        liveItemContent ?? itemContent,
+        itemContent
+    );
 }
 
 function upsertConflictEvidence(

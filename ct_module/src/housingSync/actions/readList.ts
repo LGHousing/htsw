@@ -71,6 +71,7 @@ function readChildListSummaries(
 
     for (const { label, prop, kind } of childListFields) {
         const itemTypes: Array<Action["type"] | Condition["type"] | "UNKNOWN"> = [];
+        let explicitlyEmpty = false;
         let labelIndex = -1;
         for (let i = 0; i < lore.length; i++) {
             if (removedFormatting(lore[i]).trim() === label + ":") {
@@ -80,6 +81,8 @@ function readChildListSummaries(
         }
 
         if (labelIndex === -1) {
+            summaries[prop] = ["UNKNOWN"];
+            childListsToRead.add(prop);
             continue;
         }
 
@@ -104,6 +107,7 @@ function readChildListSummaries(
 
             const displayName = text.slice(2).trim();
             if (displayName === "None") {
+                explicitlyEmpty = true;
                 continue;
             }
 
@@ -114,6 +118,10 @@ function readChildListSummaries(
             itemTypes.push(type ?? "UNKNOWN");
         }
 
+        // A heading with no readable entries is incomplete, not an empty list.
+        if (itemTypes.length === 0 && !explicitlyEmpty) {
+            itemTypes.push("UNKNOWN");
+        }
         if (kind === "conditionList") {
             summaries[prop] = itemTypes as Array<Condition["type"] | "UNKNOWN">;
         } else {
@@ -133,7 +141,11 @@ async function readActionsListPage(
     ctx: TaskContext,
     captureItems: boolean
 ): Promise<ObservedActionSlot[]> {
-    const slots = getVisiblePaginatedItemSlots(ctx).filter(
+    const visible = getVisiblePaginatedItemSlots(ctx);
+    if (visible.length === 0) {
+        throw new Error("Incomplete action list: no entries or empty-list placeholder.");
+    }
+    const slots = visible.filter(
         (slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG)
     );
     const observed: ObservedActionSlot[] = slots
@@ -219,7 +231,8 @@ export async function scanActionList(
                     parent: null,
                 },
             });
-        }
+        },
+        read
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isRootList = read.listPath === undefined;

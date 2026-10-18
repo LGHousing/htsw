@@ -255,6 +255,7 @@ async function hydrateActionDetailFromEditor(
             actionPath: entryPath,
             actionType: entry.action.type,
             itemRead: read,
+            requireFullPages: read.requireFullPages,
             events: read.events,
             emitSnapshot,
             readChildActions: readActionList,

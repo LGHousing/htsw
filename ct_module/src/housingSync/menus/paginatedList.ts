@@ -12,6 +12,11 @@ export type PaginatedListConfig = {
     emptyPlaceholderName: string;
 };
 
+export type PaginatedListReadOptions = {
+    /** Require full non-final pages before using this read to clear a conflict. */
+    requireFullPages?: boolean;
+};
+
 export function getVisiblePaginatedItemSlots(ctx: TaskContext): ItemSlot[] {
     const slots = ctx.getAllItemSlots((slot) => {
         const slotId = slot.getSlotId();
@@ -116,12 +121,13 @@ function getCurrentPaginatedListPageState(
 
     const parsedTitle = parsePaginatedTitlePage(title, config);
     const hasNext = hasNextPage(ctx);
+    const hasPrev = hasPrevPage(ctx);
     if (parsedTitle === null) {
         return {
             currentPage: 1,
-            totalPages: hasNext ? null : 1,
+            totalPages: hasNext || hasPrev ? null : 1,
             hasNext,
-            hasPrev: false,
+            hasPrev,
         };
     }
 
@@ -129,7 +135,7 @@ function getCurrentPaginatedListPageState(
         currentPage: parsedTitle.currentPage,
         totalPages: parsedTitle.totalPages,
         hasNext,
-        hasPrev: hasPrevPage(ctx),
+        hasPrev,
     };
 }
 
@@ -289,33 +295,54 @@ export async function readPaginatedList<T extends { index: number }>(
         totalEntries: number;
         pagesRead: number;
         entries: readonly T[];
-    }) => void
+    }) => void,
+    { requireFullPages = false }: PaginatedListReadOptions = {}
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
+    const totalPages = getCurrentPaginatedListPageState(ctx, config).totalPages;
     let pagesRead = 0;
+    const requireCompletePage = () => {
+        const state = getCurrentPaginatedListPageState(ctx, config);
+        if (
+            totalPages === null ||
+            state.totalPages !== totalPages ||
+            state.currentPage !== pagesRead + 1 ||
+            state.hasPrev !== state.currentPage > 1 ||
+            state.hasNext !== state.currentPage < totalPages
+        ) {
+            throw new Error(
+                `Incomplete paginated ${config.label} list: expected page ${pagesRead + 1}/${totalPages}, found ${state.currentPage}/${state.totalPages} (previous: ${state.hasPrev}, next: ${state.hasNext}).`
+            );
+        }
+    };
     for (;;) {
+        requireCompletePage();
         const pageEntries = await readPage();
+        requireCompletePage();
+        if (requireFullPages) {
+            const isFinalPage = pagesRead + 1 === totalPages;
+            // A multi-page list must end with 1..ITEMS_PER_PAGE entries.
+            // This checks the advertised page count, but cannot detect a
+            // partially rendered final page; conflict clearing also compares
+            // the full read's count and summaries with the initial scan.
+            const minEntries = isFinalPage ? (pagesRead === 0 ? 0 : 1) : ITEMS_PER_PAGE;
+            if (pageEntries.length < minEntries || pageEntries.length > ITEMS_PER_PAGE) {
+                throw new Error(
+                    `Incomplete paginated ${config.label} list: page ${pagesRead + 1}/${totalPages} has ${pageEntries.length} entries; expected ${minEntries}..${ITEMS_PER_PAGE}.`
+                );
+            }
+        }
         for (const entry of pageEntries) {
             entry.index = entries.length;
             entries.push(entry);
         }
         pagesRead++;
         onPageRead?.({ totalEntries: entries.length, pagesRead, entries });
-        const stateBefore = getCurrentPaginatedListPageState(ctx, config);
-        if (!stateBefore.hasNext) break;
+        if (pagesRead === totalPages) break;
 
         clickPaginatedNextPage(ctx);
         await timedWaitForMenu(ctx, "pageTurnWait");
-
-        // Guard: if the click didn't advance us, abort instead of looping
-        // forever on the same page (which would also duplicate entries).
-        const stateAfter = getCurrentPaginatedListPageState(ctx, config);
-        if (stateAfter.currentPage <= stateBefore.currentPage) {
-            throw new Error(
-                `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
-            );
-        }
     }
     return entries;
 }
