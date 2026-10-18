@@ -214,6 +214,8 @@ export async function applyImportableFunctionPlan(
     }
     if (changesFunction) {
         await application.run("repeatExecution", async () => {
+            // Cancellation may arrive with the final body verification response.
+            ctx.checkCancelled();
             if (currentTicks !== targetTicks) {
                 await writeFunctionRepeatTicks(ctx, plan, targetTicks, currentTicks);
                 await verifyFunctionRepeatTicks(ctx, plan, targetTicks);

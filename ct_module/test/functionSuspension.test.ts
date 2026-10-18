@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import TaskContext from "../src/tasks/context";
 import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 import type { ImportContext } from "../src/importables/import/context";
@@ -69,6 +70,7 @@ vi.mock("../src/importables/functions/housing", async (original) => ({
         const h = live.house;
         h.click("read interval");
         h.intervalReads++;
+        h.afterIntervalRead?.();
         return h.repeat;
     },
     applyFunctionSettings: async (
@@ -269,6 +271,9 @@ class House {
     verified = false;
     rejectOff = false;
     unreadBody: "root" | "branch" | "mismatch" | null = null;
+    context = new TaskContext();
+    afterVerification?: () => void;
+    afterIntervalRead?: () => void;
 
     assertSafe(): void {
         if (this.repeat > 0)
@@ -280,6 +285,7 @@ class House {
 
     click(_label: string): void {
         this.assertSafe();
+        this.context.checkCancelled();
         if (++this.clicks === this.cut || this.cutLabel === _label)
             throw new Error("disconnect");
     }
@@ -337,12 +343,16 @@ async function importHouse(
     }
     const application = new ApplicationProgress(
         functionApplicationPlan(plan, session),
-        undefined
+        {
+            emit: () => {
+                if (house.verified) house.afterVerification?.();
+            },
+        }
     );
     // Match the session's pre-apply invalidation; active creation must not
     // republish an empty cache after this point.
     if (trusted) deleteImportableCache(session.housingUuid, "FUNCTION", "Autokick");
-    await applyImportableFunctionPlan({} as never, plan, session, application);
+    await applyImportableFunctionPlan(house.context, plan, session, application);
     await application.run("cache", async () => {
         if (trusted)
             await tryWriteImportableCache(
@@ -356,6 +366,40 @@ async function importHouse(
 }
 
 describe("automatic function execution suspension", () => {
+    test.each(["cancel", "force cancel"] as const)(
+        "%s after body verification leaves repetition off",
+        async (interruption) => {
+            const h = new House();
+            const click = vi.spyOn(h, "click");
+            h.afterVerification = () => {
+                click.mockClear();
+                if (interruption === "cancel") h.context.cancel();
+                else h.context.forceCancel();
+            };
+            await expect(importHouse(h)).rejects.toThrow("Task cancelled");
+            expect(h.verified).toBe(true);
+            expect(h.body).toEqual(h.target);
+            expect(h.repeat).toBe(0);
+            expect(h.writes).toEqual([0]);
+            expect(click).not.toHaveBeenCalled();
+        }
+    );
+
+    test("cancellation after successful enable read-back leaves repetition on", async () => {
+        const h = new House();
+        h.afterIntervalRead = () => {
+            if (h.repeat === 5 && h.verified) h.context.cancel();
+        };
+        await expect(importHouse(h)).resolves.toBeUndefined();
+        expect(h.context.isCancelled()).toBe(true);
+        expect(h.verified).toBe(true);
+        expect(h.body).toEqual(h.target);
+        expect(h.repeat).toBe(5);
+        expect(h.writes).toEqual([0, 5]);
+        expect(h.intervalReads).toBe(3);
+        expect(() => h.context.checkCancelled()).toThrow("Task cancelled");
+    });
+
     test.each(["Autokick", "new function", "Exit sibling", "variable ordering"])(
         "disconnect at every modelled GUI click, then fresh import converges (%s)",
         async (scenario) => {
