@@ -453,14 +453,16 @@ function getCycleFieldSlot(
     options: readonly string[]
 ): ItemSlot {
     if (slotName !== "Holder") return ctx.getMenuItemSlot(slotName);
-    const slot = ctx.tryGetMenuItemSlot("Holder");
-    if (slot !== null) {
-        const loreOptions = itemLore(slot.getItem()).map(normalizeSelectedOption);
-        if (
-            options.every((option) => loreOptions.indexOf(option) !== -1) &&
-            readSelectedOption(slot, options) !== null
-        )
-            return slot;
+    for (const label of ["Holder", "Variable Requirement"]) {
+        const slot = ctx.tryGetMenuItemSlot(label);
+        if (slot !== null) {
+            const loreOptions = itemLore(slot.getItem()).map(normalizeSelectedOption);
+            if (
+                options.every((option) => loreOptions.indexOf(option) !== -1) &&
+                readSelectedOption(slot, options) !== null
+            )
+                return slot;
+        }
     }
     // Hypixel sometimes renders the action's list icon here. Never cycle it,
     // even if named Holder with incomplete lore; reopening makes it render again.
