@@ -27,6 +27,7 @@ type DiffDetailsList = {
     projectChangesSinceBaseline?: readonly ActionListConflictDifference[];
     sourceActions?: readonly Action[];
     liveActions?: readonly Action[];
+    unknown?: true;
 };
 
 export type DiffDetailsReport = {
@@ -65,6 +66,7 @@ export function diffDetailsReportForImportConflicts(
             unknown++;
             return {
                 ...conflict,
+                unknown: true,
                 canonicalDifferences: [],
                 printerDiagnostics: [],
             };
@@ -132,6 +134,12 @@ function appendDiffDetailsLists(
 ): void {
     for (const list of lists) {
         lines.push("", `# ${list.type} "${list.identity}" · ${list.basePath}`);
+        if (list.unknown) {
+            lines.push(
+                "# Live action list was not fully read; canonical field differences are unavailable."
+            );
+            continue;
+        }
         for (const diagnostic of list.printerDiagnostics) {
             lines.push(
                 `# HTSL printer ${diagnostic.level} (${diagnostic.side}): ${diagnostic.message}`

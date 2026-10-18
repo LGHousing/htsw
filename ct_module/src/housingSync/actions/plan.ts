@@ -29,6 +29,7 @@ import type { ItemFieldContent } from "../items/fieldContent";
 import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
+import { createItemFieldObservationRecorder } from "../items/fieldObservations";
 
 export type ActionListApplyOptions = {
     reopenList?: () => Promise<void>;
@@ -67,6 +68,7 @@ export type ActionListPlanScan =
           options: ActionListPlanOptions;
           readOptions: ListReadOptions;
           phaseUnits: PhaseUnits;
+          liveItemContent?: ItemFieldContent;
       };
 
 export async function readActionListPlan(
@@ -115,14 +117,14 @@ export async function scanActionListForPlan(
                   canonicalizeItemName: options.sync.canonicalizeItemName,
                   itemCaptures: options.sync.itemRead.captures,
               };
-    const readOptions = {
+    const readOptions: ListReadOptions = {
         ...itemRead,
         progress,
         phaseUnits,
         listPath: options.listPath,
         events: options.sync.events,
     };
-    const scan = await scanActionList(
+    let scan = await scanActionList(
         ctx,
         {
             kind: "sync",
@@ -150,6 +152,16 @@ export async function scanActionListForPlan(
         }
         return { kind: "planned", plan };
     }
+    let liveItemContent: ItemFieldContent | undefined;
+    if (conflictVerdict === "conflict") {
+        // A summary mismatch is provisional. Re-read without trusted child
+        // snapshots so the content check below uses only live Housing values,
+        // including lists the project is about to remove.
+        const observations = createItemFieldObservationRecorder();
+        readOptions.itemFieldObservations = observations;
+        liveItemContent = (owner, prop) => observations.get(owner, prop)?.canonicalKey;
+        scan = await scanActionList(ctx, { kind: "full" }, readOptions);
+    }
     return {
         kind: "hydrate",
         desired,
@@ -157,6 +169,7 @@ export async function scanActionListForPlan(
         options,
         readOptions,
         phaseUnits,
+        liveItemContent,
     };
 }
 
@@ -164,7 +177,7 @@ export async function hydrateActionListForPlan(
     ctx: TaskContext,
     pending: Extract<ActionListPlanScan, { kind: "hydrate" }>
 ): Promise<ActionListPlan> {
-    const { desired, scan, options, readOptions, phaseUnits } = pending;
+    const { desired, scan, options, readOptions, phaseUnits, liveItemContent } = pending;
     await hydrateActionListScan(ctx, scan, readOptions);
     const observed = scan.slots;
     for (const entry of observed) {
@@ -178,7 +191,7 @@ export async function hydrateActionListForPlan(
     if (options.sync.trust.trustMode) {
         const liveActions = fullyHydratedActionsFromSlots(observed);
         if (liveActions !== null) {
-            recordKnownConflictEvidence(liveActions, desired, options);
+            recordKnownConflictEvidence(liveActions, desired, options, liveItemContent);
         }
     }
     if (!options.sync.trust.trustMode) {
@@ -335,7 +348,8 @@ function recordActionListConflict(
 function recordKnownConflictEvidence(
     liveActions: readonly Action[],
     desired: readonly Action[],
-    options: ActionListPlanOptions
+    options: ActionListPlanOptions,
+    liveItemContent?: ItemFieldContent
 ): void {
     const target = options.conflictTarget;
     if (
@@ -350,7 +364,48 @@ function recordKnownConflictEvidence(
         return;
     }
     const itemContent = options.sync.itemDiff?.fieldContent;
-    upsertConflictEvidence(liveActions, desired, options, itemContent, itemContent);
+    const trustPlan = options.sync.trust.importables.get(
+        importableKey(target.type, target.identity)
+    );
+    const contentHash = trustPlan?.lockListContentHashes?.[target.basePath];
+    if (liveItemContent !== undefined && contentHash !== undefined) {
+        const itemRead = { complete: true };
+        const verdict = actionListConflictVerdict(
+            { actions: liveActions },
+            {
+                contentHash,
+                scanHash: undefined,
+            },
+            desired,
+            "content",
+            (owner, prop) => {
+                const content = liveItemContent(owner, prop);
+                if (
+                    content === undefined &&
+                    typeof (owner as Record<string, unknown>)[prop] === "string"
+                ) {
+                    itemRead.complete = false;
+                }
+                return content;
+            },
+            itemContent
+        );
+        if (
+            itemRead.complete &&
+            (verdict === "unchanged" || verdict === "already-applied")
+        ) {
+            const index = options.sync.conflicts.indexOf(target);
+            if (index !== -1) options.sync.conflicts.splice(index, 1);
+            return;
+        }
+    }
+    upsertConflictEvidence(
+        liveActions,
+        desired,
+        options,
+        liveItemContent ?? itemContent,
+        itemContent
+    );
 }
 
 function upsertConflictEvidence(

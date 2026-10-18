@@ -2,11 +2,24 @@ import { describe, expect, it } from "vitest";
 import type { Action } from "htsw/types";
 
 import {
+    diffDetailsReportForImportConflicts,
     formatDiffDetailsFile,
     printerDiagnosticsForDiff,
 } from "../src/housingSync/actions/diffDetails";
 
 describe("diff details", () => {
+    it("distinguishes unavailable live evidence from equal canonical fields", () => {
+        const report = diffDetailsReportForImportConflicts(
+            [{ type: "FUNCTION", identity: "Debug", basePath: "actions" }],
+            []
+        );
+        const details = formatDiffDetailsFile(report, "/project/import.json", "now");
+
+        expect(report.unknown).toBe(1);
+        expect(details).toContain("Live action list was not fully read");
+        expect(details).not.toContain("No renderable canonical field differences");
+    });
+
     it("surfaces diagnostics from lossy HTSL printing", () => {
         const actions: Action[] = [{ type: "REMOVE_ITEM" }];
 

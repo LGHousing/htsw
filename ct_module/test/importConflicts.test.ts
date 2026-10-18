@@ -12,6 +12,8 @@ import { createItemFieldResolver } from "../src/importables/items/resolveItem";
 import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
 import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
 import type TaskContext from "../src/tasks/context";
+import type { ObservedActionSlot } from "../src/housingSync/observedActions";
+import type { ListReadOptions } from "../src/housingSync/context/actionReadContext";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -487,5 +489,103 @@ describe("readActionListPlan conflict detection", () => {
         expect(plan.phaseUnits.hydrating).toBe(0);
         expect(session.conflicts).toEqual([]);
     });
+    it.each([
+        ["baseline", true, 0],
+        ["source", true, 0],
+        ["outside edit", true, 1],
+        ["baseline", false, 1],
+        ["outside edit", false, 1],
+    ] as const)(
+        "checks full live content after a summary mismatch: %s, content baseline %s",
+        async (liveValue, includeContentHashes, expectedConflicts) => {
+            const baseline = [conditional({ ifActions: [message("baseline")] })];
+            const desired = [conditional({ ifActions: [message("source")] })];
+            const importable: ImportableFunction = {
+                type: "FUNCTION",
+                name: "Debug",
+                actions: desired,
+            };
+            const shallow = observedSlot(0, conditional());
+            shallow.hydrated = false;
+            shallow.childListSummaries = { ifActions: ["UNKNOWN"] };
+            const full = observedSlot(0, conditional());
+            full.hydrated = false;
+            mocks.scanActionList
+                .mockResolvedValueOnce({ slots: [shallow] })
+                .mockResolvedValueOnce({ slots: [full] });
+            mocks.hydrateActionListScan.mockImplementationOnce(async () => {
+                full.action = conditional({ ifActions: [message(liveValue)] });
+                full.hydrated = true;
+            });
+            const session = sessionWithLock(importable, baseline, true, "always", includeContentHashes);
 
+            await readActionListPlan(null as unknown as TaskContext, desired, {
+                sync: session,
+                baselineCurrent: baseline,
+                conflictTarget: {
+                    type: "FUNCTION",
+                    identity: "Debug",
+                    basePath: "actions",
+                },
+            });
+
+            expect(mocks.scanActionList.mock.calls[1][1]).toEqual({ kind: "full" });
+            const fullRead = mocks.scanActionList.mock.calls[1][2] as ListReadOptions;
+            expect(fullRead.itemFieldObservations).toBeDefined();
+            expect(session.conflicts).toHaveLength(expectedConflicts);
+            if (liveValue === "outside edit") {
+                expect(session.conflictEvidence[0].liveActions).toEqual([
+                    conditional({ ifActions: [message(liveValue)] }),
+                ]);
+            }
+        }
+    );
+
+    it("keeps a summary conflict when the full live list remains unreadable", async () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions: [playSound()],
+        };
+        const unreadable: ObservedActionSlot = {
+            ...observedSlot(0, message("baseline")),
+            action: null,
+            hydrated: false,
+        };
+        mocks.scanActionList.mockResolvedValue({ slots: [unreadable] });
+        const session = sessionWithLock(importable, [message("baseline")]);
+
+        await readActionListPlan(null as unknown as TaskContext, importable.actions!, {
+            sync: session,
+            conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        });
+
+        expect(session.conflicts).toHaveLength(1);
+        expect(session.conflictEvidence).toEqual([]);
+    });
+
+    it("does not clear a summary conflict using unread live item contents", async () => {
+        const actions = [{ type: "GIVE_ITEM", itemName: "stone" } as Action];
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Debug",
+            actions,
+        };
+        const live = observedSlot(0, actions[0]);
+        mocks.scanActionList.mockResolvedValue({ slots: [live] });
+        const session = sessionWithLock(importable, actions);
+        session.trust.importables.get("FUNCTION:Debug")!.lockListScanHashes = {
+            actions: "old scan",
+        };
+        // Change the desired structure so the first scan cannot classify it as
+        // already applied; neither side has captured item contents.
+        const desired = [...actions, message("new")];
+
+        await readActionListPlan(null as unknown as TaskContext, desired, {
+            sync: session,
+            conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+        });
+
+        expect(session.conflicts).toHaveLength(1);
+    });
 });
