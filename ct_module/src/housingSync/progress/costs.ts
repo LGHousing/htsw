@@ -319,6 +319,7 @@ function childListUnits(
         COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
     if (rowTypes !== undefined) {
         for (let i = 0; i < rowTypes.length; i++) {
+            if (rowTypes[i] === "UNKNOWN") continue;
             const itemFields = actionItemFieldCount(rowTypes[i] as Action["type"]);
             if (
                 itemFields > 0 ||

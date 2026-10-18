@@ -43,7 +43,13 @@ import type { ProgressHandler } from "../../progress/types";
 async function readConditionsListPage(
     ctx: TaskContext
 ): Promise<ObservedConditionSlot[]> {
-    return getVisiblePaginatedItemSlots(ctx)
+    const visible = getVisiblePaginatedItemSlots(ctx);
+    if (visible.length === 0) {
+        throw new Error(
+            "Incomplete condition list: no entries or empty-list placeholder."
+        );
+    }
+    return visible
         .filter((slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG))
         .map((slot, index) => {
             const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
