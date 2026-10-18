@@ -7,7 +7,9 @@ import type {
     ImportableMenu,
     ImportableRegion,
     ImportableCommand,
+    Importable,
 } from "htsw/types";
+import type { Tag } from "htsw/nbt";
 
 import {
     actionOperationApplyUnits,
@@ -44,6 +46,9 @@ import type {
 } from "../src/housingSync/actions/diff/types";
 import type { ObservedActionSlot } from "../src/housingSync/observedActions";
 import type { ImportableCacheEntry } from "../src/importCache/cache";
+import { listHashes } from "../src/importCache/hash";
+import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "../src/importables/items/projectItems";
 
 import { conditional, message, observedSlot } from "./utils";
 
@@ -468,6 +473,130 @@ describe("progress cost estimates", () => {
         ).toBeGreaterThan(
             estimateImportableUnits(menuWith("new"), cache(menuWith("old")), true) +
                 4 * COST.commandMenuWait
+        );
+    });
+
+    test.each([
+        { slots: 41, changedSlots: 2, branches: 5 },
+        { slots: 45, changedSlots: 8, branches: 2 },
+    ])(
+        "trusted $slots-slot menu prices changed item contents behind unchanged action names",
+        ({ slots, changedSlots, branches }) => {
+            const itemNbt = (marker: number): Tag => ({
+                type: "compound",
+                value: {
+                    id: { type: "string", value: "minecraft:stone" },
+                    tag: {
+                        type: "compound",
+                        value: { marker: { type: "int", value: marker } },
+                    },
+                },
+            });
+            const item = (name: string, marker: number): ImportableItem => ({
+                type: "ITEM",
+                name,
+                nbt: itemNbt(marker),
+            });
+            const branch = (itemName: string): Action =>
+                conditional({
+                    conditions: [{ type: "REQUIRE_ITEM", itemName }],
+                    ifActions: [{ type: "GIVE_ITEM", itemName }],
+                    elseActions: [{ type: "REMOVE_ITEM", itemName }],
+                });
+            const menu: ImportableMenu = {
+                type: "MENU",
+                name: "synthetic stock",
+                size: 6,
+                slots: Array.from({ length: slots }, (_, slot) => ({
+                    slot,
+                    nbt: itemNbt(0),
+                    actions: Array.from({ length: branches }, () =>
+                        branch(slot < changedSlots ? "changed" : "stable")
+                    ),
+                })),
+            };
+            const oldProject: Importable[] = [
+                menu,
+                item("changed", 1),
+                item("stable", 1),
+            ];
+            const oldDependencies = createItemDependencyIndex(
+                oldProject,
+                createProjectItemIndex(oldProject)
+            );
+            const cache = {
+                importable: menu,
+                lists: listHashes(menu),
+                itemDependencies: oldDependencies.snapshotOf(menu),
+            } as ImportableCacheEntry;
+            const currentProject: Importable[] = [
+                menu,
+                item("changed", 2),
+                item("stable", 1),
+            ];
+            const currentDependencies = createItemDependencyIndex(
+                currentProject,
+                createProjectItemIndex(currentProject)
+            );
+
+            // Each changed branch visits the parent, its three lists, and the
+            // three item editors. All three items must be selected, spawned and
+            // restored even though their reference names have not changed.
+            const roundTrip = COST.menuClickWait + COST.goBackWait;
+            const perBranch =
+                7 * roundTrip +
+                3 *
+                    (COST.menuClickWait +
+                        COST.itemSelect +
+                        COST.itemInject +
+                        COST.inventoryRestore);
+            const perSlot =
+                COST.commandMenuWait +
+                2 * COST.menuClickWait +
+                roundTrip +
+                branches * perBranch;
+            const expected =
+                2 * (COST.commandMenuWait + COST.menuClickWait) +
+                changedSlots * perSlot +
+                COST.cacheWrite;
+            expect(estimateImportableUnits(menu, cache, true)).toBeCloseTo(expected);
+
+            // Updating the dependency snapshot makes the same large menu cheap
+            // again; the other slots were never charged for their nested trees.
+            expect(
+                estimateImportableUnits(
+                    menu,
+                    {
+                        ...cache,
+                        itemDependencies: currentDependencies.snapshotOf(menu),
+                    },
+                    true
+                )
+            ).toBeCloseTo(COST.commandMenuWait + COST.menuClickWait + COST.cacheWrite);
+        }
+    );
+
+    test("cached menu item placement includes spawning and scratch-slot restoration", () => {
+        const menu: ImportableMenu = {
+            type: "MENU",
+            name: "new item",
+            slots: [{ slot: 4, nbt: null as never }],
+        };
+        const cache: ImportableCacheEntry = {
+            schemaVersion: 2,
+            writtenAt: "2026-01-01T00:00:00.000Z",
+            writer: "importer",
+            hash: "0x0",
+            importable: { ...menu, slots: [] },
+            lists: {},
+        };
+        expect(estimateImportableUnits(menu, cache, true)).toBeCloseTo(
+            2 * (COST.commandMenuWait + COST.menuClickWait) +
+                COST.menuClickWait +
+                COST.itemSelect +
+                COST.itemInject +
+                COST.inventoryRestore +
+                COST.cacheWrite
         );
     });
 

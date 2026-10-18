@@ -48,6 +48,8 @@ import { cacheEntryListHashes } from "../../importCache/status";
 import { trustedChildListPathsForImportable } from "../../importCache/trust";
 import { regionBoundsEqual } from "../../importables/regions/bounds";
 import { menuSlotNbtCompareKey } from "../../importables/menus/slotComparison";
+import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
+import type { ItemDiffContext } from "../actions/diff/itemDiffContext";
 
 /**
  * Fixed scale: 1 unit = 250 ms. Prices are mean operation ms / 250,
@@ -1316,11 +1318,34 @@ export function estimateImportableCost(
  */
 function estimateCachedMenuUnits(
     importable: ImportableMenu,
-    cached: ImportableMenu,
+    cacheEntry: ImportableCacheEntry,
     trustMode: boolean
 ): number {
+    const cached = cacheEntry.importable as ImportableMenu;
     const cachedBySlot = new Map<number, MenuSlot>();
     for (const slot of cached.slots) cachedBySlot.set(slot.slot, slot);
+    // An unchanged item name can now resolve to different NBT or click actions.
+    // Use the same invalidations as the importer, before deciding a slot's
+    // action list needs no work.
+    const invalidations = itemDependencyIndexFor(importable)?.invalidationsFor(
+        importable,
+        cacheEntry.itemDependencies
+    );
+    const itemDiff: ItemDiffContext | undefined =
+        invalidations === undefined
+            ? undefined
+            : {
+                  hasActionList: (actions) =>
+                      actions.some((action) =>
+                          invalidations.hasInvalidatedSubtree(action)
+                      ),
+                  actionsDiffer: (_observed, desired) =>
+                      invalidations.hasInvalidatedSubtree(desired),
+                  conditionsDiffer: (_observed, desired) =>
+                      getConditionScalarLoreFields(desired.type).some((field) =>
+                          invalidations.isFieldInvalidated(desired, field.prop)
+                      ),
+              };
 
     let reading = 0;
     let slotWork = 0;
@@ -1334,9 +1359,17 @@ function estimateCachedMenuUnits(
             cachedSlot === undefined ||
             menuSlotNbtCompareKey(cachedSlot.nbt) !== menuSlotNbtCompareKey(slot.nbt)
         ) {
-            slotWork += MENU_ITEM_WRITE_UNITS;
+            slotWork += MENU_ITEM_WRITE_UNITS + COST.itemInject + COST.inventoryRestore;
         }
-        const actionUnits = baselineAwareApplyUnits(slot.actions ?? [], baseline);
+        const desired = slot.actions ?? [];
+        const diff = diffActionList(
+            baselineActionListFromActions(baseline),
+            desired,
+            itemDiff
+        );
+        const actionUnits =
+            actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length) +
+            menuDiffItemWriteUnits(diff.operations);
         const visit =
             MENU_SLOT_VISIT_UNITS + pageTurnUnitsForListItemCount(baseline.length);
         if (!trustMode && cachedSlot !== undefined) {
@@ -1375,12 +1408,54 @@ function estimateCachedMenuUnits(
         }
     }
     return (
-        COST.commandMenuWait +
-        COST.menuClickWait +
-        reading +
-        applying +
-        COST.cacheWrite
+        COST.commandMenuWait + COST.menuClickWait + reading + applying + COST.cacheWrite
     );
+}
+
+/** Item writers select their item whenever their editor runs, even when only
+ * another field changed. The action diff prices editor/child-list visits;
+ * add any same-name item selection it could not see, plus the spawn and
+ * scratch-slot restoration. Menu estimates assume no reusable inventory copy.
+ */
+function menuDiffItemWriteUnits(
+    operations: readonly (ActionListOperation | ConditionListOperation)[]
+): number {
+    let total = 0;
+    for (const op of operations) {
+        if (op.kind !== "add" && op.kind !== "edit") continue;
+        if (op.kind === "edit" && op.noteOnly) continue;
+        const isAction = "childListDiffs" in op;
+        const fields = isAction
+            ? getActionScalarLoreFields(op.desired.type)
+            : getConditionScalarLoreFields(op.desired.type);
+        const current =
+            op.kind === "add"
+                ? undefined
+                : "baselineAction" in op
+                  ? op.baselineAction
+                  : op.baselineCondition;
+        for (const field of fields) {
+            if (field.kind !== "item") continue;
+            if (
+                typeof (op.desired as unknown as Record<string, unknown>)[field.prop] !==
+                "string"
+            )
+                continue;
+            if (
+                current !== undefined &&
+                !scalarFieldDiffers(current, op.desired, op.desired.type, field.prop)
+            ) {
+                total += COST.menuClickWait + COST.itemSelect;
+            }
+            total += COST.itemInject + COST.inventoryRestore;
+        }
+        if (isAction) {
+            for (const child of op.childListDiffs) {
+                total += menuDiffItemWriteUnits(child.diff.operations);
+            }
+        }
+    }
+    return total;
 }
 
 /**
@@ -1401,7 +1476,7 @@ export function estimateImportableUnits(
         return estimateImportableCost(importable);
     }
     if (importable.type === "MENU" && cacheEntry.importable.type === "MENU") {
-        return estimateCachedMenuUnits(importable, cacheEntry.importable, trustMode);
+        return estimateCachedMenuUnits(importable, cacheEntry, trustMode);
     }
     const getCached = (basePath: string) =>
         readCachedActionList(cacheEntry.importable, basePath);
