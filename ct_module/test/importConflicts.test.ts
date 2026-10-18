@@ -588,4 +588,50 @@ describe("readActionListPlan conflict detection", () => {
 
         expect(session.conflicts).toHaveLength(1);
     });
+
+    it.each(["baseline item", "outside item"])(
+        "preserves captured item contents through conflict snapshots: %s",
+        async (canonicalKey) => {
+            const item = { type: "GIVE_ITEM", itemName: "stone" } as Action;
+            const desired = [item, message("new")];
+            const importable: ImportableFunction = {
+                type: "FUNCTION", name: "Debug", actions: desired,
+            };
+            const live = observedSlot(0, { ...item });
+            mocks.scanActionList.mockResolvedValue({ slots: [live] });
+            mocks.hydrateActionListScan.mockImplementationOnce(async (...args: unknown[]) => {
+                const read = args[2] as ListReadOptions;
+                read.itemFieldObservations!.record(live.action as Action, "itemName", {
+                    snbt: "{}",
+                    canonicalKey,
+                });
+            });
+            const session = sessionWithLock(importable, [item]);
+            const trustPlan = session.trust.importables.get("FUNCTION:Debug")!;
+            trustPlan.lockListScanHashes = { actions: "old scan" };
+            trustPlan.lockListContentHashes = {
+                actions: actionListContentHashFromActions([item], () => "baseline item"),
+            };
+            session.itemDiff = {
+                hasActionList: () => false,
+                actionsDiffer: () => false,
+                conditionsDiffer: () => false,
+                fieldContent: (owner) => owner === item ? "baseline item" : undefined,
+            };
+
+            await readActionListPlan(null as unknown as TaskContext, desired, {
+                sync: session,
+                conflictTarget: { type: "FUNCTION", identity: "Debug", basePath: "actions" },
+            });
+
+            expect(session.conflicts).toHaveLength(canonicalKey === "baseline item" ? 0 : 1);
+            if (canonicalKey === "outside item") {
+                expect(session.conflictEvidence[0].canonicalDifferences).toContainEqual({
+                    path: "action 1 (give item) · itemName",
+                    live: "outside item",
+                    source: "baseline item",
+                });
+            }
+        }
+    );
 });

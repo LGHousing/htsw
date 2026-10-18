@@ -25,7 +25,10 @@ import type { ActionListPath } from "../actionPath";
 import { actionListConflictVerdict } from "./conflicts";
 import { importableKey } from "../../importables/identity";
 import { overwriteWarningsEnabled } from "../../importables/overwriteWarning";
-import type { ItemFieldContent } from "../items/fieldContent";
+import {
+    cloneActionsWithItemFieldContent,
+    type ItemFieldContent,
+} from "../items/fieldContent";
 import { fullyHydratedActionsFromSlots } from "./hydration/plan";
 import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
@@ -191,7 +194,22 @@ export async function hydrateActionListForPlan(
     if (options.sync.trust.trustMode) {
         const liveActions = fullyHydratedActionsFromSlots(observed);
         if (liveActions !== null) {
-            recordKnownConflictEvidence(liveActions, desired, options, liveItemContent);
+            if (liveItemContent === undefined) {
+                recordKnownConflictEvidence(liveActions, desired, options);
+            } else {
+                // Hydration records item observations on the original owners.
+                // Carry them onto the copied actions used as conflict evidence.
+                const snapshot = cloneActionsWithItemFieldContent(
+                    observed.map((entry) => entry.action as Action),
+                    liveItemContent
+                );
+                recordKnownConflictEvidence(
+                    snapshot.actions as Action[],
+                    desired,
+                    options,
+                    snapshot.itemContent
+                );
+            }
         }
     }
     if (!options.sync.trust.trustMode) {
