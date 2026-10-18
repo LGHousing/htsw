@@ -1,5 +1,7 @@
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
+import { itemLore } from "../../../utils/itemLore";
+import { removedFormatting } from "../../../utils/helpers";
 
 import type { ResolveItemField } from "../../items/itemReferences";
 import TaskContext from "../../../tasks/context";
@@ -13,6 +15,9 @@ import {
 import { timedWaitForMenu, waitForMenu } from "../../menus/menuWait";
 import {
     getPaginatedListSlotAtIndex,
+    getVisiblePaginatedItemSlots,
+    readPaginatedList,
+    isEmptyPaginatedPlaceholder,
     goToPaginatedListPage,
 } from "../../menus/paginatedList";
 import { COST } from "../../progress/costs";
@@ -22,6 +27,7 @@ import { appendConditionsToOpenConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import { getActionIo, writeOpenAction } from "../io";
 import { isTaskCancelled } from "../../../tasks/manager";
+import { withHolderRecovery } from "../../menus/holderRecovery";
 import {
     assertOneLevelActionTree,
     isChildAction,
@@ -47,8 +53,10 @@ export async function addAction(
     action: Action,
     resolveItem: ResolveItemField,
     apply: ActionApplyContext,
+    listLength: number,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
+    const listTitle = action.type === "CHANGE_VAR" ? ctx.getOpenContainerTitle() : null;
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
@@ -61,10 +69,20 @@ export async function addAction(
     }
 
     if (spec.write) {
-        await writeOpenAction(ctx, action, {
-            resolveItem,
-            apply,
-        });
+        await withHolderRecovery(
+            ctx,
+            action.type === "CHANGE_VAR"
+                ? {
+                      listTitle,
+                      index: listLength,
+                      listLength: listLength + 1,
+                      displayName,
+                      config: ACTION_LIST_CONFIG,
+                      editorTitle: "Action Settings",
+                  }
+                : undefined,
+            () => writeOpenAction(ctx, action, { resolveItem, apply })
+        );
         callbacks?.onActionAdded?.();
         await clickGoBack(ctx);
     }
@@ -83,19 +101,20 @@ export async function appendActionsToOpenActionList(
         shouldApplyList: () => true,
 
         async applyChildActions(_prop, args) {
-            await appendChildActionsToOpenActionList(
-                ctx,
-                args.desired,
-                resolveItem
-            );
+            await appendChildActionsToOpenActionList(ctx, args.desired, resolveItem);
         },
 
         async applyConditions(_prop, args) {
             await appendConditionsToOpenConditionList(ctx, args.desired, resolveItem);
         },
     };
+    const existing = await readPaginatedList(ctx, ACTION_LIST_CONFIG, async () =>
+        getVisiblePaginatedItemSlots(ctx)
+            .filter((slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG))
+            .map((_slot, index) => ({ index }))
+    );
     for (let i = 0; i < desired.length; i++) {
-        await addAction(ctx, desired[i], resolveItem, apply);
+        await addAction(ctx, desired[i], resolveItem, apply, existing.length + i);
     }
     if (desired.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -126,16 +145,12 @@ async function appendChildActionsToOpenActionList(
             );
         },
         async applyConditions(_prop, args) {
-            await appendConditionsToOpenConditionList(
-                ctx,
-                args.desired,
-                resolveItem
-            );
+            await appendConditionsToOpenConditionList(ctx, args.desired, resolveItem);
         },
     };
 
-    for (const action of children) {
-        await addAction(ctx, action, resolveItem, apply);
+    for (let i = 0; i < children.length; i++) {
+        await addAction(ctx, children[i], resolveItem, apply, i);
     }
     if (children.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -210,6 +225,14 @@ async function clickAddActionOption(
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     const slot = await getSlotPaginate(ctx, displayName);
+
+    if (
+        itemLore(slot.getItem()).some((line) =>
+            removedFormatting(line).includes("You are not allowed to use this action!")
+        )
+    ) {
+        throw new Error(`action not allowed for this player: ${displayName}`);
+    }
 
     if (isLimitExceeded(slot, "action")) {
         throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);

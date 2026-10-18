@@ -4,6 +4,20 @@ import type { HtswBridgeSnapshot } from "../src/bridge/types";
 describe("structured HTSW bridge", () => {
     beforeEach(() => vi.resetModules());
 
+    it("retains the final refined total after the progress session is cleared", async () => {
+        const bridge = await import("../src/bridge/status");
+        let plannedUnits: number | null = 10000;
+        bridge.connectBridge(() => undefined, () => ({ plannedUnits }));
+        bridge.beginBridgeRun("import", "queue");
+        bridge.beginBridgeSession("import");
+        bridge.finishBridgeSession("completed");
+        plannedUnits = null;
+        bridge.finishBridgeRun("completed", { completed: 1 });
+        expect(bridge.bridgeStatus().run?.plannedUnits).toBe(10000);
+        bridge.beginBridgeRun("import", "queue");
+        expect(bridge.bridgeStatus().run?.plannedUnits).toBeNull();
+    });
+
     it("retains a whole queue run through sessions and snapshots short-lived transitions", async () => {
         const bridge = await import("../src/bridge/status");
         let json = "";

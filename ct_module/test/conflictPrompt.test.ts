@@ -25,7 +25,7 @@ vi.mock("../src/gui/popovers/confirm", () => ({
 import {
     answerConflictPrompt,
     openAnswerableConflictPrompt,
-} from "../src/gui/popovers/conflictPrompt";
+} from "../src/runtime/conflictPrompt";
 
 const options = {
     chatMessage:
@@ -122,3 +122,7 @@ describe("answerable conflict prompt", () => {
         expect(mocks.popover).toBeNull();
     });
 });
+
+import { conflictPrompts } from "../src/runtime/conflictPrompt";
+import { renderConflictPrompt } from "../src/gui/popovers/conflictPrompt";
+conflictPrompts.observe(renderConflictPrompt);

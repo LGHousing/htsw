@@ -9,12 +9,12 @@ import {
     isParsePending,
     requestParse,
     type CachedParse,
-} from "../../parsing/parses";
+} from "../../../runtime/parsing/parses";
 import { javaType, runtimeString, type RuntimeString } from "../../lib/java";
 import { isFramePerfEnabled, recordPhase } from "../../lib/framePerf";
-import { getImportJsonPath, setImportJsonPath } from "../../state";
+import { getImportJsonPath, setImportJsonPath } from "../../../runtime/state/index";
 import { disposeLineModelCachesUnder } from "../../code-view/lineModel";
-import { BoundedLruMap } from "../../lib/boundedLruMap";
+import { BoundedLruMap } from "../../../utils/boundedLruMap";
 
 export type SourceDir = {
     kind: "dir";

@@ -104,10 +104,12 @@ export async function selectItemFromOpenInventory(
             desired: desiredSummary,
             before: summarizeItemStack(containerSlotStack(targetSlotInContainer)),
         });
-        sendCreativeInventoryAction(ctx, SCRATCH_INVENTORY_SLOT, desiredStack);
-        const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () =>
-            slotMatchesStack(targetSlotInContainer, desiredStack, match)
-        );
+        const landed = await timed("itemInject", COST.itemInject, async () => {
+            sendCreativeInventoryAction(ctx, SCRATCH_INVENTORY_SLOT, desiredStack);
+            return pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () =>
+                slotMatchesStack(targetSlotInContainer, desiredStack, match)
+            );
+        });
         if (!landed) {
             const itemName = removedFormatting(item.getName());
             const observed = summarizeItemStack(

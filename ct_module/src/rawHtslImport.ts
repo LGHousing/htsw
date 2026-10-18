@@ -7,7 +7,7 @@ import { createItemFieldResolver } from "./importables/items/resolveItem";
 import { TaskManager } from "./tasks/manager";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
-import { compactFileLabel } from "./gui/lib/pathDisplay";
+import { compactFileLabel } from "./project/pathDisplay";
 import { emitBridgeEvent, rejectBridgeRun } from "./bridge/status";
 import { blockingDiagnostics } from "./utils/helpers";
 

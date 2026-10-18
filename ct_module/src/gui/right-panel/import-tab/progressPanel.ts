@@ -49,13 +49,13 @@ import {
     parkedTaskFor,
     phaseFractions,
     type PhaseUnits,
-} from "./taskProgress";
+} from "../../../runtime/taskProgress";
 import {
     countTaskRowsByStatus,
     isTaskTotalEtaReady,
     type MenuSlotFocus,
 } from "../../../housingSync/progress/types";
-import { formatElapsedSeconds } from "./elapsed";
+import { formatElapsedSeconds } from "../../../runtime/elapsed";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;

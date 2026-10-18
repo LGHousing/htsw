@@ -23,12 +23,12 @@ vi.mock("../src/settings", () => ({
         state.enabled = enabled;
     },
 }));
-vi.mock("../src/gui/right-panel/import-tab/queue", () => ({
+vi.mock("../src/runtime/queue", () => ({
     getQueue: () => state.rows,
     getQueueRow: (key: string) => state.rows.find((row) => row.key === key) ?? null,
     isRestoredQueueRow: (key: string) => state.restored.has(key),
 }));
-vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
+vi.mock("../src/runtime/queueRunner", () => ({
     isQueueRunning: () => state.running,
     startQueue: (options?: { autoRun?: boolean }) => {
         state.starts.push(options);
@@ -40,8 +40,6 @@ vi.mock("../src/gui/right-panel/import-tab/queueRunner", () => ({
         return () => {};
     },
 }));
-vi.mock("../src/gui/badge", () => ({ registerBadge: () => {} }));
-vi.mock("../src/gui/toast", () => ({ dismissToast: () => {}, showToast: () => {} }));
 vi.mock("../src/tasks/activeTask", () => ({
     cancelActiveTask: () => {
         state.cancelled++;
@@ -79,7 +77,7 @@ describe("queue Auto-run safeguards", () => {
     });
 
     test("starts two seconds after the last queue change", async () => {
-        const { autoRunQueueChanged } = await import("../src/gui/autoRun");
+        const { autoRunQueueChanged } = await import("../src/runtime/autoRun");
 
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(1000);
@@ -93,7 +91,7 @@ describe("queue Auto-run safeguards", () => {
 
     test("does not start for restored rows", async () => {
         state.restored.add("k");
-        const { autoRunQueueChanged } = await import("../src/gui/autoRun");
+        const { autoRunQueueChanged } = await import("../src/runtime/autoRun");
 
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
@@ -103,7 +101,7 @@ describe("queue Auto-run safeguards", () => {
 
     test("parse-error hold clears only on a reparse", async () => {
         const { autoRunQueueChanged, autoRunRefresh, holdAutoRunUntilReparse } =
-            await import("../src/gui/autoRun");
+            await import("../src/runtime/autoRun");
 
         holdAutoRunUntilReparse();
         autoRunQueueChanged();
@@ -121,7 +119,7 @@ describe("queue Auto-run safeguards", () => {
 
     test("a reparse that changes running work cancels its session", async () => {
         const { autoRunQueueChanged, autoRunRefresh } =
-            await import("../src/gui/autoRun");
+            await import("../src/runtime/autoRun");
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
         state.rows[0].status = "running";
@@ -133,7 +131,7 @@ describe("queue Auto-run safeguards", () => {
 
     test("does not cancel for a changed importable outside the running session", async () => {
         const { autoRunQueueChanged, autoRunRefresh } =
-            await import("../src/gui/autoRun");
+            await import("../src/runtime/autoRun");
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
         state.rows[0].status = "running";
@@ -144,7 +142,7 @@ describe("queue Auto-run safeguards", () => {
     });
 
     test("debounces another run after the queue runner settles", async () => {
-        const { autoRunQueueChanged } = await import("../src/gui/autoRun");
+        const { autoRunQueueChanged } = await import("../src/runtime/autoRun");
         autoRunQueueChanged();
         await vi.advanceTimersByTimeAsync(2000);
         expect(state.starts).toHaveLength(1);
@@ -161,7 +159,7 @@ describe("queue Auto-run safeguards", () => {
         // Auto-track queues a whole project as one row, so the loop is judged
         // by the importables it detected, not by the queue row.
         state.rows[0].key = "project";
-        const { autoRunRefresh } = await import("../src/gui/autoRun");
+        const { autoRunRefresh } = await import("../src/runtime/autoRun");
         autoRunRefresh("reparse", 1, 1, ["k"]);
         await vi.advanceTimersByTimeAsync(2000);
         state.running = false;

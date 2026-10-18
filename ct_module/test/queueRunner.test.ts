@@ -16,7 +16,7 @@ import {
     type BulkFilter,
     type QueueOp,
     type QueueRow,
-} from "../src/gui/right-panel/import-tab/queue";
+} from "../src/runtime/queue";
 import {
     bulkFilterAllowed,
     expandBulkDefault,
@@ -27,16 +27,16 @@ import {
     runQueuedExportSession,
     type QueueRunnerDependencies,
     type QueueSessionResult,
-} from "../src/gui/right-panel/import-tab/queueRunner";
+} from "../src/runtime/queueRunner";
 import { exportHeldItem } from "../src/importables/items/export";
-import * as parses from "../src/gui/parsing/parses";
+import * as parses from "../src/runtime/parsing/parses";
 import { getTaskActivity } from "../src/tasks/activity";
 import type { runExportSession } from "../src/importables/export/session";
-import { createExportProgressSink } from "../src/gui/export/progressSink";
+import { createExportProgressSink } from "../src/runtime/exportProgress";
 import {
     clearTaskProgress,
     getTaskProgress,
-} from "../src/gui/right-panel/import-tab/taskProgress";
+} from "../src/runtime/taskProgress";
 
 const ctx = {
     checkCancelled: () => undefined,

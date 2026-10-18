@@ -50,48 +50,36 @@ import { regionBoundsEqual } from "../../importables/regions/bounds";
 import { menuSlotNbtCompareKey } from "../../importables/menus/slotComparison";
 
 /**
- * Per-op-kind costs in abstract units. Calibrated against
- * `guaranteedSleep1000 = 4` as the 1-second anchor, so 1 unit ≈ 250ms.
- *
- * Costs are tuned so each kind's *real* avg ms / unit lands close to a
- * common ~250 ms/u band — that way ETA projections stay accurate even
- * when an importable's op mix is skewed (e.g. lots of `itemSelect` vs
- * lots of `anvilInput`). When a per-op ms/u drifts noticeably from the
- * band, bump the cost to compensate. Latest sample basis (n=samples):
- *   commandMenuWait 2.3 (n=214 @ 585ms → ~254 ms/u)
- *   menuClickWait 1.7   (n=3414 @ 430ms → ~253 ms/u)
- *   pageTurnWait 1.7    (n=222 @ 427ms → ~251 ms/u)
- *   goBackWait 1.8      (n=3422 @ 451ms → ~251 ms/u)
- *   chatInput 3.0       (n=846 @ 751ms → ~250 ms/u)
- *   anvilInput 3.8      (n=11 @ 937ms → ~247 ms/u)
- *   itemSelect 1.6      (n=54 @ 388ms → ~243 ms/u)
- *   reorderStep 1.8     (n=145 @ 454ms → ~252 ms/u)
- *
- * Re-tune via `/htsw eta`, then divide each kind's `avgMs` by the
- * target band rate to get the new unit value.
+ * Fixed scale: 1 unit = 250 ms. Prices are mean operation ms / 250,
+ * rounded to tenths, from 95,746 live operations on headless engine a53c5578
+ * (2026-10-16). Unsampled kinds retain their previous prices.
+ * Completed-job replay with these prices and the engine's 9-unit importing
+ * allowance per executed task: FUNCTION -0.7%, MENU/COMMAND +0.2%.
+ * Injection and inventory restoration are charged only when performed.
  */
 export const COST = {
-    commandMenuWait: 2.3,
+    commandMenuWait: 2.1,
     commandMessageWait: 2,
 
-    menuClickWait: 1.7,
+    menuClickWait: 1.8,
     messageClickWait: 2,
-    pageTurnWait: 1.7,
-    goBackWait: 1.8,
+    pageTurnWait: 1.5,
+    goBackWait: 1.9,
 
-    chatInput: 3,
+    chatInput: 3.2,
     signInput: 3,
     anvilInput: 3.8,
-    itemSelect: 1.6,
+    itemSelect: 1.7,
 
-    reorderStep: 1.8,
+    reorderStep: 1.7,
     guaranteedSleep1000: 4,
 
     readVisiblePage: 0,
     scalarRead: 0,
     cacheWrite: 0.25,
     nbtCapture: 0.25,
-    itemInject: 1,
+    itemInject: 1.3,
+    inventoryRestore: 1.1,
 };
 
 /**
@@ -183,7 +171,7 @@ function fieldKindEditUnits(
         return COST.menuClickWait + COST.menuClickWait;
     }
     if (kind === "item") {
-        return COST.menuClickWait + COST.itemSelect + COST.itemInject;
+        return COST.menuClickWait + COST.itemSelect;
     }
     if (kind === "value") return COST.chatInput;
     if (kind === "actionList") {
@@ -780,7 +768,7 @@ function ownSetupUnits(importable: Importable): number {
             (importable.rightClickActions?.length ?? 0) > 0;
         // A codeless item is skipped, not spawned, so it has no setup work.
         return hasActions
-            ? COST.itemInject + COST.commandMenuWait + COST.menuClickWait
+            ? COST.commandMenuWait + COST.menuClickWait
             : 0;
     }
     if (importable.type === "MENU") return COST.commandMenuWait;
@@ -1125,12 +1113,10 @@ export function estimateImportableReadUnits(importable: Importable): number {
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) return COST.cacheWrite;
         return (
-            COST.itemInject +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListReadCost(left) +
             actionListReadCost(right) +
-            COST.guaranteedSleep1000 +
             COST.nbtCapture +
             COST.cacheWrite
         );
@@ -1244,15 +1230,10 @@ export function estimateImportableCost(
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            return (
-                COST.itemInject +
-                COST.guaranteedSleep1000 +
-                COST.cacheWrite
-            );
+            return COST.itemInject + COST.cacheWrite;
         }
         return (
             COST.itemInject +
-            COST.guaranteedSleep1000 +
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(
@@ -1269,7 +1250,6 @@ export function estimateImportableCost(
                 "rightClickActions",
                 trustedChildListPaths
             ) +
-            COST.guaranteedSleep1000 +
             COST.nbtCapture +
             COST.cacheWrite
         );
@@ -1414,7 +1394,7 @@ export function estimateImportableUnits(
     usesCachedInteractData: boolean = false
 ): number {
     if (importable.type === "ITEM" && usesCachedInteractData) {
-        return COST.itemInject + COST.guaranteedSleep1000 + COST.cacheWrite;
+        return COST.itemInject + COST.cacheWrite;
     }
     if (cacheEntry === null) {
         return estimateImportableCost(importable);

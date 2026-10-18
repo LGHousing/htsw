@@ -1,14 +1,13 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../state";
+import { getHousingUuid } from "../../../../runtime/state/index";
 import { showToast } from "../../../toast";
 import { listAllMenuNames } from "../../../../importables/menus/listMenus";
 import {
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
-    writePresence,
     type HouseImportable,
 } from "../../../../importCache/cache";
 
@@ -47,24 +46,3 @@ export function scanHouseMenus(): void {
         ChatLib.chat(`&c[htsw] Menu scan failed: ${String(err)}`);
     });
 }
-
-// Partial liveness: menus are keyed by title. Creation announces the title;
-// deletion ("Deleted the custom menu") carries no title, so we can't patch a
-// single entry — the next rescan reconciles it. Renames (Change Title) have no
-// captured confirmation, so a retitle also needs a rescan.
-// Read the event through a declared parameter only: on this Rhino build,
-// pulling a ClientChatReceivedEvent out of `arguments` (which is what a
-// `...args` rest parameter compiles to) throws
-// "InternalError: Invalid JavaScript value" and silently kills the handler.
-register("chat", (event) => {
-    // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
-    const msg = ChatLib.getChatMessage(event, false);
-    if (typeof msg !== "string") return;
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-
-    const created = msg.match(/^Created custom menu with the title (.+)!$/);
-    if (created !== null) {
-        writePresence(uuid, "MENU", created[1]);
-    }
-});

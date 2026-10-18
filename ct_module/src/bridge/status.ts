@@ -33,6 +33,7 @@ function newRun(operation: HtswOperation, scope: HtswRunStatus["scope"]): HtswRu
         finishedAt: null,
         currentImportable: null,
         progressFraction: null,
+        plannedUnits: null,
         elapsedMs: 0,
         etaSeconds: null,
         estimatedFinishAt: null,
@@ -169,6 +170,7 @@ export function beginBridgeSession(operation: HtswOperation): void {
     run.operation = operation;
     run.sessionId = `${run.runId}:s${++nextSession}`;
     conflictDetails = {};
+    run.plannedUnits = null;
     emitBridgeEvent("htsw_session", {
         scope: "session",
         phase: "started",
@@ -181,8 +183,10 @@ export function finishBridgeSession(
     data: Record<string, unknown> = {}
 ): void {
     if (run === null || run.finishedAt !== null || run.sessionId === null) return;
+    bridgeSnapshot();
     emitBridgeEvent("htsw_session", {
         scope: "session",
+        plannedUnits: run.plannedUnits,
         phase: "finished",
         status,
         ...data,

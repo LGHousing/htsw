@@ -13,7 +13,7 @@ import {
     isFreshnessCheckDue,
     settledChange,
     type Fingerprint,
-} from "../src/gui/parsing/freshness";
+} from "../src/runtime/parsing/freshness";
 
 function completeSweep(
     fingerprint: Fingerprint,

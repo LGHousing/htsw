@@ -8,7 +8,7 @@ import {
 } from "./exportArgs";
 import { printExportHelp } from "./exportHelp";
 import { captureOpenChest, exportCapturedChest } from "../importables/menus/exportChest";
-import { getHousingUuid } from "../gui/state";
+import { getHousingUuid } from "../runtime/state/index";
 import { queuedExportDestination } from "./exportDestination";
 import {
     addQueueRow,
@@ -16,14 +16,15 @@ import {
     makeImportableQueueRow,
     type QueueAddResult,
     type QueueRow,
-} from "../gui/right-panel/import-tab/queue";
-import { autoRunQueueChanged } from "../gui/autoRun";
-import { parseImportJsonCurrentBlocking } from "../gui/parsing/parses";
+} from "../runtime/queue";
+import { autoRunQueueChanged } from "../runtime/autoRun";
+import { parseImportJsonCurrentBlocking } from "../runtime/parsing/parses";
 import { importableIdentity } from "../importables/identity";
-import { pauseQueue } from "../gui/right-panel/import-tab/queueRunner";
+import { pauseQueue } from "../runtime/queueRunner";
 import { readProjectExportDestination } from "../importables/export/projectDestination";
 import { parentDirOf } from "../project/paths";
 import { emitBridgeEvent } from "../bridge/status";
+import { withCurrentHouse } from "./currentHouse";
 
 function rowAdded(result: QueueAddResult): boolean {
     return result.kind === "added" || result.kind === "alsoQueuedOtherDirection";
@@ -39,22 +40,25 @@ function queueExportRow(row: QueueRow, label: string): void {
     autoRunQueueChanged();
 }
 
-function exportTarget(explicitPath: string | undefined): {
-    house: string;
-    path: string;
-} | null {
-    const house = getHousingUuid();
-    if (house === null) {
-        ChatLib.chat("&c[htsw] Enter a Housing house first.");
-        return null;
-    }
-    return {
-        house,
-        path: queuedExportDestination(explicitPath, house).importJsonPath,
+export function commandExport(args: string[], house = getHousingUuid()): void {
+    // Without a known house, find it first and run the command again.
+    const exportTarget = (
+        explicitPath: string | undefined
+    ): { house: string; path: string } | null => {
+        if (house === null) {
+            withCurrentHouse(
+                (uuid) => commandExport(args, uuid),
+                (reason) =>
+                    ChatLib.chat(`&c[htsw] Couldn't find the current house: ${reason}`)
+            );
+            return null;
+        }
+        return {
+            house,
+            path: queuedExportDestination(explicitPath, house).importJsonPath,
+        };
     };
-}
 
-export function commandExport(args: string[]): void {
     if (args.length === 0) {
         printExportHelp();
         return;

@@ -27,7 +27,8 @@ vi.mock("../src/utils/mainThread", () => ({
     runOnMainThread: (callback: () => void) => callback(),
 }));
 
-vi.mock("../src/gui/lib/java", () => ({
+vi.mock("../src/utils/java", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../src/utils/java")>()),
     javaType: (name: string) => {
         if (name === "java.lang.Runnable") {
             return class {
@@ -54,11 +55,11 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 2,
 }));
 
-vi.mock("../src/gui/parsing/importablePaths", () => ({
+vi.mock("../src/runtime/parsing/importablePaths", () => ({
     allReferencedPaths: () => ["/project/import.json", "/project/actions.htsl"],
 }));
 
-vi.mock("../src/gui/parsing/parseSnapshot", () => ({
+vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
     saveSnapshot: () => ({
         hashMs: 0,
         buildMs: 3,
@@ -82,7 +83,7 @@ test("profiles the worker phases and main-thread callback delay", async () => {
         .mockReturnValueOnce(149)
         .mockReturnValueOnce(160);
     const { parseImportJsonOffThread } = await import(
-        "../src/gui/parsing/offThreadParse"
+        "../src/runtime/parsing/offThreadParse"
     );
     const completed = vi.fn();
 

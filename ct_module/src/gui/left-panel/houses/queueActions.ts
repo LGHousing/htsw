@@ -3,8 +3,8 @@
 import type { Importable } from "htsw/types";
 
 import type { HouseReadableType } from "../../../importables/export/readers";
-import { autoRunQueueChanged } from "../../autoRun";
-import { shortPath } from "../../lib/pathDisplay";
+import { autoRunQueueChanged } from "../../../runtime/autoRun";
+import { shortPath } from "../../../project/pathDisplay";
 import {
     addQueueRow,
     makeBulkQueueRow,
@@ -12,7 +12,7 @@ import {
     type BulkFilter,
     type QueueAddResult,
     type QueueRow,
-} from "../../right-panel/import-tab/queue";
+} from "../../../runtime/queue";
 import { showToast } from "../../toast";
 
 export type HouseQueueTarget = { identity: string; label?: string };

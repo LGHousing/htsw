@@ -1,4 +1,4 @@
-import { SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
+import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 import {
     emitBridgeEvent,
@@ -6,8 +6,8 @@ import {
     setBridgeConflictDetails,
 } from "../bridge/status";
 
-import { canonicalPath } from "../gui/parsing/parses";
-import { openAnswerableConflictPrompt } from "../gui/popovers/conflictPrompt";
+import { canonicalPath, parseImportJsonCurrent } from "../runtime/parsing/parses";
+import { openAnswerableConflictPrompt } from "../runtime/conflictPrompt";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { actionListsOfImportable } from "../importCache/actionLists";
 import {
@@ -33,14 +33,9 @@ import { importableIdentity, importableKey } from "../importables/identity";
 import { resolveModuleRelativePath } from "../project/paths";
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
-import { FileSystemFileLoader } from "../utils/fileLoaders";
-import {
-    blockingDiagnostics,
-    errorMessage,
-    stripSurroundingQuotes,
-} from "../utils/helpers";
+import { blockingDiagnostics, errorMessage, stripSurroundingQuotes } from "../utils/helpers";
 import { runHousingSyncTask } from "../housingSync/taskRunner";
-import { createDiffProgressSession } from "../gui/right-panel/import-tab/diffProgress";
+import { createDiffProgressSession } from "../runtime/diffProgress";
 import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
 import {
     appendGroupDiffReport,
@@ -265,26 +260,20 @@ export function commandDiff(args: string[]): void {
         return;
     }
 
-    let parsed: ImportablesParseResult;
-    try {
-        parsed = parseImportablesResult(
-            new SourceMap(new FileSystemFileLoader()),
-            manifest
-        );
-    } catch (error) {
-        diffFailure(errorMessage(error));
-        return;
-    }
-    const errorCount = blockingDiagnostics(parsed.diagnostics).length;
-    if (errorCount > 0) {
-        diffFailure(`manifest has ${errorCount} error${errorCount === 1 ? "" : "s"}`);
-        return;
-    }
-
-    const progress = createDiffProgressSession(parsed.value, manifest);
+    // Reserve the task before yielding so another command cannot start during parsing.
+    let progress: ReturnType<typeof createDiffProgressSession> | null = null;
     void runHousingSyncTask(
         "diff",
         async (ctx) => {
+            const entry = await parseImportJsonCurrent(manifest);
+            ctx.checkCancelled();
+            if (entry.parsed === null) throw new Error(entry.error ?? "parse failed");
+            const parsed = entry.parsed;
+            const errorCount = blockingDiagnostics(parsed.diagnostics).length;
+            if (errorCount > 0) {
+                throw new Error(`manifest has ${errorCount} error${errorCount === 1 ? "" : "s"}`);
+            }
+            progress = createDiffProgressSession(parsed.value, manifest);
             progress.start();
             const housingUuid = await getCurrentHousingUuid(ctx);
             const live = await readDiffImportables(
@@ -368,11 +357,11 @@ export function commandDiff(args: string[]): void {
         { diagnostic: "htsw_diff" }
     )
         .then((completed) => {
-            if (completed === undefined) progress.clear();
+            if (completed === undefined) progress?.clear();
         })
         .catch((error: unknown) => {
             const reason = errorMessage(error);
-            progress.fail(reason);
+            progress?.fail(reason);
             ChatLib.chat(`[htsw] Diff failed: ${reason}`);
         });
 }

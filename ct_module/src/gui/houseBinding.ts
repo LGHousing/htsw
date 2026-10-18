@@ -2,10 +2,10 @@
 
 import { Icons } from "./lib/icons.generated";
 import { type MenuAction } from "./lib/menu";
-import { shortPath } from "./lib/pathDisplay";
-import { canonicalPath, markParseStale, requestParse } from "./parsing/parses";
+import { shortPath } from "../project/pathDisplay";
+import { canonicalPath, markParseStale, requestParse } from "../runtime/parsing/parses";
 import { openConfirmPopover } from "./popovers/confirm";
-import { getHousingUuid, setExportImportJsonPath } from "./state";
+import { getHousingUuid, setExportImportJsonPath } from "../runtime/state/index";
 import { houseDisplayName } from "../importCache/aliases";
 import { recordHouseBinding } from "../importCache/houseBindings";
 import { setHouseUuidKey } from "../project/importJsonMutations";

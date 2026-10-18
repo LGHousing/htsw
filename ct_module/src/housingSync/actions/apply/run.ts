@@ -23,6 +23,7 @@ import { applyPlannedConditionList } from "../conditions/apply";
 import { ACTION_LIST_CONFIG } from "../listConfigs";
 import type { ActionListApplyOptions, ActionListPlan } from "../plan";
 import { getActionIo, writeOpenAction } from "../io";
+import { withHolderRecovery } from "../../menus/holderRecovery";
 import {
     addAction,
     actionWithNote,
@@ -286,17 +287,35 @@ export class ActionListApplyRun {
                     if (isDesired) desiredSnapshot.updated = true;
                 };
                 if (spec.write) {
+                    const listTitle =
+                        op.desired.type === "CHANGE_VAR"
+                            ? this.ctx.getOpenContainerTitle()
+                            : null;
                     actionSlot.click();
                     await timedWaitForMenu(this.ctx, "menuClickWait");
 
                     const apply = this.writerHooksFor(op, applyChildActionList);
 
                     this.markSnapshotUnsafe();
-                    await writeOpenAction(this.ctx, op.desired, {
-                        current: op.baselineAction,
-                        resolveItem: this.options.sync.resolveItem,
-                        apply,
-                    });
+                    await withHolderRecovery(
+                        this.ctx,
+                        op.desired.type === "CHANGE_VAR"
+                            ? {
+                                  listTitle,
+                                  index: currentIndex,
+                                  listLength: this.current.length,
+                                  displayName: spec.displayName,
+                                  config: ACTION_LIST_CONFIG,
+                                  editorTitle: "Action Settings",
+                              }
+                            : undefined,
+                        () =>
+                            writeOpenAction(this.ctx, op.desired, {
+                                current: op.baselineAction,
+                                resolveItem: this.options.sync.resolveItem,
+                                apply,
+                            })
+                    );
                     updateEditSnapshot(actionWithCurrentNote(), false);
                     this.markSnapshotSafe();
                     await clickGoBack(this.ctx);
@@ -370,6 +389,7 @@ export class ActionListApplyRun {
                     actionToImport,
                     this.options.sync.resolveItem,
                     apply,
+                    currentLength,
                     {
                         onMutationStarted: () => {
                             this.markSnapshotUnsafe();

@@ -3,7 +3,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     getMtimeMs: () => 1,
-    pathExists: () => true,
 }));
 
 vi.mock("../src/utils/fileLoaders", () => ({
@@ -34,16 +33,16 @@ vi.mock("../src/gui/code-view/htslParse", () => ({
     }),
 }));
 
-vi.mock("../src/gui/parsing/selectedParse", () => ({
+vi.mock("../src/runtime/parsing/selectedParse", () => ({
     getSelectedParsedResult: () => null,
 }));
 
-vi.mock("../src/gui/parsing/parses", () => ({
+vi.mock("../src/runtime/parsing/parses", () => ({
     getParseAt: () => null,
     onParseCacheEntryChanged: () => () => undefined,
 }));
 
-vi.mock("../src/gui/lib/pathDisplay", () => ({
+vi.mock("../src/project/pathDisplay", () => ({
     shortPath: (path: string) => path,
 }));
 

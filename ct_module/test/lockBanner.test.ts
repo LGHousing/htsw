@@ -14,7 +14,7 @@ const state = {
     busy: false,
 };
 
-vi.mock("../src/gui/state", () => ({
+vi.mock("../src/runtime/state/index", () => ({
     getHousingUuid: () => state.housingUuid,
 }));
 vi.mock("../src/gui/cache-status", () => ({
@@ -34,7 +34,8 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../src/utils/filesystem")>()),
     getMtimeMs: (path: string) => state.mtimes.get(path) ?? 0,
 }));
-vi.mock("../src/gui/parsing/parses", () => ({
+
+vi.mock("../src/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
 }));
 vi.mock("../src/gui/left-panel/projects/acceptHouseLock", () => ({
