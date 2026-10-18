@@ -187,72 +187,75 @@ test.each(["Holder", "Variable Requirement"])(
     }
 );
 
-for (const condition of [false, true]) {
-    test(`refreshes a malformed parent once before reopening the ${condition ? "condition" : "action"} editor`, async () => {
-        const editorTitle = condition ? "Settings" : "Action Settings";
-        const displayName = condition ? "Variable Requirement" : "Change Variable";
-        title = editorTitle;
-        listTitle = condition ? "Conditions" : "Actions: Proof";
-        name = "Head";
-        reopenList.mockImplementation(async () => {
-            expect(slot.click).not.toHaveBeenCalled();
-            showList(1);
-            name = displayName;
-        });
-        slot.click.mockImplementation(() => {
+for (const condition of [false, true])
+    for (const malformed of condition
+        ? ["Head", "Change Player's Group", "Change Variable"]
+        : ["Head", "Change Player's Group"]) {
+        test(`refreshes a ${malformed} parent before reopening the ${condition ? "condition" : "action"} editor`, async () => {
+            const editorTitle = condition ? "Settings" : "Action Settings";
+            const displayName = condition ? "Variable Requirement" : "Change Variable";
             title = editorTitle;
-        });
-        const write = vi
-            .fn()
-            .mockRejectedValueOnce(failure())
-            .mockResolvedValue(undefined);
-        await withHolderRecovery(
-            ctx as never,
-            {
-                ...entry,
-                listTitle,
-                editorTitle,
-                displayName,
-                config: condition
-                    ? { label: "condition", emptyPlaceholderName: "No Conditions!" }
-                    : entry.config,
-            },
-            write
-        );
-        expect(reopenList).toHaveBeenCalledTimes(1);
-        expect(slot.click).toHaveBeenCalledTimes(1);
-        expect(write).toHaveBeenCalledTimes(2);
-    });
-}
-
-test("refuses a parent that stays malformed after two refreshes without clicking it", async () => {
-    name = "Head";
-    await expect(
-        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
-    ).rejects.toThrow(
-        'held "Head" at index 25 (length 26); expected "Change Variable" after 2 parent list reopens.'
-    );
-    expect(reopenList).toHaveBeenCalledTimes(2);
-    expect(slot.click).not.toHaveBeenCalled();
-});
-
-test.each(["before", "after"])(
-    "refuses a changed list length %s refreshing",
-    async (when) => {
-        if (when === "before") length = 27;
-        else {
-            name = "Head";
+            listTitle = condition ? "Edit Conditions" : "Actions: Proof";
+            name = malformed;
             reopenList.mockImplementation(async () => {
-                length = 27;
-                name = entry.displayName;
+                expect(slot.click).not.toHaveBeenCalled();
                 showList(1);
+                name = displayName;
             });
-        }
+            slot.click.mockImplementation(() => {
+                title = editorTitle;
+            });
+            const write = vi
+                .fn()
+                .mockRejectedValueOnce(failure())
+                .mockResolvedValue(undefined);
+            await withHolderRecovery(
+                ctx as never,
+                {
+                    ...entry,
+                    listTitle,
+                    editorTitle,
+                    displayName,
+                    config: condition
+                        ? { label: "condition", emptyPlaceholderName: "No Conditions!" }
+                        : entry.config,
+                },
+                write
+            );
+            expect(reopenList).toHaveBeenCalledTimes(1);
+            expect(slot.click).toHaveBeenCalledTimes(1);
+            expect(write).toHaveBeenCalledTimes(2);
+        });
+    }
+
+test.each(["Head", "Change Player's Group"])(
+    "refuses a persistent %s parent after two refreshes without clicking it",
+    async (malformed) => {
+        name = malformed;
+        await expect(
+            withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+        ).rejects.toThrow(
+            `held "${malformed}" at index 25 (length 26); expected "Change Variable" after 2 parent list reopens.`
+        );
+        expect(reopenList).toHaveBeenCalledTimes(2);
+        expect(slot.click).not.toHaveBeenCalled();
+    }
+);
+
+test.each(["Head", "Change Player's Group"])(
+    "refuses a changed list length after refreshing %s",
+    async (malformed) => {
+        name = malformed;
+        reopenList.mockImplementation(async () => {
+            length = 27;
+            name = entry.displayName;
+            showList(1);
+        });
         await expect(
             withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
         ).rejects.toThrow("length changed: expected 26, found 27 (index 25)");
         expect(slot.click).not.toHaveBeenCalled();
-        expect(reopenList).toHaveBeenCalledTimes(when === "before" ? 0 : 1);
+        expect(reopenList).toHaveBeenCalledTimes(1);
     }
 );
 
@@ -276,6 +279,24 @@ test("refuses an unknown parent when no owning navigation was supplied", async (
             vi.fn().mockRejectedValue(failure())
         )
     ).rejects.toThrow('held "Head"');
+    expect(slot.click).not.toHaveBeenCalled();
+    expect(reopenList).not.toHaveBeenCalled();
+});
+
+test("does not refresh an arbitrary unknown parent name", async () => {
+    name = "Unrecognized item";
+    await expect(
+        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+    ).rejects.toThrow('held "Unrecognized item"');
+    expect(reopenList).not.toHaveBeenCalled();
+    expect(slot.click).not.toHaveBeenCalled();
+});
+
+test("refuses a changed list length before refreshing", async () => {
+    length = 27;
+    await expect(
+        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+    ).rejects.toThrow("length changed: expected 26, found 27 (index 25)");
     expect(slot.click).not.toHaveBeenCalled();
     expect(reopenList).not.toHaveBeenCalled();
 });
