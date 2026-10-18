@@ -119,7 +119,6 @@ export class ConditionListApplyRun {
             const conditionSlot = await getPaginatedListSlotAtIndex(
                 this.ctx,
                 currentIndex,
-                this.current.length,
                 CONDITION_LIST_CONFIG
             );
 
@@ -141,6 +140,7 @@ export class ConditionListApplyRun {
                 op.desired.type === "COMPARE_VAR"
                     ? {
                           listTitle,
+                          reopenList: this.options.reopenList,
                           index: currentIndex,
                           listLength: this.current.length,
                           displayName: getConditionIo(op.desired.type).displayName,
@@ -188,7 +188,7 @@ export class ConditionListApplyRun {
                 units: conditionOperationUnits(op, this.operationUnits),
             });
 
-            await deleteObservedCondition(this.ctx, index, this.current.length);
+            await deleteObservedCondition(this.ctx, index);
             this.current.splice(index, 1);
             this.completeOperation(op);
         }
@@ -208,7 +208,8 @@ export class ConditionListApplyRun {
                 this.ctx,
                 op.desired,
                 this.options.resolveItem,
-                this.current.length
+                this.current.length,
+                this.options.reopenList
             );
             this.appendCurrentEntry();
             this.completeOperation(op);

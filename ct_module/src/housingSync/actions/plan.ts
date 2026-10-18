@@ -31,6 +31,7 @@ import { actionListConflictDifferences } from "./conflictDetails";
 import { captureDiffInput, isDiffCaptureEnabled } from "./diff/diffCapture";
 
 export type ActionListApplyOptions = {
+    reopenList?: () => Promise<void>;
     sync: ActionSyncContext;
     listPath?: ActionListPath;
     progressScope?: ProgressScope;
@@ -304,9 +305,7 @@ function recordActionListConflict(
     );
     if (verdict === "conflict") {
         const liveActions =
-            "actions" in live
-                ? live.actions
-                : fullyHydratedActionsFromSlots(live.slots);
+            "actions" in live ? live.actions : fullyHydratedActionsFromSlots(live.slots);
         const canonicalDifferences =
             liveActions === null
                 ? null
@@ -351,13 +350,7 @@ function recordKnownConflictEvidence(
         return;
     }
     const itemContent = options.sync.itemDiff?.fieldContent;
-    upsertConflictEvidence(
-        liveActions,
-        desired,
-        options,
-        itemContent,
-        itemContent
-    );
+    upsertConflictEvidence(liveActions, desired, options, itemContent, itemContent);
 }
 
 function upsertConflictEvidence(

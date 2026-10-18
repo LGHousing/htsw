@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { parsePaginatedTitlePage } from "../src/housingSync/menus/paginatedList";
+import {
+    getPaginatedListSlotAtIndex,
+    parsePaginatedTitlePage,
+} from "../src/housingSync/menus/paginatedList";
 
 const config = {
     label: "action",
@@ -25,4 +28,24 @@ describe("parsePaginatedTitlePage", () => {
             'Malformed paginated action title: "(x/3) Actions: Loop"'
         );
     });
+});
+
+test("slot lookup checks actual entries and never returns an empty-list placeholder", async () => {
+    let name = "Change Variable";
+    const slot = { getSlotId: () => 10, getItem: () => ({ getName: () => name }) };
+    const ctx = {
+        getOpenContainerTitle: () => "Edit Actions",
+        tryGetItemSlot: () => null,
+        getAllItemSlots: () => [slot],
+    };
+    await expect(getPaginatedListSlotAtIndex(ctx as never, 0, config)).resolves.toBe(
+        slot
+    );
+    await expect(getPaginatedListSlotAtIndex(ctx as never, 1, config)).rejects.toThrow(
+        "page holds 1 entries"
+    );
+    name = config.emptyPlaceholderName;
+    await expect(getPaginatedListSlotAtIndex(ctx as never, 0, config)).rejects.toThrow(
+        "page holds 0 entries"
+    );
 });

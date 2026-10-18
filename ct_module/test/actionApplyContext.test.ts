@@ -52,19 +52,20 @@ describe("createActionApplyContext", () => {
 
         let receivedActionDiff: ChildActionListDiff | undefined;
         let receivedConditionDiff: ConditionListDiff | undefined;
-        const applyChildActions = async (
-            _ctx: TaskContext,
-            plan: PlannedChildActionList
-        ): Promise<void> => {
-            receivedActionDiff = plan.diff;
-        };
-        const applyConditions = async (
-            _ctx: TaskContext,
-            _observedCount: number,
-            diff: ConditionListDiff
-        ): Promise<void> => {
-            receivedConditionDiff = diff;
-        };
+        const applyChildActions = vi.fn(
+            async (_ctx: TaskContext, plan: PlannedChildActionList): Promise<void> => {
+                receivedActionDiff = plan.diff;
+            }
+        );
+        const applyConditions = vi.fn(
+            async (
+                _ctx: TaskContext,
+                _observedCount: number,
+                diff: ConditionListDiff
+            ): Promise<void> => {
+                receivedConditionDiff = diff;
+            }
+        );
         const apply = createActionApplyContext({
             ctx: null as never,
             actionPath: ActionPath.at(undefined, 0),
@@ -80,16 +81,30 @@ describe("createActionApplyContext", () => {
             applyConditions,
         });
 
+        const reopenList = vi.fn(async () => undefined);
         await apply.applyChildActions("ifActions", {
+            reopenList,
             desired: desired.ifActions,
             observed: observed.ifActions,
         });
         await apply.applyConditions("conditions", {
+            reopenList,
             desired: desired.conditions,
             observed: observed.conditions,
         });
 
         expect(receivedActionDiff).toBe(actionDiff.diff);
         expect(receivedConditionDiff).toBe(conditionDiff.diff);
+        expect(applyChildActions).toHaveBeenCalledWith(
+            null,
+            expect.anything(),
+            expect.objectContaining({ reopenList })
+        );
+        expect(applyConditions).toHaveBeenCalledWith(
+            null,
+            1,
+            conditionDiff.diff,
+            expect.objectContaining({ reopenList })
+        );
     });
 });

@@ -64,6 +64,7 @@ import {
     menuPlanIsNoOp,
     planImportableMenu,
     scanImportableMenu,
+    reconstructPartialMenu,
     type MenuImportPlan,
     type MenuRead,
 } from "../menus/import";
@@ -335,6 +336,7 @@ const IMPORTERS = {
         apply: applyImportableMenuPlan,
         isNoOp: menuPlanIsNoOp,
         applicationPlan: menuApplicationPlan,
+        reconstructPartial: reconstructPartialMenu,
     }),
     ITEM: defineImporter<"ITEM", ItemRead, ItemImportPlan>({
         type: "ITEM",

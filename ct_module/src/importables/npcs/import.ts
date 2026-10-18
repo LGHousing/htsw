@@ -214,7 +214,17 @@ export async function applyImportableNpcPlan(
                 "leftActions",
                 leftPlan,
                 session.actions,
-                (sync) => applyActionListPlan(ctx, leftPlan, { sync })
+                (sync) =>
+                    applyActionListPlan(ctx, leftPlan, {
+                        sync,
+                        reopenList: async () => {
+                            await openNpcLeftClickActions(
+                                ctx,
+                                plan.importable,
+                                session.npcLookup
+                            );
+                        },
+                    })
             );
         }
     }
@@ -228,7 +238,17 @@ export async function applyImportableNpcPlan(
             "rightActions",
             rightPlan,
             session.actions,
-            (sync) => applyActionListPlan(ctx, rightPlan, { sync })
+            (sync) =>
+                applyActionListPlan(ctx, rightPlan, {
+                    sync,
+                    reopenList: async () => {
+                        await openNpcRightClickActions(
+                            ctx,
+                            plan.importable,
+                            session.npcLookup
+                        );
+                    },
+                })
         );
     }
 }

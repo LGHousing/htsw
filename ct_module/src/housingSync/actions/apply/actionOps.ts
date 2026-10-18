@@ -54,6 +54,7 @@ export async function addAction(
     resolveItem: ResolveItemField,
     apply: ActionApplyContext,
     listLength: number,
+    reopenList: (() => Promise<void>) | undefined,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     const listTitle = action.type === "CHANGE_VAR" ? ctx.getOpenContainerTitle() : null;
@@ -74,6 +75,7 @@ export async function addAction(
             action.type === "CHANGE_VAR"
                 ? {
                       listTitle,
+                      reopenList,
                       index: listLength,
                       listLength: listLength + 1,
                       displayName,
@@ -93,7 +95,8 @@ export async function addAction(
 export async function appendActionsToOpenActionList(
     ctx: TaskContext,
     desired: Action[],
-    resolveItem: ResolveItemField
+    resolveItem: ResolveItemField,
+    reopenList?: () => Promise<void>
 ): Promise<void> {
     assertOneLevelActionTree(desired);
     const apply: ActionApplyContext = {
@@ -101,11 +104,21 @@ export async function appendActionsToOpenActionList(
         shouldApplyList: () => true,
 
         async applyChildActions(_prop, args) {
-            await appendChildActionsToOpenActionList(ctx, args.desired, resolveItem);
+            await appendChildActionsToOpenActionList(
+                ctx,
+                args.desired,
+                resolveItem,
+                args.reopenList
+            );
         },
 
         async applyConditions(_prop, args) {
-            await appendConditionsToOpenConditionList(ctx, args.desired, resolveItem);
+            await appendConditionsToOpenConditionList(
+                ctx,
+                args.desired,
+                resolveItem,
+                args.reopenList
+            );
         },
     };
     const existing = await readPaginatedList(ctx, ACTION_LIST_CONFIG, async () =>
@@ -114,7 +127,14 @@ export async function appendActionsToOpenActionList(
             .map((_slot, index) => ({ index }))
     );
     for (let i = 0; i < desired.length; i++) {
-        await addAction(ctx, desired[i], resolveItem, apply, existing.length + i);
+        await addAction(
+            ctx,
+            desired[i],
+            resolveItem,
+            apply,
+            existing.length + i,
+            reopenList
+        );
     }
     if (desired.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -124,7 +144,8 @@ export async function appendActionsToOpenActionList(
 async function appendChildActionsToOpenActionList(
     ctx: TaskContext,
     desired: Action[],
-    resolveItem: ResolveItemField
+    resolveItem: ResolveItemField,
+    reopenList?: () => Promise<void>
 ): Promise<void> {
     const children: ChildAction[] = [];
     for (const action of desired) {
@@ -145,12 +166,17 @@ async function appendChildActionsToOpenActionList(
             );
         },
         async applyConditions(_prop, args) {
-            await appendConditionsToOpenConditionList(ctx, args.desired, resolveItem);
+            await appendConditionsToOpenConditionList(
+                ctx,
+                args.desired,
+                resolveItem,
+                args.reopenList
+            );
         },
     };
 
     for (let i = 0; i < children.length; i++) {
-        await addAction(ctx, children[i], resolveItem, apply, i);
+        await addAction(ctx, children[i], resolveItem, apply, i, reopenList);
     }
     if (children.length > 0) {
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -160,13 +186,11 @@ async function appendChildActionsToOpenActionList(
 export async function deleteObservedAction(
     ctx: TaskContext,
     index: number,
-    listLength: number,
     callbacks?: MutationCallbacks
 ): Promise<void> {
     const slot = await getPaginatedListSlotAtIndex(
         ctx,
         index,
-        listLength,
         ACTION_LIST_CONFIG
     );
     callbacks?.onMutationStarted?.();
@@ -197,7 +221,6 @@ export async function moveActionToIndex(
         const currentSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            listLength,
             ACTION_LIST_CONFIG
         );
         callbacks?.onMutationStarted?.();
@@ -250,4 +273,3 @@ async function clickAddActionOption(
         );
     }
 }
-

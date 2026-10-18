@@ -63,6 +63,7 @@ describe("item-aware child-list writes", () => {
         });
 
         expect(apply.applyChildActions).toHaveBeenCalledWith("ifActions", {
+            reopenList: expect.any(Function) as () => Promise<void>,
             desired: action.ifActions,
             observed: action.ifActions,
         });
@@ -81,6 +82,7 @@ describe("item-aware child-list writes", () => {
         });
 
         expect(apply.applyChildActions).toHaveBeenCalledWith("actions", {
+            reopenList: expect.any(Function) as () => Promise<void>,
             desired: action.actions,
             observed: action.actions,
         });

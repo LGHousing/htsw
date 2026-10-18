@@ -102,7 +102,11 @@ export async function applyImportableEventPlan(
         openEventEditor(ctx, plan.importable.event)
     );
     await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
-        applyActionListPlan(ctx, actionsPlan, { sync })
+        applyActionListPlan(ctx, actionsPlan, {
+            sync,
+            reopenList: () =>
+                openEventEditor(ctx, plan.importable.event),
+        })
     );
 }
 

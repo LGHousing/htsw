@@ -102,6 +102,10 @@ export async function writeConditional(
         await waitForMenu(ctx);
 
         await options.apply.applyConditions("conditions", {
+            reopenList: async () => {
+                await clickGoBack(ctx);
+                await openSubmenu(ctx, getActionFieldLabel("CONDITIONAL", "conditions"));
+            },
             desired: action.conditions,
             observed: current?.conditions,
         });
@@ -123,6 +127,10 @@ export async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
         await options.apply.applyChildActions("ifActions", {
+            reopenList: async () => {
+                await clickGoBack(ctx);
+                await openSubmenu(ctx, getActionFieldLabel("CONDITIONAL", "ifActions"));
+            },
             desired: action.ifActions,
             observed: current?.ifActions,
         });
@@ -136,6 +144,10 @@ export async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
         await options.apply.applyChildActions("elseActions", {
+            reopenList: async () => {
+                await clickGoBack(ctx);
+                await openSubmenu(ctx, getActionFieldLabel("CONDITIONAL", "elseActions"));
+            },
             desired: action.elseActions,
             observed: current?.elseActions,
         });
@@ -570,6 +582,10 @@ export async function writeRandom(
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
     await options.apply.applyChildActions("actions", {
+        reopenList: async () => {
+            await clickGoBack(ctx);
+            await openSubmenu(ctx, getActionFieldLabel("RANDOM", "actions"));
+        },
         desired: action.actions,
         observed: current?.actions,
     });

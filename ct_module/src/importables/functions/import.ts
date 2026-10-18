@@ -183,6 +183,11 @@ export async function applyImportableFunctionPlan(
         await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
             applyActionListPlan(ctx, actionsPlan, {
                 sync,
+                reopenList: async () => {
+                    if ((await openFunctionEditor(ctx, plan.importable.name)) === "missing") {
+                        throw new Error(`Function "${plan.importable.name}" no longer exists.`);
+                    }
+                },
             })
         );
         await application.run("closeActions", () => clickGoBack(ctx));

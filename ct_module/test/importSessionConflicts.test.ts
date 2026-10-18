@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction, ImportableMenu } from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
     applyImportablePlan: vi.fn(async () => undefined),
@@ -611,4 +611,64 @@ describe("import conflict chat", () => {
                 '[htsw] Conflict: FUNCTION "Debug" · actions'
         );
     });
+});
+
+it("persists a menu cancellation snapshot as partial in both cache and lock", async () => {
+    vi.clearAllMocks();
+    const importable: ImportableMenu = {
+        type: "MENU",
+        name: "Partial",
+        size: 1,
+        slots: [
+            {
+                slot: 0,
+                nbt: { type: "compound", value: {} },
+                actions: [message("desired")],
+            },
+        ],
+    };
+    const partial: ImportableMenu = { ...importable, slots: [] };
+    mocks.scanImportable.mockResolvedValue({
+        kind: "MENU",
+        importable,
+        needsHydration: false,
+        plan: () => ({
+            kind: "MENU",
+            importable,
+            applicationPlan: cacheApplicationPlan,
+            applicationUnits: cacheApplicationPlan.totalUnits,
+            isNoOp: () => false,
+            apply: async () => {
+                throw createTaskCancelledError();
+            },
+            reconstructObserved: () => null,
+            reconstructPartial: () => partial,
+        }),
+    });
+    const ctx = {
+        sleep: async () => undefined,
+        displayMessage: vi.fn(),
+    } as unknown as TaskContext;
+    await expect(
+        runImportSession(ctx, {
+            importables: [importable],
+            trustMode: false,
+            housingUuid: "test-house",
+            sourcePath: "./project/import.json",
+            parsed: { value: [importable] } as never,
+            conflictHandling: { kind: "proceed" },
+        })
+    ).rejects.toMatchObject({ __taskCancelled: true });
+    expect(mocks.tryWriteImportableCache).toHaveBeenCalledWith(
+        ctx,
+        partial,
+        "importer",
+        "test-house",
+        expect.objectContaining({ partial: true })
+    );
+    expect(mocks.upsertHouseLockImportablesOffThread).toHaveBeenLastCalledWith(
+        "./project/import.json",
+        "test-house",
+        [expect.objectContaining({ importable: partial, partial: true })]
+    );
 });

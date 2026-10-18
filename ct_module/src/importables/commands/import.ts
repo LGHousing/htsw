@@ -146,7 +146,11 @@ export async function applyImportableCommandPlan(
             openExistingCommandActionsEditor(ctx, plan.importable.name)
         );
         await application.runActionList("actions", actionsPlan, session.actions, (sync) =>
-            applyActionListPlan(ctx, actionsPlan, { sync })
+            applyActionListPlan(ctx, actionsPlan, {
+                sync,
+                reopenList: () =>
+                    openExistingCommandActionsEditor(ctx, plan.importable.name),
+            })
         );
     }
 

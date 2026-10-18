@@ -30,6 +30,7 @@ function formatHouseLockError(error: unknown): string {
 }
 
 export type HouseLockEntry = {
+    partial?: true;
     type: Importable["type"];
     identity: string;
     hash: string;
@@ -100,6 +101,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
             type?: unknown;
             identity?: unknown;
             hash?: unknown;
+            partial?: unknown;
             listScanHashes?: unknown;
             listContentHashes?: unknown;
             itemDependencies?: unknown;
@@ -115,6 +117,7 @@ function parseHouseLock(raw: string | null): HouseLock | null {
             type: e.type as Importable["type"],
             identity: e.identity,
             hash: e.hash,
+            ...(e.partial === true ? { partial: true } : {}),
         };
         if (exposeListScanHashes) {
             const listScanHashes = parseStringRecord(e.listScanHashes);
@@ -306,12 +309,14 @@ function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
 }
 
 export type HouseLockImportableUpdate = {
+    partial?: true;
     importable: Importable;
     itemDependencies?: ItemDependencySnapshot;
     itemContent: ItemFieldContent | undefined;
 };
 
 type PreparedHouseLockImportableUpdate = {
+    partial?: true;
     type: Importable["type"];
     identity: string;
     hash: string;
@@ -403,6 +408,7 @@ function prepareHouseLockImportableUpdate(
         type: importable.type,
         identity,
         hash: memoizedImportableHash(importable),
+        ...(update.partial ? { partial: true } : {}),
         listScanHashes,
         listContentHashes,
         ...(update.itemDependencies !== undefined
@@ -426,6 +432,7 @@ function upsertPreparedHouseLockImportables(
             type: update.type,
             identity: update.identity,
             hash: update.hash,
+            ...(update.partial ? { partial: true } : {}),
             listScanHashes: update.listScanHashes,
             listContentHashes: update.listContentHashes,
             ...(update.itemDependencies !== undefined

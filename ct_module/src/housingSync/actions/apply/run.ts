@@ -66,7 +66,7 @@ export function actionListApplyResultFromError(
     return (error as ErrorWithActionListApplyResult).__htswActionListApplyResult ?? null;
 }
 
-function throwWithActionListApplyResult(
+export function throwWithActionListApplyResult(
     error: unknown,
     result: ActionListApplyResult
 ): never {
@@ -108,6 +108,7 @@ export class ActionListApplyRun {
     private completedOps = 0;
     private operationStartUnits = 0;
     private snapshotSafeForCache = true;
+    private mutationStarted = false;
 
     constructor(
         private readonly ctx: TaskContext,
@@ -183,6 +184,7 @@ export class ActionListApplyRun {
         );
         return {
             currentSnapshot: cloned.actions,
+            ...(this.mutationStarted ? { mutationStarted: true as const } : {}),
             ...(cloned.itemContent === undefined
                 ? {}
                 : { itemContent: cloned.itemContent }),
@@ -228,7 +230,7 @@ export class ActionListApplyRun {
 
             await this.beginOperation(op);
             await this.ctx.finishBeforeCancelling(async () => {
-                await deleteObservedAction(this.ctx, index, this.current.length, {
+                await deleteObservedAction(this.ctx, index, {
                     onMutationStarted: () => {
                         this.markSnapshotUnsafe();
                     },
@@ -251,7 +253,6 @@ export class ActionListApplyRun {
                 const actionSlot = await getPaginatedListSlotAtIndex(
                     this.ctx,
                     currentIndex,
-                    this.current.length,
                     ACTION_LIST_CONFIG
                 );
 
@@ -302,6 +303,7 @@ export class ActionListApplyRun {
                         op.desired.type === "CHANGE_VAR"
                             ? {
                                   listTitle,
+                                  reopenList: this.options.reopenList,
                                   index: currentIndex,
                                   listLength: this.current.length,
                                   displayName: spec.displayName,
@@ -390,6 +392,7 @@ export class ActionListApplyRun {
                     this.options.sync.resolveItem,
                     apply,
                     currentLength,
+                    this.options.reopenList,
                     {
                         onMutationStarted: () => {
                             this.markSnapshotUnsafe();
@@ -424,7 +427,6 @@ export class ActionListApplyRun {
                     const addedSlot = await getPaginatedListSlotAtIndex(
                         this.ctx,
                         op.toIndex,
-                        currentLength,
                         ACTION_LIST_CONFIG
                     );
                     const noteSnapshot = { updated: false };
@@ -537,6 +539,7 @@ export class ActionListApplyRun {
     }
 
     private markSnapshotUnsafe(): void {
+        this.mutationStarted = true;
         this.snapshotSafeForCache = false;
     }
 

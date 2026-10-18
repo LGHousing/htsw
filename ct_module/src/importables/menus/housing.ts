@@ -32,8 +32,7 @@ export async function openMenuEditor(
  */
 export async function openMenuElements(ctx: TaskContext): Promise<void> {
     const slot = ctx.tryGetItemSlot(
-        (s) =>
-            removedFormatting(s.getItem().getName()).indexOf("Edit Menu Elements") >= 0
+        (s) => removedFormatting(s.getItem().getName()).indexOf("Edit Menu Elements") >= 0
     );
     if (slot === null) {
         throw new Error(
@@ -51,10 +50,13 @@ export async function openMenuElements(ctx: TaskContext): Promise<void> {
  * each named "<N> Rows"; clicking the target beacon selects it and returns to
  * the settings screen. Caller must be on the settings screen; leaves it there.
  */
-export async function setMenuSize(ctx: TaskContext, rows: number): Promise<void> {
+export async function setMenuSize(
+    ctx: TaskContext,
+    rows: number,
+    onMutationStarted?: () => void
+): Promise<void> {
     const sizeButton = ctx.getItemSlot(
-        (s) =>
-            removedFormatting(s.getItem().getName()).indexOf("Change Menu Size") >= 0
+        (s) => removedFormatting(s.getItem().getName()).indexOf("Change Menu Size") >= 0
     );
     sizeButton.click(MouseButton.LEFT);
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -63,6 +65,7 @@ export async function setMenuSize(ctx: TaskContext, rows: number): Promise<void>
         const name = plainItemName(s.getItem().getName());
         return name === `${rows} Rows` || name === `${rows} Row`;
     });
+    onMutationStarted?.();
     target.click(MouseButton.LEFT);
     await timedWaitForMenu(ctx, "menuClickWait");
 }

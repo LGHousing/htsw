@@ -3,7 +3,13 @@ import { isTaskCancelled } from "../../tasks/manager";
 import { errorMessage, removedFormatting } from "../../utils/helpers";
 import { clickGoBack, HolderReadError } from "./menuUtils";
 import { timedWaitForMenu } from "./menuWait";
-import { getPaginatedListSlotAtIndex, type PaginatedListConfig } from "./paginatedList";
+import {
+    getPaginatedListSlotAtIndex,
+    getVisiblePaginatedItemSlots,
+    isEmptyPaginatedPlaceholder,
+    readPaginatedList,
+    type PaginatedListConfig,
+} from "./paginatedList";
 
 type HolderEditor = {
     listTitle: string | null;
@@ -12,6 +18,7 @@ type HolderEditor = {
     displayName: string;
     config: PaginatedListConfig;
     editorTitle: string;
+    reopenList?: () => Promise<void>;
 };
 
 const baseTitle = (title: string | null) => (title ?? "").replace(/^\(\d+\/\d+\)\s+/, "");
@@ -45,20 +52,49 @@ export async function withHolderRecovery(
             )
                 throw new Error("Holder editor or parent list is no longer known.");
             await clickGoBack(ctx);
-            if (baseTitle(ctx.getOpenContainerTitle()) !== baseTitle(entry.listTitle))
-                throw new Error("Holder recovery returned to a different list.");
-            const slot = await getPaginatedListSlotAtIndex(
-                ctx,
-                entry.index,
-                entry.listLength,
-                entry.config
-            );
-            if (
-                baseTitle(ctx.getOpenContainerTitle()) !== baseTitle(entry.listTitle) ||
-                removedFormatting(slot.getItem().getName()) !== entry.displayName
-            )
-                throw new Error("Holder recovery entry no longer matches.");
-            slot.click();
+            for (let refresh = 0; ; refresh++) {
+                if (baseTitle(ctx.getOpenContainerTitle()) !== baseTitle(entry.listTitle))
+                    throw new Error(
+                        `Holder recovery returned to "${ctx.getOpenContainerTitle() ?? "(closed)"}"; expected "${entry.listTitle}".`
+                    );
+                const entries = await readPaginatedList(ctx, entry.config, async () =>
+                    getVisiblePaginatedItemSlots(ctx)
+                        .filter(
+                            (slot) => !isEmptyPaginatedPlaceholder(slot, entry.config)
+                        )
+                        .map((_slot, index) => ({ index }))
+                );
+                if (entries.length !== entry.listLength) {
+                    throw new Error(
+                        `Holder recovery list "${ctx.getOpenContainerTitle() ?? "(closed)"}" length changed: expected ${entry.listLength}, found ${entries.length} (index ${entry.index}).`
+                    );
+                }
+                const slot = await getPaginatedListSlotAtIndex(
+                    ctx,
+                    entry.index,
+                    entry.config
+                );
+                const name = removedFormatting(slot.getItem().getName());
+                if (baseTitle(ctx.getOpenContainerTitle()) !== baseTitle(entry.listTitle))
+                    throw new Error(
+                        `Holder recovery reached "${ctx.getOpenContainerTitle() ?? "(closed)"}"; expected "${entry.listTitle}".`
+                    );
+                if (name === entry.displayName) {
+                    slot.click();
+                    break;
+                }
+                if (
+                    (name === "Head" || name.trim() === "") &&
+                    entry.reopenList !== undefined &&
+                    refresh < 2
+                ) {
+                    await entry.reopenList();
+                    continue;
+                }
+                throw new Error(
+                    `Holder recovery entry no longer matches: "${ctx.getOpenContainerTitle() ?? "(closed)"}" held "${name}" at index ${entry.index} (length ${entry.listLength}); expected "${entry.displayName}" after ${refresh} parent list reopens.`
+                );
+            }
             await timedWaitForMenu(ctx, "menuClickWait");
             if (ctx.getOpenContainerTitle() !== entry.editorTitle)
                 throw new Error("Holder recovery opened a different editor.");
