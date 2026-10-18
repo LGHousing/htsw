@@ -59,6 +59,7 @@ type Menu = {
     entries: (page: number) => ItemSlot[];
     fields?: () => Record<string, ItemSlot>;
     pages?: number;
+    unnumberedFirstPage?: boolean;
     missingNext?: () => boolean;
     onPrevious?: () => void;
 };
@@ -91,7 +92,7 @@ function menus(root: Menu) {
     ];
     const ctx = {
         getOpenContainerTitle: () =>
-            current.pages === undefined
+            current.pages === undefined || (page === 1 && current.unnumberedFirstPage)
                 ? current.title
                 : `(${page}/${current.pages}) ${current.title}`,
         getAllItemSlots: () => current.entries(page).slice((page - 1) * 21, page * 21),
@@ -198,9 +199,11 @@ describe("full conflict re-read completeness", () => {
         }
     );
 
-    it.each([1, 22])(
-        "keeps the conflict when the re-read drops a trailing HEAL after %i baseline entries",
-        async (count) => {
+    it.each([
+        [1, false], [22, false], [22, true],
+    ] as const)(
+        "keeps the conflict when the re-read drops a trailing HEAL after %i baseline entries (unnumbered first page: %s)",
+        async (count, unnumberedFirstPage) => {
             const baseline = [...Array<Action>(count - 1).fill(heal), kill];
             const live = [...baseline, heal];
             let rereading = false;
@@ -208,6 +211,7 @@ describe("full conflict re-read completeness", () => {
             const ui = menus({
                 title: "Actions: Proof",
                 pages: Math.ceil(live.length / 21),
+                unnumberedFirstPage,
                 entries: () => {
                     scans++;
                     return actionSlots(
@@ -225,13 +229,16 @@ describe("full conflict re-read completeness", () => {
         }
     );
 
-    it.each([1, 21, 35, 42])(
-        "clears a scan conflict after consistent complete reads of %i entries",
-        async (count) => {
+    it.each([
+        [1, false], [21, false], [35, false], [42, false], [35, true],
+    ] as const)(
+        "clears a scan conflict after consistent complete reads of %i entries (unnumbered first page: %s)",
+        async (count, unnumberedFirstPage) => {
             const baseline = [...Array<Action>(count - 1).fill(heal), kill];
             const ui = menus({
                 title: "Actions: Proof",
                 pages: Math.ceil(count / 21),
+                unnumberedFirstPage,
                 entries: () => actionSlots(baseline),
             });
             const sync = session(baseline);
