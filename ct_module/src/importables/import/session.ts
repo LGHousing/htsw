@@ -1038,6 +1038,7 @@ async function maybeWritePartialImportCache(
     const itemDependencies = verifiedSnapshotFor(plan.importable, verifiedContext);
     if (
         !(await tryWriteImportableCache(ctx, partial, "importer", housingUuid, {
+            ...(partial.type === "MENU" ? { partial: true as const } : {}),
             itemDependencies,
         }))
     ) {
@@ -1045,6 +1046,7 @@ async function maybeWritePartialImportCache(
     }
     setPendingHouseLockEntry(pendingHouseLockEntries, {
         importable: partial,
+        ...(partial.type === "MENU" ? { partial: true as const } : {}),
         itemDependencies,
         itemContent: itemContentForLock(
             partial,

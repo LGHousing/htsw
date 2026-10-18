@@ -1,4 +1,4 @@
-import type { Action } from "htsw/types";
+import type { Action, ImportableMenu } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
 import type { ItemFieldContent } from "../../items/fieldContent";
@@ -25,6 +25,10 @@ export type ApplyChildActionList = (
 ) => Promise<void>;
 
 export type ActionListApplyResult = {
+    /** True once application may have changed this list. */
+    readonly mutationStarted?: true;
+    /** Confirmed menu slots, collected across lists before a failure. */
+    readonly menuSnapshot?: ImportableMenu;
     readonly currentSnapshot: ReadonlyArray<Action | Observed | null>;
     readonly itemContent?: ItemFieldContent;
 };

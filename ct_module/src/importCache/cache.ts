@@ -155,6 +155,8 @@ export function getImportCachePresenceRevision(): number {
 // `readImportableCache` returns — presence-only records (no content) are not
 // returned by it, so every diff/trust/import consumer is unchanged.
 export type ImportableCacheEntry = {
+    /** Confirmed lists only; omitted menu slots may still exist in Housing. */
+    partial?: true;
     schemaVersion: number;
     version?: number;
     /** ISO 8601 instant the entry was last written. Informational only. */
@@ -217,6 +219,7 @@ export function cacheEntryHashesAreCurrent(entry: ImportableCacheEntry): boolean
 }
 
 export type ImportableCacheWriteOptions = {
+    partial?: true;
     itemDependencies?: ItemDependencySnapshot;
 };
 
@@ -243,7 +246,7 @@ type PresenceRecord = {
 function buildImportableCacheEntry(
     importable: Importable,
     writer: CacheWriter,
-    itemDependencies?: ItemDependencySnapshot
+    options: ImportableCacheWriteOptions
 ): ImportableCacheEntry {
     return {
         schemaVersion: CACHE_SCHEMA_VERSION,
@@ -255,7 +258,10 @@ function buildImportableCacheEntry(
         importable,
         hash: importableHash(importable),
         lists: listHashes(importable),
-        ...(itemDependencies !== undefined ? { itemDependencies } : {}),
+        ...(options.itemDependencies !== undefined
+            ? { itemDependencies: options.itemDependencies }
+            : {}),
+        ...(options.partial ? { partial: true } : {}),
     };
 }
 
@@ -269,10 +275,10 @@ function prepareImportableCacheWrite(
     housingUuid: string,
     importable: Importable,
     writer: CacheWriter,
-    itemDependencies?: ItemDependencySnapshot,
+    options: ImportableCacheWriteOptions,
     resolvedPath?: string
 ): PreparedImportableCacheWrite {
-    const entry = buildImportableCacheEntry(importable, writer, itemDependencies);
+    const entry = buildImportableCacheEntry(importable, writer, options);
     return {
         path:
             resolvedPath ??
@@ -317,7 +323,7 @@ export function writeImportableCache(
         housingUuid,
         importable,
         writer,
-        options.itemDependencies
+        options
     );
     return commitImportableCacheWrite(ctx, housingUuid, prepared);
 }
@@ -423,6 +429,7 @@ function validVerifiedCacheEntry(
         value.schemaVersion !== CACHE_SCHEMA_VERSION ||
         value.version !== CACHE_ENTRY_VERSION ||
         value.verified !== true ||
+        (value.partial !== undefined && value.partial !== true) ||
         typeof value.name !== "string" ||
         value.name.length === 0 ||
         typeof value.writtenAt !== "string" ||
@@ -502,7 +509,7 @@ function writeImportableCacheOffThread(
                                 housingUuid,
                                 importable,
                                 writer,
-                                options.itemDependencies,
+                                options,
                                 path
                             );
                         } catch (prepareError) {

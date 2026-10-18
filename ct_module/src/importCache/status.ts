@@ -82,7 +82,8 @@ export function buildCacheStatusRowFromEntry(
     const state =
         entry === null
             ? "unknown"
-            : cacheEntryHash(entry) !== hash ||
+            : entry.partial === true ||
+                cacheEntryHash(entry) !== hash ||
                 (dependencySnapshot !== undefined &&
                     !sameItemDependencySnapshot(
                         entry.itemDependencies,

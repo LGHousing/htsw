@@ -667,7 +667,7 @@ describe("menu slot trust", () => {
         ]);
 
         expect(trustedChildListPathsForImportable(desired, listHashes(cached))).toEqual(
-            new Set(["slot#4.actions"])
+            new Set(["slot#0.actions", "slot#4.actions"])
         );
         expect(readCachedActionList(cached, "slot#5.actions")).toEqual([chat("sell")]);
     });

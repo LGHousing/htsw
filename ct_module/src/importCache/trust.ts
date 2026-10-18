@@ -127,7 +127,11 @@ export function buildTrustPlan(
             sourceHash = memoizedImportableHash(importable);
             // cacheEntryHash recomputes legacy entries whose normalization
             // version predates the hashes stored in current cache entries.
-            wholeImportableTrusted = dependenciesMatch && entryHash === sourceHash;
+            wholeImportableTrusted =
+                entry.partial !== true &&
+                lockEntry?.partial !== true &&
+                dependenciesMatch &&
+                entryHash === sourceHash;
 
             if (!wholeImportableTrusted) {
                 const cachedLists = cacheEntryListHashes(entry);
@@ -189,6 +193,7 @@ function lockEntryForImportable(
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) {
         return {
             hash: "",
+            partial: undefined,
             listScanHashes: undefined,
             listContentHashes: undefined,
             itemDependencies: undefined,

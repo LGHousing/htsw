@@ -53,12 +53,10 @@ export function actionListsOfImportable(importable: Importable): ImportableActio
             break;
         case "MENU":
             for (const slot of importable.slots) {
-                if (slot.actions !== undefined && slot.actions.length > 0) {
-                    lists.push({
-                        basePath: menuSlotActionsPath(slot.slot),
-                        actions: slot.actions,
-                    });
-                }
+                lists.push({
+                    basePath: menuSlotActionsPath(slot.slot),
+                    actions: slot.actions ?? [],
+                });
             }
             break;
     }

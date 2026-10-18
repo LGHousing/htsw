@@ -235,6 +235,7 @@ describe("ActionListApplyResult", () => {
         expect(thrown).toBeInstanceOf(Error);
         expect(actionListApplyResultFromError(thrown)).toEqual({
             currentSnapshot: [newAction],
+            mutationStarted: true,
         });
     });
 
