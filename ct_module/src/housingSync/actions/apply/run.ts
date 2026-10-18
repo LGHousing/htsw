@@ -66,7 +66,7 @@ export function actionListApplyResultFromError(
     return (error as ErrorWithActionListApplyResult).__htswActionListApplyResult ?? null;
 }
 
-function throwWithActionListApplyResult(
+export function throwWithActionListApplyResult(
     error: unknown,
     result: ActionListApplyResult
 ): never {
@@ -108,6 +108,7 @@ export class ActionListApplyRun {
     private completedOps = 0;
     private operationStartUnits = 0;
     private snapshotSafeForCache = true;
+    private mutationStarted = false;
 
     constructor(
         private readonly ctx: TaskContext,
@@ -183,6 +184,7 @@ export class ActionListApplyRun {
         );
         return {
             currentSnapshot: cloned.actions,
+            ...(this.mutationStarted ? { mutationStarted: true as const } : {}),
             ...(cloned.itemContent === undefined
                 ? {}
                 : { itemContent: cloned.itemContent }),
@@ -537,6 +539,7 @@ export class ActionListApplyRun {
     }
 
     private markSnapshotUnsafe(): void {
+        this.mutationStarted = true;
         this.snapshotSafeForCache = false;
     }
 

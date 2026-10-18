@@ -48,8 +48,17 @@ export function houseLockCurrentEntryFor(
     importable: Importable,
     itemDependencies?: ItemDependencyIndex
 ): HouseLockCurrentEntry | null {
-    const entry = houseLockEntryFor(lock, importable.type, importableIdentity(importable));
-    if (entry === null || entry.hash !== memoizedImportableHash(importable)) return null;
+    const entry = houseLockEntryFor(
+        lock,
+        importable.type,
+        importableIdentity(importable)
+    );
+    if (
+        entry === null ||
+        entry.partial === true ||
+        entry.hash !== memoizedImportableHash(importable)
+    )
+        return null;
     const dependencyIndex = itemDependencies ?? itemDependencyIndexFor(importable);
     const dependencySnapshot = dependencyIndex?.snapshotOf(importable);
     const dependenciesMatch =

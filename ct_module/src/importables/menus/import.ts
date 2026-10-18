@@ -1,3 +1,4 @@
+import { nbt } from "htsw";
 import type { Action, ImportableMenu } from "htsw/types";
 
 import {
@@ -5,9 +6,18 @@ import {
     diffActionList,
 } from "../../housingSync/actions/diff";
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
-import { applyActionListPlan } from "../../housingSync/actions/apply";
+import {
+    applyActionListPlan,
+    actionListApplyResultFromError,
+    type ActionListApplyResult,
+} from "../../housingSync/actions/apply";
 import type { ActionListPlan } from "../../housingSync/actions/plan";
-import { fullyHydratedActionsFromSlots } from "../../housingSync/actions/hydration/plan";
+import { throwWithActionListApplyResult } from "../../housingSync/actions/apply/run";
+import type { ItemFieldContent } from "../../housingSync/items/fieldContent";
+import {
+    actionsFullyHydrated,
+    fullyHydratedActionsFromSlots,
+} from "../../housingSync/actions/hydration/plan";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import {
     actionListPlanFromRead,
@@ -128,6 +138,8 @@ export type MenuImportPlan = {
     importable: ImportableMenu;
     trustPlan?: ImportableTrustPlan;
     exists: boolean;
+    /** Undefined actions mean unread, never a confirmed empty list. */
+    baseline: ImportableMenu | null;
     diff: MenuDiff;
     applicationPlan: ApplicationPlan;
 };
@@ -305,7 +317,12 @@ export function planImportableMenu(
         return {
             slot: slot.slot,
             item: getItemFromSnbt(slot.snbt),
-            actions: actionBaseline.actions,
+            // Keep observed owners so their captured item contents remain available
+            // when a later failure writes this baseline to the lock.
+            actions:
+                actionPlan !== null && actionBaseline.actionsKnown
+                    ? actionPlan.observed.map((entry) => entry.action as Action)
+                    : actionBaseline.actions,
             actionsKnown: actionBaseline.actionsKnown,
         };
     });
@@ -331,6 +348,24 @@ export function planImportableMenu(
         importable: read.importable,
         trustPlan: read.trustPlan,
         exists: read.grid !== null,
+        baseline:
+            read.grid === null
+                ? null
+                : {
+                      type: "MENU" as const,
+                      name: read.importable.name,
+                      size: read.grid.size,
+                      slots: read.grid.slots.map((slot, index) => ({
+                          slot: slot.slot,
+                          nbt: nbt.parseSnbtText(slot.snbt),
+                          actions:
+                              baseline[index].actionsKnown &&
+                              (actionReadBySlot.has(slot.slot) ||
+                                  cachedBySlot.has(slot.slot))
+                                  ? baseline[index].actions
+                                  : undefined,
+                      })),
+                  },
         diff,
     } as const;
     return {
@@ -434,8 +469,71 @@ export async function applyImportableMenuPlan(
     session: ImportContext,
     application: ApplicationProgress
 ): Promise<void> {
+    const state: MenuPartialState = {
+        snapshot:
+            plan.baseline === null
+                ? null
+                : {
+                      ...plan.baseline,
+                      slots: plan.baseline.slots.map((slot) => ({ ...slot })),
+                  },
+        itemContents: [],
+    };
+    try {
+        await applyMenu(ctx, plan, session, application, state);
+    } catch (error) {
+        const snapshot = state.snapshot;
+        throwWithActionListApplyResult(error, {
+            currentSnapshot: [],
+            ...(snapshot === null
+                ? {}
+                : {
+                      menuSnapshot: {
+                          ...snapshot,
+                          slots: snapshot.slots.filter(
+                              (slot) => slot.actions !== undefined
+                          ),
+                      },
+                  }),
+            itemContent: (owner, property) => {
+                for (const content of state.itemContents) {
+                    const value = content(owner, property);
+                    if (value !== undefined) return value;
+                }
+                return session.actions.itemDiff?.fieldContent?.(owner, property);
+            },
+        });
+    }
+}
+
+type MenuPartialState = {
+    snapshot: ImportableMenu | null;
+    itemContents: ItemFieldContent[];
+};
+
+export function reconstructPartialMenu(
+    _plan: MenuImportPlan,
+    result: ActionListApplyResult | null
+): ImportableMenu | null {
+    return result?.menuSnapshot ?? null;
+}
+
+async function applyMenu(
+    ctx: TaskContext,
+    plan: MenuImportPlan,
+    session: ImportContext,
+    application: ApplicationProgress,
+    state: MenuPartialState
+): Promise<void> {
     const { importable, diff } = plan;
     if (plan.exists && diff.setSize === null && diff.ops.length === 0) return;
+    const forgetSlot = (slot: number): void => {
+        if (state.snapshot !== null) {
+            state.snapshot.slots = state.snapshot.slots.filter(
+                (entry) => entry.slot !== slot
+            );
+        }
+    };
 
     const events = session.actions.events;
     const exists =
@@ -461,8 +559,16 @@ export async function applyImportableMenuPlan(
                 menuCreated(importable.name)
             );
             noteMenuCreated(importable.name);
+            state.snapshot = { type: "MENU", name: importable.name, slots: [] };
         } else {
-            await openMenuEditor(ctx, importable.name);
+            if ((await openMenuEditor(ctx, importable.name)) === "missing") {
+                state.snapshot = null;
+                throw new Error(
+                    `Menu ${importable.name} disappeared before application.`
+                );
+            }
+            // A shell created earlier in this session has no action lists yet.
+            state.snapshot ??= { type: "MENU", name: importable.name, slots: [] };
         }
     });
     workDone++;
@@ -475,7 +581,7 @@ export async function applyImportableMenuPlan(
         for (const op of clearOps) {
             startSlot(op.slot, null);
             await application.run(clearStepKey(op.slot), () =>
-                clearMenuSlot(ctx, op.slot)
+                clearMenuSlot(ctx, op.slot, () => forgetSlot(op.slot))
             );
             workDone++;
         }
@@ -488,7 +594,16 @@ export async function applyImportableMenuPlan(
     }
     const desiredSize = diff.setSize;
     if (desiredSize !== null) {
-        await application.run("resize", () => setMenuSize(ctx, desiredSize));
+        await application.run("resize", async () => {
+            await setMenuSize(ctx, desiredSize, () => {
+                if (state.snapshot === null) return;
+                state.snapshot.size = undefined;
+                state.snapshot.slots = state.snapshot.slots.filter(
+                    (slot) => slot.slot < desiredSize * 9
+                );
+            });
+            if (state.snapshot !== null) state.snapshot.size = desiredSize;
+        });
         workDone++;
     }
     if (remainingOps.length === 0) return;
@@ -503,7 +618,7 @@ export async function applyImportableMenuPlan(
         if (op.clear) {
             startSlot(op.slot, null);
             await application.run(clearStepKey(op.slot), () =>
-                clearMenuSlot(ctx, op.slot)
+                clearMenuSlot(ctx, op.slot, () => forgetSlot(op.slot))
             );
             workDone++;
         } else if (op.setItem !== undefined) {
@@ -512,7 +627,27 @@ export async function applyImportableMenuPlan(
             await application.run(itemStepKey(op.slot), async () => {
                 menuGridClick(op.slot, "RIGHT");
                 await timedWaitForMenu(ctx, "menuClickWait");
-                await selectItemFromOpenInventory(ctx, item, `menu slot ${op.slot}`);
+                const previous = state.snapshot?.slots.find(
+                    (slot) => slot.slot === op.slot
+                );
+                await selectItemFromOpenInventory(
+                    ctx,
+                    item,
+                    `menu slot ${op.slot}`,
+                    undefined,
+                    () => forgetSlot(op.slot)
+                );
+                const desired = importable.slots.find((slot) => slot.slot === op.slot);
+                if (desired === undefined) {
+                    throw new Error(
+                        `Menu ${importable.name} has no source item for slot ${op.slot}.`
+                    );
+                }
+                state.snapshot?.slots.push({
+                    slot: op.slot,
+                    nbt: desired.nbt,
+                    actions: previous === undefined ? [] : previous.actions,
+                });
             });
             workDone++;
         }
@@ -531,14 +666,37 @@ export async function applyImportableMenuPlan(
             actionsPlan,
             session.actions,
             async (sync) => {
-                await applyActionListPlan(ctx, actionsPlan, {
-                    sync,
-                    reopenList: async () => {
-                        await clickGoBack(ctx);
-                        menuGridClick(op.slot, "LEFT");
-                        await timedWaitForMenu(ctx, "menuClickWait");
-                    },
-                });
+                const slot = state.snapshot?.slots.find(
+                    (entry) => entry.slot === op.slot
+                );
+                try {
+                    const result = await applyActionListPlan(ctx, actionsPlan, {
+                        sync,
+                        reopenList: async () => {
+                            await clickGoBack(ctx);
+                            menuGridClick(op.slot, "LEFT");
+                            await timedWaitForMenu(ctx, "menuClickWait");
+                        },
+                    });
+                    if (slot !== undefined) {
+                        slot.actions = actionsFullyHydrated(result.currentSnapshot)
+                            ? (result.currentSnapshot.slice() as Action[])
+                            : undefined;
+                    }
+                    if (result.itemContent !== undefined)
+                        state.itemContents.push(result.itemContent);
+                } catch (error) {
+                    const result = actionListApplyResultFromError(error);
+                    // A failed list is retained only when application never reached
+                    // a mutation. Never substitute a target or read back outside edits.
+                    if (
+                        slot !== undefined &&
+                        (result === null || result.mutationStarted)
+                    ) {
+                        slot.actions = undefined;
+                    }
+                    throw error;
+                }
             }
         );
         await application.run(actionBackStepKey(op.slot), () => clickGoBack(ctx));
@@ -648,13 +806,18 @@ function menuGridClick(slot: number, button: "LEFT" | "RIGHT"): void {
  * Housing drops those orphaned actions when the menu is closed — so there's
  * nothing to clear separately here.
  */
-async function clearMenuSlot(ctx: TaskContext, slotId: number): Promise<void> {
+async function clearMenuSlot(
+    ctx: TaskContext,
+    slotId: number,
+    onMutationStarted: () => void
+): Promise<void> {
     menuGridClick(slotId, "RIGHT");
     await timedWaitForMenu(ctx, "menuClickWait");
 
     const clearButton = ctx.getItemSlot(
         (s) => removedFormatting(s.getItem().getName()).indexOf("Clear Item") >= 0
     );
+    onMutationStarted();
     clearButton.click();
     await timedWaitForMenu(ctx, "menuClickWait");
 }

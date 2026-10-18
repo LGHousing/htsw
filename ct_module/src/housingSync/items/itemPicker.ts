@@ -35,7 +35,8 @@ export async function selectItemFromOpenInventory(
     ctx: TaskContext,
     item: Item,
     label: string,
-    match: StackMatcher = canonicalStacksEqual
+    match: StackMatcher = canonicalStacksEqual,
+    onMutationStarted?: () => void
 ): Promise<void> {
     const container = Player.getContainer() as unknown as
         ReturnType<typeof Player.getContainer> | null | undefined;
@@ -72,6 +73,7 @@ export async function selectItemFromOpenInventory(
             slot: existingSlot.getSlotId(),
             stack: summarizeItemStack(existingSlot.getItem().getItemStack()),
         });
+        onMutationStarted?.();
         existingSlot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
         return;
@@ -169,6 +171,7 @@ export async function selectItemFromOpenInventory(
                     `A house script might have swapped it.`
             );
         }
+        onMutationStarted?.();
         slot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
     } finally {

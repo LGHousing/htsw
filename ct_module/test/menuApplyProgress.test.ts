@@ -200,6 +200,7 @@ function menuPlanWithActions(
             slots: [],
         },
         exists: true,
+        baseline: null,
         diff: {
             setSize: null,
             ops: [
