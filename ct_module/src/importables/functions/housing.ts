@@ -107,12 +107,14 @@ export async function openFunctionSettings(
 }
 
 function readAutomaticExecutionTicks(ctx: TaskContext): number {
-    return parseAutomaticExecutionTicks(
-        itemLore(ctx.getItemSlot("Automatic Execution").getItem())
-    );
+    const item = ctx.getItemSlot("Automatic Execution").getItem();
+    return parseAutomaticExecutionTicks(itemLore(item), item.getName());
 }
 
-export function parseAutomaticExecutionTicks(lore: readonly string[]): number {
+export function parseAutomaticExecutionTicks(
+    lore: readonly string[],
+    rawName = "Automatic Execution"
+): number {
     for (const line of lore) {
         const kv = parseLoreKeyValueLine(line);
         if (!kv || kv.label !== "Current") continue;
@@ -122,7 +124,16 @@ export function parseAutomaticExecutionTicks(lore: readonly string[]): number {
             return Number(value);
         break;
     }
-    throw new Error("Could not read the function's automatic execution interval.");
+    // Escape section signs so Minecraft displays the codes instead of consuming
+    // them as formatting. Keep the captured item details bounded in failure logs.
+    const details = JSON.stringify({
+        name: rawName.trim(),
+        lore: lore.map((line) => line.trim()),
+    }).replace(/§/g, "\\u00a7");
+    const boundedDetails = details.length > 300 ? details.slice(0, 299) + "…" : details;
+    throw new Error(
+        "Could not read the function's automatic execution interval. " + boundedDetails
+    );
 }
 
 export async function readFunctionRepeatTicks(
