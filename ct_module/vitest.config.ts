@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-import { importerClientModules } from "./scripts/importerClientModules";
+import { IMPORTER_CLIENT_MODULES, importerClientModules } from "./scripts/importerClientModules";
 
 const languageDistPath = fileURLToPath(new URL("../language/dist/", import.meta.url));
 const importerSrcPath = fileURLToPath(new URL("../importer/src/", import.meta.url));
@@ -32,12 +32,16 @@ export default defineConfig({
         coverage: {
             provider: "v8",
             reporter: ["text", "html"],
-            include: ["src/**/*.ts"],
+            include: ["src/**/*.ts", "../importer/src/**/*.ts"],
+            // importer/ sits outside this project root.
+            allowExternal: true,
             exclude: [
                 "**/*.test.ts",
                 "**/index.ts",
                 "dist/**",
                 "src/CTAutocomplete.d.ts",
+                // Declaration-only client modules; the ct_module files implement them.
+                ...Object.keys(IMPORTER_CLIENT_MODULES).map((p) => `../importer/src/${p}.ts`),
             ],
             reportOnFailure: true,
         },
