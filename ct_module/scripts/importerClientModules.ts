@@ -55,12 +55,32 @@ export function importerClientModules() {
     return {
         name: "htsw-importer-client-modules",
         enforce: "pre" as const,
-        async resolveId(this: ResolveContext, source: string, importer: string | undefined) {
-            const fromImporter = importer !== undefined && importer.startsWith(importerSrcDir);
-            if (!fromImporter && !source.startsWith("@htsw/importer")) return null;
+        async resolveId(
+            this: ResolveContext,
+            source: string,
+            importer: string | undefined
+        ) {
+            // Vite applies resolve.alias first, so "@htsw/importer/x" arrives here
+            // as a path into importer/src.
+            const intoImporter =
+                source.startsWith("@htsw/importer") || source.startsWith(importerSrcDir);
+            const fromImporter =
+                importer !== undefined && importer.startsWith(importerSrcDir);
+            if (!intoImporter && !fromImporter) return null;
             const resolved = await this.resolve(source, importer, { skipSelf: true });
             if (resolved === null) return null;
             return byImporterFile.get(resolved.id.split("?")[0]) ?? resolved;
+        },
+        // A client module is declarations only; loading one means an import
+        // slipped past resolveId and would read undefined at runtime.
+        load(id: string) {
+            const file = id.split("?")[0];
+            if (byImporterFile.has(file)) {
+                throw new Error(
+                    `importer client module ${file} was loaded instead of its ct_module file`
+                );
+            }
+            return null;
         },
     };
 }

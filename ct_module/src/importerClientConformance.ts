@@ -52,7 +52,11 @@ type Loose<T> = T extends (...args: infer A) => infer R
     ? { method(...args: A): R }["method"]
     : T;
 type Implements<Client, Declared> = {
-    [K in keyof Declared]: K extends keyof Client ? (Loose<Client[K]> extends Loose<Declared[K]> ? true : K) : K;
+    [K in keyof Declared]: K extends keyof Client
+        ? Loose<Client[K]> extends Loose<Declared[K]>
+            ? true
+            : K
+        : K;
 }[keyof Declared];
 type Check<T extends true> = T;
 

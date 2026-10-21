@@ -11,4 +11,7 @@ export type TaskFailureDetails = {
     rowIndex?: number;
 };
 
-export declare function writeTaskFailureLog(context: TaskFailureDetails, error: unknown): string;
+export declare function writeTaskFailureLog(
+    context: TaskFailureDetails,
+    error: unknown
+): string;

@@ -7,7 +7,9 @@ import {
     tryGetSlotPaginateBy,
 } from "@htsw/importer/housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
-import { MouseButton } from "../../tasks/specifics/slots";
+// The importer declares the enum its ItemSlot takes; at runtime it is this
+// module's tasks/specifics/slots.ts enum (scripts/importerClientModules.ts).
+import { MouseButton } from "@htsw/importer/tasks/specifics/slots";
 import { plainItemName, removedFormatting } from "@htsw/importer/utils/helpers";
 import { listAllGroupNames, openEditGroup } from "@htsw/importer/importables/groups/listGroups";
 import { labelPrefixMatch, openGroupPermissions, readCycleValue } from "@htsw/importer/importables/groups/housing";

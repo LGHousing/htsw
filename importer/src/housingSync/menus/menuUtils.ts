@@ -32,7 +32,6 @@ import {
     setAnvilItemName,
     submitSignValue,
 } from "./menuInput";
-import type { Item } from "../../platform";
 
 function describeVisibleOptions(ctx: TaskContext): string {
     const names: string[] = [];

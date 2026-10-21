@@ -10,4 +10,7 @@ export declare function getItemFromNbt(nbt: Tag): Item;
 export declare function getItemFromSnbt(snbt: string): Item;
 export declare function readItemDisplayAliases(nbt: Tag): string[];
 export declare function extractInteractDataSnbt(itemSnbt: string): string | null;
-export declare function itemWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string): Item;
+export declare function itemWithInteractData(
+    cosmeticNbt: Tag,
+    interactDataSnbt: string
+): Item;

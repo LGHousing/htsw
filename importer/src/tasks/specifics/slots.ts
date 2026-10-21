@@ -31,7 +31,9 @@ export declare function getAllItemSlots(
 export declare function tryGetItemSlot(
     check: string | ((slot: ItemSlot) => boolean)
 ): ItemSlot | null;
-export declare function getItemSlot(check: string | ((slot: ItemSlot) => boolean)): ItemSlot;
+export declare function getItemSlot(
+    check: string | ((slot: ItemSlot) => boolean)
+): ItemSlot;
 export declare function getMenuItemSlots(
     check?: null | ((slot: ItemSlot) => boolean)
 ): ItemSlot[] | null;
