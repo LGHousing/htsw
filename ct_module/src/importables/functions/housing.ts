@@ -120,14 +120,9 @@ export function parseAutomaticExecutionTicks(
         if (!kv || kv.label !== "Current") continue;
         const value = removedFormatting(kv.value).trim();
         if (value === "Disabled") return 0;
-        // Include signs and decimals in each match so they cannot become valid ticks.
-        const numbers = value.match(/[+-]?(?:\d+(?:\.\d*)?|\.\d+)/g);
-        if (
-            numbers?.length === 1 &&
-            /^\d+$/.test(numbers[0]) &&
-            Number.isSafeInteger(Number(numbers[0]))
-        )
-            return Number(numbers[0]);
+        // Housing shows "18000 Ticks (15m00s)"; the bracketed duration repeats the same interval.
+        const ticks = /^(\d+)(?:\s+Ticks?(?:\s+\([^()]*\))?)?$/i.exec(value)?.[1];
+        if (ticks !== undefined && Number.isSafeInteger(Number(ticks))) return Number(ticks);
         break;
     }
     // Escape section signs so Minecraft displays the codes instead of consuming
