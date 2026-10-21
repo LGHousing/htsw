@@ -27,7 +27,8 @@ import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 import { getMinecraft, javaType } from "../../utils/java";
 import { itemLore } from "../../utils/itemLore";
-import { submitHousingText } from "./textInput";
+import { submitHousingText, type TextReadBack } from "./textInput";
+import { normalizeValueTextForCompare } from "../actions/comparison";
 
 const GuiEditSign = javaType("net.minecraft.client.gui.inventory.GuiEditSign");
 
@@ -318,17 +319,30 @@ export async function setListItemNote(
     }
 
     options?.onMutationStarted?.();
+    const readBack: TextReadBack = {
+        read: () => {
+            const fresh = ctx.getMenuItemSlots()?.find((entry) => entry.getSlotId() === slot.getSlotId());
+            if (fresh === undefined) return null;
+            const actual = readListItemNote(fresh) ?? "";
+            return actual.endsWith("...") || actual.endsWith("…") ? null : actual;
+        },
+        matches: (actual) => normalizeNoteText(removedFormatting(actual)) ===
+            normalizeNoteText(removedFormatting(normalizedNote ?? "")),
+    };
     slot.drop();
     if (normalizedNote === undefined) {
         await waitForChatInputPrompt(ctx);
         await submitHousingText(
-            ctx, "Note", "/chatinput cancel",
-            () => ctx.runCommand("/chatinput cancel"),
-            () => timedWaitForMenu(ctx, "menuClickWait")
+            ctx, "Note", "",
+            (onSent) => ctx.runCommand("/chatinput cancel", onSent),
+            () => timedWaitForMenu(ctx, "menuClickWait"),
+            readBack
         );
     } else {
-        await enterValue(ctx, normalizedNote, "Note", () =>
-            timedWaitForMenu(ctx, "menuClickWait")
+        await enterValue(
+            ctx, normalizedNote, "Note",
+            () => timedWaitForMenu(ctx, "menuClickWait"),
+            readBack
         );
     }
     options?.onApplied?.();
@@ -581,7 +595,8 @@ export async function enterValue(
     ctx: TaskContext,
     value: string,
     field: string,
-    confirm: () => WaitForPromise<void> = () => waitForMenu(ctx)
+    confirm: () => WaitForPromise<void> = () => waitForMenu(ctx),
+    readBack?: TextReadBack
 ): Promise<"CHAT" | "ANVIL" | "SIGN"> {
     const chatWait = waitForChatInputPrompt(ctx);
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
@@ -608,8 +623,9 @@ export async function enterValue(
     if (inputMode === "CHAT") {
         await submitHousingText(
             ctx, field, value,
-            () => ctx.sendMessage(value),
-            confirm
+            (onSent) => ctx.sendMessage(value, onSent),
+            confirm,
+            readBack
         );
         return "CHAT";
     }
@@ -617,8 +633,12 @@ export async function enterValue(
         await ctx.finishChatPrompt();
         await submitHousingText(
             ctx, field, value,
-            () => submitSignValue(value),
-            confirm
+            (onSent) => {
+                submitSignValue(value);
+                onSent();
+            },
+            confirm,
+            readBack
         );
         return "SIGN";
     }
@@ -634,8 +654,12 @@ export async function enterValue(
     setAnvilItemName(value);
     await submitHousingText(
         ctx, field, value,
-        acceptNewAnvilItem,
-        confirm
+        (onSent) => {
+            acceptNewAnvilItem();
+            onSent();
+        },
+        confirm,
+        readBack
     );
     return "ANVIL";
 }
@@ -673,7 +697,7 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
     slot.click();
     const started = Date.now();
     const field = removedFormatting(slot.getItem().getName()).trim();
-    const mode = await enterValue(ctx, newValue, field);
+    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, true));
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
@@ -681,7 +705,8 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
 export async function setStringValue(
     ctx: TaskContext,
     slot: ItemSlot,
-    value: string
+    value: string,
+    numeric: boolean = false
 ): Promise<void> {
     const newValue = value;
     const currentValue = readStringValue(slot);
@@ -698,25 +723,25 @@ export async function setStringValue(
     slot.click();
     const started = Date.now();
     const field = removedFormatting(slot.getItem().getName()).trim();
-    const mode = await enterValue(ctx, newValue, field);
-    verifyStringValue(ctx, field, newValue);
+    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, numeric));
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
 
-function verifyStringValue(ctx: TaskContext, field: string, expected: string): void {
-    const slot = ctx.tryGetMenuItemSlot(field);
-    if (slot === null) return;
-    const actual = readStringValue(slot);
-    if (actual === null || actual.endsWith("...") || actual.endsWith("…")) return;
-    // Housing wraps lore and renders formatting codes as colours. Compare the
-    // visible text so those display changes don't become false write failures.
+function fieldReadBack(ctx: TaskContext, field: string, numeric = false): TextReadBack {
     const visible = (text: string) => removedFormatting(text).trim().replace(/\s+/g, " ");
-    if (visible(actual) !== visible(expected)) {
-        throw new Error(
-            `Housing did not apply ${field}: expected ${JSON.stringify(expected)}, read ${JSON.stringify(visible(actual))}`
-        );
-    }
+    return {
+        read: () => {
+            const slot = ctx.tryGetMenuItemSlot(field);
+            if (slot === null) return null;
+            const actual = readStringValue(slot);
+            if (actual === null || actual.endsWith("...") || actual.endsWith("…")) return null;
+            return visible(actual);
+        },
+        matches: (actual, expected) => numeric
+            ? normalizeValueTextForCompare(actual) === normalizeValueTextForCompare(visible(expected))
+            : actual === visible(expected),
+    };
 }
 
 export async function resetStringValue(ctx: TaskContext, slot: ItemSlot): Promise<void> {
@@ -727,7 +752,7 @@ export async function resetStringValue(ctx: TaskContext, slot: ItemSlot): Promis
         ctx,
         removedFormatting(slot.getItem().getName()).trim(),
         "/chatinput reset",
-        () => ctx.runCommand("/chatinput reset"),
+        (onSent) => ctx.runCommand("/chatinput reset", onSent),
         () => waitForMenu(ctx)
     );
     recordTimedOp("chatInput", COST.chatInput, Date.now() - started);
@@ -782,10 +807,13 @@ export async function setStringOrPaginatedOptionValue(
         setAnvilItemName(newValue);
         await submitHousingText(
             ctx, slotName, newValue,
-            acceptNewAnvilItem,
-            () => waitForMenu(ctx)
+            (onSent) => {
+                acceptNewAnvilItem();
+                onSent();
+            },
+            () => waitForMenu(ctx),
+            fieldReadBack(ctx, slotName)
         );
-        verifyStringValue(ctx, slotName, newValue);
         return;
     }
 
@@ -793,19 +821,22 @@ export async function setStringOrPaginatedOptionValue(
         case "CHAT":
             await submitHousingText(
                 ctx, slotName, newValue,
-                () => ctx.sendMessage(newValue),
-                () => waitForMenu(ctx)
+                (onSent) => ctx.sendMessage(newValue, onSent),
+                () => waitForMenu(ctx),
+                fieldReadBack(ctx, slotName)
             );
-            verifyStringValue(ctx, slotName, newValue);
             return;
         case "SIGN":
             await ctx.finishChatPrompt();
             await submitHousingText(
                 ctx, slotName, newValue,
-                () => submitSignValue(newValue),
-                () => waitForMenu(ctx)
+                (onSent) => {
+                    submitSignValue(newValue);
+                    onSent();
+                },
+                () => waitForMenu(ctx),
+                fieldReadBack(ctx, slotName)
             );
-            verifyStringValue(ctx, slotName, newValue);
             return;
         case "MENU": {
             await ctx.finishChatPrompt();

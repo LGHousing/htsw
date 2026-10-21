@@ -47,7 +47,13 @@ export async function setTeamTag(ctx: TaskContext, tag: string): Promise<void> {
     const slot = ctx.getMenuItemSlot(CHANGE_TAG_SLOT);
     if (readTagValue(slot) === tag) return;
     slot.click();
-    await enterValue(ctx, tag, "Team tag");
+    await enterValue(ctx, tag, "Team tag", undefined, {
+        read: () => {
+            const fresh = ctx.tryGetMenuItemSlot(CHANGE_TAG_SLOT);
+            return fresh === null ? null : readTagValue(fresh);
+        },
+        matches: (actual, expected) => actual === expected,
+    });
 }
 
 export async function setTeamFriendlyFire(

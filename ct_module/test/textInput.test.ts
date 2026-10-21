@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemSlot } from "../src/tasks/specifics/slots";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
 import TaskContext from "../src/tasks/context";
@@ -12,8 +12,9 @@ vi.mock("../src/housingSync/menus/menuWait", () => ({
     waitForKnownMenu: vi.fn(),
 }));
 
-import { waitForMenu } from "../src/housingSync/menus/menuWait";
+import { timedWaitForMenu, waitForMenu } from "../src/housingSync/menus/menuWait";
 import {
+    setListItemNote,
     setStringValue,
     setStringOrPaginatedOptionValue,
 } from "../src/housingSync/menus/menuUtils";
@@ -21,8 +22,12 @@ import {
     housingTextRejection,
     submitHousingText,
 } from "../src/housingSync/menus/textInput";
+import { writeGiveExperienceLevels } from "../src/housingSync/actions/writers";
+import { writeCompareVar } from "../src/housingSync/actions/conditions/writers";
 
-function inputContext() {
+const BLOCKED = "§cThe stat key provided contains blocked words! (1)";
+
+function inputContext(field = "Variable", before = "Kills") {
     const listeners = new Set<{
         event: string;
         check: (message: string) => boolean;
@@ -42,9 +47,9 @@ function inputContext() {
         promise.cleanupWaiter = () => listeners.delete(listener);
         return promise;
     }) as typeof ctx.waitFor;
-    const receive = (message: string) => {
+    const receive = (message: string, event = "message") => {
         for (const listener of [...listeners]) {
-            if (listener.event === "message" && listener.check(message)) {
+            if (listener.event === event && listener.check(message)) {
                 listeners.delete(listener);
                 listener.resolve([message]);
             }
@@ -53,7 +58,7 @@ function inputContext() {
     const slot = (value: string) =>
         ({
             getItem: () => ({
-                getName: () => "§aVariable",
+                getName: () => field,
                 lore: ["Current Value:", `§7${value}`, "", "Click to edit!"],
             }),
             click: () =>
@@ -61,8 +66,9 @@ function inputContext() {
                     receive("Please use the chat to provide the value you wish to set.")
                 ),
         }) as unknown as ItemSlot;
-    let actual = "Kills";
+    let actual = before;
     ctx.tryGetMenuItemSlot = vi.fn(() => slot(actual));
+    ctx.getMenuItemSlot = vi.fn(() => slot(before));
     let openMenu!: () => void;
     const menuCleanup = vi.fn();
     vi.mocked(waitForMenu).mockImplementation(() => {
@@ -72,12 +78,14 @@ function inputContext() {
         promise.cleanupWaiter = menuCleanup;
         return promise;
     });
-    ctx.sendMessage = vi.fn(async () => {
+    vi.mocked(timedWaitForMenu).mockImplementation(() => waitForMenu(ctx));
+    ctx.sendMessage = vi.fn(async (_value: string, onSent?: () => void) => {
+        onSent?.();
         openMenu();
     });
     return {
         ctx,
-        slot: slot("Kills"),
+        slot: slot(before),
         receive,
         listeners,
         menuCleanup,
@@ -89,65 +97,210 @@ function inputContext() {
 }
 
 beforeEach(() => vi.clearAllMocks());
+afterEach(() => vi.restoreAllMocks());
 
 describe("Housing text inputs", () => {
     it.each([setStringValue, setStringOrPaginatedOptionValue])(
-        "fails a variable write when the blocked-words reply arrives during send (%s)",
+        "fails a blocked variable write when read-back still shows Kills (%s)",
         async (write) => {
             const { ctx, slot, receive, openMenu, listeners, menuCleanup } =
                 inputContext();
-            const sendMessage = vi.fn(async () => {
-                receive("§cThe stat key provided contains blocked words! (1)");
-                openMenu(); // Housing returns the editor with its old default.
+            const sendMessage = vi.fn(async (_value: string, onSent?: () => void) => {
+                onSent?.();
+                receive(BLOCKED);
+                openMenu();
             });
             ctx.sendMessage = sendMessage;
             await expect(write(ctx, slot, "n19")).rejects.toThrow(
-                'Hypixel\'s chat filter rejected "n19" for Variable; rename it'
+                'HTSW_INPUT_REJECTED: Hypixel\'s chat filter rejected "n19" for Variable; rename it'
             );
-            expect(sendMessage).toHaveBeenCalledExactlyOnceWith("n19");
+            expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
+                "n19",
+                expect.any(Function)
+            );
             expect(listeners.size).toBe(0);
             expect(menuCleanup).toHaveBeenCalled();
         }
     );
 
-    it("fails when the returned field still reads Kills without a rejection reply", async () => {
+    it("fails a read-back mismatch without a rejection reply", async () => {
         const { ctx, slot } = inputContext();
         await expect(setStringValue(ctx, slot, "n19")).rejects.toThrow(
-            'Housing did not apply Variable: expected "n19", read "Kills"'
+            'HTSW_INPUT_REJECTED: Housing did not apply Variable: expected "n19", read "Kills"'
         );
     });
 
-    it("accepts a write whose fresh field matches", async () => {
+    it.each(["This route is not valid!", BLOCKED])(
+        "accepts a matching read-back despite unrelated chat: %s",
+        async (message) => {
+            const { ctx, slot, setActual, receive, openMenu } = inputContext();
+            ctx.sendMessage = async (_value, onSent) => {
+                onSent?.();
+                receive(message);
+                setActual("coins");
+                openMenu();
+            };
+            await expect(setStringValue(ctx, slot, "coins")).resolves.toBeUndefined();
+        }
+    );
+
+    it.each([
+        ["1234567", "1,234,567"],
+        ["3.14159265", "3.142"],
+    ])(
+        "accepts numeric action and condition writes displayed as %s → %s",
+        async (expected, actual) => {
+            const action = inputContext("Levels", "0");
+            action.setActual(actual);
+            await expect(
+                writeGiveExperienceLevels(action.ctx, {
+                    type: "GIVE_EXPERIENCE_LEVELS",
+                    amount: expected,
+                })
+            ).resolves.toBeUndefined();
+            const condition = inputContext("Compare Value", "0");
+            condition.setActual(actual);
+            const getSlot = condition.ctx.getMenuItemSlot.bind(condition.ctx);
+            condition.ctx.getMenuItemSlot = (name) =>
+                name === "Fallback Value"
+                    ? ({
+                          getItem: () => ({ lore: ["Current Value:", "Not Set"] }),
+                      } as unknown as ItemSlot)
+                    : getSlot(name);
+            await expect(
+                writeCompareVar(condition.ctx, {
+                    type: "COMPARE_VAR",
+                    amount: expected,
+                    fallback: "Not Set",
+                })
+            ).resolves.toBeUndefined();
+        }
+    );
+
+    it.each([true, false])(
+        "checks visible note text after writing (accepted=%s)",
+        async (accepted) => {
+            const { ctx, receive } = inputContext();
+            const noteSlot = (note: string) =>
+                ({
+                    getSlotId: () => 10,
+                    getItem: () => ({ lore: ["Action", "Click to edit!", "", note] }),
+                    drop: () =>
+                        queueMicrotask(() =>
+                            receive(
+                                "Please use the chat to provide the value you wish to set."
+                            )
+                        ),
+                }) as unknown as ItemSlot;
+            ctx.getMenuItemSlots = () => [noteSlot(accepted ? "§cHello" : "Old")];
+            const result = setListItemNote(ctx, noteSlot("Old"), "&cHello");
+            if (accepted) await expect(result).resolves.toBeUndefined();
+            else await expect(result).rejects.toThrow("HTSW_INPUT_REJECTED:");
+        }
+    );
+
+    it("keeps numeric-looking variable names strict", async () => {
         const { ctx, slot, setActual } = inputContext();
-        setActual("coins");
-        await expect(setStringValue(ctx, slot, "coins")).resolves.toBeUndefined();
+        setActual("1,234,567");
+        await expect(setStringValue(ctx, slot, "1234567")).rejects.toThrow(
+            "HTSW_INPUT_REJECTED:"
+        );
     });
 
-    it("keeps listening after send until confirmation, and cleans up on rejection", async () => {
+    it("does not listen during sender cooldown", async () => {
+        const { ctx, receive, openMenu, listeners } = inputContext();
+        await expect(
+            submitHousingText(
+                ctx,
+                "Variable",
+                "n19",
+                async (onSent) => {
+                    receive(BLOCKED); // A previous write's late reply, before this send.
+                    await Promise.resolve();
+                    onSent();
+                    openMenu();
+                },
+                () => waitForMenu(ctx)
+            )
+        ).resolves.toBeUndefined();
+        expect(listeners.size).toBe(0);
+    });
+
+    it("uses an exact reply for an unreadable field only within the short send window", async () => {
         const { ctx, receive, listeners, menuCleanup } = inputContext();
         const result = submitHousingText(
             ctx,
-            "Item name",
+            "Variable",
             "n19",
-            () => {},
+            (onSent) => onSent(),
             () => waitForMenu(ctx)
         );
         await Promise.resolve();
-        receive("The item name contains blocked words!");
-        await expect(result).rejects.toThrow('rejected "n19" for Item name');
+        receive(BLOCKED);
+        await expect(result).rejects.toThrow(
+            'HTSW_INPUT_REJECTED: Hypixel\'s chat filter rejected "n19"'
+        );
         expect(listeners.size).toBe(0);
         expect(menuCleanup).toHaveBeenCalled();
     });
 
-    it("recognizes server refusals without matching player chat", () => {
+    it("ignores replies after the short window and removes the listener", async () => {
+        let now = 0;
+        vi.spyOn(Date, "now").mockImplementation(() => now);
+        const { ctx, receive, openMenu, listeners } = inputContext();
+        const result = submitHousingText(
+            ctx,
+            "Variable",
+            "n19",
+            (onSent) => onSent(),
+            () => waitForMenu(ctx)
+        );
+        now = 1501;
+        receive(BLOCKED);
+        receive("", "tick");
+        await Promise.resolve();
         expect(
-            housingTextRejection("This command is not valid! A server-supplied reason.")
+            [...listeners].filter((listener) => listener.event === "message")
+        ).toHaveLength(0);
+        openMenu();
+        await expect(result).resolves.toBeUndefined();
+        expect(listeners.size).toBe(0);
+    });
+
+    it("notifies listeners only after the raw chat send", async () => {
+        const ctx = new TaskContext();
+        const events: string[] = [];
+        vi.spyOn(ctx, "sleep").mockResolvedValue();
+        vi.spyOn(
+            ctx as unknown as { sendRawChatPacket(message: string): void },
+            "sendRawChatPacket"
+        ).mockImplementation(() => {
+            events.push("wire");
+        });
+        await ctx.runCommand("/command create tpa", () => {
+            events.push("command listener");
+        });
+        await ctx.sendMessage("coins", () => {
+            events.push("value listener");
+        });
+        expect(events).toEqual(["wire", "command listener", "wire", "value listener"]);
+    });
+
+    it("recognizes only observed replies for the corresponding input", () => {
+        expect(
+            housingTextRejection("This command is not valid!", "Command name")
         ).not.toBeNull();
-        expect(housingTextRejection("This command already exists!")).not.toBeNull();
-        expect(housingTextRejection("The name can only contain letters!")).not.toBeNull();
+        expect(
+            housingTextRejection("This command already exists!", "Variable")
+        ).toBeNull();
+        expect(housingTextRejection("This route is not valid!", "Variable")).toBeNull();
+        expect(
+            housingTextRejection("The name can only contain letters!", "Variable")
+        ).toBeNull();
         expect(
             housingTextRejection(
-                "Player: The stat key provided contains blocked words! (1)"
+                "Player: The stat key provided contains blocked words! (1)",
+                "Variable"
             )
         ).toBeNull();
     });

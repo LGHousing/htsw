@@ -64,7 +64,7 @@ export async function ensureFunctionExists(
         ctx,
         "Function name",
         name,
-        () => ctx.runCommand(`/function create ${name}`),
+        (onSent) => ctx.runCommand(`/function create ${name}`, onSent),
         () => ctx.withTimeout(
             functionActionEditorOpened(name).start(ctx),
             "Waiting for function creation",
@@ -99,7 +99,7 @@ export async function ensureFunctionNamesExist(
             ctx,
             "Function name",
             name,
-            () => ctx.runCommand(`/function create ${name}`),
+            (onSent) => ctx.runCommand(`/function create ${name}`, onSent),
             () => ctx.withTimeout(
                 functionActionEditorOpened(name).start(ctx),
                 "Waiting for function creation",

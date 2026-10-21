@@ -219,7 +219,8 @@ export async function writeChangeMaxHealth(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_MAX_HEALTH", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 
     if (action.heal !== undefined) {
@@ -332,7 +333,8 @@ export async function writeGiveExperienceLevels(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("GIVE_EXPERIENCE_LEVELS", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -441,7 +443,8 @@ export async function writeChangeVar(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_VAR", "value")),
-            action.value
+            action.value,
+            true
         );
     }
 
@@ -547,7 +550,8 @@ export async function writeChangeHealth(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_HEALTH", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -559,7 +563,8 @@ export async function writeChangeHunger(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_HUNGER", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -690,7 +695,8 @@ export async function writeDropItem(
         String(
             action.despawnDurationTicks ??
                 numberActionDefault("DROP_ITEM", "despawnDurationTicks")
-        )
+        ),
+        true
     );
 
     await setStringValue(
@@ -699,7 +705,8 @@ export async function writeDropItem(
         String(
             action.pickupDelayTicks ??
                 numberActionDefault("DROP_ITEM", "pickupDelayTicks")
-        )
+        ),
+        true
     );
 
     await setBooleanValue(
@@ -722,17 +729,20 @@ export async function writeSetVelocity(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "x")),
-        action.x
+        action.x,
+        true
     );
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "y")),
-        action.y
+        action.y,
+        true
     );
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "z")),
-        action.z
+        action.z,
+        true
     );
 }
 
@@ -742,7 +752,8 @@ export async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promi
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("LAUNCH", "strength")),
-        action.strength
+        action.strength,
+        true
     );
 }
 

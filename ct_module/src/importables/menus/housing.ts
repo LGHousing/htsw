@@ -87,7 +87,7 @@ export async function ensureMenuNamesExist(
                 ctx,
                 "Menu name",
                 name,
-                () => ctx.runCommand(`/menu create ${name}`),
+                (onSent) => ctx.runCommand(`/menu create ${name}`, onSent),
                 () => ctx.withTimeout(
                     menuCreated(name).start(ctx),
                     "Waiting for menu creation",

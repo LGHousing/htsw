@@ -30,19 +30,24 @@ export async function ensureCommandExists(
             ctx,
             "Command name",
             name,
-            () => ctx.runCommand(`/command create ${name}`),
+            (onSent) => ctx.runCommand(`/command create ${name}`, onSent),
             () => timedWaitForMenu(ctx, "commandMenuWait")
         );
     } catch (error) {
         if (!(error instanceof HousingTextRejectedError)) throw error;
         const reason = error.reason.replace(/^This command is not valid!/, "").trim();
-        if (reason !== "This command already exists!") throw error;
+        if (reason !== "This command already exists!") {
+            if (error.reason.startsWith("This command is not valid!")) {
+                throw new Error(`command name rejected by Housing: ${reason || error.reason}`);
+            }
+            throw error;
+        }
         // The list may predate another bot's or the owner's creation.
         resetCommandNameSession();
         const refreshed = await getSessionCommandNamesLower(ctx);
         if (refreshed.has(name.toLowerCase())) return "existing";
         throw new Error(
-            `Housing rejected ${JSON.stringify(name)} for Command name: already exists (not visible in Commands)`
+            "command name rejected by Housing: already exists (not visible in Commands)"
         );
     }
     noteCommandCreated(name);

@@ -559,7 +559,7 @@ async function applyMenu(
                 ctx,
                 "Menu name",
                 importable.name,
-                () => ctx.runCommand(`/menu create ${importable.name}`),
+                (onSent) => ctx.runCommand(`/menu create ${importable.name}`, onSent),
                 () => ctx.withTimeout(
                     menuCreated(importable.name).start(ctx),
                     "Waiting for menu creation",

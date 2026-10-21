@@ -169,7 +169,7 @@ async function moveExistingRegionToBounds(
             ctx,
             "Region name",
             importable.name,
-            () => ctx.runCommand(`/region create ${importable.name}`),
+            (onSent) => ctx.runCommand(`/region create ${importable.name}`, onSent),
             () => ctx.withTimeout(
                 regionCreated(importable.name).start(ctx),
                 "Waiting for region creation",
@@ -195,7 +195,7 @@ async function createRegionWithBounds(
         ctx,
         "Region name",
         importable.name,
-        () => ctx.runCommand(`/region create ${importable.name}`),
+        (onSent) => ctx.runCommand(`/region create ${importable.name}`, onSent),
         () => ctx.withTimeout(
             regionCreated(importable.name).start(ctx),
             "Waiting for region creation",

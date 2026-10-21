@@ -42,7 +42,7 @@ export async function ensureRegionNamesExist(
             ctx,
             "Region name",
             name,
-            () => ctx.runCommand(`/region create ${name}`),
+            (onSent) => ctx.runCommand(`/region create ${name}`, onSent),
             () => ctx.withTimeout(
                 regionCreated(name).start(ctx),
                 "Waiting for region creation",

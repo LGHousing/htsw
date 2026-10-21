@@ -96,7 +96,7 @@ export async function applyRenames(
                 ctx,
                 `${rename.type === "FUNCTION" ? "Function" : "Region"} name`,
                 rename.to,
-                () => ctx.runCommand(spec.command(rename.from, rename.to)),
+                (onSent) => ctx.runCommand(spec.command(rename.from, rename.to), onSent),
                 () => ctx.withTimeout(
                     chatMessage(spec.confirmation(rename.from, rename.to)).start(ctx),
                     "Waiting for Housing to confirm rename",

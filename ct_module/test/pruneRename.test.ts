@@ -44,11 +44,13 @@ function renameCtx(): TaskContext {
         promise.cleanupWaiter = () => listeners.delete(receive);
         return promise;
     }) as typeof ctx.waitFor;
-    ctx.runCommand = async (command: string) => {
+    ctx.runCommand = async (command: string, onSent?: () => void) => {
+        onSent?.();
         mocks.commands.push(command);
         if (mocks.refusal !== null) {
             for (const receive of listeners) receive(mocks.refusal);
-        } else if (mocks.confirms.has(command)) {
+        }
+        if (mocks.confirms.has(command)) {
             const [, type, , from, to] = command.match(/^\/(\w+) (rename) (\S+) (\S+)$/)!;
             for (const receive of listeners) receive(`Renamed ${type} ${from} to ${to}`);
         } else {
@@ -176,19 +178,14 @@ describe("applyRenames", () => {
         ]);
     });
 
-    it("stops on a filter rejection without falling back to delete-and-create", async () => {
+    it("ignores unrelated error chat when Housing confirms the rename", async () => {
         stubLock([{ type: "FUNCTION", identity: "Old" }]);
-        mocks.refusal = "The function name contains blocked words! (1)";
-        await expect(
-            applyRenames(renameCtx(), manifestPath, [
-                { type: "FUNCTION", from: "Old", to: "n19" },
-            ])
-        ).rejects.toThrow(
-            'Hypixel\'s chat filter rejected "n19" for Function name; rename it'
-        );
-        expect(Object.keys(readHouseLock(manifestPath)?.importables ?? {})).toEqual([
-            "FUNCTION:Old",
+        mocks.refusal = "This route is not valid!";
+        mocks.confirms.add("/function rename Old New");
+        const result = await applyRenames(renameCtx(), manifestPath, [
+            { type: "FUNCTION", from: "Old", to: "New" },
         ]);
+        expect(result.renamed).toEqual([{ type: "FUNCTION", from: "Old", to: "New" }]);
     });
 
     it("refuses to move a baseline onto one that already exists", async () => {
