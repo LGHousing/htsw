@@ -169,6 +169,11 @@ export function itemToHtswTag(item: Item): Tag {
     return fromMinecraftTag(compound);
 }
 
+/** The stack's raw NBT, as ChatTriggers' `Item.getRawNBT()` prints it. */
+export function itemStackRawNbt(stack: HtswMinecraftItemStack): string {
+    return new Item(stack).getRawNBT();
+}
+
 export function getItemFromNbt(nbt: Tag): Item {
     const normalized = normalizeItemNbtForMinecraft(nbt);
     if (normalized.type !== "compound") {

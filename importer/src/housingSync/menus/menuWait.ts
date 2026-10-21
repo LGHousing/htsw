@@ -30,6 +30,8 @@ import {
     type WaitForPromise,
 } from "../../tasks/specifics/waitFor";
 import { errorMessage, removedFormatting } from "../../utils/helpers";
+import { itemStackRawNbt } from "../../utils/nbt";
+import { platform } from "../../platform";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
@@ -139,7 +141,7 @@ function openContainerMatchesOpenedWindow(
     if (!skipPopulateWait) {
         if (count < expectedItemCount(state)) return false;
         if (state.snapshot !== null) {
-            const container = Player.getContainer();
+            const container = platform().openContainer();
             if (container == null || container.getSize() !== state.snapshotSlots)
                 return false;
             // Read the same container the consumers use, not merely a populated
@@ -329,7 +331,7 @@ export function waitForMenu(
                 ) {
                     const stack = stacks[slot];
                     state.snapshot.push(
-                        stack === null ? null : new Item(stack).getRawNBT()
+                        stack === null ? null : itemStackRawNbt(stack)
                     );
                 }
                 traceMenuWait("windowItems", {
@@ -348,7 +350,7 @@ export function waitForMenu(
                 if (slot === null || slot < 0 || slot >= state.snapshot.length)
                     return false;
                 const stack = setSlotPacketStack(packet);
-                const nbt = stack === null ? null : new Item(stack).getRawNBT();
+                const nbt = stack === null ? null : itemStackRawNbt(stack);
                 if (state.snapshot[slot] !== null) state.expectedItems--;
                 if (nbt !== null) state.expectedItems++;
                 state.snapshot[slot] = nbt;

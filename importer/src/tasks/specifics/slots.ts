@@ -17,14 +17,6 @@ export interface ItemSlot {
     drop(ctrl?: boolean): void;
 }
 
-export type DisplayedGuiMenuState = {
-    screen: string;
-    itemCount: number;
-    slotCount: number;
-    menuSlotCount: number;
-    windowId: number | null;
-};
-
 export declare function getAllItemSlots(
     check?: null | ((slot: ItemSlot) => boolean)
 ): ItemSlot[] | null;
@@ -46,5 +38,4 @@ export declare function getMenuItemSlot(
 export declare function menuStateDescription(): string;
 export declare function getOpenContainerTitle(): string | null;
 export declare function getOpenContainerWindowId(): number | null;
-export declare function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null;
 export declare function describeGuiScreenMenu(): string;

@@ -3,7 +3,7 @@
 // implementation, so nothing here runs. See platform.ts.
 import type { Tag } from "htsw/nbt";
 
-import type { Item } from "../platform";
+import type { Item, MCItemStack } from "../platform";
 
 export declare function itemToHtswTag(item: Item): Tag;
 export declare function getItemFromNbt(nbt: Tag): Item;
@@ -14,3 +14,4 @@ export declare function itemWithInteractData(
     cosmeticNbt: Tag,
     interactDataSnbt: string
 ): Item;
+export declare function itemStackRawNbt(stack: MCItemStack): string;
