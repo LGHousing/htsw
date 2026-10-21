@@ -120,8 +120,14 @@ export function parseAutomaticExecutionTicks(
         if (!kv || kv.label !== "Current") continue;
         const value = removedFormatting(kv.value).trim();
         if (value === "Disabled") return 0;
-        if (/^\d+$/.test(value) && Number.isSafeInteger(Number(value)))
-            return Number(value);
+        // Include signs and decimals in each match so they cannot become valid ticks.
+        const numbers = value.match(/[+-]?(?:\d+(?:\.\d*)?|\.\d+)/g);
+        if (
+            numbers?.length === 1 &&
+            /^\d+$/.test(numbers[0]) &&
+            Number.isSafeInteger(Number(numbers[0]))
+        )
+            return Number(numbers[0]);
         break;
     }
     // Escape section signs so Minecraft displays the codes instead of consuming
