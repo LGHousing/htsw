@@ -83,8 +83,7 @@ async function setPlayerTimeValue(ctx: TaskContext, value: number): Promise<void
     await openSubmenu(ctx, slotName);
     const customSlot = await getSlotPaginate(ctx, "Custom Time");
     customSlot.click();
-    await enterValue(ctx, time);
-    await waitForMenu(ctx);
+    await enterValue(ctx, time, slotName);
 }
 
 export async function writeConditional(
@@ -255,8 +254,7 @@ export async function writeGiveItem(
         await openSubmenu(ctx, slotLabel);
         const manualSlot = await getSlotPaginate(ctx, "Manual Input");
         manualSlot.click();
-        await enterValue(ctx, slotValue);
-        await waitForMenu(ctx);
+        await enterValue(ctx, slotValue, slotLabel);
     } else {
         await setSelectValue(ctx, slotLabel, slotValue);
     }
@@ -500,8 +498,7 @@ export async function writePlaySound(
             throw new Error("Could not find custom sound editor slot");
         }
         customSoundSlot.click();
-        await enterValue(ctx, desiredSound);
-        await waitForMenu(ctx);
+        await enterValue(ctx, desiredSound, soundLabel);
     }
 
     await setNumberValue(

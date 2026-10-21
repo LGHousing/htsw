@@ -1,7 +1,7 @@
 import type { TaskWaiter } from "../../tasks/context";
 import TaskContext from "../../tasks/context";
 import { menuOpened } from "../../housingSync/menus/menuWaiters";
-import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { enterValue } from "../../housingSync/menus/menuUtils";
 import { isAtMenuTitle } from "../../housingSync/menus/currentMenu";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
@@ -134,8 +134,7 @@ export async function openEditGroup(ctx: TaskContext, name: string): Promise<voi
 export async function createGroup(ctx: TaskContext, name: string): Promise<void> {
     await openGroupsList(ctx);
     ctx.getMenuItemSlot(CREATE_GROUP_SLOT).click();
-    await enterValue(ctx, name);
-    await waitForMenu(ctx);
+    await enterValue(ctx, name, "Group name");
 }
 
 export async function deleteGroup(ctx: TaskContext, name: string): Promise<void> {

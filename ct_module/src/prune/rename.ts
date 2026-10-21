@@ -1,3 +1,4 @@
+import { HousingTextRejectedError, submitHousingText } from "../housingSync/menus/textInput";
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
 import { chatMessage } from "../housingSync/menus/menuWaiters";
@@ -91,15 +92,22 @@ export async function applyRenames(
         }
         let confirmed = false;
         try {
-            await ctx.expectAfter(
+            await submitHousingText(
+                ctx,
+                `${rename.type === "FUNCTION" ? "Function" : "Region"} name`,
+                rename.to,
                 () => ctx.runCommand(spec.command(rename.from, rename.to)),
-                chatMessage(spec.confirmation(rename.from, rename.to))
+                () => ctx.withTimeout(
+                    chatMessage(spec.confirmation(rename.from, rename.to)).start(ctx),
+                    "Waiting for Housing to confirm rename",
+                    8000
+                )
             );
             confirmed = true;
         } catch (error) {
             // A command Housing does not have never answers, so the wait times
             // out and the pair falls back to delete-and-create.
-            if (isTaskCancelled(error)) throw error;
+            if (isTaskCancelled(error) || error instanceof HousingTextRejectedError) throw error;
         }
         if (!confirmed) {
             outcome.unconfirmed.push(rename);

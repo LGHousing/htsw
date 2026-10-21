@@ -1,3 +1,4 @@
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
 import { isUnspawnableItem } from "htsw";
 
@@ -59,9 +60,16 @@ export async function ensureFunctionExists(
     const status = await openFunctionEditor(ctx, name);
     if (status === "opened") return;
 
-    await ctx.expectAfter(
+    await submitHousingText(
+        ctx,
+        "Function name",
+        name,
         () => ctx.runCommand(`/function create ${name}`),
-        functionActionEditorOpened(name)
+        () => ctx.withTimeout(
+            functionActionEditorOpened(name).start(ctx),
+            "Waiting for function creation",
+            8000
+        )
     );
     noteFunctionCreated(name);
 }
@@ -87,9 +95,16 @@ export async function ensureFunctionNamesExist(
 
     for (let i = 0; i < missing.length; i++) {
         const name = missing[i];
-        await ctx.expectAfter(
+        await submitHousingText(
+            ctx,
+            "Function name",
+            name,
             () => ctx.runCommand(`/function create ${name}`),
-            functionActionEditorOpened(name)
+            () => ctx.withTimeout(
+                functionActionEditorOpened(name).start(ctx),
+                "Waiting for function creation",
+                8000
+            )
         );
         await clickGoBack(ctx);
         noteFunctionCreated(name);

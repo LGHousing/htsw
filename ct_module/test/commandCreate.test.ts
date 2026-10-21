@@ -58,19 +58,19 @@ function commandContext() {
 beforeEach(() => vi.clearAllMocks());
 
 test.each([
-    ["  This command is not valid!  ", "This command is not valid!"],
+    "  This command is not valid!  ",
     // Any reason with the observed refusal prefix is handled without guessing
     // Housing's other reason texts.
-    ["This command is not valid! A server-supplied reason.", "A server-supplied reason."],
+    "This command is not valid! A server-supplied reason.",
 ])(
     "rejects command creation immediately for %s, even during send",
-    async (reply, reason) => {
+    async (reply) => {
         const { ctx, runCommand, receive, messageCleanup, menuCleanup } =
             commandContext();
         runCommand.mockImplementation(async () => receive(reply));
 
         await expect(ensureCommandExists(ctx, "tpa")).rejects.toThrow(
-            `command name rejected by Housing: ${reason}`
+            `Housing rejected "tpa" for Command name: ${reply.trim()}`
         );
 
         expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create tpa");
@@ -108,7 +108,7 @@ for (const reply of [
         const { ctx, runCommand, receive } = commandContext();
         runCommand.mockImplementation(async () => receive(reply));
         await expect(ensureCommandExists(ctx, "home")).rejects.toThrow(
-            "command name rejected by Housing: already exists (not visible in Commands)"
+            'Housing rejected "home" for Command name: already exists (not visible in Commands)'
         );
         expect(resetCommandNameSession).toHaveBeenCalledTimes(1);
         expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(2);
@@ -154,12 +154,12 @@ test("keeps permission/timeout failures and cleans the refusal listener", async 
     expect(noteCommandCreated).not.toHaveBeenCalled();
 });
 
-test("cleans the refusal listener if sending fails", async () => {
-    const { ctx, runCommand, messageCleanup } = commandContext();
+test("cleans listeners if sending fails", async () => {
+    const { ctx, runCommand, messageCleanup, menuCleanup } = commandContext();
     runCommand.mockRejectedValue(new Error("cancelled"));
     await expect(ensureCommandExists(ctx, "new")).rejects.toThrow("cancelled");
     expect(messageCleanup).toHaveBeenCalled();
-    expect(timedWaitForMenu).not.toHaveBeenCalled();
+    expect(menuCleanup).toHaveBeenCalled();
 });
 
 test("leaves commands found in the list alone", async () => {
@@ -168,4 +168,17 @@ test("leaves commands found in the list alone", async () => {
     await expect(ensureCommandExists(ctx, "TPA")).resolves.toBe("existing");
     expect(runCommand).not.toHaveBeenCalled();
     expect(ctx.waitFor).not.toHaveBeenCalled();
+});
+
+
+test("rejects blocked command names before recording creation", async () => {
+    const { ctx, runCommand, receive, openMenu } = commandContext();
+    runCommand.mockImplementation(async () => {
+        receive("The command name contains blocked words! (1)");
+        openMenu();
+    });
+    await expect(ensureCommandExists(ctx, "n19")).rejects.toThrow(
+        'Hypixel\'s chat filter rejected "n19" for Command name; rename it'
+    );
+    expect(noteCommandCreated).not.toHaveBeenCalled();
 });

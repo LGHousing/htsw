@@ -1,5 +1,5 @@
 import { enterValue } from "../../housingSync/menus/menuUtils";
-import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import type TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { openTeamsList } from "./listTeams";
@@ -29,8 +29,7 @@ function readFriendlyFireValue(slot: ItemSlot): boolean | null {
 export async function createTeam(ctx: TaskContext, name: string): Promise<void> {
     await openTeamsList(ctx);
     ctx.getMenuItemSlot("Create Team").click();
-    await enterValue(ctx, name);
-    await waitForMenu(ctx);
+    await enterValue(ctx, name, "Team name");
 }
 
 export function readTeamSettings(ctx: TaskContext): TeamSettings {
@@ -48,8 +47,7 @@ export async function setTeamTag(ctx: TaskContext, tag: string): Promise<void> {
     const slot = ctx.getMenuItemSlot(CHANGE_TAG_SLOT);
     if (readTagValue(slot) === tag) return;
     slot.click();
-    await enterValue(ctx, tag);
-    await waitForMenu(ctx);
+    await enterValue(ctx, tag, "Team tag");
 }
 
 export async function setTeamFriendlyFire(

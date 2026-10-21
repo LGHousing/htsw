@@ -1,3 +1,4 @@
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import type { ImportableRegion, Pos } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/apply";
@@ -164,9 +165,16 @@ async function moveExistingRegionToBounds(
 ): Promise<void> {
     await setDesiredRegionSelection(ctx, importable);
     if ((await openRegionEditor(ctx, importable.name)) !== "opened") {
-        await ctx.expectAfter(
+        await submitHousingText(
+            ctx,
+            "Region name",
+            importable.name,
             () => ctx.runCommand(`/region create ${importable.name}`),
-            regionCreated(importable.name)
+            () => ctx.withTimeout(
+                regionCreated(importable.name).start(ctx),
+                "Waiting for region creation",
+                8000
+            )
         );
         await openRegionEditor(ctx, importable.name);
         return;
@@ -183,9 +191,16 @@ async function createRegionWithBounds(
     importable: ImportableRegion
 ): Promise<void> {
     await setDesiredRegionSelection(ctx, importable);
-    await ctx.expectAfter(
+    await submitHousingText(
+        ctx,
+        "Region name",
+        importable.name,
         () => ctx.runCommand(`/region create ${importable.name}`),
-        regionCreated(importable.name)
+        () => ctx.withTimeout(
+            regionCreated(importable.name).start(ctx),
+            "Waiting for region creation",
+            8000
+        )
     );
     await openRegionEditor(ctx, importable.name);
 }

@@ -7,7 +7,7 @@ import {
     openSubmenu,
     tryGetSlotPaginateBy,
 } from "../../housingSync/menus/menuUtils";
-import { timedWaitForMenu, waitForMenu } from "../../housingSync/menus/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import type TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
 import { plainItemName, removedFormatting } from "../../utils/helpers";
@@ -69,8 +69,7 @@ export async function setGroupTag(ctx: TaskContext, tag: string): Promise<void> 
     const slot = ctx.getMenuItemSlot(CHANGE_TAG_SLOT);
     if (readTagValue(slot) === tag) return;
     slot.click(MouseButton.LEFT);
-    await enterValue(ctx, tag);
-    await waitForMenu(ctx);
+    await enterValue(ctx, tag, "Group tag");
     verifyGroupField("tag", tag, readGroupSettings(ctx).tag);
 }
 
@@ -97,8 +96,7 @@ export async function setGroupPriority(
     const slot = ctx.getMenuItemSlot(CHANGE_PRIORITY_SLOT);
     if (readPriorityValue(slot) === priority) return;
     slot.click();
-    await enterValue(ctx, String(priority));
-    await waitForMenu(ctx);
+    await enterValue(ctx, String(priority), "Group priority");
     verifyGroupField("priority", priority, readGroupSettings(ctx).priority);
 }
 

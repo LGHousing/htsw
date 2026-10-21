@@ -1,3 +1,4 @@
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type TaskContext from "../../tasks/context";
@@ -82,9 +83,16 @@ export async function ensureMenuNamesExist(
 
     for (const name of names) {
         if (!existing.has(name.toLowerCase())) {
-            await ctx.expectAfter(
+            await submitHousingText(
+                ctx,
+                "Menu name",
+                name,
                 () => ctx.runCommand(`/menu create ${name}`),
-                menuCreated(name)
+                () => ctx.withTimeout(
+                    menuCreated(name).start(ctx),
+                    "Waiting for menu creation",
+                    8000
+                )
             );
             await clickGoBack(ctx);
             noteMenuCreated(name);

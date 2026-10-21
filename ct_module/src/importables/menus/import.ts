@@ -1,3 +1,4 @@
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import { nbt } from "htsw";
 import type { Action, ImportableMenu } from "htsw/types";
 
@@ -554,9 +555,16 @@ async function applyMenu(
 
     await application.run("menu", async () => {
         if (!exists) {
-            await ctx.expectAfter(
+            await submitHousingText(
+                ctx,
+                "Menu name",
+                importable.name,
                 () => ctx.runCommand(`/menu create ${importable.name}`),
-                menuCreated(importable.name)
+                () => ctx.withTimeout(
+                    menuCreated(importable.name).start(ctx),
+                    "Waiting for menu creation",
+                    8000
+                )
             );
             noteMenuCreated(importable.name);
             state.snapshot = { type: "MENU", name: importable.name, slots: [] };

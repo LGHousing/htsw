@@ -1,3 +1,4 @@
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import type TaskContext from "../../tasks/context";
 import { unique } from "../../utils/helpers";
 import { oneOf } from "../../tasks/waiters";
@@ -37,9 +38,16 @@ export async function ensureRegionNamesExist(
         await ctx.runCommand(`/pos1`);
         await ctx.runCommand(`/pos2`);
 
-        await ctx.expectAfter(
+        await submitHousingText(
+            ctx,
+            "Region name",
+            name,
             () => ctx.runCommand(`/region create ${name}`),
-            regionCreated(name)
+            () => ctx.withTimeout(
+                regionCreated(name).start(ctx),
+                "Waiting for region creation",
+                8000
+            )
         );
         await onCreated?.(name);
     }
