@@ -73,6 +73,11 @@ function printActionAt(
         }
     }
 
+    if (action.type === "CHANGE_VAR" && !action.key) {
+        // Housing can return a Change Variable with no variable name. Export it visibly instead of crashing.
+        out += `${pad}/// HTSW export: this Change Variable has no variable name in Housing (read back: ${JSON.stringify(action)})${eol}`;
+    }
+
     out += pad + printActionHead(action, depth, ctx) + eol;
     return out;
 }
@@ -292,14 +297,14 @@ function defaultTailFor(actionKw: string, index: number): string {
 }
 
 function printActionChangeVar(action: Extract<Action, { type: "CHANGE_VAR" }>): string {
-    const holder = action.holder;
+    const holder = action.holder ?? { type: "Player" };
     const kw =
         holder.type === "Global"
             ? "globalvar"
             : holder.type === "Team"
                 ? "teamvar"
                 : "var";
-    const parts: string[] = [kw, quoteName(action.key)];
+    const parts: string[] = [kw, quoteName(action.key ?? "")];
     if (holder.type === "Team") {
         parts.push(quoteName(holder.team ?? ""));
     }
