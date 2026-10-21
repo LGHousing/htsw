@@ -215,7 +215,7 @@ export function getOpenContainerWindowId(): number | null {
     }
 }
 
-export type DisplayedGuiMenuState = {
+type DisplayedGuiMenuState = {
     screen: string;
     itemCount: number;
     slotCount: number;
@@ -301,7 +301,7 @@ export function menuItemDebugSnapshot(limit: number = 54): MenuItemDebugSnapshot
     return out;
 }
 
-export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
+function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
     try {
         const mc = getMinecraft();
         const screen = mc.field_71462_r;

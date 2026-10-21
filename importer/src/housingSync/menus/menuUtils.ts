@@ -32,6 +32,8 @@ import {
     setAnvilItemName,
     submitSignValue,
 } from "./menuInput";
+import { submitHousingText, type TextReadBack } from "./textInput";
+import { normalizeValueTextForCompare } from "../actions/comparison";
 
 function describeVisibleOptions(ctx: TaskContext): string {
     const names: string[] = [];
@@ -223,15 +225,33 @@ export async function setListItemNote(
     }
 
     options?.onMutationStarted?.();
+    const readBack: TextReadBack = {
+        read: () => {
+            const fresh = ctx.getMenuItemSlots()?.find((entry) => entry.getSlotId() === slot.getSlotId());
+            if (fresh === undefined) return null;
+            const actual = readListItemNote(fresh) ?? "";
+            return actual.endsWith("...") || actual.endsWith("…") ? null : actual;
+        },
+        matches: (actual) => normalizeNoteText(removedFormatting(actual)) ===
+            normalizeNoteText(removedFormatting(normalizedNote ?? "")),
+    };
     slot.drop();
     if (normalizedNote === undefined) {
         await waitForChatInputPrompt(ctx);
-        await ctx.runCommand("/chatinput cancel");
+        await submitHousingText(
+            ctx, "Note", "",
+            (onSent) => ctx.runCommand("/chatinput cancel", onSent),
+            () => timedWaitForMenu(ctx, "menuClickWait"),
+            readBack
+        );
     } else {
-        await enterValue(ctx, normalizedNote);
+        await enterValue(
+            ctx, normalizedNote, "Note",
+            () => timedWaitForMenu(ctx, "menuClickWait"),
+            readBack
+        );
     }
     options?.onApplied?.();
-    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 function readCurrentValue(slot: ItemSlot): string | null {
@@ -476,9 +496,13 @@ export async function setCycleValue(
     throw new Error(`Could not set "${slotName}" to "${value}".`);
 }
 
+/** Submit text and wait for Housing to return the editor or reject the value. */
 export async function enterValue(
     ctx: TaskContext,
-    value: string
+    value: string,
+    field: string,
+    confirm: () => WaitForPromise<void> = () => waitForMenu(ctx),
+    readBack?: TextReadBack
 ): Promise<"CHAT" | "ANVIL" | "SIGN"> {
     const chatWait = waitForChatInputPrompt(ctx);
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
@@ -503,12 +527,25 @@ export async function enterValue(
     );
 
     if (inputMode === "CHAT") {
-        await ctx.sendMessage(value);
+        await submitHousingText(
+            ctx, field, value,
+            (onSent) => ctx.sendMessage(value, onSent),
+            confirm,
+            readBack
+        );
         return "CHAT";
     }
     if (inputMode === "SIGN") {
         await ctx.finishChatPrompt();
-        submitSignValue(value);
+        await submitHousingText(
+            ctx, field, value,
+            (onSent) => {
+                submitSignValue(value);
+                onSent();
+            },
+            confirm,
+            readBack
+        );
         return "SIGN";
     }
     await ctx.finishChatPrompt();
@@ -521,7 +558,15 @@ export async function enterValue(
     }
     await waitForKnownMenu(ctx, inputMode.windowId, true);
     setAnvilItemName(value);
-    acceptNewAnvilItem();
+    await submitHousingText(
+        ctx, field, value,
+        (onSent) => {
+            acceptNewAnvilItem();
+            onSent();
+        },
+        confirm,
+        readBack
+    );
     return "ANVIL";
 }
 
@@ -557,8 +602,8 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
 
     slot.click();
     const started = Date.now();
-    const mode = await enterValue(ctx, newValue);
-    await waitForMenu(ctx);
+    const field = removedFormatting(slot.getItem().getName()).trim();
+    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, true));
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
@@ -566,7 +611,8 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
 export async function setStringValue(
     ctx: TaskContext,
     slot: ItemSlot,
-    value: string
+    value: string,
+    numeric: boolean = false
 ): Promise<void> {
     const newValue = value;
     const currentValue = readStringValue(slot);
@@ -582,18 +628,39 @@ export async function setStringValue(
 
     slot.click();
     const started = Date.now();
-    const mode = await enterValue(ctx, newValue);
-    await waitForMenu(ctx);
+    const field = removedFormatting(slot.getItem().getName()).trim();
+    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, numeric));
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
+}
+
+function fieldReadBack(ctx: TaskContext, field: string, numeric = false): TextReadBack {
+    const visible = (text: string) => removedFormatting(text).trim().replace(/\s+/g, " ");
+    return {
+        read: () => {
+            const slot = ctx.tryGetMenuItemSlot(field);
+            if (slot === null) return null;
+            const actual = readStringValue(slot);
+            if (actual === null || actual.endsWith("...") || actual.endsWith("…")) return null;
+            return visible(actual);
+        },
+        matches: (actual, expected) => numeric
+            ? normalizeValueTextForCompare(actual) === normalizeValueTextForCompare(visible(expected))
+            : actual === visible(expected),
+    };
 }
 
 export async function resetStringValue(ctx: TaskContext, slot: ItemSlot): Promise<void> {
     slot.click();
     const started = Date.now();
     await waitForChatInputPrompt(ctx);
-    await ctx.runCommand("/chatinput reset");
-    await waitForMenu(ctx);
+    await submitHousingText(
+        ctx,
+        removedFormatting(slot.getItem().getName()).trim(),
+        "/chatinput reset",
+        (onSent) => ctx.runCommand("/chatinput reset", onSent),
+        () => waitForMenu(ctx)
+    );
     recordTimedOp("chatInput", COST.chatInput, Date.now() - started);
 }
 
@@ -618,34 +685,64 @@ export async function setStringOrPaginatedOptionValue(
             openWindowPacketGuiId(packet) === "minecraft:anvil"
         );
     });
+    const signWait = ctx.waitFor("tick", isSignEditorOpen);
     const menuWait = waitForMenu(ctx);
     const anvilMode = anvilWait.then((args) => ({
         mode: "ANVIL" as const,
         windowId: openWindowPacketId(args[0]) ?? 0,
     }));
     const inputMode = await ctx.withTimeout(
-        ctx.race<"CHAT" | "MENU" | { mode: "ANVIL"; windowId: number }>([
+        ctx.race<"CHAT" | "MENU" | "SIGN" | { mode: "ANVIL"; windowId: number }>([
             [chatWait.then(() => "CHAT" as const), chatWait],
             [anvilMode, anvilWait],
+            [signWait.then(() => "SIGN" as const), signWait],
             [menuWait.then(() => "MENU" as const), menuWait],
         ]),
         `Waiting to edit "${slotName}"`,
         8000
     );
 
-    if (inputMode !== "CHAT" && inputMode !== "MENU") {
+    if (typeof inputMode !== "string") {
         await ctx.finishChatPrompt();
         await waitForKnownMenu(ctx, inputMode.windowId, true);
+        if (newValue.length > ANVIL_NAME_MAX) {
+            throw new Error(
+                `Value for ${slotName} is too long for Housing's anvil input (max ${ANVIL_NAME_MAX}); set Preferred Input to Chat.`
+            );
+        }
         setAnvilItemName(newValue);
-        acceptNewAnvilItem();
-        await waitForMenu(ctx);
+        await submitHousingText(
+            ctx, slotName, newValue,
+            (onSent) => {
+                acceptNewAnvilItem();
+                onSent();
+            },
+            () => waitForMenu(ctx),
+            fieldReadBack(ctx, slotName)
+        );
         return;
     }
 
     switch (inputMode) {
         case "CHAT":
-            await ctx.sendMessage(newValue);
-            await waitForMenu(ctx);
+            await submitHousingText(
+                ctx, slotName, newValue,
+                (onSent) => ctx.sendMessage(newValue, onSent),
+                () => waitForMenu(ctx),
+                fieldReadBack(ctx, slotName)
+            );
+            return;
+        case "SIGN":
+            await ctx.finishChatPrompt();
+            await submitHousingText(
+                ctx, slotName, newValue,
+                (onSent) => {
+                    submitSignValue(newValue);
+                    onSent();
+                },
+                () => waitForMenu(ctx),
+                fieldReadBack(ctx, slotName)
+            );
             return;
         case "MENU": {
             await ctx.finishChatPrompt();
@@ -684,8 +781,7 @@ export async function setLocationValue(
         await openSubmenu(ctx, label);
         const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
         optionSlot.click();
-        await enterValue(ctx, location.value);
-        await waitForMenu(ctx);
+        await enterValue(ctx, location.value, label);
         return;
     }
     await setSelectValue(ctx, label, location.type);

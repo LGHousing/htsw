@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../incompleteRead";
 import type TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
 import { errorMessage, removedFormatting } from "../../utils/helpers";
@@ -107,6 +108,9 @@ export async function withHolderRecovery(
                 throw new Error("Holder recovery opened a different editor.");
         } catch (error) {
             if (isTaskCancelled(error)) throw error;
+            if (error instanceof IncompleteReadError) {
+                throw error.withContext(`Holder recovery after ${original.message}`);
+            }
             const message = errorMessage(error);
             throw new Error(`${original.message}; ${message}`);
         }

@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../incompleteRead";
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
 import { itemLore } from "../../../utils/itemLore";
@@ -268,8 +269,8 @@ async function clickAddActionOption(
         await wait;
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
-        throw new Error(
-            `After clicking Add Action option "${displayName}" (${actionType})${menuStateDescription()}: ${errorMessage(error)}`
-        );
+        const context = `After clicking Add Action option "${displayName}" (${actionType})${menuStateDescription()}`;
+        if (error instanceof IncompleteReadError) throw error.withContext(context);
+        throw new Error(`${context}: ${errorMessage(error)}`);
     }
 }

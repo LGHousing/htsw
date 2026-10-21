@@ -154,14 +154,16 @@ export async function writeCompareVar(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
-        condition.fallback ?? stringConditionDefault("COMPARE_VAR", "fallback")
+        condition.fallback ?? stringConditionDefault("COMPARE_VAR", "fallback"),
+        true
     );
 }
 
@@ -255,7 +257,8 @@ export async function writeCompareHealth(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HEALTH", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 }
@@ -276,7 +279,8 @@ export async function writeCompareMaxHealth(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_MAX_HEALTH", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 }
@@ -297,7 +301,8 @@ export async function writeCompareHunger(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HUNGER", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 }
@@ -342,7 +347,8 @@ export async function writeComparePlaceholder(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 }
@@ -446,7 +452,8 @@ export async function writeCompareDamage(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_DAMAGE", "amount")),
-            condition.amount
+            condition.amount,
+            true
         );
     }
 }

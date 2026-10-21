@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
     planFunctionSettingChanges,
@@ -66,3 +66,48 @@ describe("function description settings", () => {
         });
     });
 });
+
+test.each(["open settings", "write description"])(
+    "%s retains the incomplete-read instance and appends the function context",
+    async (step) => {
+        const housing = await import("@htsw/importer/importables/functions/housing");
+        const lists = await import("@htsw/importer/importables/functions/listFunctions");
+        const menus = await import("@htsw/importer/housingSync/menus/menuUtils");
+        const { IncompleteReadError } = await import("@htsw/importer/housingSync/incompleteRead");
+        const { applyImportableFunctionPlan, functionApplicationPlan } =
+            await import("@htsw/importer/importables/functions/import");
+        const { ApplicationProgress } =
+            await import("@htsw/importer/importables/import/applicationProgress");
+        const failure = new IncompleteReadError("Settings menu not ready");
+        vi.spyOn(lists, "openFunctionList").mockResolvedValue(undefined);
+        vi.spyOn(housing, "readFunctionRepeatTicks").mockResolvedValue(0);
+        const open = vi
+            .spyOn(housing, "openFunctionSettings")
+            .mockResolvedValue(undefined);
+        if (step === "open settings") open.mockRejectedValue(failure);
+        else vi.spyOn(menus, "setStringValue").mockRejectedValue(failure);
+        const plan: import("@htsw/importer/importables/functions/import").FunctionImportPlan = {
+            kind: "FUNCTION",
+            exists: true,
+            importable: { type: "FUNCTION", name: "Readiness", actions: [] },
+            actionsPlan: null,
+            settingsPlan: [
+                { key: "description", current: undefined, desired: "New description" },
+            ],
+        };
+        const session = {} as import("@htsw/importer/importables/import/context").ImportContext;
+        await expect(
+            applyImportableFunctionPlan(
+                { getItemSlot: () => ({}) } as never,
+                plan,
+                session,
+                new ApplicationProgress(functionApplicationPlan(plan, session), undefined)
+            )
+        ).rejects.toBe(failure);
+        expect(failure.message).toBe(
+            `HTSW_INCOMPLETE_READ: Settings menu not ready (${step === "open settings" ? "opening settings" : "setting description"} for function Readiness)`
+        );
+    }
+);
+
+afterEach(() => vi.restoreAllMocks());

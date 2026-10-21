@@ -45,11 +45,11 @@ describe("group write read-back", () => {
         );
     });
 
-    it("accepts a tag that reads back correctly", async () => {
+    it.each(["TEST", "&cTEST", "§cTEST"])("accepts a tag that reads back correctly: %s", async (tag) => {
         await expect(
             setGroupTag(
-                context(["Current Tag: [GUEST]"], ["Current Tag: [TEST]"]),
-                "TEST"
+                context(["Current Tag: [GUEST]"], ["Current Tag: [§cTEST]"]),
+                tag
             )
         ).resolves.toBeUndefined();
     });

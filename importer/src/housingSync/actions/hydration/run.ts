@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../incompleteRead";
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
@@ -12,7 +13,7 @@ import { refreshTruncatedScalarFields } from "../../fields/readScalars";
 import type { ActionHydrationPlan, ActionHydrationWork } from "./plan";
 import type { ChildListName } from "../../actionPath";
 import {
-    observedSlotsToActions,
+    fullyHydratedObservedSlotsToActions,
     presentChildListsContainNoNulls,
     type ObservedActionSlot,
 } from "../../observedActions";
@@ -58,7 +59,7 @@ export async function completeActionListScan(
     read: ListReadOptions
 ): Promise<Action[]> {
     await hydrateActionListScan(ctx, scan, read);
-    return observedSlotsToActions(scan.slots);
+    return fullyHydratedObservedSlotsToActions(scan.slots);
 }
 
 export async function readActionListFully(
@@ -214,6 +215,9 @@ async function hydrateActionDetail(
         const inner = errorMessage(error);
         const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
+        if (error instanceof IncompleteReadError) {
+            throw error.withContext(`at ${path}, ${typeName}`);
+        }
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);
     }
 }
@@ -283,6 +287,26 @@ async function hydrateActionDetailFromEditor(
         });
         if (note) {
             entry.action.note = note;
+        }
+        for (const prop of work.childListsToRead) {
+            const summary = entry.childListSummaries?.[prop];
+            if (summary === undefined || summary.includes("UNKNOWN")) continue;
+            const children = (entry.action as Record<string, unknown>)[prop];
+            if (
+                !Array.isArray(children) ||
+                children.length !== summary.length ||
+                children.some(
+                    (child: unknown, index) =>
+                        child === null ||
+                        typeof child !== "object" ||
+                        !("type" in child) ||
+                        child.type !== summary[index]
+                )
+            ) {
+                throw new IncompleteReadError(
+                    `Incomplete ${entry.action.type}.${prop}: child list does not match its list preview (${summary.length} entries expected). Read stopped.`
+                );
+            }
         }
     } else if (work.childListsToRead.size > 0) {
         throw new Error(`Reading action "${entry.action.type}" is not implemented.`);

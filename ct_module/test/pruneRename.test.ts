@@ -4,11 +4,9 @@ const mocks = vi.hoisted(() => ({
     commands: [] as string[],
     // confirmations Housing will send back, keyed by command
     confirms: new Set<string>(),
+    refusal: null as string | null,
 }));
 
-vi.mock("@htsw/importer/housingSync/menus/menuWaiters", () => ({
-    chatMessage: (message: string) => ({ label: message, message }),
-}));
 vi.mock("@htsw/importer/tasks/manager", () => ({ isTaskCancelled: () => false }));
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: (path: string, content: string) => {
@@ -19,7 +17,8 @@ vi.mock("../src/utils/filesystem", () => ({
 
 import { applyRenames, detectRenames } from "@htsw/importer/prune/rename";
 import { readHouseLock } from "@htsw/importer/importCache/houseLock";
-import type TaskContext from "@htsw/importer/tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
+import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
 import type { PrunableType } from "@htsw/importer/prune/registry";
 
 const manifestPath = "./projects/demo/import.json";
@@ -27,22 +26,38 @@ const lockPath = "./projects/demo/house.lock.json";
 
 let files: Partial<Record<string, string>> = {};
 
-// stands in for the context's command/wait pair: the wait resolves only when
-// Housing was set up to confirm that command
+// Deliver replies during the send, just as a fast Housing connection can.
 function renameCtx(): TaskContext {
-    return {
-        checkCancelled: () => undefined,
-        runCommand: async (command: string) => {
-            mocks.commands.push(command);
-        },
-        expectAfter: async (send: () => Promise<void>) => {
-            await send();
-            const command = mocks.commands[mocks.commands.length - 1];
-            if (!mocks.confirms.has(command)) {
-                throw new Error("Waiting for message in chat: timed out");
-            }
-        },
-    } as unknown as TaskContext;
+    const ctx = Object.create(TaskContext.prototype) as TaskContext;
+    const listeners = new Set<(message: string) => void>();
+    ctx.checkCancelled = () => {};
+    ctx.withTimeout = ((promise: WaitForPromise<unknown>) =>
+        promise) as typeof ctx.withTimeout;
+    ctx.waitFor = ((_event: string, check: (message: string) => boolean) => {
+        let receive!: (message: string) => void;
+        const promise = new Promise<[string]>((resolve) => {
+            receive = (message) => {
+                if (check(message)) resolve([message]);
+            };
+            listeners.add(receive);
+        }) as WaitForPromise<[string]>;
+        promise.cleanupWaiter = () => listeners.delete(receive);
+        return promise;
+    }) as typeof ctx.waitFor;
+    ctx.runCommand = async (command: string, onSent?: () => void) => {
+        onSent?.();
+        mocks.commands.push(command);
+        if (mocks.refusal !== null) {
+            for (const receive of listeners) receive(mocks.refusal);
+        }
+        if (mocks.confirms.has(command)) {
+            const [, type, , from, to] = command.match(/^\/(\w+) (rename) (\S+) (\S+)$/)!;
+            for (const receive of listeners) receive(`Renamed ${type} ${from} to ${to}`);
+        } else {
+            throw new Error("Waiting for message in chat: timed out");
+        }
+    };
+    return ctx;
 }
 
 function stubLock(entries: { type: string; identity: string }[]): void {
@@ -70,14 +85,13 @@ function stubLock(entries: { type: string; identity: string }[]): void {
     });
 }
 
-function map(
-    entries: [PrunableType, string[]][]
-): Map<PrunableType, readonly string[]> {
+function map(entries: [PrunableType, string[]][]): Map<PrunableType, readonly string[]> {
     return new Map(entries);
 }
 
 beforeEach(() => {
     mocks.commands = [];
+    mocks.refusal = null;
     mocks.confirms = new Set();
     stubLock([]);
     vi.stubGlobal("Java", { type: () => new Proxy({}, { get: () => () => undefined }) });
@@ -110,9 +124,9 @@ describe("detectRenames", () => {
     });
 
     it("only renames types whose rename Housing announces", () => {
-        expect(
-            detectRenames(map([["MENU", ["Old"]]]), map([["MENU", ["New"]]]))
-        ).toEqual([]);
+        expect(detectRenames(map([["MENU", ["Old"]]]), map([["MENU", ["New"]]]))).toEqual(
+            []
+        );
         expect(
             detectRenames(map([["REGION", ["Old"]]]), map([["REGION", ["New"]]]))
         ).toEqual([{ type: "REGION", from: "Old", to: "New" }]);
@@ -137,9 +151,7 @@ describe("applyRenames", () => {
             { type: "FUNCTION", from: "Old", to: "New" },
         ]);
 
-        expect(outcome.renamed).toEqual([
-            { type: "FUNCTION", from: "Old", to: "New" },
-        ]);
+        expect(outcome.renamed).toEqual([{ type: "FUNCTION", from: "Old", to: "New" }]);
         expect(outcome.unconfirmed).toEqual([]);
         const lock = readHouseLock(manifestPath);
         expect(Object.keys(lock?.importables ?? {})).toEqual(["FUNCTION:New"]);
@@ -164,6 +176,16 @@ describe("applyRenames", () => {
         expect(Object.keys(readHouseLock(manifestPath)?.importables ?? {})).toEqual([
             "FUNCTION:Old",
         ]);
+    });
+
+    it("ignores unrelated error chat when Housing confirms the rename", async () => {
+        stubLock([{ type: "FUNCTION", identity: "Old" }]);
+        mocks.refusal = "This route is not valid!";
+        mocks.confirms.add("/function rename Old New");
+        const result = await applyRenames(renameCtx(), manifestPath, [
+            { type: "FUNCTION", from: "Old", to: "New" },
+        ]);
+        expect(result.renamed).toEqual([{ type: "FUNCTION", from: "Old", to: "New" }]);
     });
 
     it("refuses to move a baseline onto one that already exists", async () => {

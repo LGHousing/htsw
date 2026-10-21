@@ -1,3 +1,5 @@
+import { IncompleteReadError } from "../../housingSync/incompleteRead";
+import { submitHousingText } from "../../housingSync/menus/textInput";
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
 import { isUnspawnableItem } from "htsw";
 
@@ -59,9 +61,16 @@ export async function ensureFunctionExists(
     const status = await openFunctionEditor(ctx, name);
     if (status === "opened") return;
 
-    await ctx.expectAfter(
-        () => ctx.runCommand(`/function create ${name}`),
-        functionActionEditorOpened(name)
+    await submitHousingText(
+        ctx,
+        "Function name",
+        name,
+        (onSent) => ctx.runCommand(`/function create ${name}`, onSent),
+        () => ctx.withTimeout(
+            functionActionEditorOpened(name).start(ctx),
+            "Waiting for function creation",
+            8000
+        )
     );
     noteFunctionCreated(name);
 }
@@ -87,9 +96,16 @@ export async function ensureFunctionNamesExist(
 
     for (let i = 0; i < missing.length; i++) {
         const name = missing[i];
-        await ctx.expectAfter(
-            () => ctx.runCommand(`/function create ${name}`),
-            functionActionEditorOpened(name)
+        await submitHousingText(
+            ctx,
+            "Function name",
+            name,
+            (onSent) => ctx.runCommand(`/function create ${name}`, onSent),
+            () => ctx.withTimeout(
+                functionActionEditorOpened(name).start(ctx),
+                "Waiting for function creation",
+                8000
+            )
         );
         await clickGoBack(ctx);
         noteFunctionCreated(name);
@@ -120,8 +136,9 @@ export function parseAutomaticExecutionTicks(
         if (!kv || kv.label !== "Current") continue;
         const value = removedFormatting(kv.value).trim();
         if (value === "Disabled") return 0;
-        if (/^\d+$/.test(value) && Number.isSafeInteger(Number(value)))
-            return Number(value);
+        // Housing shows "18000 Ticks (15m00s)"; the bracketed duration repeats the same interval.
+        const ticks = /^(\d+)(?:\s+Ticks?(?:\s+\([^()]*\))?)?$/i.exec(value)?.[1];
+        if (ticks !== undefined && Number.isSafeInteger(Number(ticks))) return Number(ticks);
         break;
     }
     // Escape section signs so Minecraft displays the codes instead of consuming
@@ -229,6 +246,7 @@ async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Pr
     try {
         return await run();
     } catch (error) {
+        if (error instanceof IncompleteReadError) throw error.withContext(label);
         const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Action, ImportableFunction, ImportableMenu } from "htsw/types";
 
 const mocks = vi.hoisted(() => ({
@@ -672,3 +672,78 @@ it("persists a menu cancellation snapshot as partial in both cache and lock", as
         [expect.objectContaining({ importable: partial, partial: true })]
     );
 });
+
+it("keeps the retry prefix first in the final FUNCTION reason when Add Action readiness times out", async () => {
+    const { addAction } = await import("@htsw/importer/housingSync/actions/apply/actionOps");
+    const menuWait = await import("@htsw/importer/housingSync/menus/menuWait");
+    const menuUtils = await import("@htsw/importer/housingSync/menus/menuUtils");
+    const slots = await import("../src/tasks/specifics/slots");
+    const click = vi.fn();
+    // The picker opens; the real second readiness wait expires after selection.
+    vi.spyOn(menuWait, "timedWaitForMenu").mockResolvedValueOnce(undefined);
+    vi.spyOn(menuUtils, "getSlotPaginate").mockResolvedValue({
+        getItem: () => ({ getLore: () => [] }),
+        click,
+    } as never);
+    vi.spyOn(slots, "menuStateDescription").mockReturnValue(' in "Action Settings"');
+    vi.spyOn(slots, "describeGuiScreenMenu").mockReturnValue("GuiChest");
+    const importable: ImportableFunction = {
+        type: "FUNCTION",
+        name: "Readiness",
+        actions: [message("new")],
+    };
+    const ctx = {
+        sleep: async () => undefined,
+        displayMessage: () => undefined,
+        getMenuItemSlot: () => ({ click: () => undefined }),
+        waitFor: () => new Promise(() => {}),
+        withTimeout: (_wait: unknown, reason: string) =>
+            Promise.reject(new Error(`Timeout after 6000ms: ${reason}`)),
+    } as unknown as TaskContext;
+    mocks.scanImportable.mockResolvedValue({
+        kind: "FUNCTION",
+        importable,
+        needsHydration: false,
+        plan: () => ({
+            kind: "FUNCTION",
+            importable,
+            applicationPlan: cacheApplicationPlan,
+            applicationUnits: cacheApplicationPlan.totalUnits,
+            isNoOp: () => false,
+            apply: () =>
+                addAction(
+                    ctx,
+                    message("new"),
+                    undefined as never,
+                    {} as never,
+                    0,
+                    undefined
+                ),
+            reconstructObserved: () => null,
+            reconstructPartial: () => null,
+        }),
+    });
+    const events: SyncEvent[] = [];
+    await runImportSession(ctx, {
+        importables: [importable],
+        trustMode: false,
+        housingUuid: "test-house",
+        sourcePath: "./project/import.json",
+        parsed: { value: [importable] } as never,
+        conflictHandling: { kind: "proceed" },
+        events: { emit: (event) => events.push(event) },
+    });
+    expect(click).toHaveBeenCalledOnce();
+    const finished = events.find(
+        (event) => event.kind === "importableFinished" && event.status === "failed"
+    );
+    if (finished?.kind !== "importableFinished") throw new Error("No failed import event");
+    expect(finished.error).toMatch(
+        /^Failed to import FUNCTION: HTSW_INCOMPLETE_READ: Timeout after 6000ms:/
+    );
+    expect(finished.error).toContain(
+        'After clicking Add Action option "Send a Chat Message"'
+    );
+});
+
+afterEach(() => vi.restoreAllMocks());

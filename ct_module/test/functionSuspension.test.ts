@@ -627,7 +627,7 @@ describe("automatic function execution suspension", () => {
         expect(parseAutomaticExecutionTicks(["§7Current: §a0"])).toBe(0);
         expect(parseAutomaticExecutionTicks(["§7Current: §cDisabled"])).toBe(0);
         expect(parseAutomaticExecutionTicks(["§7Current: §a5"])).toBe(5);
-        for (const lore of [[], ["Current: unknown"], ["Current: 5garbage"]])
+        for (const lore of [[], ["Current: unknown"], ["Current: 0 or 5 ticks"]])
             expect(() => parseAutomaticExecutionTicks(lore)).toThrow();
     });
 });

@@ -84,8 +84,7 @@ async function setPlayerTimeValue(ctx: TaskContext, value: number): Promise<void
     await openSubmenu(ctx, slotName);
     const customSlot = await getSlotPaginate(ctx, "Custom Time");
     customSlot.click();
-    await enterValue(ctx, time);
-    await waitForMenu(ctx);
+    await enterValue(ctx, time, slotName);
 }
 
 export async function writeConditional(
@@ -221,7 +220,8 @@ export async function writeChangeMaxHealth(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_MAX_HEALTH", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 
     if (action.heal !== undefined) {
@@ -256,8 +256,7 @@ export async function writeGiveItem(
         await openSubmenu(ctx, slotLabel);
         const manualSlot = await getSlotPaginate(ctx, "Manual Input");
         manualSlot.click();
-        await enterValue(ctx, slotValue);
-        await waitForMenu(ctx);
+        await enterValue(ctx, slotValue, slotLabel);
     } else {
         await setSelectValue(ctx, slotLabel, slotValue);
     }
@@ -335,7 +334,8 @@ export async function writeGiveExperienceLevels(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("GIVE_EXPERIENCE_LEVELS", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -444,7 +444,8 @@ export async function writeChangeVar(
         await setStringValue(
             ctx,
             ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_VAR", "value")),
-            action.value
+            action.value,
+            true
         );
     }
 
@@ -501,8 +502,7 @@ export async function writePlaySound(
             throw new Error("Could not find custom sound editor slot");
         }
         customSoundSlot.click();
-        await enterValue(ctx, desiredSound);
-        await waitForMenu(ctx);
+        await enterValue(ctx, desiredSound, soundLabel);
     }
 
     await setNumberValue(
@@ -551,7 +551,8 @@ export async function writeChangeHealth(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_HEALTH", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -563,7 +564,8 @@ export async function writeChangeHunger(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("CHANGE_HUNGER", "amount")),
-        action.amount
+        action.amount,
+        true
     );
 }
 
@@ -694,7 +696,8 @@ export async function writeDropItem(
         String(
             action.despawnDurationTicks ??
                 numberActionDefault("DROP_ITEM", "despawnDurationTicks")
-        )
+        ),
+        true
     );
 
     await setStringValue(
@@ -703,7 +706,8 @@ export async function writeDropItem(
         String(
             action.pickupDelayTicks ??
                 numberActionDefault("DROP_ITEM", "pickupDelayTicks")
-        )
+        ),
+        true
     );
 
     await setBooleanValue(
@@ -726,17 +730,20 @@ export async function writeSetVelocity(
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "x")),
-        action.x
+        action.x,
+        true
     );
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "y")),
-        action.y
+        action.y,
+        true
     );
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("SET_VELOCITY", "z")),
-        action.z
+        action.z,
+        true
     );
 }
 
@@ -746,7 +753,8 @@ export async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promi
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("LAUNCH", "strength")),
-        action.strength
+        action.strength,
+        true
     );
 }
 

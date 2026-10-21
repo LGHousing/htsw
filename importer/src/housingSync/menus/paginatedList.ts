@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../incompleteRead";
 import TaskContext from "../../tasks/context";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { plainItemName } from "../../utils/helpers";
@@ -314,7 +315,7 @@ export async function readPaginatedList<T extends { index: number }>(
             state.hasPrev !== state.currentPage > 1 ||
             (totalPages !== null && state.hasNext !== state.currentPage < totalPages)
         ) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Incomplete paginated ${config.label} list: expected page ${pagesRead + 1}/${totalPages}, found ${state.currentPage}/${state.totalPages} (previous: ${state.hasPrev}, next: ${state.hasNext}).`
             );
         }
@@ -331,7 +332,7 @@ export async function readPaginatedList<T extends { index: number }>(
             // with the initial scan.
             const minEntries = isFinalPage ? (pagesRead === 0 ? 0 : 1) : ITEMS_PER_PAGE;
             if (pageEntries.length < minEntries || pageEntries.length > ITEMS_PER_PAGE) {
-                throw new Error(
+                throw new IncompleteReadError(
                     `Incomplete paginated ${config.label} list: page ${pagesRead + 1}/${totalPages} has ${pageEntries.length} entries; expected ${minEntries}..${ITEMS_PER_PAGE}.`
                 );
             }

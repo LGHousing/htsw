@@ -194,13 +194,14 @@ export default class TaskContext {
         }
     }
 
-    public async runCommand(command: string): Promise<void> {
+    public async runCommand(command: string, onSent?: () => void): Promise<void> {
         if (!command.startsWith("/")) {
             throw new Error(`Invalid command: ${command}`);
         }
         await this.awaitCommandCooldown();
         await this.awaitChatBudget();
         this.sendRawChatPacket(command);
+        onSent?.();
         recordRuntimeDebug("command", { command });
         this.lastCommandAt = Date.now();
     }
@@ -230,7 +231,7 @@ export default class TaskContext {
         platform().sendPacket(this.createChatPacket(message));
     }
 
-    public async sendMessage(message: string): Promise<void> {
+    public async sendMessage(message: string, onSent?: () => void): Promise<void> {
         if (message.startsWith("/")) {
             throw new Error(`Invalid chat prompt value: ${message}`);
         }
@@ -245,6 +246,7 @@ export default class TaskContext {
         // overwrite the message field by reflection so the full (≤256) message
         // reaches the server.
         this.sendRawChatPacket(outgoingMessage);
+        onSent?.();
         recordRuntimeDebug("chatInput", { length: outgoingMessage.length });
     }
 
