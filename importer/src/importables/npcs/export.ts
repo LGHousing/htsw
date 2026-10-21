@@ -26,6 +26,7 @@ import {
 } from "./listNpcs";
 import type { ReadOutput } from "../export/reader";
 import { capturedItemFieldContent } from "../../housingSync/items/fieldContent";
+import { platform } from "../../platform";
 
 export type ExportNpcWithSharedStateOptions = {
     entry: NpcListEntry;
@@ -96,7 +97,7 @@ function writeActionFile(
         ctx.displayMessage(`&7[export] &e${diag.message}`);
     }
     ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
+    platform().fileLib.write(target.htslPath, source, true);
     if (showProgressMessages) ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 

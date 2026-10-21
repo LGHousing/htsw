@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 let taskRunning = false;
 const observers: Array<(running: boolean) => void> = [];

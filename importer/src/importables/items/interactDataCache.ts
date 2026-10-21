@@ -5,8 +5,9 @@ import { tagChild, type TagLike } from "../../housingSync/items/itemTag";
 import { IMPORT_CACHE_ROOT } from "../../importCache/paths";
 import { atomicWriteText, getMtimeMs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
-import { runtimeString } from "../../utils/java";
+import { runtimeString } from "../../utils/runtimeString";
 import type { ItemDependencyIndex } from "./dependencyIndex";
+import { platform } from "../../platform";
 
 export type InteractDataExpectation =
     { kind: "absent" } | { kind: "cached"; snbt: string } | { kind: "uncached" };
@@ -36,8 +37,8 @@ export function readInteractDataCache(
 ): string | undefined {
     const path = cachePath(item, dependencies, housingUuid);
     try {
-        if (!FileLib.exists(path)) return undefined;
-        const value = FileLib.read(path) as unknown as string | null;
+        if (!platform().fileLib.exists(path)) return undefined;
+        const value = platform().fileLib.read(path) as unknown as string | null;
         if (value === null) return undefined;
         const snbt = runtimeString(value);
         return isInteractDataSnbt(snbt) ? snbt : undefined;

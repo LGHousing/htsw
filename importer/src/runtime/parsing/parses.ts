@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw";
 

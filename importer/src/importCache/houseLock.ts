@@ -3,7 +3,6 @@ import type { Importable } from "htsw/types";
 import { parentDir } from "htsw-editor-common/project";
 
 import { atomicWriteText } from "../utils/filesystem";
-import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { importableIdentity, importableKey } from "../importables/identity";
 import { actionListsOfImportable } from "./actionLists";
@@ -20,6 +19,7 @@ import type {
 import type { ItemFieldContent } from "../housingSync/items/fieldContent";
 import { memoizedImportableHash } from "./hashMemo";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
+import { platform } from "../platform";
 
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
@@ -201,10 +201,10 @@ function parseStringRecord(value: unknown): Record<string, string> | undefined {
 
 export function readHouseLock(importJsonPath: string): HouseLock | null {
     const path = houseLockPathForImportJson(importJsonPath);
-    if (!FileLib.exists(path)) return null;
+    if (!platform().fileLib.exists(path)) return null;
     let raw: string | null;
     try {
-        raw = FileLib.read(path);
+        raw = platform().fileLib.read(path);
     } catch (_e) {
         raw = null;
     }
@@ -266,7 +266,7 @@ export function houseLockAcceptsUpdate(
     housingUuid: string
 ): boolean {
     const path = houseLockPathForImportJson(importJsonPath);
-    if (!FileLib.exists(path)) return true;
+    if (!platform().fileLib.exists(path)) return true;
     const lock = readHouseLock(importJsonPath);
     if (lock === null) return false;
     if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) return false;
@@ -354,36 +354,28 @@ export function upsertHouseLockImportablesOffThread(
     if (updates.length === 0) return Promise.resolve(true);
     const snapshot = updates.slice();
     return new Promise((resolve) => {
-        const Thread = javaType("java.lang.Thread");
-        const Runnable = javaType("java.lang.Runnable");
         try {
-            const thread = new Thread(
-                new Runnable({
-                    run: function () {
-                        let prepared: PreparedHouseLockImportableUpdate[] | null = null;
-                        try {
-                            prepared = snapshot.map(prepareHouseLockImportableUpdate);
-                        } catch (error) {
-                            recordRuntimeDebug("houseLockPrepareFailed", {
-                                path: importJsonPath,
-                                error: formatHouseLockError(error),
-                            });
-                        }
-                        runOnMainThread(() => {
-                            resolve(
-                                prepared !== null &&
-                                    upsertPreparedHouseLockImportables(
-                                        importJsonPath,
-                                        housingUuid,
-                                        prepared
-                                    )
-                            );
-                        });
-                    },
-                })
-            );
-            thread.setDaemon(true);
-            thread.start();
+            platform().startDaemonThread(function () {
+                let prepared: PreparedHouseLockImportableUpdate[] | null = null;
+                try {
+                    prepared = snapshot.map(prepareHouseLockImportableUpdate);
+                } catch (error) {
+                    recordRuntimeDebug("houseLockPrepareFailed", {
+                        path: importJsonPath,
+                        error: formatHouseLockError(error),
+                    });
+                }
+                runOnMainThread(() => {
+                    resolve(
+                        prepared !== null &&
+                            upsertPreparedHouseLockImportables(
+                                importJsonPath,
+                                housingUuid,
+                                prepared
+                            )
+                    );
+                });
+            });
         } catch (_error) {
             resolve(upsertHouseLockImportables(importJsonPath, housingUuid, snapshot));
         }

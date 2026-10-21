@@ -23,6 +23,7 @@ import {
     resetRuntimeDebugRecords,
 } from "../runtimeDebug/runtimeDebugBuffer";
 import { errorMessage } from "../utils/helpers";
+import { platform } from "../platform";
 
 // Cancellation resolves undefined; other errors still reject.
 export async function runHousingSyncTask<T>(
@@ -68,10 +69,10 @@ export async function runHousingSyncTask<T>(
         } finally {
             const deferredChat = ctx.abandonChatPrompt();
             if (deferredChat !== null && deferredChat > 0) {
-                ChatLib.chat(
+                platform().chat(
                     `&c[htsw] ${deferredChat === 1 ? "Your chat message was" : `${deferredChat} chat messages were`} blocked by Housing's value prompt and could not be resent because the task stopped.`
                 );
-                ChatLib.chat(
+                platform().chat(
                     "&7[htsw] If a Housing value prompt is still open, run &f/chatinput cancel&7."
                 );
             }

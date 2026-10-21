@@ -1,6 +1,6 @@
-/// <reference types="../../../CTAutocomplete" />
 
-import { runtimeString } from "../../utils/java";
+import { runtimeString } from "../../utils/runtimeString";
+import { platform } from "../../platform";
 
 export type TimedOperationKind =
     | "commandMenuWait"
@@ -187,9 +187,9 @@ function weightFromPersisted(entry: PersistedEntry, count: number): number {
 function loadPersistedStats(): void {
     if (loadedPersistedStats) return;
     loadedPersistedStats = true;
-    if (!FileLib.exists(PERSIST_PATH)) return;
+    if (!platform().fileLib.exists(PERSIST_PATH)) return;
     try {
-        const raw = runtimeString(FileLib.read(PERSIST_PATH));
+        const raw = runtimeString(platform().fileLib.read(PERSIST_PATH));
         const parsed = JSON.parse(raw) as {
             stats?: { [kind: string]: PersistedEntry | undefined };
         };
@@ -237,7 +237,7 @@ function schedulePersist(): void {
 
 function persistTimingStats(): void {
     try {
-        FileLib.write(
+        platform().fileLib.write(
             PERSIST_PATH,
             JSON.stringify(
                 {

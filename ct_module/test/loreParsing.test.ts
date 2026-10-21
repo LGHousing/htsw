@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { shallowActionListHasActions } from "../src/housingSync/fields/loreParsing";
+import { shallowActionListHasActions } from "@htsw/importer/housingSync/fields/loreParsing";
 
 function slotWithLore(lore: string[]) {
     return {

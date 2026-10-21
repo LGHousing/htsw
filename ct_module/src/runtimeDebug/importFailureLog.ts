@@ -1,4 +1,4 @@
-import { recentRuntimeDebugRecords, runtimeDebugStats } from "./runtimeDebugBuffer";
+import { recentRuntimeDebugRecords, runtimeDebugStats } from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
 import { ensureParentDirs } from "../utils/filesystem";
 import {
     describeGuiScreenMenu,
@@ -11,7 +11,7 @@ import {
 } from "../tasks/specifics/waitFor";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
 import { readLocalVersion } from "../autoUpdate";
-import { getUploadDiagnostics } from "../settings";
+import { getUploadDiagnostics } from "@htsw/importer/settings";
 
 export type TaskFailureDetails = {
     phase: string;

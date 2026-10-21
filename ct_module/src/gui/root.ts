@@ -13,8 +13,8 @@ import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatPanel } from "./chat";
 import { COLOR_PANEL } from "./lib/theme";
-import { getShowChatPanel, getShowInventoryButtons } from "../settings";
-import { isTaskRunning } from "../tasks/runningState";
+import { getShowChatPanel, getShowInventoryButtons } from "@htsw/importer/settings";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
 
 // Smallest chat panel we'll render (input bar + a couple scrollback rows) and
 // the minimum height the left rail keeps above it, so a short window degrades

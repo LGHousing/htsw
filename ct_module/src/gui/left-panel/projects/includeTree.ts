@@ -1,8 +1,8 @@
 import type { ImportJsonFileNode } from "htsw";
 import type { Importable } from "htsw/types";
-import { importableIdentity } from "../../../importables/identity";
+import { importableIdentity } from "@htsw/importer/importables/identity";
 import type { ResultImport } from "./rowModel";
-import { canonicalPath } from "../../../runtime/parsing/parses";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
 
 /**
  * The parser's include tree, re-exported for the Projects tree renderer.

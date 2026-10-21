@@ -61,6 +61,7 @@ import { normalizeSoundKey } from "../fields/sounds";
 import { setItemValue } from "../items/itemPicker";
 import type { WriteActionOptions } from "./io";
 import { itemLore } from "../../utils/itemLore";
+import type { Item } from "../../platform";
 
 function booleanActionDefault(type: Action["type"], prop: string): boolean {
     return getActionFieldDefault(type, prop) as boolean;

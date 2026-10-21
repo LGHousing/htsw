@@ -31,16 +31,16 @@ import {
 import {
     getActiveTaskListLabel,
     getActiveTaskPath,
-} from "../src/runtime/taskProgress";
-import { createReadProgressSession } from "../src/runtime/readProgress";
+} from "@htsw/importer/runtime/taskProgress";
+import { createReadProgressSession } from "@htsw/importer/runtime/readProgress";
 import { createImportPreviewReplay } from "../src/gui/right-panel/import-tab/importPreviewReplay";
 import {
     ActionListPath,
     type ActionPathPart,
     ActionPath,
-} from "../src/housingSync/actionPath";
-import type { ObservedNode } from "../src/housingSync/observedActions";
-import type { PlannedOp } from "../src/housingSync/syncEvents";
+} from "@htsw/importer/housingSync/actionPath";
+import type { ObservedNode } from "@htsw/importer/housingSync/observedActions";
+import type { PlannedOp } from "@htsw/importer/housingSync/syncEvents";
 
 import { conditional, message } from "./utils";
 
@@ -843,6 +843,6 @@ describe("previewRevision", () => {
     });
 });
 
-import { readSessions } from "../src/runtime/readProgress";
+import { readSessions } from "@htsw/importer/runtime/readProgress";
 import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
 readSessions.observe(({ type, basePath, observe }) => observe(createReadLivePreview(type, basePath)));

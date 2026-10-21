@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
 
@@ -14,6 +13,7 @@ import {
     type QueueAddResult,
 } from "./queue";
 import { autoRunQueueChanged } from "./autoRun";
+import { platform } from "../platform";
 
 export type ExportSpec = {
     type: Importable["type"];
@@ -42,9 +42,9 @@ export function startExport(
             0xffe85c5c,
             8000
         );
-        ChatLib.chat("&c[htsw] Export stopped: the selected project no longer exists.");
-        ChatLib.chat(`&7  ${destination.path}`);
-        ChatLib.chat("&7Choose another project from Houses → Export project.");
+        platform().chat("&c[htsw] Export stopped: the selected project no longer exists.");
+        platform().chat(`&7  ${destination.path}`);
+        platform().chat("&7Choose another project from Houses → Export project.");
         return;
     }
     const importJsonPath = destination.path;

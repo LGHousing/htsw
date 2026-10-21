@@ -1,6 +1,7 @@
 import type { Action, Condition } from "htsw/types";
 import { MINECRAFT_ITEMS } from "htsw/types";
 import { items as itemReferences } from "htsw";
+import type { Item } from "../../platform";
 
 export type CanonicalizeItemName = (name: string) => string;
 

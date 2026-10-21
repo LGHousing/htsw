@@ -2,9 +2,9 @@ import type { ImportablesParseResult } from "htsw";
 import type { Importable, ImportableFunction, ImportableTeam } from "htsw/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { expandImportDependencies } from "../src/importables/import/dependencyExpansion";
-import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { importableHash, listHashes } from "../src/importCache/hash";
+import { expandImportDependencies } from "@htsw/importer/importables/import/dependencyExpansion";
+import type { ImportableCacheEntry } from "@htsw/importer/importCache/cache";
+import { importableHash, listHashes } from "@htsw/importer/importCache/hash";
 
 function parsed(importables: Importable[]): ImportablesParseResult {
     return {

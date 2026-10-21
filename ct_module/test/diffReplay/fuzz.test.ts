@@ -6,7 +6,7 @@ import type { Action } from "htsw/types";
 import {
     diffActionList,
     baselineActionListFromActions,
-} from "../../src/housingSync/actions/diff";
+} from "@htsw/importer/housingSync/actions/diff";
 import { changeVar, conditional, message, playSound } from "../utils";
 import { actionListsEqual, applyPlan } from "./oracle";
 import { scoreDiff } from "./scorer";

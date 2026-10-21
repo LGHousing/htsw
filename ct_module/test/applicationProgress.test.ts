@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
 import {
     actionListStep,
     ApplicationProgress,
     defineApplicationPlan,
     workStep,
-} from "../src/importables/import/applicationProgress";
+} from "@htsw/importer/importables/import/applicationProgress";
 
 describe("application progress", () => {
     test("combines outer work and sequential action lists into one cumulative value", async () => {

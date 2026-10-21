@@ -1,5 +1,5 @@
 import { runOnMainThread } from "../utils/mainThread";
-import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
+import { recordRuntimeDebug } from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
 
 /**
  * promise-polyfill schedules every `.then()` callback via `setTimeout(fn, 0)`.

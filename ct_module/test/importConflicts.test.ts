@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
-import { scanConflictVerdict } from "../src/housingSync/actions/conflicts";
+import { scanConflictVerdict } from "@htsw/importer/housingSync/actions/conflicts";
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
-} from "../src/housingSync/actions/scanHash";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { OverwriteWarningMode } from "../src/importables/overwriteWarning";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type TaskContext from "../src/tasks/context";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
-import type { ListReadOptions } from "../src/housingSync/context/actionReadContext";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
+import type { OverwriteWarningMode } from "@htsw/importer/importables/overwriteWarning";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ListReadOptions } from "@htsw/importer/housingSync/context/actionReadContext";
 import { changeVar, conditional, message, observedSlot, playSound } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -21,14 +21,14 @@ const mocks = vi.hoisted(() => ({
     hydrateActionListScan: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/actions/readList", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/actions/readList")>()),
+vi.mock("@htsw/importer/housingSync/actions/readList", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/actions/readList")>()),
     scanActionList: mocks.scanActionList,
 }));
 
-vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", async (importOriginal) => ({
     ...(await importOriginal<
-        typeof import("../src/housingSync/actions/hydration/run")
+        typeof import("@htsw/importer/housingSync/actions/hydration/run")
     >()),
     hydrateActionListScan: mocks.hydrateActionListScan,
 }));
@@ -36,8 +36,8 @@ vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
 import {
     readActionListPlan,
     scanActionListForPlan,
-} from "../src/housingSync/actions/plan";
-import { scanActionListSync } from "../src/housingSync/actions/prepareSync";
+} from "@htsw/importer/housingSync/actions/plan";
+import { scanActionListSync } from "@htsw/importer/housingSync/actions/prepareSync";
 
 function sessionWithLock(
     importable: ImportableFunction,

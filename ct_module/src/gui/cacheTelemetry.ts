@@ -1,5 +1,5 @@
-import { canonicalDefaultCacheSize } from "../housingSync/actions/comparison";
-import { importCacheMemorySizes } from "../importCache/cache";
+import { canonicalDefaultCacheSize } from "@htsw/importer/housingSync/actions/comparison";
+import { importCacheMemorySizes } from "@htsw/importer/importCache/cache";
 import { codeViewModelCacheSize } from "./code-view/codeView";
 import { htslParseCacheSize } from "./code-view/htslParse";
 import { lineModelCacheSizes } from "./code-view/lineModel";
@@ -10,11 +10,11 @@ import { anchorCacheSize } from "./lib/anchors";
 import { imageCacheSizes } from "./lib/images";
 import { textWidthCacheSize } from "./lib/layout";
 import { truncateCacheSize } from "./lib/render";
-import { forEachCachedParse, parseCacheSizes } from "../runtime/parsing/parses";
+import { forEachCachedParse, parseCacheSizes } from "@htsw/importer/runtime/parsing/parses";
 import { rightPanelFileCacheSize } from "./right-panel";
 import { focusedLineCacheSize } from "./right-panel/import-tab/focusedLine";
 import { livePreviewCacheTelemetry } from "./right-panel/import-tab/livePreview";
-import { queueItemsCacheSize } from "../runtime/queue";
+import { queueItemsCacheSize } from "@htsw/importer/runtime/queue";
 import { queueRowCacheSizes } from "./right-panel/import-tab/queueRows";
 import { debugLog } from "./lib/debugLog";
 

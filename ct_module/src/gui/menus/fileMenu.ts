@@ -12,7 +12,7 @@ import {
     isQueueItemQueued,
     queueItemsForPath,
     removeFromQueue,
-} from "../../runtime/queue";
+} from "@htsw/importer/runtime/queue";
 import { appendRawHtslFile } from "../../rawHtslImport";
 import { giveRawSnbtMenuAction } from "./giveItemMenu";
 

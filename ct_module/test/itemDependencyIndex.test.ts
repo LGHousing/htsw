@@ -5,16 +5,16 @@ import type { Action, Importable, ImportableItem } from "htsw/types";
 import {
     createItemDependencyIndex,
     type ItemDependencySnapshot,
-} from "../src/importables/items/dependencyIndex";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
-import { createItemDiffContext } from "../src/importables/items/diff";
-import { createItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+} from "@htsw/importer/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemDiffContext } from "@htsw/importer/importables/items/diff";
+import { createItemFieldObservationRecorder } from "@htsw/importer/housingSync/items/fieldObservations";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
 import { itemFieldObservationFromSnbt } from "../src/housingSync/items/capture";
 import {
     createItemVerificationTracker,
     verifiedItemDependencies,
-} from "../src/importables/items/verifiedDependencies";
+} from "@htsw/importer/importables/items/verifiedDependencies";
 
 function item(name: string, marker: number, actions?: Action[]): ImportableItem {
     const nbt: Tag = {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { extractCommandNameFromSlot } from "../src/importables/commands/listCommands";
+import { extractCommandNameFromSlot } from "@htsw/importer/importables/commands/listCommands";
 
 describe("extractCommandNameFromSlot", () => {
     test("strips the command menu display slash", () => {

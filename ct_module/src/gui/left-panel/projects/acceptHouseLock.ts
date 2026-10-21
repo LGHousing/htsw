@@ -1,16 +1,16 @@
 import type { MenuAction } from "../../lib/menu";
 
-import { acceptHouseLockAsCurrent } from "../../../importCache/acceptHouseLock";
-import { houseDisplayName } from "../../../importCache/aliases";
-import { readHouseLock } from "../../../importCache/houseLock";
-import { TaskManager } from "../../../tasks/manager";
+import { acceptHouseLockAsCurrent } from "@htsw/importer/importCache/acceptHouseLock";
+import { houseDisplayName } from "@htsw/importer/importCache/aliases";
+import { readHouseLock } from "@htsw/importer/importCache/houseLock";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { Icons } from "../../lib/icons.generated";
-import { parseImportJsonBlocking } from "../../../runtime/parsing/parses";
+import { parseImportJsonBlocking } from "@htsw/importer/runtime/parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
-import { setHouseTrust } from "../../../runtime/state/index";
+import { setHouseTrust } from "@htsw/importer/runtime/state/index";
 import { showToast } from "../../toast";
-import { blockingDiagnostics } from "../../../utils/helpers";
+import { blockingDiagnostics } from "@htsw/importer/utils/helpers";
 
 function acceptProjectLock(importJsonPath: string): void {
     if (TaskManager.isBusy()) {

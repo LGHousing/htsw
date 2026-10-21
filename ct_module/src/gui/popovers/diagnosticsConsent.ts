@@ -1,7 +1,7 @@
 import {
     getUploadDiagnosticsPreference,
     setUploadDiagnostics,
-} from "../../settings";
+} from "@htsw/importer/settings";
 import { openConfirmPopover } from "./confirm";
 
 let promptOpen = false;

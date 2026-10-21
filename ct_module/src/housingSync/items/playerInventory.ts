@@ -1,5 +1,5 @@
-import TaskContext from "../../tasks/context";
-import { pollTicks } from "../../tasks/poll";
+import TaskContext from "@htsw/importer/tasks/context";
+import { pollTicks } from "@htsw/importer/tasks/poll";
 import { getItemFromSnbt } from "../../utils/nbt";
 import {
     SET_SLOT_ACK_MAX_TICKS,
@@ -9,10 +9,10 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "../menus/packets";
-import { traceNote } from "../trace/taskTrace";
-import { COST } from "../progress/costs";
-import { timed } from "../progress/timing";
-import { snbtFromItem } from "./itemNbt";
+import { traceNote } from "@htsw/importer/housingSync/trace/taskTrace";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
+import { timed } from "@htsw/importer/housingSync/progress/timing";
+import { snbtFromItem } from "@htsw/importer/housingSync/items/itemNbt";
 
 const INVENTORY_SIZE = 36;
 

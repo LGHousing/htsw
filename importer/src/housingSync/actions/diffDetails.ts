@@ -8,6 +8,7 @@ import type {
     ActionSyncConflict,
     ActionSyncConflictEvidence,
 } from "./syncContext";
+import { platform } from "../../platform";
 
 export type DiffPrinterDiagnostic = {
     side: "source" | "live";
@@ -232,7 +233,7 @@ export function writeDiffDetailsFile(
     const path = diffDetailsPath(manifest);
     if (!atomicWriteText(path, formatDiffDetailsFile(report, manifest, timestamp))) {
         try {
-            if (FileLib.exists(path)) FileLib.delete(path);
+            if (platform().fileLib.exists(path)) platform().fileLib.delete(path);
         } catch (_error) {}
         throw new Error(`could not write diff details '${path}'`);
     }

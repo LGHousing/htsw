@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as htsw from "htsw";
 import { MINECRAFT_ITEMS } from "htsw/types";
 
-import { StandaloneItemCaptures } from "../src/importables/items/standaloneCaptures";
+import { StandaloneItemCaptures } from "@htsw/importer/importables/items/standaloneCaptures";
 
 const vanillaStone = '{id:"minecraft:stone",Count:1b,Damage:0s}';
 const magicSword =

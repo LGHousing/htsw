@@ -5,7 +5,7 @@ import {
     beginChatPromptDeferral,
     deferPlayerChat,
     finishChatPromptDeferral,
-} from "../src/tasks/chatPromptDeferral";
+} from "@htsw/importer/tasks/chatPromptDeferral";
 
 describe("Housing chat prompt deferral", () => {
     it("holds player chat until the prompt closes", () => {

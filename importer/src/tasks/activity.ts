@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 /**
  * A label for what the running task is doing during stretches no progress row

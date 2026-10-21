@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseCommandArgs, quoteCommandArg } from "../src/utils/commandArgs";
+import { parseCommandArgs, quoteCommandArg } from "@htsw/importer/utils/commandArgs";
 
 describe("parseCommandArgs", () => {
     test("keeps normal split args unchanged", () => {

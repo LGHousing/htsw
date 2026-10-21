@@ -2,6 +2,7 @@ import type { Importable } from "htsw/types";
 
 import { ensureParentDirs } from "../utils/filesystem";
 import type { PruneTarget } from "./types";
+import { platform } from "../platform";
 
 const RECORD_DIR = "./htsw/pruned";
 const RECORD_SCHEMA_VERSION = 1;
@@ -29,7 +30,7 @@ export function writePruneRecord(
     const path = unusedRecordPath(timestamp.replace(/[:.]/g, "-"));
     ensureParentDirs(path);
     const recovered = entries.filter((entry) => entry.content !== null).length;
-    FileLib.write(
+    platform().fileLib.write(
         path,
         JSON.stringify(
             {
@@ -56,10 +57,10 @@ export function writePruneRecord(
 // second would overwrite the first's record.
 function unusedRecordPath(stamp: string): string {
     const base = `${RECORD_DIR}/pruned-${stamp}`;
-    if (!FileLib.exists(`${base}.json`)) return `${base}.json`;
+    if (!platform().fileLib.exists(`${base}.json`)) return `${base}.json`;
     for (let suffix = 2; suffix < 100; suffix++) {
         const candidate = `${base}-${suffix}.json`;
-        if (!FileLib.exists(candidate)) return candidate;
+        if (!platform().fileLib.exists(candidate)) return candidate;
     }
     return `${base}-overflow.json`;
 }

@@ -1,8 +1,8 @@
 import type {
     ActionListDiff,
     ActionListOperation,
-} from "../../src/housingSync/actions/diff/types";
-import { actionCompareKey } from "../../src/housingSync/actions/comparison";
+} from "@htsw/importer/housingSync/actions/diff/types";
+import { actionCompareKey } from "@htsw/importer/housingSync/actions/comparison";
 
 type OperationCounts = Record<ActionListOperation["kind"], number>;
 

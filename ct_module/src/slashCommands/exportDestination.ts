@@ -1,6 +1,6 @@
-import type { ProjectExportTarget } from "../importables/export/projectDestination";
+import type { ProjectExportTarget } from "@htsw/importer/importables/export/projectDestination";
 import { normalizePathSeparators, parentDir } from "htsw-editor-common/project";
-import { defaultExportRoot, resolveModuleRelativePath } from "../project/paths";
+import { defaultExportRoot, resolveModuleRelativePath } from "@htsw/importer/project/paths";
 
 type ExportDestinationPath = ProjectExportTarget;
 

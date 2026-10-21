@@ -1,5 +1,5 @@
 import { helpers, type Diagnostic } from "htsw";
-import { getMinecraft } from "./java";
+import { platform } from "../platform";
 
 export function removedFormatting(str: string): string {
     return helpers.stripFormatting(str);
@@ -51,8 +51,7 @@ export function blockingDiagnostics(diagnostics: readonly Diagnostic[]): Diagnos
  * Pass `false` for literal text, where `&` is just an ampersand.
  */
 export function chatWidth(string: string, hasFormatCodes: boolean = true): number {
-    const raw = hasFormatCodes ? ChatLib.addColor(string) : string;
-    return getMinecraft().field_71466_p.func_78256_a(raw);
+    return platform().chatWidth(string, hasFormatCodes);
 }
 
 export function spaceWidth() {
@@ -60,7 +59,7 @@ export function spaceWidth() {
 }
 
 export function chatSeparator(): string {
-    const totalWidth = ChatLib.getChatWidth();
+    const totalWidth = platform().chatBoxWidth();
     const sepWidth = chatWidth("-");
 
     return "-".repeat(totalWidth / sepWidth);

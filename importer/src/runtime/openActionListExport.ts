@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 import * as htsw from "htsw";
 import { blockingDiagnostics } from "../utils/helpers";
@@ -8,11 +7,12 @@ import { runHousingSyncTask } from "../housingSync/taskRunner";
 import { TaskManager } from "../tasks/manager";
 import { atomicWriteText } from "../utils/filesystem";
 import { StringFileLoader } from "../utils/fileLoaders";
-import { runtimeString, type RuntimeString } from "../utils/java";
+import { runtimeString, type RuntimeString } from "../utils/runtimeString";
 import { compactFileLabel } from "../project/pathDisplay";
 import { showToast } from "./events";
 import { StandaloneItemCaptures } from "../importables/items/standaloneCaptures";
 import { emitBridgeEvent, rejectBridgeRun } from "../bridge/status";
+import { platform } from "../platform";
 
 function standaloneHtsl(actions: readonly htsw.types.Action[]): string {
     const printed = htsw.htsl.printActionsWithDiagnostics(actions);
@@ -41,12 +41,12 @@ export async function exportOpenActionListTo(
 ): Promise<void> {
     if (!path.toLowerCase().endsWith(".htsl")) {
         rejectBridgeRun("export", "expected_htsl_destination", "htsw_export");
-        ChatLib.chat("&c[htsw] Open action-list exports require a .htsl destination.");
+        platform().chat("&c[htsw] Open action-list exports require a .htsl destination.");
         return;
     }
     if (TaskManager.isBusy()) {
         rejectBridgeRun("export", "busy", "htsw_export");
-        ChatLib.chat(
+        platform().chat(
             "&c[htsw] An import (or another task) is already running — wait for it to finish first."
         );
         return;
@@ -95,17 +95,17 @@ export async function exportOpenActionListTo(
                     itemEntries.length > 0
                         ? ` (+${itemEntries.length} item file${itemEntries.length === 1 ? "" : "s"})`
                         : "";
-                ChatLib.chat(
+                platform().chat(
                     `&a[htsw] Exported ${count} action${count === 1 ? "" : "s"} → ${path}${itemCountSuffix}`
                 );
                 if (itemEntries.length > 0) {
-                    ChatLib.chat(
+                    platform().chat(
                         "&7[htsw] Custom items were written as inline .snbt files next to the export; keep them together with the .htsl."
                     );
                 }
                 const clickActionItems = itemCaptures.clickActionItemCount();
                 if (clickActionItems > 0) {
-                    ChatLib.chat(
+                    platform().chat(
                         `&e[htsw] ${clickActionItems} item${clickActionItems === 1 ? "" : "s"} include${clickActionItems === 1 ? "s" : ""} click actions as raw interact_data in their .snbt; they reimport correctly only into this house, and those click actions are not editable HTSL.`
                     );
                 }
@@ -117,7 +117,7 @@ export async function exportOpenActionListTo(
             { diagnostic: "htsw_export" }
         );
     } catch (err) {
-        ChatLib.chat(`&c[htsw] Open action-list export failed: ${String(err)}`);
+        platform().chat(`&c[htsw] Open action-list export failed: ${String(err)}`);
         showToast(`Export failed: ${String(err)}`, 0xffe85c5c, 8000);
     }
 }
@@ -131,7 +131,7 @@ function prettySnbt(snbt: string): string {
 }
 
 function readExistingItem(htslPath: string, reference: string): string | null {
-    const content = FileLib.read(itemTarget(htslPath, reference)) as
+    const content = platform().fileLib.read(itemTarget(htslPath, reference)) as
         RuntimeString | null | undefined;
     return content === null || content === undefined ? null : runtimeString(content);
 }

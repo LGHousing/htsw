@@ -5,7 +5,7 @@ import {
     formatCacheReportSummary,
     type CacheReportRow,
 } from "../src/slashCommands/cacheReportModel";
-import type { ItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import type { ItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
 
 const itemDependencies = {} as ItemDependencyIndex;
 

@@ -15,7 +15,7 @@ vi.mock("../src/housingSync/items/capture", () => ({
     observeItemFromOpenEditorField: vi.fn(),
 }));
 
-vi.mock("../src/housingSync/menus/paginatedList", () => ({
+vi.mock("@htsw/importer/housingSync/menus/paginatedList", () => ({
     getPaginatedListPageForIndex: () => 1,
     getPaginatedListSlotAtIndex: vi.fn(async () => mocks.slot),
     getVisiblePaginatedItemSlots: vi.fn(() => []),
@@ -31,15 +31,15 @@ vi.mock("../src/housingSync/menus/paginatedList", () => ({
     ]),
 }));
 
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     clickGoBack: vi.fn(async () => undefined),
 }));
 
-import { readConditionList } from "../src/housingSync/actions/conditions/readList";
+import { readConditionList } from "@htsw/importer/housingSync/actions/conditions/readList";
 
 describe("condition item capture", () => {
     test("exports Block Type through the block-reference capture path", async () => {

@@ -1,5 +1,4 @@
 import { activeBridgeRunId, emitBridgeEvent } from "../bridge/status";
-/// <reference types="../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
 

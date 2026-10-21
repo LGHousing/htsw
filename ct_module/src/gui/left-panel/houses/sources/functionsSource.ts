@@ -2,18 +2,18 @@
 
 import type { FunctionIcon } from "htsw/types";
 
-import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../../runtime/state/index";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import { showToast } from "../../../toast";
 import { markGuiDirty } from "../../../lib/dirty";
-import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
+import { listAllFunctionEntries } from "@htsw/importer/importables/functions/listFunctions";
 import { functionIconFromSnapshot } from "../../../../importables/functions/icon";
 import {
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     type HouseImportable,
-} from "../../../../importCache/cache";
+} from "@htsw/importer/importCache/cache";
 
 let scanInFlight = false;
 

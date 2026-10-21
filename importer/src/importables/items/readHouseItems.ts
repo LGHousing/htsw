@@ -16,6 +16,7 @@ import type { ReadFn } from "../export/reader";
 import { readClickActions } from "./readClickActions";
 import { hasItemClickActions } from "./interactDataCache";
 import { tagChild } from "../../housingSync/items/itemTag";
+import { platform, type Item } from "../../platform";
 
 function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]): Item {
     const source = projectItems.find((item) => item.name === name);
@@ -34,7 +35,7 @@ function liveInventoryItem(name: string, projectItems: readonly ImportableItem[]
     const signedCandidates = new Map<string, Item>();
     let ambiguousUnsignedCopy = false;
     for (let slot = 0; slot < 36; slot++) {
-        const item = Player.getInventory()?.getStackInSlot(slot);
+        const item = platform().playerInventory()?.getStackInSlot(slot);
         if (item == null || canonicalItemShellKey(item) !== shell) continue;
         const key = canonicalLiveItemKey(item);
         candidates.set(key, item);

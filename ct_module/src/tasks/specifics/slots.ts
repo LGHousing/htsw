@@ -1,4 +1,4 @@
-import { removedFormatting } from "../../utils/helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 import { getMinecraft, javaType } from "../../utils/java";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero as lastObservedWindowID } from "./waitFor";
 import { itemLore } from "../../utils/itemLore";

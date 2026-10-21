@@ -12,7 +12,7 @@ import {
 import type { Element } from "../lib/layout";
 import { extract, type Extractable } from "../lib/extractable";
 import type { LineDecorations, LineDecorator, RenderableLine } from "./lineTypes";
-import { ActionPath } from "../../housingSync/actionPath";
+import { ActionPath } from "@htsw/importer/housingSync/actionPath";
 import { tokenizeHtsl } from "../right-panel/syntax";
 
 export type SourceCodeViewProps = {

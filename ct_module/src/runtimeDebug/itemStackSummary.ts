@@ -1,4 +1,4 @@
-import { removedFormatting } from "../utils/helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 import { javaType } from "../utils/java";
 
 export type ItemStackSummary = {

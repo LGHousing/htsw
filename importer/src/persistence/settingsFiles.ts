@@ -1,7 +1,7 @@
-/// <reference types="../../CTAutocomplete" />
 
 import { atomicWriteText } from "../utils/filesystem";
-import { runtimeString, type RuntimeString } from "../utils/java";
+import { runtimeString, type RuntimeString } from "../utils/runtimeString";
+import { platform } from "../platform";
 
 const SETTINGS_ROOT = "./htsw/.settings";
 const LEGACY_ROOTS = ["./htsw/.state", "./htsw/.cache"];
@@ -32,7 +32,7 @@ function removeLegacyFiles(fileName: string, extraLegacy: readonly string[]): vo
     const paths = legacyPathsFor(fileName, extraLegacy);
     for (let i = 0; i < paths.length; i++) {
         try {
-            if (FileLib.exists(paths[i])) FileLib.delete(paths[i]);
+            if (platform().fileLib.exists(paths[i])) platform().fileLib.delete(paths[i]);
         } catch (_e) {}
     }
 }
@@ -42,8 +42,8 @@ export function readSettingsFile(
     extraLegacy: readonly string[] = []
 ): string | null {
     const path = settingsFilePath(fileName);
-    if (FileLib.exists(path)) {
-        const value = FileLib.read(path) as RuntimeString | null | undefined;
+    if (platform().fileLib.exists(path)) {
+        const value = platform().fileLib.read(path) as RuntimeString | null | undefined;
         if (value === null || value === undefined) {
             throw new Error(`Could not read settings file: ${path}`);
         }
@@ -55,8 +55,8 @@ export function readSettingsFile(
     const legacyPaths = legacyPathsFor(fileName, extraLegacy);
     for (let i = 0; i < legacyPaths.length; i++) {
         const legacyPath = legacyPaths[i];
-        if (!FileLib.exists(legacyPath)) continue;
-        const value = FileLib.read(legacyPath) as RuntimeString | null | undefined;
+        if (!platform().fileLib.exists(legacyPath)) continue;
+        const value = platform().fileLib.read(legacyPath) as RuntimeString | null | undefined;
         if (value === null || value === undefined) {
             throw new Error(`Could not read settings file: ${legacyPath}`);
         }

@@ -17,7 +17,7 @@ import {
     isImportCompletionSoundEnabled,
     setImportCompletionSoundEnabled,
     setTaskSoundsMuted,
-} from "../../../runtime/state/flags";
+} from "@htsw/importer/runtime/state/flags";
 import {
     getAutoUpdatePreference,
     getRestoreWorkspace,
@@ -33,9 +33,9 @@ import {
     setSmoothScrolling,
     setUnmatchedFunctionsFirst,
     setUploadDiagnostics,
-} from "../../../settings";
+} from "@htsw/importer/settings";
 import { commandUpdate } from "../../../autoUpdate";
-import { setAutoRunEnabled } from "../../../runtime/autoRun";
+import { setAutoRunEnabled } from "@htsw/importer/runtime/autoRun";
 
 type ToggleRow = {
     icon: () => IconName;

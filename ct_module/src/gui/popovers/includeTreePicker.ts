@@ -9,8 +9,8 @@ import {
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
-import { basename, dirname } from "../../project/pathDisplay";
-import { canonicalPath } from "../../runtime/parsing/parses";
+import { basename, dirname } from "@htsw/importer/project/pathDisplay";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
 import { ROW_BG, ROW_HOVER_BG, caretButton } from "../left-panel/projects/rowModel";
 import type { IncludeNode } from "../left-panel/projects/includeTree";
 

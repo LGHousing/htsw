@@ -30,7 +30,7 @@ describe("prune consent", () => {
     }
 
     function loadConsent() {
-        return import("../src/prune/consent");
+        return import("@htsw/importer/prune/consent");
     }
 
     beforeEach(() => {

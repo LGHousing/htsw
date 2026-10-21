@@ -1,11 +1,11 @@
 import { beforeEach, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ back: vi.fn() }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
 }));
-vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/menus/menuUtils")>()),
     clickGoBack: mocks.back,
 }));
 vi.mock("../src/tasks/specifics/slots", async (original) => ({
@@ -13,8 +13,8 @@ vi.mock("../src/tasks/specifics/slots", async (original) => ({
     menuStateDescription: () =>
         ' in "Action Settings" (slots: Head, Variable, Operation, Value, Automatic Unset)',
 }));
-import { withHolderRecovery } from "../src/housingSync/menus/holderRecovery";
-import { HolderReadError, setCycleValue } from "../src/housingSync/menus/menuUtils";
+import { withHolderRecovery } from "@htsw/importer/housingSync/menus/holderRecovery";
+import { HolderReadError, setCycleValue } from "@htsw/importer/housingSync/menus/menuUtils";
 import { MouseButton } from "../src/tasks/specifics/slots";
 const diagnostic =
     'Could not find "Holder" in "Action Settings" (slots: Head, Variable, Operation, Value, Automatic Unset, Go Back, Note)';

@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import { canonicalPath } from "../parsing/parses";
 import {

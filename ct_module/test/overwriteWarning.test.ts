@@ -29,7 +29,7 @@ describe("overwrite warning persistence", () => {
     });
 
     it("defaults to always when no setting exists", async () => {
-        const warnings = await import("../src/importables/overwriteWarning");
+        const warnings = await import("@htsw/importer/importables/overwriteWarning");
 
         expect(warnings.getOverwriteWarningMode()).toBe("always");
     });
@@ -38,7 +38,7 @@ describe("overwrite warning persistence", () => {
         "resets corrupt settings and remains writable",
         async (stored) => {
             files.set(SETTINGS_PATH, stored);
-            const warnings = await import("../src/importables/overwriteWarning");
+            const warnings = await import("@htsw/importer/importables/overwriteWarning");
 
             expect(warnings.getOverwriteWarningMode()).toBe("always");
             expect(warnings.setOverwriteWarningMode("off")).toBe(true);
@@ -57,7 +57,7 @@ describe("overwrite warning persistence", () => {
             },
             delete: () => false,
         });
-        const warnings = await import("../src/importables/overwriteWarning");
+        const warnings = await import("@htsw/importer/importables/overwriteWarning");
 
         expect(warnings.getOverwriteWarningMode()).toBe("always");
         expect(warnings.setOverwriteWarningMode("trusted")).toBe(true);

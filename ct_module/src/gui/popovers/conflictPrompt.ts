@@ -1,4 +1,4 @@
-import { conflictPrompts } from "../../runtime/conflictPrompt";
+import { conflictPrompts } from "@htsw/importer/runtime/conflictPrompt";
 import { closeConfirmPopover, openConfirmPopover } from "./confirm";
 
 export function renderConflictPrompt(

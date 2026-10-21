@@ -4,7 +4,7 @@ import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Input, Row, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { markGuiDirty } from "../../lib/dirty";
-import { getAlias, setAlias, clearAlias } from "../../../importCache/aliases";
+import { getAlias, setAlias, clearAlias } from "@htsw/importer/importCache/aliases";
 
 let editingUuid: string | null = null;
 let editingValue = "";

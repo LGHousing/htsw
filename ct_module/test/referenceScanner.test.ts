@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Action, Importable } from "htsw/types";
-import { collectReferencedImportables } from "../src/importables/import/referenceScanner";
+import { collectReferencedImportables } from "@htsw/importer/importables/import/referenceScanner";
 
 function fn(actions: Action[]): Importable {
     return { type: "FUNCTION", name: "f", actions } as unknown as Importable;

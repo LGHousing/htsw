@@ -1,16 +1,16 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import TaskContext from "../../tasks/context";
-import { TaskManager } from "../../tasks/manager";
+import TaskContext from "@htsw/importer/tasks/context";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import {
     forEachPaginatedPage,
     tryGetSlotPaginateBy,
-} from "../../housingSync/menus/menuUtils";
-import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
+} from "@htsw/importer/housingSync/menus/menuUtils";
+import { timedWaitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { plainItemName, removedFormatting } from "../../utils/helpers";
-import { listAllGroupNames, openEditGroup } from "./listGroups";
-import { labelPrefixMatch, openGroupPermissions, readCycleValue } from "./housing";
+import { plainItemName, removedFormatting } from "@htsw/importer/utils/helpers";
+import { listAllGroupNames, openEditGroup } from "@htsw/importer/importables/groups/listGroups";
+import { labelPrefixMatch, openGroupPermissions, readCycleValue } from "@htsw/importer/importables/groups/housing";
 import { itemLore } from "../../utils/itemLore";
 
 const REPORT_PATH = "./htsw/group-permissions.json";
@@ -84,7 +84,7 @@ function readPage(ctx: TaskContext, page: number): PermPageReport {
         for (let i = 0; i < slots.length; i++) {
             const item = slots[i].getItem();
             const name = plainItemName(item.getName());
-            const rawLore = itemLore(item);
+            const rawLore = itemLore(item as Item);
             const lore: string[] = [];
             for (let j = 0; j < rawLore.length; j++) {
                 const line = removedFormatting(rawLore[j]).trim();

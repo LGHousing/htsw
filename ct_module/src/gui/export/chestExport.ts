@@ -1,20 +1,20 @@
-import { projectExportDestinationFromParsedImportJson } from "../../importables/export/projectDestination";
+import { projectExportDestinationFromParsedImportJson } from "@htsw/importer/importables/export/projectDestination";
 import {
     captureOpenChest,
     exportCapturedChest,
     type CapturedChest,
 } from "../../importables/menus/exportChest";
-import { parentDirOf } from "../../project/paths";
-import { TaskManager } from "../../tasks/manager";
+import { parentDirOf } from "@htsw/importer/project/paths";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
-import { shortPath } from "../../project/pathDisplay";
-import { getParseAt, markParseStale } from "../../runtime/parsing/parses";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
+import { getParseAt, markParseStale } from "@htsw/importer/runtime/parsing/parses";
 import { openConfirmPopover } from "../popovers/confirm";
 import { openTextPromptPopover } from "../popovers/text-prompt";
-import { getNewExportTarget } from "../../runtime/state/newExportTarget";
+import { getNewExportTarget } from "@htsw/importer/runtime/state/newExportTarget";
 import { showToast } from "../toast";
-import { getExportDestinationStatus } from "../../runtime/exportDestination";
-import { emitBridgeEvent } from "../../bridge/status";
+import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
+import { emitBridgeEvent } from "@htsw/importer/bridge/status";
 
 function menuExists(importJsonPath: string, name: string): boolean {
     const parsed = getParseAt(importJsonPath)?.parsed;

@@ -5,19 +5,19 @@ import {
     blockingDiagnostics,
     chatSeparator,
     stripSurroundingQuotes,
-} from "../utils/helpers";
+} from "@htsw/importer/utils/helpers";
 import { Simulator } from "../simulator/simulator";
-import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
+import { printDiagnostic, printDiagnostics } from "@htsw/importer/tui/diagnostics";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { readLocalVersion } from "../autoUpdate";
 import { javaType } from "../utils/java";
-import { resetTimingStats } from "../housingSync/progress/timing";
+import { resetTimingStats } from "@htsw/importer/housingSync/progress/timing";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
-import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
+import { getTaskTracePath, setTaskTraceEnabled } from "@htsw/importer/housingSync/trace/taskTrace";
 import {
     getProgressTracePath,
     setProgressTraceEnabled,
-} from "../housingSync/trace/progressTrace";
+} from "@htsw/importer/housingSync/trace/progressTrace";
 import {
     DEFAULT_STALL_MS,
     clearLagProbeSamples,
@@ -27,15 +27,15 @@ import {
     isLagProbeEnabled,
     setLagProbeEnabled,
 } from "../perf/lagProbe";
-import { getSlowSpans } from "../perf/spans";
+import { getSlowSpans } from "@htsw/importer/perf/spans";
 import { commandTest } from "../inGameTests/command";
 import {
     canonicalPath,
     getParsePerfStats,
     parseImportJsonCurrentBlocking,
-} from "../runtime/parsing/parses";
-import { compactFileLabel } from "../project/pathDisplay";
-import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
+} from "@htsw/importer/runtime/parsing/parses";
+import { compactFileLabel } from "@htsw/importer/project/pathDisplay";
+import { PROJECTS_ROOT, resolveModuleRelativePath } from "@htsw/importer/project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { commandExport, registerExportSlashCommand } from "./export";
 import { giveItem, saveItem, clearInv, viewItem } from "./debugItems";
@@ -48,16 +48,16 @@ import { commandQueue } from "./queue";
 import { commandTrust } from "./trust";
 import { commandWarnMode } from "./warnMode";
 import { commandDiff } from "./diff";
-import { answerConflictPrompt } from "../runtime/conflictPrompt";
-import { bridgeStatus, rejectBridgeRun } from "../bridge/status";
+import { answerConflictPrompt } from "@htsw/importer/runtime/conflictPrompt";
+import { bridgeStatus, rejectBridgeRun } from "@htsw/importer/bridge/status";
 import { appendRawHtslFile } from "../rawHtslImport";
-import { addQueueRow, makeBulkQueueRow } from "../runtime/queue";
-import { startQueue } from "../runtime/queueRunner";
+import { addQueueRow, makeBulkQueueRow } from "@htsw/importer/runtime/queue";
+import { startQueue } from "@htsw/importer/runtime/queueRunner";
 import {
     getDiffCapturePath,
     isDiffCaptureEnabled,
     setDiffCaptureEnabled,
-} from "../housingSync/actions/diff/diffCapture";
+} from "@htsw/importer/housingSync/actions/diff/diffCapture";
 
 export type HtswSubcommand = {
     name: string;

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createTaskCancelledError } from "../src/tasks/cancellation";
-import type TaskContext from "../src/tasks/context";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 const mocks = vi.hoisted(() => ({
     chats: [] as string[],
@@ -25,7 +25,7 @@ vi.mock("../src/gui/popovers/confirm", () => ({
 import {
     answerConflictPrompt,
     openAnswerableConflictPrompt,
-} from "../src/runtime/conflictPrompt";
+} from "@htsw/importer/runtime/conflictPrompt";
 
 const options = {
     chatMessage:
@@ -123,6 +123,6 @@ describe("answerable conflict prompt", () => {
     });
 });
 
-import { conflictPrompts } from "../src/runtime/conflictPrompt";
+import { conflictPrompts } from "@htsw/importer/runtime/conflictPrompt";
 import { renderConflictPrompt } from "../src/gui/popovers/conflictPrompt";
 conflictPrompts.observe(renderConflictPrompt);

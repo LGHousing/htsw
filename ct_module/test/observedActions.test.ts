@@ -5,7 +5,7 @@ import {
     type ChildListSummaries,
     type Observed,
     type ObservedActionSlot,
-} from "../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/observedActions";
 
 function nodeFrom(
     action: Observed,

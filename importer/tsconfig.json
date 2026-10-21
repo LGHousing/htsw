@@ -1,0 +1,25 @@
+{
+    // No ChatTriggers, Java or Minecraft types here: the importer only talks to a
+    // client through the hooks in src/platform.ts. scripts/checkBoundary.ts keeps it so.
+    // lib matches what ct_module compiles against (es2020 arrives there via @types/node).
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "lib": ["ES2020", "DOM"],
+        "types": [],
+        "isolatedModules": true,
+        "strict": true,
+        "moduleResolution": "bundler",
+        "paths": {
+            "htsw": ["../language/dist/index.d.ts"],
+            "htsw/types": ["../language/dist/types/index.d.ts"],
+            "htsw/runtime": ["../language/dist/runtime/index.d.ts"],
+            "htsw/nbt": ["../language/dist/nbt/index.d.ts"],
+            "htsw-editor-common/project": ["../editors/common/src/project/index.ts"]
+        },
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "noEmit": true
+    },
+    "include": ["src"]
+}

@@ -8,6 +8,7 @@ import {
 import { canonicalVanillaItemCompareName } from "../../housingSync/items/itemReferences";
 import { removedFormatting, unique } from "../../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../../utils/nbt";
+import type { Item } from "../../platform";
 
 export interface ProjectItem {
     name: string;

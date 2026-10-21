@@ -23,7 +23,7 @@ import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { getIconImage, renderMcItem, resolveMcItemStack } from "./images";
 import { drawItemTooltip, mcItemTooltipLines } from "./itemTooltip";
 import { GL11, getMinecraft, javaType } from "./java";
-import { TextLayoutWrap } from "../../diagnostics/textLayout";
+import { TextLayoutWrap } from "@htsw/importer/diagnostics/textLayout";
 
 const SPIN_PERIOD_MS = 1000;
 

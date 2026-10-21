@@ -36,6 +36,7 @@ import {
     type ApplicationProgress,
     type ApplicationStep,
 } from "../import/applicationProgress";
+import type { Item } from "../../platform";
 
 const INTERACT_DATA_SIGN_MAX_TICKS = 60;
 

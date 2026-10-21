@@ -7,14 +7,14 @@ import {
     taskPathChanges,
     taskProgressChanges,
     toasts,
-} from "../runtime/events";
-import { conflictPrompts } from "../runtime/conflictPrompt";
-import { importSessions } from "../runtime/taskController";
-import { readSessions } from "../runtime/readProgress";
-import { getActiveTaskPath } from "../runtime/taskProgress";
-import { slowSpanEvents } from "../perf/spans";
+} from "@htsw/importer/runtime/events";
+import { conflictPrompts } from "@htsw/importer/runtime/conflictPrompt";
+import { importSessions } from "@htsw/importer/runtime/taskController";
+import { readSessions } from "@htsw/importer/runtime/readProgress";
+import { getActiveTaskPath } from "@htsw/importer/runtime/taskProgress";
+import { slowSpanEvents } from "@htsw/importer/perf/spans";
 import { debugLog } from "./lib/debugLog";
-import { getAutoRunBadge } from "../runtime/autoRun";
+import { getAutoRunBadge } from "@htsw/importer/runtime/autoRun";
 import { markGuiDirty } from "./lib/dirty";
 import { invalidateContainerBoundsCache } from "./lib/bounds";
 import {

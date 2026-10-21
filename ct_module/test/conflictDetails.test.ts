@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actionListConflictDetails } from "../src/housingSync/actions/conflictDetails";
+import { actionListConflictDetails } from "@htsw/importer/housingSync/actions/conflictDetails";
 import { conditional, message, playSound } from "./utils";
 import type { Action, Condition } from "htsw/types";
 

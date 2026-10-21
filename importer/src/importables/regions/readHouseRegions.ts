@@ -19,6 +19,7 @@ import TaskContext from "../../tasks/context";
 import { defineHouseExporter } from "../export/exporter";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./housing";
+import { platform } from "../../platform";
 
 function requireRegionBounds(entry: RegionListEntry): ImportableRegion["bounds"] {
     if (entry.bounds === null) {
@@ -69,7 +70,7 @@ function writeActionFile(
         ctx.displayMessage(`&7[export] &e${diag.message}`);
     }
     ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
+    platform().fileLib.write(target.htslPath, source, true);
     if (showProgressMessages) ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 

@@ -28,7 +28,7 @@ import {
     getFinishedTaskSummary,
     getTaskProgress,
     isCurrentQueueRow,
-} from "../../runtime/taskProgress";
+} from "@htsw/importer/runtime/taskProgress";
 import { isLiveTabActive } from "./selection";
 import {
     clearQueue,
@@ -39,10 +39,10 @@ import {
     queueWorkRowCount,
     type QueueHouseGroup,
     type QueueRow,
-} from "../../runtime/queue";
-import { isTaskRunning } from "../../tasks/runningState";
-import { getHousingUuid } from "../../runtime/state/index";
-import { houseDisplayName } from "../../importCache/aliases";
+} from "@htsw/importer/runtime/queue";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
+import { houseDisplayName } from "@htsw/importer/importCache/aliases";
 import {
     isQueueBulkExpanded,
     isQueueRowCompact,

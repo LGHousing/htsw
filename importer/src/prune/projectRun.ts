@@ -15,6 +15,7 @@ import { pruneTypeOf } from "./registry";
 import { setTaskActivity } from "../tasks/activity";
 import { shortPath } from "../project/pathDisplay";
 import { blockingDiagnostics } from "../utils/helpers";
+import { platform } from "../platform";
 
 /**
  * A project that sets `dangerouslyDeleteEverythingNotInThisFile`, parsed as it
@@ -150,7 +151,7 @@ export async function beginProjectRun(
     const outcome = await applyRenames(ctx, project.path, renames);
     lockRevision++;
     for (const rename of outcome.renamed) {
-        ChatLib.chat(
+        platform().chat(
             `&7[htsw] Renamed ${rename.type.toLowerCase()} ${rename.from} to ` +
                 `${rename.to} instead of recreating it.`
         );
@@ -176,7 +177,7 @@ export async function finishProjectRun(
     const fullScan = row.origin !== "autotrack" || needsArmingScan(project.path);
 
     if (fullScan) {
-        ChatLib.chat(
+        platform().chat(
             `&7[htsw] Checking the house for anything ${project.path} doesn't declare…`
         );
     } else {
@@ -196,7 +197,7 @@ export async function finishProjectRun(
         : vanishedWork(project.parsed.value, project.path).plan;
 
     if (plan.targets.length > 0) {
-        for (const line of formatPrunePlan(plan, project.path)) ChatLib.chat(line);
+        for (const line of formatPrunePlan(plan, project.path)) platform().chat(line);
         if (!hasPruneConsent(project.path, house)) {
             setTaskActivity("Waiting for you to confirm the removal");
             const confirmed = await confirmPrune(
@@ -208,7 +209,7 @@ export async function finishProjectRun(
             );
             if (!confirmed) throw new Error("removal declined; nothing was removed");
             if (!grantPruneConsent(project.path, house)) {
-                ChatLib.chat(
+                platform().chat(
                     "&c[htsw] Couldn't save your confirmation; it'll ask again."
                 );
             }
@@ -226,7 +227,7 @@ export async function finishProjectRun(
             },
         });
         lockRevision++;
-        for (const line of formatPruneApplyResult(result)) ChatLib.chat(line);
+        for (const line of formatPruneApplyResult(result)) platform().chat(line);
         if (result.failures.length > 0) {
             const count = result.failures.length;
             throw new Error(

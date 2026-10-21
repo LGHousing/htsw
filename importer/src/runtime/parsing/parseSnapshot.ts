@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 /**
  * On-disk cache of `parseImportablesResult` output, keyed by the
@@ -40,8 +39,9 @@ import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs, getMtimeMs } from "../../utils/filesystem";
-import { runtimeString, type RuntimeString } from "../../utils/java";
+import { runtimeString, type RuntimeString } from "../../utils/runtimeString";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
+import { platform } from "../../platform";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // 15: v13/v14 snapshots could persist a mis-homed include tree (v13:
@@ -170,9 +170,9 @@ function isSnapshotDiagnostic(value: unknown): value is SnapshotDiagnostic {
 
 export function loadSnapshot(importJsonPath: string): Snapshot | null {
     const p = snapshotFileFor(importJsonPath);
-    if (!FileLib.exists(p)) return null;
+    if (!platform().fileLib.exists(p)) return null;
     try {
-        const stored = FileLib.read(p) as RuntimeString | null | undefined;
+        const stored = platform().fileLib.read(p) as RuntimeString | null | undefined;
         const raw = runtimeString(stored);
         if (raw.length === 0) return null;
         const parsed: unknown = JSON.parse(raw);
@@ -446,7 +446,7 @@ function writeSnapshotFile(importJsonPath: string, serialized: string): void {
     try {
         const out = snapshotFileFor(importJsonPath);
         ensureParentDirs(out);
-        FileLib.write(out, serialized, true);
+        platform().fileLib.write(out, serialized, true);
     } catch (_e) {
         // Cache is best-effort; failures don't disturb the parse path.
     }

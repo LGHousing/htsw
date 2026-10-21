@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ slots: Array<unknown>(45).fill(null), existing: false }));
-vi.mock("../src/tasks/poll", () => ({ pollTicks: async (_ctx: unknown, _ticks: number, predicate: () => boolean) => predicate() }));
+vi.mock("@htsw/importer/tasks/poll", () => ({ pollTicks: async (_ctx: unknown, _ticks: number, predicate: () => boolean) => predicate() }));
 vi.mock("../src/housingSync/menus/packets", () => ({
     SET_SLOT_ACK_MAX_TICKS: 40,
     SET_SLOT_ACK_TIMEOUT_MS: 2000,
@@ -9,15 +9,15 @@ vi.mock("../src/housingSync/menus/packets", () => ({
     sendCreativeInventoryAction: (_ctx: unknown, slot: number, stack: unknown) => { state.slots[slot] = stack === null ? null : { getItemStack: () => stack, getStackSize: () => 1 }; },
     waitForAnySetSlot: async () => undefined,
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({ waitForMenu: async () => undefined }));
-vi.mock("../src/runtimeDebug/runtimeDebugBuffer", () => ({ recordRuntimeDebug: () => undefined }));
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({ waitForMenu: async () => undefined }));
+vi.mock("@htsw/importer/runtimeDebug/runtimeDebugBuffer", () => ({ recordRuntimeDebug: () => undefined }));
 vi.mock("../src/runtimeDebug/itemStackSummary", () => ({ summarizeItemStack: () => null }));
-vi.mock("../src/housingSync/items/itemNbt", () => ({ snbtFromItem: () => "{id:stone}" }));
+vi.mock("@htsw/importer/housingSync/items/itemNbt", () => ({ snbtFromItem: () => "{id:stone}" }));
 
 import { selectItemFromOpenInventory } from "../src/housingSync/items/itemPicker";
 import { restoreInventorySlots } from "../src/housingSync/items/playerInventory";
-import { getSessionTimingUnits, resetSessionTiming } from "../src/housingSync/progress/timing";
-import { COST } from "../src/housingSync/progress/costs";
+import { getSessionTimingUnits, resetSessionTiming } from "@htsw/importer/housingSync/progress/timing";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
 
 beforeEach(() => {
     resetSessionTiming();

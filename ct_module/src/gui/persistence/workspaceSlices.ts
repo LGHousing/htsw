@@ -14,16 +14,16 @@
 
 import type { Importable } from "htsw/types";
 
-import { defineWorkspaceSlice } from "../../persistence/workspace";
+import { defineWorkspaceSlice } from "@htsw/importer/persistence/workspace";
 import {
     asEntryArray,
     asString,
     asStringArray,
     type ValueParser,
-} from "../../persistence/store";
-import { canonicalPath } from "../../runtime/parsing/parses";
+} from "@htsw/importer/persistence/store";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
 import { pathExists } from "../../utils/filesystem";
-import { getImportJsonPath, setImportJsonPath } from "../../runtime/state/paths";
+import { getImportJsonPath, setImportJsonPath } from "@htsw/importer/runtime/state/paths";
 import { restoreSourcePaths, sourcePaths } from "../left-panel/projects/source";
 import {
     getExpansionState,
@@ -54,7 +54,7 @@ import {
     type QueueOrigin,
     type QueueRow,
     type QueueStatus,
-} from "../../runtime/queue";
+} from "@htsw/importer/runtime/queue";
 
 const IMPORTABLE_TYPES: readonly Importable["type"][] = [
     "FUNCTION",

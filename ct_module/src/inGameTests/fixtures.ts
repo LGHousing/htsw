@@ -8,7 +8,7 @@ import {
     createCoverage,
     type SuiteCoverage,
 } from "./coverage";
-import { blockingDiagnostics } from "../utils/helpers";
+import { blockingDiagnostics } from "@htsw/importer/utils/helpers";
 
 const MODULE_ENV_PATH = "./config/ChatTriggers/modules/HTSW/.env";
 

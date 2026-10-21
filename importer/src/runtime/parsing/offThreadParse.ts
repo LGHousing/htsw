@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import { ImportablesParseResult, parseImportablesResult, SourceMap } from "htsw";
 
@@ -6,10 +5,10 @@ import { importableHash } from "../../importCache/hash";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { runOnMainThread } from "../../utils/mainThread";
 import { resolveCanonicalPaths } from "./realPath";
-import { javaType } from "../../utils/java";
 import { allReferencedPaths } from "./importablePaths";
 import { saveSnapshot } from "./parseSnapshot";
 import { getMtimeMs } from "../../utils/filesystem";
+import { platform } from "../../platform";
 
 export type OffThreadParseResult = {
     parsed: ImportablesParseResult | null;
@@ -72,99 +71,91 @@ export function parseImportJsonOffThread(
     onComplete: (result: OffThreadParseResult) => void
 ): void {
     const submittedAt = Date.now();
-    const Thread = javaType("java.lang.Thread");
-    const Runnable = javaType("java.lang.Runnable");
     try {
-        const thread = new Thread(
-            new Runnable({
-                run: function () {
-                    const workerStartedAt = Date.now();
-                    let parsed: ImportablesParseResult | null = null;
-                    let error: string | null = null;
-                    let fingerprint: { [path: string]: number } = {};
-                    fingerprint[canonicalImportJsonPath] = importJsonMtime;
-                    let hashes: string[] = [];
-                    let canonicalPaths: { [path: string]: string } | undefined;
-                    const phases: ParsePhaseTimings = {
-                        sourceParseMs: 0,
-                        referencedPathFingerprintMs: 0,
-                        importableHashMs: 0,
-                        snapshotBuildMs: 0,
-                        snapshotSerializeMs: 0,
-                        snapshotWriteMs: 0,
-                    };
-                    let projectShape: ParseProjectShape | null = null;
-                    try {
-                        const sourceParseStartedAt = Date.now();
-                        try {
-                            const sourceMap = new SourceMap(new FileSystemFileLoader());
-                            parsed = parseImportablesResult(
-                                sourceMap,
-                                canonicalImportJsonPath
-                            );
-                        } finally {
-                            phases.sourceParseMs = Date.now() - sourceParseStartedAt;
-                        }
-                        const fingerprintStartedAt = Date.now();
-                        fingerprint = buildParseFingerprint(
-                            canonicalImportJsonPath,
-                            importJsonMtime,
-                            parsed
-                        );
-                        canonicalPaths = resolveCanonicalPaths(fingerprint);
-                        phases.referencedPathFingerprintMs =
-                            Date.now() - fingerprintStartedAt;
-                        const hashStartedAt = Date.now();
-                        hashes = parsed.value.map(importableHash);
-                        phases.importableHashMs = Date.now() - hashStartedAt;
-                        const snapshotMetrics = saveSnapshot(
-                            canonicalImportJsonPath,
-                            parsed,
-                            fingerprint,
-                            hashes
-                        );
-                        phases.snapshotBuildMs = snapshotMetrics.buildMs;
-                        phases.snapshotSerializeMs = snapshotMetrics.serializeMs;
-                        phases.snapshotWriteMs = snapshotMetrics.writeMs;
-                        projectShape = {
-                            referencedPathCount: Object.keys(fingerprint).length,
-                            importableCount: parsed.value.length,
-                            diagnosticCount: parsed.diagnostics.length,
-                            snapshotBytes: snapshotMetrics.bytes,
-                        };
-                    } catch (parseError) {
-                        parsed = null;
-                        hashes = [];
-                        error =
-                            parseError && (parseError as { message?: string }).message
-                                ? (parseError as { message: string }).message
-                                : String(parseError);
-                    }
-                    const workerFinishedAt = Date.now();
-                    const profile: OffThreadParseProfile = {
-                        phases,
-                        projectShape,
-                        workerStartDelayMs: workerStartedAt - submittedAt,
-                        mainThreadCallbackDelayMs: 0,
-                    };
-                    const result = {
-                        parsed,
-                        error,
-                        fingerprint,
-                        canonicalPaths,
-                        hashes,
-                        profile,
-                    };
-                    runOnMainThread(() => {
-                        result.profile.mainThreadCallbackDelayMs =
-                            Date.now() - workerFinishedAt;
-                        onComplete(result);
-                    });
-                },
-            })
-        );
-        thread.setDaemon(true);
-        thread.start();
+        platform().startDaemonThread(function () {
+            const workerStartedAt = Date.now();
+            let parsed: ImportablesParseResult | null = null;
+            let error: string | null = null;
+            let fingerprint: { [path: string]: number } = {};
+            fingerprint[canonicalImportJsonPath] = importJsonMtime;
+            let hashes: string[] = [];
+            let canonicalPaths: { [path: string]: string } | undefined;
+            const phases: ParsePhaseTimings = {
+                sourceParseMs: 0,
+                referencedPathFingerprintMs: 0,
+                importableHashMs: 0,
+                snapshotBuildMs: 0,
+                snapshotSerializeMs: 0,
+                snapshotWriteMs: 0,
+            };
+            let projectShape: ParseProjectShape | null = null;
+            try {
+                const sourceParseStartedAt = Date.now();
+                try {
+                    const sourceMap = new SourceMap(new FileSystemFileLoader());
+                    parsed = parseImportablesResult(
+                        sourceMap,
+                        canonicalImportJsonPath
+                    );
+                } finally {
+                    phases.sourceParseMs = Date.now() - sourceParseStartedAt;
+                }
+                const fingerprintStartedAt = Date.now();
+                fingerprint = buildParseFingerprint(
+                    canonicalImportJsonPath,
+                    importJsonMtime,
+                    parsed
+                );
+                canonicalPaths = resolveCanonicalPaths(fingerprint);
+                phases.referencedPathFingerprintMs =
+                    Date.now() - fingerprintStartedAt;
+                const hashStartedAt = Date.now();
+                hashes = parsed.value.map(importableHash);
+                phases.importableHashMs = Date.now() - hashStartedAt;
+                const snapshotMetrics = saveSnapshot(
+                    canonicalImportJsonPath,
+                    parsed,
+                    fingerprint,
+                    hashes
+                );
+                phases.snapshotBuildMs = snapshotMetrics.buildMs;
+                phases.snapshotSerializeMs = snapshotMetrics.serializeMs;
+                phases.snapshotWriteMs = snapshotMetrics.writeMs;
+                projectShape = {
+                    referencedPathCount: Object.keys(fingerprint).length,
+                    importableCount: parsed.value.length,
+                    diagnosticCount: parsed.diagnostics.length,
+                    snapshotBytes: snapshotMetrics.bytes,
+                };
+            } catch (parseError) {
+                parsed = null;
+                hashes = [];
+                error =
+                    parseError && (parseError as { message?: string }).message
+                        ? (parseError as { message: string }).message
+                        : String(parseError);
+            }
+            const workerFinishedAt = Date.now();
+            const profile: OffThreadParseProfile = {
+                phases,
+                projectShape,
+                workerStartDelayMs: workerStartedAt - submittedAt,
+                mainThreadCallbackDelayMs: 0,
+            };
+            const result = {
+                parsed,
+                error,
+                fingerprint,
+                canonicalPaths,
+                hashes,
+                profile,
+            };
+            runOnMainThread(() => {
+                result.profile.mainThreadCallbackDelayMs =
+                    Date.now() - workerFinishedAt;
+                onComplete(result);
+            });
+        });
     } catch (threadError) {
         const error =
             threadError && (threadError as { message?: string }).message

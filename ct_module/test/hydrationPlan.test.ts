@@ -1,21 +1,21 @@
 import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
-import { applyActionListTrust } from "../src/housingSync/actions/applyTrust";
-import { matchObservedToDesired } from "../src/housingSync/actions/diff/childListMatching";
+import { applyActionListTrust } from "@htsw/importer/housingSync/actions/applyTrust";
+import { matchObservedToDesired } from "@htsw/importer/housingSync/actions/diff/childListMatching";
 import {
     actionHasItemFieldsToCapture,
     createActionHydrationPlan,
     fullyHydratedActionsFromSlots,
     type ActionHydrationPlan,
-} from "../src/housingSync/actions/hydration/plan";
-import { hydrationEntriesInVisitOrder } from "../src/housingSync/actions/hydration/run";
-import { getPaginatedListPageForIndex } from "../src/housingSync/menus/paginatedList";
+} from "@htsw/importer/housingSync/actions/hydration/plan";
+import { hydrationEntriesInVisitOrder } from "@htsw/importer/housingSync/actions/hydration/run";
+import { getPaginatedListPageForIndex } from "@htsw/importer/housingSync/menus/paginatedList";
 import type {
     ChildListSummaries,
     ChildListsToRead,
     ObservedActionSlot,
-} from "../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/observedActions";
 
 function observed(
     index: number,

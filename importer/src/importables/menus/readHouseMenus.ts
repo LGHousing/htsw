@@ -20,6 +20,7 @@ import { defineHouseExporter } from "../export/exporter";
 import { listAllMenuNames } from "./listMenus";
 import { readLiveMenu, type LiveMenu } from "./read";
 import { openMenuEditor } from "./housing";
+import { platform } from "../../platform";
 
 type ExportMenuSharedState = {
     slotItemCaptures: ItemCaptureRegistry;
@@ -105,7 +106,7 @@ async function writeMenuResult(
         const itemAbs = `${rootDir}/${nbtRel}`;
         if (!writtenItems.has(itemAbs)) {
             ensureParentDirs(itemAbs);
-            FileLib.write(itemAbs, prettySnbt(liveSlot.snbt), true);
+            platform().fileLib.write(itemAbs, prettySnbt(liveSlot.snbt), true);
             writtenItems.add(itemAbs);
         }
 
@@ -120,7 +121,7 @@ async function writeMenuResult(
                 ctx.displayMessage(`&7[export] &e${diag.message}`);
             }
             ensureParentDirs(htslAbs);
-            FileLib.write(htslAbs, source, true);
+            platform().fileLib.write(htslAbs, source, true);
             actionsRel = htslRel;
         }
 

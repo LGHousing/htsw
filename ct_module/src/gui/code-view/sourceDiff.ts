@@ -29,34 +29,34 @@
 import type { ImportablesParseResult, SourceFile, SpanTable } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
-import { normalizeHtswPath } from "../../project/pathDisplay";
-import { matchByHash } from "../../importCache/actionMatch";
+import { normalizeHtswPath } from "@htsw/importer/project/pathDisplay";
+import { matchByHash } from "@htsw/importer/importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
 import {
     getImportCacheWriteRevision,
     readImportableCache,
-} from "../../importCache/cache";
-import { actionHash, conditionHash } from "../../importCache/hash";
-import { importableIdentity } from "../../importables/identity";
-import { cacheEntryListHashes } from "../../importCache/status";
+} from "@htsw/importer/importCache/cache";
+import { actionHash, conditionHash } from "@htsw/importer/importCache/hash";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { cacheEntryListHashes } from "@htsw/importer/importCache/status";
 import {
     importableFilePaths,
     importableSourcePath,
     importableChildListPath,
     IMPORTABLE_CHILD_LIST_NAMES,
     type ImportableChildListName,
-} from "../../runtime/parsing/importablePaths";
+} from "@htsw/importer/runtime/parsing/importablePaths";
 import {
     canonicalPath,
     forEachCachedParse,
     getParseAt,
     getParseCacheRevision,
-} from "../../runtime/parsing/parses";
-import { getHousingUuid } from "../../runtime/state/housing";
+} from "@htsw/importer/runtime/parsing/parses";
+import { getHousingUuid } from "@htsw/importer/runtime/state/housing";
 import {
     menuSlotActionsPath,
     readCachedActionList,
-} from "../../importCache/actionLists";
+} from "@htsw/importer/importCache/actionLists";
 import {
     actionLineRange as parsedActionLineRange,
     parseHtslFile,
@@ -66,15 +66,15 @@ import {
     ActionPath,
     ActionTreePath,
     type ActionPathKey,
-} from "../../housingSync/actionPath";
+} from "@htsw/importer/housingSync/actionPath";
 import {
     itemDependencyIndexFor,
     type ItemDependencySnapshot,
-} from "../../importables/items/dependencyIndex";
-import { visitItemReferences } from "../../importables/items/dependencies";
-import type { ItemReferenceUse } from "../../importables/items/dependencies";
-import { ACTION_MAPPINGS } from "../../housingSync/fields/actionMappings";
-import { notesEqual } from "../../housingSync/actions/comparison";
+} from "@htsw/importer/importables/items/dependencyIndex";
+import { visitItemReferences } from "@htsw/importer/importables/items/dependencies";
+import type { ItemReferenceUse } from "@htsw/importer/importables/items/dependencies";
+import { ACTION_MAPPINGS } from "@htsw/importer/housingSync/fields/actionMappings";
+import { notesEqual } from "@htsw/importer/housingSync/actions/comparison";
 
 type ChangedItemRef = { itemName: string; openPath: string | undefined };
 type ChangedItemSpan = ChangedItemRef & {

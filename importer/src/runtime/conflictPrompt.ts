@@ -2,6 +2,7 @@ import type TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/cancellation";
 import { Observers } from "../utils/observers";
 import { openBridgePrompt, closeBridgePrompt } from "../bridge/status";
+import { platform } from "../platform";
 
 export type AnswerableConflictPromptOptions = {
     chatMessage: string;
@@ -42,12 +43,12 @@ export function answerConflictPrompt(args: readonly string[]): void {
         args.length !== 2 ||
         (args[1].toLowerCase() !== "yes" && args[1].toLowerCase() !== "no")
     ) {
-        ChatLib.chat("&cUsage: /htsw answer <id> <yes|no>");
+        platform().chat("&cUsage: /htsw answer <id> <yes|no>");
         return;
     }
     const prompt = activePrompt;
     if (prompt === null || prompt.id !== args[0]) {
-        ChatLib.chat(`[htsw] Conflict prompt ${args[0]} is expired or unknown.`);
+        platform().chat(`[htsw] Conflict prompt ${args[0]} is expired or unknown.`);
         return;
     }
     prompt.answer(args[1].toLowerCase() === "yes");
@@ -80,8 +81,8 @@ export async function openAnswerableConflictPrompt(
         answerNoCommand: `/htsw answer ${id} no`,
     });
 
-    ChatLib.chat(options.chatMessage);
-    ChatLib.chat(
+    platform().chat(options.chatMessage);
+    platform().chat(
         `[htsw] Type /htsw answer ${id} yes to ${options.chatConfirmAction} ` +
             `or /htsw answer ${id} no to ${options.chatRefuseAction}.`
     );

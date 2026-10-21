@@ -1,6 +1,7 @@
 import TaskContext from "./context";
 export { isTaskCancelled } from "./cancellation";
 import { isTaskCancelled } from "./cancellation";
+import { platform } from "../platform";
 
 type TaskCallback<T, A extends unknown[] = unknown[]> = (
     ctx: TaskContext,
@@ -40,7 +41,7 @@ export class TaskManager {
             return await callback(ctx, ...args);
         } catch (err: unknown) {
             if (isTaskCancelled(err)) {
-                ChatLib.chat(`&cTask cancelled`);
+                platform().chat(`&cTask cancelled`);
                 return undefined;
             } else {
                 throw err;

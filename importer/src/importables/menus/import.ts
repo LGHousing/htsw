@@ -60,6 +60,7 @@ import { noteMenuCreated } from "./listMenus";
 import { planMenuChanges, type MenuSlotSnapshot } from "./menuChanges";
 import { snapshotLiveMenuGrid, type LiveMenuGrid } from "./read";
 import { openMenuEditor, openMenuElements, setMenuSize } from "./housing";
+import { platform, type Item } from "../../platform";
 
 /**
  * One grid slot's work. A slot needs at most one op, which may both set the
@@ -791,7 +792,7 @@ function actionBackStepKey(slot: number): string {
 }
 
 function menuGridClick(slot: number, button: "LEFT" | "RIGHT"): void {
-    const container = Player.getContainer();
+    const container = platform().openContainer();
     if (container == null) {
         throw new Error("No open container while editing menu slot " + slot);
     }

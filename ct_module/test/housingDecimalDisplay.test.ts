@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
     scalarFieldCompareKey,
     setHousingDecimalQuantizer,
-} from "../src/housingSync/actions/comparison";
+} from "@htsw/importer/housingSync/actions/comparison";
 
 const MEASURED: Array<[number, string]> = [
     [0, "0"], [7, "7"], [-3, "-3"], [1000000, "1,000,000"],

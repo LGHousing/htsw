@@ -10,12 +10,12 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 1,
 }));
 
-import { readImportableCache } from "../src/importCache";
-import { readCachedActionList } from "../src/importCache/actionLists";
-import { estimateActionListPhaseUnits } from "../src/housingSync/progress/costs";
-import { recordEmptyFunctionShell } from "../src/importables/import/emptyShells";
-import type { ImportContext } from "../src/importables/import/context";
-import type TaskContext from "../src/tasks/context";
+import { readImportableCache } from "@htsw/importer/importCache";
+import { readCachedActionList } from "@htsw/importer/importCache/actionLists";
+import { estimateActionListPhaseUnits } from "@htsw/importer/housingSync/progress/costs";
+import { recordEmptyFunctionShell } from "@htsw/importer/importables/import/emptyShells";
+import type { ImportContext } from "@htsw/importer/importables/import/context";
+import type TaskContext from "@htsw/importer/tasks/context";
 import { message } from "./utils";
 
 describe("empty shell cache", () => {

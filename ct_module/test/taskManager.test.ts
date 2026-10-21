@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import type TaskContext from "../src/tasks/context";
-import { TaskManager } from "../src/tasks/manager";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 
 test("keeps task admission exclusive until cancellation finishes unwinding", async () => {
     let release!: () => void;

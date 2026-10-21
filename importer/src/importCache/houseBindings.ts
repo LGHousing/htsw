@@ -1,7 +1,7 @@
-/// <reference types="../../CTAutocomplete" />
 
 import { IMPORT_CACHE_ROOT } from "./paths";
 import { atomicWriteText } from "../utils/filesystem";
+import { platform } from "../platform";
 
 /**
  * Reverse index from Housing UUID to the import.json bound to it via the
@@ -36,8 +36,8 @@ function readMap(): BindingMap {
 
 function readMapFromDisk(): BindingMap {
     try {
-        if (!FileLib.exists(BINDINGS_FILE)) return {};
-        const stored = FileLib.read(BINDINGS_FILE) as unknown as string | null;
+        if (!platform().fileLib.exists(BINDINGS_FILE)) return {};
+        const stored = platform().fileLib.read(BINDINGS_FILE) as unknown as string | null;
         const raw = stored ?? "";
         if (raw.trim() === "") return {};
         const parsed = JSON.parse(raw) as unknown;

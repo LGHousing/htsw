@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
-import { COST } from "../src/housingSync/progress/costs";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
-import { ApplicationProgress } from "../src/importables/import/applicationProgress";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import { createKnownActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
+import { ApplicationProgress } from "@htsw/importer/importables/import/applicationProgress";
 import {
     menuApplicationPlan,
     menuApplyWorkCount,
     type MenuImportPlan,
-} from "../src/importables/menus/import";
+} from "@htsw/importer/importables/menus/import";
 
 import { conditional, message } from "./utils";
 

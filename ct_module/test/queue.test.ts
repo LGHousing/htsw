@@ -14,7 +14,7 @@ import {
     setQueueRowStatus,
     toggleQueue,
     type QueueRow,
-} from "../src/runtime/queue";
+} from "@htsw/importer/runtime/queue";
 
 function functionItem(path: string, identity: string): QueueRow {
     return makeImportableQueueRow({

@@ -23,6 +23,7 @@ import { defineHouseExporter, type ExportReadState } from "../export/exporter";
 import type { ReadOptions } from "../export/reader";
 import { openEventEditor } from "./housing";
 import { listAllEventNames } from "./listEvents";
+import { platform } from "../../platform";
 
 type PendingEventRead = {
     scan: ActionListScan;
@@ -139,7 +140,7 @@ async function writeEventResult(
     }
 
     ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
+    platform().fileLib.write(target.htslPath, source, true);
 
     upsertImportableEntry(target.importJsonPath, "events", {
         event: name,

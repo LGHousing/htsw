@@ -1,11 +1,11 @@
 import * as htsw from "htsw";
 
-import TaskContext from "../../tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
-import type { ItemFieldObservation } from "./fieldObservations";
-import { clickGoBack } from "../menus/menuUtils";
-import { timedWaitForMenu } from "../menus/menuWait";
-import { canonicalItemShellSnbtKey, snbtFromItem } from "./itemNbt";
+import type { ItemFieldObservation } from "@htsw/importer/housingSync/items/fieldObservations";
+import { clickGoBack } from "@htsw/importer/housingSync/menus/menuUtils";
+import { timedWaitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
+import { canonicalItemShellSnbtKey, snbtFromItem } from "@htsw/importer/housingSync/items/itemNbt";
 import {
     inventoryIsFull,
     restoreInventorySlots,
@@ -97,7 +97,7 @@ async function withCapturedEditorItem<T>(
 
         const captured = await recaptureCurrentItem(
             ctx,
-            currentItemSlot,
+            currentItemSlot as ItemSlot,
             currentSnbt,
             actionItemCount,
             displayNameHint

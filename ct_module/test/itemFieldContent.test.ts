@@ -5,10 +5,10 @@ import type { Action, Importable, ImportableItem } from "htsw/types";
 import {
     capturedItemFieldContent,
     sourceItemFieldContent,
-} from "../src/housingSync/items/fieldContent";
-import type { CapturedItem } from "../src/importables/items/captureRegistry";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
+} from "@htsw/importer/housingSync/items/fieldContent";
+import type { CapturedItem } from "@htsw/importer/importables/items/captureRegistry";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 
 const stone = (count?: number): Tag => ({
     type: "compound",

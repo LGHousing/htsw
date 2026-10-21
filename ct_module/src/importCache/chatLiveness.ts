@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { getHousingUuid } from "../runtime/state/index";
-import { deleteImportableCache, writePresence } from "./cache";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
+import { deleteImportableCache, writePresence } from "@htsw/importer/importCache/cache";
 
 // Liveness: Hypixel announces function and region create/delete/rename, and
 // menu creation, in chat. Only the house we're standing in can change, so

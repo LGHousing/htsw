@@ -1,12 +1,12 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { normalizePathSeparators } from "htsw-editor-common/project";
-import { getTaskProgress } from "../runtime/taskProgress";
-import { getParsePerfStats } from "../runtime/parsing/parses";
+import { getTaskProgress } from "@htsw/importer/runtime/taskProgress";
+import { getParsePerfStats } from "@htsw/importer/runtime/parsing/parses";
 import { debugLog, debugLogError, flushGuiDebug } from "../gui/lib/debugLog";
-import { TaskManager } from "../tasks/manager";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
-import { activeSpanPath, clearSlowSpans, setSpanThreshold } from "./spans";
+import { activeSpanPath, clearSlowSpans, setSpanThreshold } from "@htsw/importer/perf/spans";
 
 type RhinoString = string | { toString(): string };
 

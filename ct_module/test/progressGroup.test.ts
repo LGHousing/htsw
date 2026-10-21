@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { createProgressGroup } from "../src/housingSync/progress/group";
-import type { SyncEvent, SyncEventHandler } from "../src/housingSync/syncEvents";
+import { createProgressGroup } from "@htsw/importer/housingSync/progress/group";
+import type { SyncEvent, SyncEventHandler } from "@htsw/importer/housingSync/syncEvents";
 
 describe("progress group", () => {
     test("adds progress from separate action lists instead of restarting per list", () => {

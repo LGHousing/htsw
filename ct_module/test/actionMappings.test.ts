@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseActionListItem } from "../src/housingSync/fields/actionMappings";
+import { parseActionListItem } from "@htsw/importer/housingSync/fields/actionMappings";
 
 function slotWithLore(lore: string[]) {
     return {

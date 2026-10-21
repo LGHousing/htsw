@@ -4,7 +4,7 @@ import { Icons } from "../lib/icons.generated";
 import { COLOR_BUTTON, COLOR_BUTTON_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
 import { togglePopover } from "../lib/popovers";
 import { exportDestinationPicker } from "./destinationPicker";
-import { getExportDestinationStatus } from "../../runtime/exportDestination";
+import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
 
 export function exportDestinationButton(): Element {
     return Container({

@@ -14,6 +14,7 @@ import { plainItemName, removedFormatting } from "../../utils/helpers";
 import { snbtFromItem } from "../../housingSync/items/itemNbt";
 import { openMenuElements } from "./housing";
 import { itemLore } from "../../utils/itemLore";
+import { platform, type Item } from "../../platform";
 
 const PLAYER_INVENTORY_SLOTS = 36;
 
@@ -126,7 +127,7 @@ async function readMenuSlotActions(
     onListProgress?: ProgressHandler,
     events?: SyncEventHandler
 ): Promise<Action[]> {
-    const container = Player.getContainer();
+    const container = platform().openContainer();
     if (container == null) {
         throw new Error("No open container while reading menu slot " + slotId);
     }
@@ -168,7 +169,7 @@ export async function snapshotLiveMenuGrid(ctx: TaskContext): Promise<LiveMenuGr
     // trailing player-inventory slots — so size needs no settings-screen read.
     await openMenuElements(ctx);
 
-    const container = Player.getContainer();
+    const container = platform().openContainer();
     if (container == null) {
         throw new Error("No open container after opening menu elements.");
     }

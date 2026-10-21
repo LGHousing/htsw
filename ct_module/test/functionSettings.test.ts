@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
     planFunctionSettingChanges,
     type ObservedFunctionSettings,
-} from "../src/importables/functions/settings";
+} from "@htsw/importer/importables/functions/settings";
 
 const current: ObservedFunctionSettings = {
     description: "Runs every second.",

@@ -1,5 +1,5 @@
-import TaskContext from "../../tasks/context";
-import { pollTicks } from "../../tasks/poll";
+import TaskContext from "@htsw/importer/tasks/context";
+import { pollTicks } from "@htsw/importer/tasks/poll";
 import { getOpenContainerWindowId } from "../../tasks/specifics/slots";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { closeOpenScreen } from "../sideEffects";
@@ -20,7 +20,7 @@ import {
 } from "./playerInventory";
 
 import { getMinecraft, getPlayer } from "../../utils/java";
-import { canonicalLiveItemKey } from "./itemNbt";
+import { canonicalLiveItemKey } from "@htsw/importer/housingSync/items/itemNbt";
 
 type BorrowedHotbarSlot = {
     slot: InventorySlotSnapshot;

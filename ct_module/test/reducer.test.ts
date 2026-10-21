@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { initialReducerState, reduce } from "../src/housingSync/progress/reducer";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
-import { isTaskTotalLocked } from "../src/housingSync/progress/types";
+import { initialReducerState, reduce } from "@htsw/importer/housingSync/progress/reducer";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
+import { isTaskTotalLocked } from "@htsw/importer/housingSync/progress/types";
 
 const baseRow = { totalUnits: 10 };
 

@@ -4,12 +4,12 @@ import type {
     DiffOpKind,
     SyncEventHandler,
     SyncEvent,
-} from "../../../housingSync/syncEvents";
-import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
-import { importableIdentity } from "../../../importables/identity";
-import { importableSourcePath } from "../../../runtime/parsing/importablePaths";
+} from "@htsw/importer/housingSync/syncEvents";
+import { queueRowKey } from "@htsw/importer/housingSync/progress/queueRowKey";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { importableSourcePath } from "@htsw/importer/runtime/parsing/importablePaths";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
-import { ActionPath } from "../../../housingSync/actionPath";
+import { ActionPath } from "@htsw/importer/housingSync/actionPath";
 import { setFocusPath } from "./focusedLine";
 import { createImportPreviewReplay } from "./importPreviewReplay";
 import {

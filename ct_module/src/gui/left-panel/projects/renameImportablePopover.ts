@@ -1,10 +1,10 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
-import { renameImportableEntry, type Section } from "../../../project/importJsonMutations";
-import { importableIdentity } from "../../../importables/identity";
+import { renameImportableEntry, type Section } from "@htsw/importer/project/importJsonMutations";
+import { importableIdentity } from "@htsw/importer/importables/identity";
 import { closeAllPopovers } from "../../lib/popovers";
-import { markParseStale, requestParse } from "../../../runtime/parsing/parses";
+import { markParseStale, requestParse } from "@htsw/importer/runtime/parsing/parses";
 import { openTextPromptPopover } from "../../popovers/text-prompt";
 import { SECTION_BY_TYPE, bumpTreeRevision } from "./rowModel";
 

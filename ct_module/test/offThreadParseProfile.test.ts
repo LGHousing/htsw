@@ -13,7 +13,7 @@ vi.mock("htsw", () => ({
     parseImportablesResult: () => parsed,
 }));
 
-vi.mock("../src/importCache/hash", () => ({
+vi.mock("@htsw/importer/importCache/hash", () => ({
     importableHash: () => "hash",
 }));
 
@@ -55,11 +55,11 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 2,
 }));
 
-vi.mock("../src/runtime/parsing/importablePaths", () => ({
+vi.mock("@htsw/importer/runtime/parsing/importablePaths", () => ({
     allReferencedPaths: () => ["/project/import.json", "/project/actions.htsl"],
 }));
 
-vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parseSnapshot", () => ({
     saveSnapshot: () => ({
         hashMs: 0,
         buildMs: 3,
@@ -83,7 +83,7 @@ test("profiles the worker phases and main-thread callback delay", async () => {
         .mockReturnValueOnce(149)
         .mockReturnValueOnce(160);
     const { parseImportJsonOffThread } = await import(
-        "../src/runtime/parsing/offThreadParse"
+        "@htsw/importer/runtime/parsing/offThreadParse"
     );
     const completed = vi.fn();
 

@@ -3,12 +3,12 @@ import type { Action, Condition } from "htsw/types";
 import {
     actionsEqual,
     conditionCompareKey,
-} from "../../src/housingSync/actions/comparison";
+} from "@htsw/importer/housingSync/actions/comparison";
 import type {
     ActionListOperation,
     CurrentActionListEntry,
-} from "../../src/housingSync/actions/diff/types";
-import type { Observed } from "../../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/actions/diff/types";
+import type { Observed } from "@htsw/importer/housingSync/observedActions";
 
 type Entry = { entryId: number; action: Observed | null };
 

@@ -1,7 +1,6 @@
-/// <reference types="../../CTAutocomplete" />
 
 import { Observers } from "../utils/observers";
-import { getMinecraft } from "../utils/java";
+import { platform } from "../platform";
 
 /**
  * Named slices of client-thread work for `/htsw lagprobe`. When scripts run
@@ -45,7 +44,7 @@ export function clearSlowSpans(): void {
 // with the client thread would scramble both threads' nesting.
 function onClientThread(): boolean {
     try {
-        return getMinecraft().func_152345_ab();
+        return platform().isMainThread();
     } catch (_e) {
         return true;
     }

@@ -15,11 +15,11 @@ import {
 import { importableIdentity } from "../importables/identity";
 import { removedFormatting } from "../utils/helpers";
 import type { ItemDependencySnapshot } from "../importables/items/dependencyIndex";
-import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { rememberImportableHash } from "./hashMemo";
 import { isRecord, validStoredImportable } from "./structure";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
+import { platform } from "../platform";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -80,8 +80,7 @@ function cacheDirListing(dir: string): Set<string> | null {
     if (known !== undefined) return known;
     let names: Set<string> | null = null;
     try {
-        const File = javaType("java.io.File");
-        const listed = new File(dir).list();
+        const listed = platform().files.listNames(dir);
         names = new Set<string>();
         if (listed !== null) {
             for (let i = 0; i < listed.length; i++) names.add(String(listed[i]));
@@ -111,12 +110,11 @@ function resolvedCachePath(
     const listing = cacheDirListing(cacheTypeDir(housingUuid, type));
     if (listing !== null && !listing.has(fileName(legacyPath))) return path;
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        if (Files.exists(Paths.get(path)) || !Files.exists(Paths.get(legacyPath))) {
+        const files = platform().files;
+        if (files.exists(path) || !files.exists(legacyPath)) {
             return path;
         }
-        const raw = FileLib.read(legacyPath);
+        const raw = platform().fileLib.read(legacyPath);
         const parsed = JSON.parse(raw) as unknown;
         if (parsed === null || typeof parsed !== "object") return path;
         const stored = parsed as { name?: unknown; importable?: unknown };
@@ -129,7 +127,7 @@ function resolvedCachePath(
             storedIdentity = importableIdentity(stored.importable as Importable);
         }
         if (storedIdentity !== identity) return path;
-        Files.move(Paths.get(legacyPath), Paths.get(path));
+        files.move(legacyPath, path);
     } catch (_e) {
         // Unreadable or invalid legacy data is not safe to claim for this case.
     }
@@ -496,42 +494,34 @@ function writeImportableCacheOffThread(
         importableIdentity(importable)
     );
     return new Promise((resolve) => {
-        const Thread = javaType("java.lang.Thread");
-        const Runnable = javaType("java.lang.Runnable");
         try {
-            const thread = new Thread(
-                new Runnable({
-                    run: function () {
-                        let prepared: PreparedImportableCacheWrite | null = null;
-                        let error: unknown = null;
-                        try {
-                            prepared = prepareImportableCacheWrite(
-                                housingUuid,
-                                importable,
-                                writer,
-                                options,
-                                path
-                            );
-                        } catch (prepareError) {
-                            error = prepareError;
-                        }
-                        runOnMainThread(() => {
-                            if (prepared === null) {
-                                ctx.displayMessage(
-                                    `&7[cache] &eFailed to prepare cache: ${String(error)}`
-                                );
-                                resolve(false);
-                                return;
-                            }
-                            resolve(
-                                commitImportableCacheWrite(ctx, housingUuid, prepared)
-                            );
-                        });
-                    },
-                })
-            );
-            thread.setDaemon(true);
-            thread.start();
+            platform().startDaemonThread(function () {
+                let prepared: PreparedImportableCacheWrite | null = null;
+                let error: unknown = null;
+                try {
+                    prepared = prepareImportableCacheWrite(
+                        housingUuid,
+                        importable,
+                        writer,
+                        options,
+                        path
+                    );
+                } catch (prepareError) {
+                    error = prepareError;
+                }
+                runOnMainThread(() => {
+                    if (prepared === null) {
+                        ctx.displayMessage(
+                            `&7[cache] &eFailed to prepare cache: ${String(error)}`
+                        );
+                        resolve(false);
+                        return;
+                    }
+                    resolve(
+                        commitImportableCacheWrite(ctx, housingUuid, prepared)
+                    );
+                });
+            });
         } catch (_error) {
             resolve(writeImportableCache(ctx, housingUuid, importable, writer, options));
         }
@@ -719,7 +709,7 @@ export function readImportableCache(
     const mtimeBeforeRead = getMtimeMs(path);
     let raw: string | null;
     try {
-        raw = FileLib.read(path);
+        raw = platform().fileLib.read(path);
     } catch {
         raw = null;
     }
@@ -845,7 +835,7 @@ export function loadImportableCachesOffThread(
         }
         let raw: string | null;
         try {
-            raw = FileLib.read(plan.path);
+            raw = platform().fileLib.read(plan.path);
         } catch {
             raw = null;
         }
@@ -857,46 +847,38 @@ export function loadImportableCachesOffThread(
             mtime,
         };
     };
-    const Thread = javaType("java.lang.Thread");
-    const Runnable = javaType("java.lang.Runnable");
     try {
-        const thread = new Thread(
-            new Runnable({
-                run: function () {
-                    const loaded: LoadedCacheFile[] = [];
-                    let failure: unknown = null;
+        platform().startDaemonThread(function () {
+            const loaded: LoadedCacheFile[] = [];
+            let failure: unknown = null;
+            try {
+                for (let i = 0; i < plans.length; i++) {
+                    const plan = plans[i];
                     try {
-                        for (let i = 0; i < plans.length; i++) {
-                            const plan = plans[i];
-                            try {
-                                loaded.push(loadOne(plan));
-                            } catch (error) {
-                                // Publish the file as unreadable rather than
-                                // dropping it: the row settles on "unknown"
-                                // and a later mtime check re-reads it.
-                                failure = error;
-                                loaded.push({
-                                    path: plan.path,
-                                    type: plan.type,
-                                    entry: null,
-                                    house: null,
-                                    mtime: getMtimeMs(plan.path),
-                                });
-                            }
-                        }
+                        loaded.push(loadOne(plan));
                     } catch (error) {
+                        // Publish the file as unreadable rather than
+                        // dropping it: the row settles on "unknown"
+                        // and a later mtime check re-reads it.
                         failure = error;
+                        loaded.push({
+                            path: plan.path,
+                            type: plan.type,
+                            entry: null,
+                            house: null,
+                            mtime: getMtimeMs(plan.path),
+                        });
                     }
-                    try {
-                        runOnMainThread(() => publish(loaded, failure));
-                    } catch (error) {
-                        publish(loaded, error);
-                    }
-                },
-            })
-        );
-        thread.setDaemon(true);
-        thread.start();
+                }
+            } catch (error) {
+                failure = error;
+            }
+            try {
+                runOnMainThread(() => publish(loaded, failure));
+            } catch (error) {
+                publish(loaded, error);
+            }
+        });
     } catch (error) {
         publish([], error);
     }
@@ -910,9 +892,7 @@ export function deleteImportableCache(
 ): boolean {
     const path = resolvedCachePath(housingUuid, type, identity);
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        Files.deleteIfExists(Paths.get(path));
+        platform().files.deleteIfExists(path);
     } catch {
         return false;
     }
@@ -929,18 +909,17 @@ export type HousingCacheDeleteResult = "deleted" | "missing" | "partial";
 export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResult {
     let result: HousingCacheDeleteResult;
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        const root = Paths.get(`${IMPORT_CACHE_ROOT}/${housingUuid}`);
-        if (!Files.exists(root)) {
-            result = Files.notExists(root) ? "missing" : "partial";
+        const files = platform().files;
+        const root = `${IMPORT_CACHE_ROOT}/${housingUuid}`;
+        if (!files.exists(root)) {
+            result = files.notExists(root) ? "missing" : "partial";
         } else {
             let deleteCompleted = false;
             try {
-                deletePathRecursive(Files, root);
+                files.deleteRecursive(root);
                 deleteCompleted = true;
             } catch (_deleteError) {}
-            result = deleteCompleted && Files.notExists(root) ? "deleted" : "partial";
+            result = deleteCompleted && files.notExists(root) ? "deleted" : "partial";
         }
     } catch (_e) {
         result = "partial";
@@ -954,25 +933,6 @@ export function deleteHousingCache(housingUuid: string): HousingCacheDeleteResul
     enumIndex.clear();
     scanMarkerCache.clear();
     return result;
-}
-
-function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): void {
-    if (Files.isDirectory(path)) {
-        const stream = Files.newDirectoryStream(path);
-        try {
-            const it = stream.iterator();
-            while (it.hasNext()) {
-                deletePathRecursive(Files, it.next());
-            }
-        } finally {
-            try {
-                stream.close();
-            } catch (_e) {
-                /* ignore */
-            }
-        }
-    }
-    Files.deleteIfExists(path);
 }
 
 // ── Enumeration (everything of a type in a house) ──────────────────────────
@@ -1071,49 +1031,32 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
     const records = new Map<string, HouseImportable>();
     const dirRel = cacheTypeDir(uuid, type);
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        const dir = Paths.get(dirRel);
-        if (!Files.exists(dir) || !Files.isDirectory(dir)) return [];
-        const stream = Files.newDirectoryStream(dir);
-        try {
-            const it = stream.iterator();
-            while (it.hasNext()) {
-                const listedName = it.next().getFileName();
-                if (listedName === null) continue;
-                const fname = String(listedName.toString());
-                const suffix = ".knowledge.json";
-                if (
-                    fname.length < suffix.length ||
-                    fname.lastIndexOf(suffix) !== fname.length - suffix.length
-                ) {
-                    continue;
-                }
-                let raw: string | null;
-                try {
-                    raw = FileLib.read(`${dirRel}/${fname}`);
-                } catch {
-                    raw = null;
-                }
-                const parsed = parseHouseRecord(raw, type);
-                if (parsed !== null) {
-                    // A restored current file supersedes a retained legacy
-                    // sibling, regardless of directory iteration order.
-                    if (
-                        !records.has(parsed.name) ||
-                        fname === fileName(cachePathForId(uuid, type, parsed.name))
-                    ) {
-                        records.set(parsed.name, parsed);
-                    }
-                }
+        platform().files.forEachFileName(dirRel, (fname) => {
+            const suffix = ".knowledge.json";
+            if (
+                fname.length < suffix.length ||
+                fname.lastIndexOf(suffix) !== fname.length - suffix.length
+            ) {
+                return;
             }
-        } finally {
+            let raw: string | null;
             try {
-                stream.close();
-            } catch (_e) {
-                /* ignore */
+                raw = platform().fileLib.read(`${dirRel}/${fname}`);
+            } catch {
+                raw = null;
             }
-        }
+            const parsed = parseHouseRecord(raw, type);
+            if (parsed !== null) {
+                // A restored current file supersedes a retained legacy
+                // sibling, regardless of directory iteration order.
+                if (
+                    !records.has(parsed.name) ||
+                    fname === fileName(cachePathForId(uuid, type, parsed.name))
+                ) {
+                    records.set(parsed.name, parsed);
+                }
+            }
+        });
     } catch (_e) {
         // best-effort
     }
@@ -1176,7 +1119,7 @@ export function houseTypeScanned(uuid: string | null, type: Importable["type"]):
     const key = enumKey(uuid, type);
     const cached = scanMarkerCache.get(key);
     if (cached !== undefined) return cached;
-    const scanned = FileLib.exists(cacheScanMarkerPath(uuid, type));
+    const scanned = platform().fileLib.exists(cacheScanMarkerPath(uuid, type));
     scanMarkerCache.set(key, scanned);
     return scanned;
 }
@@ -1251,11 +1194,9 @@ export function recordHouseScan(
 
 function removeScanMarker(path: string): boolean {
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        const marker = Paths.get(path);
-        Files.deleteIfExists(marker);
-        return !Files.exists(marker);
+        const files = platform().files;
+        files.deleteIfExists(path);
+        return !files.exists(path);
     } catch (_e) {
         return false;
     }

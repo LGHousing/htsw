@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     back: vi.fn(async () => undefined),
     readGroup: vi.fn(async () => ({ type: "REQUIRE_GROUP" as const })),
 }));
-vi.mock("../src/housingSync/menus/paginatedList", () => ({
+vi.mock("@htsw/importer/housingSync/menus/paginatedList", () => ({
     getPaginatedListPageForIndex: () => 1,
     getPaginatedListSlotAtIndex: vi.fn(async () => mocks.slot),
     getVisiblePaginatedItemSlots: vi.fn(() => []),
@@ -22,22 +22,22 @@ vi.mock("../src/housingSync/menus/paginatedList", () => ({
         },
     ]),
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
 }));
-vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (original) => ({
     ...(await original<object>()),
     clickGoBack: mocks.back,
 }));
 
-vi.mock("../src/housingSync/actions/conditions/writers", async (original) => ({
+vi.mock("@htsw/importer/housingSync/actions/conditions/writers", async (original) => ({
     ...(await original<object>()),
     readRequireGroup: mocks.readGroup,
 }));
 
-import { readConditionList } from "../src/housingSync/actions/conditions/readList";
-import { parseConditionListItem } from "../src/housingSync/fields/conditionMappings";
-import { refreshTruncatedScalarFields } from "../src/housingSync/fields/readScalars";
+import { readConditionList } from "@htsw/importer/housingSync/actions/conditions/readList";
+import { parseConditionListItem } from "@htsw/importer/housingSync/fields/conditionMappings";
+import { refreshTruncatedScalarFields } from "@htsw/importer/housingSync/fields/readScalars";
 
 function slot(lore: string[]) {
     return { getItem: () => ({ getLore: () => lore }) } as never;

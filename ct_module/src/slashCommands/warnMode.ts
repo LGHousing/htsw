@@ -2,8 +2,8 @@ import {
     getOverwriteWarningMode,
     setOverwriteWarningMode,
     type OverwriteWarningMode,
-} from "../importables/overwriteWarning";
-import { emitBridgeEvent } from "../bridge/status";
+} from "@htsw/importer/importables/overwriteWarning";
+import { emitBridgeEvent } from "@htsw/importer/bridge/status";
 
 export function parseWarnModeArgument(
     args: readonly string[]

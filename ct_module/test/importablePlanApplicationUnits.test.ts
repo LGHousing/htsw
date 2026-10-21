@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
-import { COST, estimateActionListPhaseUnits } from "../src/housingSync/progress/costs";
+import { createKnownActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { COST, estimateActionListPhaseUnits } from "@htsw/importer/housingSync/progress/costs";
 import {
     functionPlanApplicationUnits,
     planImportableFunction,
     type FunctionRead,
-} from "../src/importables/functions/import";
-import { planImportableMenu } from "../src/importables/menus/import";
+} from "@htsw/importer/importables/functions/import";
+import { planImportableMenu } from "@htsw/importer/importables/menus/import";
 
 import { message } from "./utils";
 

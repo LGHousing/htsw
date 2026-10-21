@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 /**
  * GUI-driving implementation of `ExportProgressSink`: a thin adapter that

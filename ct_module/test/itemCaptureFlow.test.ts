@@ -9,17 +9,17 @@ const inventory = vi.hoisted(() => ({
 
 vi.mock("../src/housingSync/sideEffects", () => ({ isInCreativeMode: () => true }));
 
-vi.mock("../src/tasks/context", () => ({ default: vi.fn() }));
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/tasks/context", () => ({ default: vi.fn() }));
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     clickGoBack: vi.fn(async () => undefined),
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
 }));
 vi.mock("../src/utils/nbt", () => ({
     getItemFromSnbt: (snbt: string) => ({ snbt }),
 }));
-vi.mock("../src/housingSync/items/itemNbt", () => ({
+vi.mock("@htsw/importer/housingSync/items/itemNbt", () => ({
     canonicalItemShellSnbtKey: (snbt: string) => `shell:${snbt}`,
     canonicalLiveItemKey: (item: { snbt: string }) =>
         item.snbt.replace(',tag:{captureEcho:"changed"}', ""),

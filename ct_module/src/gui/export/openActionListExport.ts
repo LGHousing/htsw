@@ -1,5 +1,5 @@
-import { TaskManager } from "../../tasks/manager";
-import { exportOpenActionListTo } from "../../runtime/openActionListExport";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { exportOpenActionListTo } from "@htsw/importer/runtime/openActionListExport";
 import { openFileBrowserWithHtslDestination } from "../popovers/file-browser";
 
 export function startOpenActionListExport(): void {

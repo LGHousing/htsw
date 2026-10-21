@@ -11,7 +11,9 @@
             "htsw/types": ["../language/dist/types/index.d.ts"],
             "htsw/runtime": ["../language/dist/runtime/index.d.ts"],
             "htsw/nbt": ["../language/dist/nbt/index.d.ts"],
-            "htsw-editor-common/project": ["../editors/common/src/project/index.ts"]
+            "htsw-editor-common/project": ["../editors/common/src/project/index.ts"],
+            "@htsw/importer": ["../importer/src/index.ts"],
+            "@htsw/importer/*": ["../importer/src/*"]
         },
         "esModuleInterop": true,
         "skipLibCheck": true,

@@ -20,18 +20,18 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: mocks.parse,
 }));
-vi.mock("../src/importCache/housingId", () => ({ getCurrentHousingUuid: mocks.house }));
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/importCache/housingId", () => ({ getCurrentHousingUuid: mocks.house }));
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => false },
 }));
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: mocks.runTask,
 }));
-vi.mock("../src/runtime/diffProgress", () => ({
+vi.mock("@htsw/importer/runtime/diffProgress", () => ({
     createDiffProgressSession: mocks.createProgress,
 }));
 

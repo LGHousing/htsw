@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 import { projectSectionFolders } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";

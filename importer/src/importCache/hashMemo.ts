@@ -1,8 +1,8 @@
 import type { Importable } from "htsw/types";
 
-import { javaType } from "../utils/java";
 import { runOnMainThread } from "../utils/mainThread";
 import { importableHash } from "./hash";
+import { platform } from "../platform";
 
 const hashByImportable = new WeakMap<object, string>();
 let importableHashRevision = 0;
@@ -41,34 +41,26 @@ export function warmImportableHashesOffThread(
         return;
     }
 
-    const Thread = javaType("java.lang.Thread");
-    const Runnable = javaType("java.lang.Runnable");
     try {
-        const thread = new Thread(
-            new Runnable({
-                run: function () {
-                    const hashes: string[] = [];
-                    try {
-                        for (let i = 0; i < pending.length; i++) {
-                            hashes.push(importableHash(pending[i]));
-                        }
-                    } catch (_error) {
-                        runOnMainThread(onComplete);
-                        return;
+        platform().startDaemonThread(function () {
+            const hashes: string[] = [];
+            try {
+                for (let i = 0; i < pending.length; i++) {
+                    hashes.push(importableHash(pending[i]));
+                }
+            } catch (_error) {
+                runOnMainThread(onComplete);
+                return;
+            }
+            runOnMainThread(() => {
+                for (let i = 0; i < pending.length; i++) {
+                    if (!hashByImportable.has(pending[i])) {
+                        rememberImportableHash(pending[i], hashes[i]);
                     }
-                    runOnMainThread(() => {
-                        for (let i = 0; i < pending.length; i++) {
-                            if (!hashByImportable.has(pending[i])) {
-                                rememberImportableHash(pending[i], hashes[i]);
-                            }
-                        }
-                        onComplete();
-                    });
-                },
-            })
-        );
-        thread.setDaemon(true);
-        thread.start();
+                }
+                onComplete();
+            });
+        });
     } catch (_error) {
         onComplete();
     }

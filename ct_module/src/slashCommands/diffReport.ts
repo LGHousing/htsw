@@ -1,28 +1,28 @@
 import type { Action, Importable, Permission } from "htsw/types";
 
-import { compareActionList } from "../housingSync/actions/conflicts";
+import { compareActionList } from "@htsw/importer/housingSync/actions/conflicts";
 import {
     actionListConflictDifferences,
     summarizeActionListConflictDifferences,
     type ActionListConflictDetails,
     type ActionListConflictDifference,
-} from "../housingSync/actions/conflictDetails";
-import type { ActionSyncConflict } from "../housingSync/actions/syncContext";
+} from "@htsw/importer/housingSync/actions/conflictDetails";
+import type { ActionSyncConflict } from "@htsw/importer/housingSync/actions/syncContext";
 import {
     actionListsOfImportable,
     type ImportableActionList,
-} from "../importCache/actionLists";
-import { houseLockEntryFor, type HouseLock } from "../importCache/houseLock";
-import { importableIdentity, importableKey } from "../importables/identity";
+} from "@htsw/importer/importCache/actionLists";
+import { houseLockEntryFor, type HouseLock } from "@htsw/importer/importCache/houseLock";
+import { importableIdentity, importableKey } from "@htsw/importer/importables/identity";
 import {
     printerDiagnosticsForDiff,
     type DiffPrinterDiagnostic,
-} from "../housingSync/actions/diffDetails";
+} from "@htsw/importer/housingSync/actions/diffDetails";
 import {
     sourceItemFieldContent,
     type ItemFieldContent,
-} from "../housingSync/items/fieldContent";
-import type { ProjectItemIndex } from "../importables/items/projectItems";
+} from "@htsw/importer/housingSync/items/fieldContent";
+import type { ProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 
 type DiffReportList = ActionSyncConflict &
     ActionListConflictDetails & {

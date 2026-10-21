@@ -10,9 +10,9 @@ import type {
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
-} from "../src/housingSync/actions/scanHash";
-import type { HouseLock } from "../src/importCache/houseLock";
-import { formatDiffDetailsFile } from "../src/housingSync/actions/diffDetails";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import type { HouseLock } from "@htsw/importer/importCache/houseLock";
+import { formatDiffDetailsFile } from "@htsw/importer/housingSync/actions/diffDetails";
 import {
     appendGroupDiffReport,
     evaluateDiffReport,

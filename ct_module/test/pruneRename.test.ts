@@ -6,10 +6,10 @@ const mocks = vi.hoisted(() => ({
     confirms: new Set<string>(),
 }));
 
-vi.mock("../src/housingSync/menus/menuWaiters", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWaiters", () => ({
     chatMessage: (message: string) => ({ label: message, message }),
 }));
-vi.mock("../src/tasks/manager", () => ({ isTaskCancelled: () => false }));
+vi.mock("@htsw/importer/tasks/manager", () => ({ isTaskCancelled: () => false }));
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: (path: string, content: string) => {
         FileLib.write(path, content, true);
@@ -17,10 +17,10 @@ vi.mock("../src/utils/filesystem", () => ({
     },
 }));
 
-import { applyRenames, detectRenames } from "../src/prune/rename";
-import { readHouseLock } from "../src/importCache/houseLock";
-import type TaskContext from "../src/tasks/context";
-import type { PrunableType } from "../src/prune/registry";
+import { applyRenames, detectRenames } from "@htsw/importer/prune/rename";
+import { readHouseLock } from "@htsw/importer/importCache/houseLock";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { PrunableType } from "@htsw/importer/prune/registry";
 
 const manifestPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";

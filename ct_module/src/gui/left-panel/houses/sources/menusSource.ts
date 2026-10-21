@@ -1,15 +1,15 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../../runtime/state/index";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import { showToast } from "../../../toast";
-import { listAllMenuNames } from "../../../../importables/menus/listMenus";
+import { listAllMenuNames } from "@htsw/importer/importables/menus/listMenus";
 import {
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     type HouseImportable,
-} from "../../../../importCache/cache";
+} from "@htsw/importer/importCache/cache";
 
 let scanInFlight = false;
 

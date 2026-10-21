@@ -23,8 +23,8 @@ import {
     COLOR_ROW_SELECTED,
     COLOR_ROW_SELECTED_HOVER,
 } from "../lib/theme";
-import { ActionPath, ActionTreePath } from "../../housingSync/actionPath";
-import type { DiffOpKind } from "../../housingSync/syncEvents";
+import { ActionPath, ActionTreePath } from "@htsw/importer/housingSync/actionPath";
+import type { DiffOpKind } from "@htsw/importer/housingSync/syncEvents";
 import {
     effectiveFocusActionPath,
     getCurrentOperation,
@@ -41,7 +41,7 @@ import {
     getSessionVerb,
     getTaskProgress,
     getTaskViewIdentity,
-} from "../../runtime/taskProgress";
+} from "@htsw/importer/runtime/taskProgress";
 
 const SCROLL_ID = "right-live-preview-scroll";
 const COLOR_PENDING_GRAY = 0xff666666 | 0;

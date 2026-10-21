@@ -9,12 +9,12 @@ import type {
 import {
     actionListConflictVerdict,
     type ActionListConflictVerdict,
-} from "../src/housingSync/actions/conflicts";
+} from "@htsw/importer/housingSync/actions/conflicts";
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
-} from "../src/housingSync/actions/scanHash";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import type TaskContext from "@htsw/importer/tasks/context";
 import { changeVar, message, playSound } from "./utils";
 
 const cacheMocks = vi.hoisted(() => ({
@@ -28,23 +28,23 @@ const lockMocks = vi.hoisted(() => ({
     ),
 }));
 
-vi.mock("../src/importCache/cache", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache/cache")>()),
+vi.mock("@htsw/importer/importCache/cache", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache/cache")>()),
     writeImportableCache: cacheMocks.writeImportableCache,
     readImportableCache: cacheMocks.readImportableCache,
 }));
 
-vi.mock("../src/importCache/houseLock", () => ({
+vi.mock("@htsw/importer/importCache/houseLock", () => ({
     upsertHouseLockImportable: lockMocks.upsertHouseLockImportable,
 }));
 
-vi.mock("../src/importCache/housingId", () => ({
+vi.mock("@htsw/importer/importCache/housingId", () => ({
     getCurrentHousingUuid: async () => "house",
 }));
 
-import { defineHouseExporter } from "../src/importables/export/exporter";
+import { defineHouseExporter } from "@htsw/importer/importables/export/exporter";
 import { readDiffImportables } from "../src/slashCommands/diff";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
 
 describe("diff live reads", () => {
     beforeEach(() => {

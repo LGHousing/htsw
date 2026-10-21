@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 /**
  * Shared task progress state. Owns the `TaskProgress` object used by import,

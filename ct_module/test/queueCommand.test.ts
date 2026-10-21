@@ -9,20 +9,20 @@ const state = vi.hoisted(() => ({
     retries: [] as string[],
 }));
 
-vi.mock("../src/runtime/autoRun", () => ({
+vi.mock("@htsw/importer/runtime/autoRun", () => ({
     autoRunQueueChanged: () => state.changed++,
     setAutoRunEnabled: (enabled: boolean) => {
         state.autoRun = enabled;
     },
 }));
-vi.mock("../src/runtime/exportDestination", () => ({
+vi.mock("@htsw/importer/runtime/exportDestination", () => ({
     getExportDestinationStatus: () => ({
         kind: "ready",
         path: "/project/import.json",
     }),
 }));
-vi.mock("../src/project/pathDisplay", () => ({ compactFileLabel: (v: string) => v }));
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/project/pathDisplay", () => ({ compactFileLabel: (v: string) => v }));
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     parseImportJsonCurrent: async (path: string) => ({
         canonicalPath: path,
         parsed: { importJson: { houseUuid: "house" }, value: [] },
@@ -34,8 +34,8 @@ vi.mock("../src/runtime/parsing/parses", () => ({
         error: null,
     }),
 }));
-vi.mock("../src/runtime/state/index", () => ({ getHousingUuid: () => "house" }));
-vi.mock("../src/runtime/queue", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({ getHousingUuid: () => "house" }));
+vi.mock("@htsw/importer/runtime/queue", () => ({
     addQueueRow: (row: Record<string, unknown>) => {
         state.rows.push(row);
         return { kind: "added", row, message: "Queued" };
@@ -72,7 +72,7 @@ vi.mock("../src/runtime/queue", () => ({
         return true;
     },
 }));
-vi.mock("../src/runtime/queueRunner", () => ({
+vi.mock("@htsw/importer/runtime/queueRunner", () => ({
     isQueueRunning: () => false,
     pauseQueue: () => {
         state.pauses++;
@@ -83,8 +83,8 @@ vi.mock("../src/runtime/queueRunner", () => ({
         return true;
     },
 }));
-vi.mock("../src/importCache/aliases", () => ({ houseDisplayName: (v: string) => v }));
-vi.mock("../src/importables/export/readers", () => ({
+vi.mock("@htsw/importer/importCache/aliases", () => ({ houseDisplayName: (v: string) => v }));
+vi.mock("@htsw/importer/importables/export/readers", () => ({
     HOUSE_READABLE_TYPES: [
         "FUNCTION",
         "EVENT",
@@ -97,8 +97,8 @@ vi.mock("../src/importables/export/readers", () => ({
         "ITEM",
     ],
 }));
-vi.mock("../src/project/paths", () => ({ resolveModuleRelativePath: (v: string) => v }));
-vi.mock("../src/settings", () => ({ getAutoRun: () => false }));
+vi.mock("@htsw/importer/project/paths", () => ({ resolveModuleRelativePath: (v: string) => v }));
+vi.mock("@htsw/importer/settings", () => ({ getAutoRun: () => false }));
 
 import { commandQueue } from "../src/slashCommands/queue";
 

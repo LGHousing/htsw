@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import type { SyncEvent } from "../syncEvents";
 import type { TaskProgress } from "../progress/types";

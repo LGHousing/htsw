@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportableFunction } from "htsw/types";
 
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type TaskContext from "../src/tasks/context";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type TaskContext from "@htsw/importer/tasks/context";
 import { observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -55,7 +55,7 @@ vi.mock("htsw", async (importOriginal) => ({
     }),
 }));
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: async () => ({
         parsed: { value: [mocks.source, mocks.otherSource], diagnostics: [] },
@@ -63,8 +63,8 @@ vi.mock("../src/runtime/parsing/parses", () => ({
     }),
 }));
 
-vi.mock("../src/project/paths", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/project/paths")>()),
+vi.mock("@htsw/importer/project/paths", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/project/paths")>()),
     resolveModuleRelativePath: (path: string) => path,
 }));
 
@@ -85,15 +85,15 @@ vi.mock("../src/gui/popovers/confirm", () => ({
     closeConfirmPopover: () => undefined,
 }));
 
-vi.mock("../src/importCache/housingId", () => ({
+vi.mock("@htsw/importer/importCache/housingId", () => ({
     getCurrentHousingUuid: async () => "house",
 }));
 
-vi.mock("../src/importables/export/projectDestination", () => ({
+vi.mock("@htsw/importer/importables/export/projectDestination", () => ({
     projectItemsFromParsedImportJson: () => [],
 }));
 
-vi.mock("../src/importables/export/readers", () => ({
+vi.mock("@htsw/importer/importables/export/readers", () => ({
     HOUSE_READERS: {
         FUNCTION: async (
             _ctx: unknown,
@@ -113,12 +113,12 @@ vi.mock("../src/importables/export/readers", () => ({
     },
 }));
 
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => false },
     isTaskCancelled: () => false,
 }));
 
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: (
         _kind: string,
         run: (ctx: {
@@ -140,13 +140,13 @@ vi.mock("../src/housingSync/taskRunner", () => ({
     },
 }));
 
-vi.mock("../src/runtime/diffProgress", () => ({
+vi.mock("@htsw/importer/runtime/diffProgress", () => ({
     createDiffProgressSession: () => mocks.progress,
 }));
 
-vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
+vi.mock("@htsw/importer/housingSync/actions/diffDetails", async (importOriginal) => ({
     ...(await importOriginal<
-        typeof import("../src/housingSync/actions/diffDetails")
+        typeof import("@htsw/importer/housingSync/actions/diffDetails")
     >()),
     writeDiffDetailsFile: () => "./htsw-diff/latest.diff",
 }));
@@ -161,27 +161,27 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
         mocks.files.has(path) ? (mocks.files.get(path)?.length ?? 1) : 0,
 }));
 
-vi.mock("../src/housingSync/actions/readList", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/actions/readList")>()),
+vi.mock("@htsw/importer/housingSync/actions/readList", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/actions/readList")>()),
     scanActionList: mocks.scanActionList,
 }));
 
-vi.mock("../src/housingSync/actions/hydration/run", async (importOriginal) => ({
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", async (importOriginal) => ({
     ...(await importOriginal<
-        typeof import("../src/housingSync/actions/hydration/run")
+        typeof import("@htsw/importer/housingSync/actions/hydration/run")
     >()),
     hydrateActionListScan: mocks.hydrateActionListScan,
 }));
 
-import { readActionListPlan } from "../src/housingSync/actions/plan";
-import { buildTrustPlan, type TrustPlan } from "../src/importCache/trust";
+import { readActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { buildTrustPlan, type TrustPlan } from "@htsw/importer/importCache/trust";
 import {
     readHouseLock,
     upsertHouseLockImportable,
-} from "../src/importCache/houseLock";
-import { readImportableCache } from "../src/importCache/cache";
+} from "@htsw/importer/importCache/houseLock";
+import { readImportableCache } from "@htsw/importer/importCache/cache";
 import { commandDiff } from "../src/slashCommands/diff";
-import { answerConflictPrompt } from "../src/runtime/conflictPrompt";
+import { answerConflictPrompt } from "@htsw/importer/runtime/conflictPrompt";
 
 const manifest = "import.json";
 const lockPath = "./house.lock.json";
@@ -355,6 +355,6 @@ describe("/htsw diff live-state adoption", () => {
     });
 });
 
-import { conflictPrompts } from "../src/runtime/conflictPrompt";
+import { conflictPrompts } from "@htsw/importer/runtime/conflictPrompt";
 import { renderConflictPrompt } from "../src/gui/popovers/conflictPrompt";
 conflictPrompts.observe(renderConflictPrompt);

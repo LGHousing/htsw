@@ -8,20 +8,20 @@ const mocks = vi.hoisted(() => ({
     readBooleanValue: vi.fn((): boolean | null => false),
 }));
 
-vi.mock("../src/housingSync/menus/menuUtils", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/menus/menuUtils")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/menus/menuUtils")>()),
     clickGoBack: mocks.clickGoBack,
     setBooleanValue: mocks.setBooleanValue,
     readBooleanValue: mocks.readBooleanValue,
 }));
 
-vi.mock("../src/housingSync/menus/menuWait", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/menus/menuWait")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuWait", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/menus/menuWait")>()),
     waitForMenu: mocks.waitForMenu,
 }));
 
-import { writeConditional, writeRandom } from "../src/housingSync/actions/writers";
-import { readOpenConditional } from "../src/housingSync/actions/readers";
+import { writeConditional, writeRandom } from "@htsw/importer/housingSync/actions/writers";
+import { readOpenConditional } from "@htsw/importer/housingSync/actions/readers";
 
 const child: Action = { type: "MESSAGE", message: "same structure" };
 const ctx = {

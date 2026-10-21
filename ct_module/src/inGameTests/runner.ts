@@ -1,67 +1,67 @@
 import type { Action, Condition, Importable, ImportableMenu } from "htsw/types";
 
-import TaskContext from "../tasks/context";
-import { getCurrentHousingUuid } from "../importCache";
+import TaskContext from "@htsw/importer/tasks/context";
+import { getCurrentHousingUuid } from "@htsw/importer/importCache";
 import {
     buildTrustPlan,
     deleteImportableCache,
     importableHash,
     readImportableCache,
-} from "../importCache";
-import { importableCanonicalParts } from "../importCache/hash";
-import { importableIdentity, importableKey } from "../importables/identity";
-import { createProjectItemIndex } from "../importables/items/projectItems";
-import { createItemDependencyIndex } from "../importables/items/dependencyIndex";
-import { createItemFieldResolver } from "../importables/items/resolveItem";
+} from "@htsw/importer/importCache";
+import { importableCanonicalParts } from "@htsw/importer/importCache/hash";
+import { importableIdentity, importableKey } from "@htsw/importer/importables/identity";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
 import {
     orderImportablesForSession,
     runImportSession,
-} from "../importables/import/session";
+} from "@htsw/importer/importables/import/session";
 import {
     readImportablePlan,
     type ImportablePlan,
     type ImportablePlanDetails,
-} from "../importables/import/importers";
-import type { ImportContext } from "../importables/import/context";
+} from "@htsw/importer/importables/import/importers";
+import type { ImportContext } from "@htsw/importer/importables/import/context";
 import { createImportedItemPlacementSession } from "../housingSync/items/heldItem";
-import { listAllFunctionNames } from "../importables/functions/listFunctions";
-import { resetFunctionNameSession } from "../importables/functions/listFunctions";
+import { listAllFunctionNames } from "@htsw/importer/importables/functions/listFunctions";
+import { resetFunctionNameSession } from "@htsw/importer/importables/functions/listFunctions";
 import {
     listAllCommandNames,
     resetCommandNameSession,
-} from "../importables/commands/listCommands";
+} from "@htsw/importer/importables/commands/listCommands";
 import {
     HOUSE_READERS,
     HOUSE_READABLE_TYPES,
-} from "../importables/export/readers";
-import { deleteTeam } from "../importables/teams/listTeams";
-import { deleteGroup } from "../importables/groups/listGroups";
-import { createNpcLookupCache } from "../importables/npcs/listNpcs";
-import { listAllRegionNames } from "../importables/regions/listRegions";
-import { listAllMenuNames, resetMenuNameSession } from "../importables/menus/listMenus";
-import type { SyncEventHandler } from "../housingSync/syncEvents";
+} from "@htsw/importer/importables/export/readers";
+import { deleteTeam } from "@htsw/importer/importables/teams/listTeams";
+import { deleteGroup } from "@htsw/importer/importables/groups/listGroups";
+import { createNpcLookupCache } from "@htsw/importer/importables/npcs/listNpcs";
+import { listAllRegionNames } from "@htsw/importer/importables/regions/listRegions";
+import { listAllMenuNames, resetMenuNameSession } from "@htsw/importer/importables/menus/listMenus";
+import type { SyncEventHandler } from "@htsw/importer/housingSync/syncEvents";
 import type {
     ActionListOperation,
     ConditionListOperation,
     ChildListDiff,
-} from "../housingSync/actions/diff/types";
+} from "@htsw/importer/housingSync/actions/diff/types";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "../housingSync/menus/packets";
-import { ItemCaptureRegistry } from "../importables/items/captureRegistry";
+import { ItemCaptureRegistry } from "@htsw/importer/importables/items/captureRegistry";
 import {
     restorePlayerInventory,
     snapshotPlayerInventory,
 } from "../housingSync/items/playerInventory";
 import { gmcOnImportStart, waitForCreativeMode } from "../housingSync/sideEffects";
-import { getTaskTracePath, setTaskTraceEnabled } from "../housingSync/trace/taskTrace";
-import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
+import { getTaskTracePath, setTaskTraceEnabled } from "@htsw/importer/housingSync/trace/taskTrace";
+import { projectItemsFromParsedImportJson } from "@htsw/importer/importables/export/projectDestination";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
-import { chatMessage } from "../housingSync/menus/menuWaiters";
-import { functionListOpened } from "../importables/waiters";
+import { chatMessage } from "@htsw/importer/housingSync/menus/menuWaiters";
+import { functionListOpened } from "@htsw/importer/importables/waiters";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 
 type FixtureResult = {

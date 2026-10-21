@@ -1,4 +1,4 @@
-import { errorMessage } from "../utils/helpers";
+import { errorMessage } from "@htsw/importer/utils/helpers";
 import { commandUpdate } from "../autoUpdate";
 import { getMinecraft } from "../utils/java";
 import { openPathInOS } from "../utils/osShell";

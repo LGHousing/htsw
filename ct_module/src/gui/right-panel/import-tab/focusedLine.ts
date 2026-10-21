@@ -1,8 +1,8 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { normalizeHtswPath } from "../../../project/pathDisplay";
+import { normalizeHtswPath } from "@htsw/importer/project/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
-import { ActionTreePath } from "../../../housingSync/actionPath";
+import { ActionTreePath } from "@htsw/importer/housingSync/actionPath";
 import { previewLineIdForPath } from "./livePreview";
 
 type FileState = {

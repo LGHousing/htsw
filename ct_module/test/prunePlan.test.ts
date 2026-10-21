@@ -13,35 +13,35 @@ const mocks = vi.hoisted(() => ({
     eventCache: new Map<string, Importable | null>(),
 }));
 
-vi.mock("../src/importables/functions/listFunctions", () => ({
+vi.mock("@htsw/importer/importables/functions/listFunctions", () => ({
     listAllFunctionNames: async () => mocks.functions,
 }));
-vi.mock("../src/importables/menus/listMenus", () => ({
+vi.mock("@htsw/importer/importables/menus/listMenus", () => ({
     listAllMenuNames: async () => {
         if (mocks.menuListError !== null) throw new Error(mocks.menuListError);
         return mocks.menus;
     },
 }));
-vi.mock("../src/importables/regions/listRegions", () => ({
+vi.mock("@htsw/importer/importables/regions/listRegions", () => ({
     listAllRegionNames: async () => mocks.regions,
 }));
-vi.mock("../src/importables/commands/listCommands", () => ({
+vi.mock("@htsw/importer/importables/commands/listCommands", () => ({
     listAllCommandNames: async () => mocks.commands,
 }));
-vi.mock("../src/importables/teams/listTeams", () => ({
+vi.mock("@htsw/importer/importables/teams/listTeams", () => ({
     listAllTeamNames: async () => mocks.teams,
     deleteTeam: async () => undefined,
 }));
-vi.mock("../src/importables/groups/listGroups", () => ({
+vi.mock("@htsw/importer/importables/groups/listGroups", () => ({
     listAllGroupNames: async () => mocks.groups,
     deleteGroup: async () => undefined,
 }));
-vi.mock("../src/importables/npcs/listNpcs", () => ({
+vi.mock("@htsw/importer/importables/npcs/listNpcs", () => ({
     listAllNpcs: async () => mocks.npcs,
     npcLabel: (entry: { name: string; pos: { x: number; y: number; z: number } }) =>
         `${entry.name} @ ${entry.pos.x},${entry.pos.y},${entry.pos.z}`,
 }));
-vi.mock("../src/importCache/cache", () => ({
+vi.mock("@htsw/importer/importCache/cache", () => ({
     recordHouseScan: () => undefined,
     listCachedImportables: () => [],
     readImportableCache: (_uuid: string, type: string, identity: string) => {
@@ -51,9 +51,9 @@ vi.mock("../src/importCache/cache", () => ({
     },
 }));
 
-import { scanHousePrunePlan, vanishedWork } from "../src/prune/plan";
-import type TaskContext from "../src/tasks/context";
-import type { PrunableType } from "../src/prune/registry";
+import { scanHousePrunePlan, vanishedWork } from "@htsw/importer/prune/plan";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { PrunableType } from "@htsw/importer/prune/registry";
 
 const importJsonPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";

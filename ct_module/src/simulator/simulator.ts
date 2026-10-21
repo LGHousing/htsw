@@ -2,7 +2,7 @@ import { SourceMap, SpanTable, runtime, types } from "htsw";
 
 import { registerCommandTriggers } from "./commands";
 import { createActionBehaviors } from "./actions";
-import { printDiagnostic } from "../tui/diagnostics";
+import { printDiagnostic } from "@htsw/importer/tui/diagnostics";
 import { registerEventTriggers } from "./events";
 import { registerRegionTriggers } from "./regions";
 import { createConditionBehaviors } from "./conditions";

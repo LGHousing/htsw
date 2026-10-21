@@ -11,7 +11,7 @@ import {
     queueWorkRowCount,
     runnableQueueRowCount,
     type QueueRow,
-} from "../src/runtime/queue";
+} from "@htsw/importer/runtime/queue";
 
 const PATH = "C:/projects/root/import.json";
 

@@ -3,6 +3,7 @@ import { cyrb53 } from "../utils/helpers";
 import { ensureParentDirs } from "../utils/filesystem";
 import { recentRuntimeDebugRecords } from "./runtimeDebugBuffer";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
+import { platform } from "../platform";
 
 export type SlowParseDetails = {
     canon: string;
@@ -86,7 +87,7 @@ export function uploadSlowParseDiagnostics(details: SlowParseDetails): void {
             recentRuntimeDebug: recentRuntimeDebugRecords(),
         });
         ensureParentDirs(path);
-        FileLib.write(path, JSON.stringify(body, null, 2), true);
+        platform().fileLib.write(path, JSON.stringify(body, null, 2), true);
         uploadDiagnosticsFile(path);
     } catch (_e) {}
 }

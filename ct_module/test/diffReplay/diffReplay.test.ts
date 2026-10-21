@@ -4,8 +4,8 @@
 import { describe, expect, test } from "vitest";
 import type { Action } from "htsw/types";
 
-import { actionCreationCost } from "../../src/housingSync/actions/diff";
-import type { CurrentActionListEntry } from "../../src/housingSync/actions/diff/types";
+import { actionCreationCost } from "@htsw/importer/housingSync/actions/diff";
+import type { CurrentActionListEntry } from "@htsw/importer/housingSync/actions/diff/types";
 import { loadDiffCapture, parseDiffCapture, type DiffInputCapture } from "./loader";
 import { scoreOptimality } from "./optimal";
 import { replayDiffCaptures } from "./runner";

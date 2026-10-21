@@ -1,11 +1,11 @@
 import type { Diagnostic, ImportablesParseResult } from "htsw";
 
-import { formatDiagnostics, type FormattedTextBlock, type LineSegment } from "../../diagnostics/format";
+import { formatDiagnostics, type FormattedTextBlock, type LineSegment } from "@htsw/importer/diagnostics/format";
 import {
     renderTextBlock,
     TextLayoutVStack,
     TextLayoutWrap,
-} from "../../diagnostics/textLayout";
+} from "@htsw/importer/diagnostics/textLayout";
 import type { Rect } from "../lib/layout";
 import { hoverCardContentWidth, offerHoverCard } from "../lib/hoverCards";
 

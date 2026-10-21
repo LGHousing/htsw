@@ -1,10 +1,10 @@
 import { expect, test, vi } from "vitest";
 
-import type TaskContext from "../src/tasks/context";
-import type { TaskWaiter } from "../src/tasks/context";
-import { createTaskCancelledError } from "../src/tasks/cancellation";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { TaskWaiter } from "@htsw/importer/tasks/context";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
-import { oneOf } from "../src/tasks/waiters";
+import { oneOf } from "@htsw/importer/tasks/waiters";
 
 function pendingWaiter(label: string): {
     waiter: TaskWaiter<void>;

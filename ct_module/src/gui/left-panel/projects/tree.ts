@@ -36,8 +36,8 @@ import {
     includeTreeOf,
     findImportableHome,
 } from "./includeTree";
-import { canonicalPath, getParseCacheRevision } from "../../../runtime/parsing/parses";
-import { compactPath } from "../../../project/pathDisplay";
+import { canonicalPath, getParseCacheRevision } from "@htsw/importer/runtime/parsing/parses";
+import { compactPath } from "@htsw/importer/project/pathDisplay";
 import { isFramePerfEnabled, recordPhase } from "../../lib/framePerf";
 import {
     searchQuery,
@@ -69,8 +69,8 @@ import {
 } from "./rows";
 import type { Importable } from "htsw/types";
 import { importableLinkStatusContextKey } from "../../cache-status";
-import { getAliasRevision } from "../../../importCache/aliases";
-import { getAutoTrackRevision } from "../../../runtime/state/index";
+import { getAliasRevision } from "@htsw/importer/importCache/aliases";
+import { getAutoTrackRevision } from "@htsw/importer/runtime/state/index";
 import { getLockBannerRevision, lockBannerFor, lockBannerRow } from "./lockBanner";
 
 const LEFT_PAD = 7;

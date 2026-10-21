@@ -1,4 +1,4 @@
-import type { HousingPresence } from "../importCache/housingPresence";
+import type { HousingPresence } from "@htsw/importer/importCache/housingPresence";
 
 export function canShowHousingFrame(
     presence: HousingPresence,

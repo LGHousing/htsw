@@ -9,7 +9,7 @@ import type {
     SpanTable,
 } from "htsw";
 
-import { shortPath } from "../../project/pathDisplay";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import {
     actionLineRange,
@@ -17,8 +17,8 @@ import {
     parseHtslFile,
     type HtslLine,
 } from "./htslParse";
-import { getSelectedParsedResult } from "../../runtime/parsing/selectedParse";
-import { getParseAt, onParseCacheEntryChanged } from "../../runtime/parsing/parses";
+import { getSelectedParsedResult } from "@htsw/importer/runtime/parsing/selectedParse";
+import { getParseAt, onParseCacheEntryChanged } from "@htsw/importer/runtime/parsing/parses";
 import {
     tokenizeHtsl,
     tokenizeJson,
@@ -29,9 +29,9 @@ import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 import {
     normalizeDiagnosticSpans,
     type DiagnosticLineSpan,
-} from "../../diagnostics/spans";
-import { ActionListPath, ActionPath } from "../../housingSync/actionPath";
-import { BoundedMap } from "../../utils/boundedLruMap";
+} from "@htsw/importer/diagnostics/spans";
+import { ActionListPath, ActionPath } from "@htsw/importer/housingSync/actionPath";
+import { BoundedMap } from "@htsw/importer/utils/boundedLruMap";
 import { getMtimeMs, pathExists } from "../../utils/filesystem";
 import { splitTokensAtSpans } from "./tokenMarks";
 

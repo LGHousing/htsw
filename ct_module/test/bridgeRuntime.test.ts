@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initStatusBridge, sampleBridgeProgress } from "../src/bridge/runtime";
-import { getSessionTimingUnits, resetSessionTiming } from "../src/housingSync/progress/timing";
-import { HTSW_STATUS_PROPERTY } from "../src/bridge/types";
+import { getSessionTimingUnits, resetSessionTiming } from "@htsw/importer/housingSync/progress/timing";
+import { HTSW_STATUS_PROPERTY } from "@htsw/importer/bridge/types";
 
 const progress = vi.hoisted(() => ({
     getTaskProgress: vi.fn(),
@@ -11,7 +11,7 @@ const progress = vi.hoisted(() => ({
     isEtaEstimating: vi.fn(() => false),
     isEtaRough: vi.fn(() => false),
 }));
-vi.mock("../src/runtime/taskProgress", () => progress);
+vi.mock("@htsw/importer/runtime/taskProgress", () => progress);
 
 afterEach(() => {
     vi.unstubAllGlobals();

@@ -1,5 +1,4 @@
 import { boundProjectChanges } from "./events";
-/// <reference types="../../CTAutocomplete" />
 
 import { boundImportJsonPath } from "../importCache/houseBindings";
 import { canonicalPath } from "./parsing/parses";
@@ -10,11 +9,12 @@ import {
     setExportImportJsonPath,
     setImportJsonPath,
 } from "./state";
+import { platform } from "../platform";
 
 export function openBoundProjectForHouse(uuid: string | null): boolean {
     if (uuid === null) return false;
     const bound = boundImportJsonPath(uuid);
-    if (bound === null || !FileLib.exists(bound)) return false;
+    if (bound === null || !platform().fileLib.exists(bound)) return false;
     const canon = canonicalPath(bound);
     boundProjectChanges.emit({ kind: "open", uuid, path: bound, canonicalPath: canon });
     setImportJsonPath(bound);

@@ -31,6 +31,7 @@ import {
     functionSettingsForExport,
     type FunctionSettings,
 } from "./settings";
+import { platform } from "../../platform";
 
 type PendingFunctionRead = {
     scan: ActionListScan;
@@ -123,7 +124,7 @@ async function writeFunctionResult(
     }
 
     ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
+    platform().fileLib.write(target.htslPath, source, true);
 
     const {
         type: _type,

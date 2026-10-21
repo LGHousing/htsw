@@ -2,13 +2,13 @@
 
 import { Icons } from "./lib/icons.generated";
 import { type MenuAction } from "./lib/menu";
-import { shortPath } from "../project/pathDisplay";
-import { canonicalPath, markParseStale, requestParse } from "../runtime/parsing/parses";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
+import { canonicalPath, markParseStale, requestParse } from "@htsw/importer/runtime/parsing/parses";
 import { openConfirmPopover } from "./popovers/confirm";
-import { getHousingUuid, setExportImportJsonPath } from "../runtime/state/index";
-import { houseDisplayName } from "../importCache/aliases";
-import { recordHouseBinding } from "../importCache/houseBindings";
-import { setHouseUuidKey } from "../project/importJsonMutations";
+import { getHousingUuid, setExportImportJsonPath } from "@htsw/importer/runtime/state/index";
+import { houseDisplayName } from "@htsw/importer/importCache/aliases";
+import { recordHouseBinding } from "@htsw/importer/importCache/houseBindings";
+import { setHouseUuidKey } from "@htsw/importer/project/importJsonMutations";
 
 function boundHouseUuidOf(fullPath: string): string | null {
     const parse = requestParse(fullPath);

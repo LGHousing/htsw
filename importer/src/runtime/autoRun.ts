@@ -1,5 +1,4 @@
 import { emitBridgeEvent } from "../bridge/status";
-/// <reference types="../../CTAutocomplete" />
 
 import { getAutoRun, setAutoRun } from "../settings";
 import { ensureParentDirs } from "../utils/filesystem";
@@ -9,6 +8,7 @@ import { isQueueRunning, onQueueRunEnded, startQueue } from "./queueRunner";
 import { dismissToast, showToast } from "./events";
 import type { AutoTrackRefreshTrigger } from "./autoTrack";
 import { resetArmingScans } from "../prune/projectRun";
+import { platform } from "../platform";
 
 const AUTO_RUN_COLOR = 0xffe85c5c;
 const AUTO_RUN_PAUSED_COLOR = 0xffe8b45c;
@@ -48,7 +48,7 @@ export function setAutoRunDetectionLive(live: boolean): void {
 }
 
 function onMultiplayerServer(): boolean {
-    const ip = Server.getIP();
+    const ip = platform().serverIp();
     return ip !== "" && ip !== "localhost";
 }
 
@@ -161,7 +161,7 @@ function writeLoopAlarm(keys: readonly string[]): string {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const path = `./htsw/import-errors/auto-run-loop-${timestamp}.json`;
     ensureParentDirs(path);
-    FileLib.write(
+    platform().fileLib.write(
         path,
         JSON.stringify(
             {
@@ -191,12 +191,12 @@ function disableForLoop(keys: readonly string[]): void {
         path,
         keys,
     });
-    ChatLib.chat(
+    platform().chat(
         "&c&l[htsw] AUTO-RUN DISABLED — importables read back as modified immediately after importing:"
     );
-    for (const key of keys) ChatLib.chat(`&c  ${key}`);
-    ChatLib.chat("&c[htsw] This may be an importer bug. Please report it.");
-    ChatLib.chat(`&c[htsw] Debug log: ${path}`);
+    for (const key of keys) platform().chat(`&c  ${key}`);
+    platform().chat("&c[htsw] This may be an importer bug. Please report it.");
+    platform().chat(`&c[htsw] Debug log: ${path}`);
     showToast(
         "AUTO-RUN DISABLED — imported files immediately read back as modified",
         AUTO_RUN_COLOR,
@@ -270,7 +270,7 @@ export function setAutoRunEnabled(enabled: boolean): void {
         awaitingSuccessRefresh = false;
         lastSuccessfulImportKeys = null;
         showToast("Auto-run off", 0xff5c9ded, 4000);
-        ChatLib.chat("&7[htsw] Auto-run disabled.");
+        platform().chat("&7[htsw] Auto-run disabled.");
         return;
     }
     showToast(
@@ -278,7 +278,7 @@ export function setAutoRunEnabled(enabled: boolean): void {
         AUTO_RUN_COLOR,
         10000
     );
-    ChatLib.chat(
+    platform().chat(
         "&c&l[htsw] AUTO-RUN ON &c— queued Housing work will run automatically. &f/htsw watch off &cto disable."
     );
     autoRunQueueChanged();

@@ -29,7 +29,7 @@ describe("house alias persistence", () => {
 
     test("does not replace a malformed alias map", async () => {
         files.set(ALIAS_FILE, "not json");
-        const aliases = await import("../src/importCache/aliases");
+        const aliases = await import("@htsw/importer/importCache/aliases");
 
         expect(aliases.setAlias("house-a", "Home")).toBe(false);
         expect(files.get(ALIAS_FILE)).toBe("not json");

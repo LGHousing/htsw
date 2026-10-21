@@ -1,7 +1,7 @@
 import type { Importable } from "htsw/types";
 
-import type { ObservedNode } from "../../../housingSync/observedActions";
-import { normalizeHtswPath } from "../../../project/pathDisplay";
+import type { ObservedNode } from "@htsw/importer/housingSync/observedActions";
+import { normalizeHtswPath } from "@htsw/importer/project/pathDisplay";
 import {
     beginPreviewRead,
     hasPreviewState,

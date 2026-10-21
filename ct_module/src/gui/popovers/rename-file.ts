@@ -2,7 +2,7 @@
 
 import { pathExists } from "../../utils/filesystem";
 import { javaType } from "../../utils/java";
-import { basename, dirname } from "../../project/pathDisplay";
+import { basename, dirname } from "@htsw/importer/project/pathDisplay";
 import { openTextPromptPopover } from "./text-prompt";
 
 // False when the rename failed and the prompt should reopen.

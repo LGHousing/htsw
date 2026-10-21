@@ -2,6 +2,7 @@ import TaskContext from "../../tasks/context";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { plainItemName } from "../../utils/helpers";
 import { timedWaitForMenu } from "./menuWait";
+import type { Item } from "../../platform";
 
 const ITEMS_PER_PAGE = 21;
 const PREV_PAGE_SLOT_ID = 45;

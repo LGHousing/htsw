@@ -11,8 +11,8 @@ vi.mock("../src/utils/filesystem", () => ({
     getMtimeMs: (path: string) => disk.files.get(path)?.mtime ?? 0,
 }));
 
-import { hasInteractDataCache } from "../src/importables/items/interactDataCache";
-import type { ItemDependencyIndex } from "../src/importables/items/dependencyIndex";
+import { hasInteractDataCache } from "@htsw/importer/importables/items/interactDataCache";
+import type { ItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
 
 const item = {
     type: "ITEM",

@@ -9,7 +9,7 @@ import {
     setSpanThreshold,
     span,
     slowSpanEvents,
-} from "../src/perf/spans";
+} from "@htsw/importer/perf/spans";
 
 slowSpanEvents.observe(({ ms, path }) =>
     logged.push(`[lagprobe] slow span ${ms}ms: ${path}`)

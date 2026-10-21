@@ -1,9 +1,9 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { setExportImportJsonPath } from "./paths";
 import { runtimeChanges } from "../events";
 import { asNullableString, defineDoc, defineValue } from "../../persistence/store";
+import { platform } from "../../platform";
 
 // Persisted across /ct reload: the in-memory uuid being wiped left every
 // house-derived UI (bind chips, bound markers, house names) in its gray
@@ -41,7 +41,7 @@ export function setHousingUuid(uuid: string | null): void {
     // on the uuid transition.
     if (changed && uuid !== null) {
         const bound = boundImportJsonPath(uuid);
-        if (bound !== null && FileLib.exists(bound)) {
+        if (bound !== null && platform().fileLib.exists(bound)) {
             setExportImportJsonPath(bound);
         }
     }

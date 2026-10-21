@@ -1,13 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
-import TaskContext from "../src/tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
 import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
-import type { ImportContext } from "../src/importables/import/context";
-import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ImportContext } from "@htsw/importer/importables/import/context";
+import { createKnownActionListPlan } from "@htsw/importer/housingSync/actions/plan";
 import {
     baselineActionListFromActions,
     diffActionList,
-} from "../src/housingSync/actions/diff";
+} from "@htsw/importer/housingSync/actions/diff";
 import {
     applyImportableFunctionPlan,
     functionApplicationPlan,
@@ -15,26 +15,26 @@ import {
     scanImportableFunction,
     hydrateImportableFunction,
     planImportableFunction,
-} from "../src/importables/functions/import";
+} from "@htsw/importer/importables/functions/import";
 import {
     planFunctionSettingChanges,
     type FunctionSettingChange,
-} from "../src/importables/functions/settings";
-import { ApplicationProgress } from "../src/importables/import/applicationProgress";
-import { parseAutomaticExecutionTicks } from "../src/importables/functions/housing";
+} from "@htsw/importer/importables/functions/settings";
+import { ApplicationProgress } from "@htsw/importer/importables/import/applicationProgress";
+import { parseAutomaticExecutionTicks } from "@htsw/importer/importables/functions/housing";
 import { changeVar, conditional, message } from "./utils";
 import {
     buildTrustPlan,
     deleteImportableCache,
     readImportableCache,
     tryWriteImportableCache,
-} from "../src/importCache";
-import type { ActionListPlan } from "../src/housingSync/actions/plan";
-import { createItemDiffContext } from "../src/importables/items/diff";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
+} from "@htsw/importer/importCache";
+import type { ActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { createItemDiffContext } from "@htsw/importer/importables/items/diff";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 import { itemFieldObservationFromSnbt } from "../src/housingSync/items/capture";
-import type { ItemFieldObservationRecorder } from "../src/housingSync/items/fieldObservations";
+import type { ItemFieldObservationRecorder } from "@htsw/importer/housingSync/items/fieldObservations";
 
 vi.mock("../src/utils/filesystem", async (original) => ({
     ...(await original<typeof import("../src/utils/filesystem")>()),
@@ -43,8 +43,8 @@ vi.mock("../src/utils/filesystem", async (original) => ({
 }));
 
 const live = vi.hoisted(() => ({ house: undefined as unknown as House }));
-vi.mock("../src/importables/functions/housing", async (original) => ({
-    ...(await original<typeof import("../src/importables/functions/housing")>()),
+vi.mock("@htsw/importer/importables/functions/housing", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/importables/functions/housing")>()),
     ensureFunctionExists: async () => {
         live.house.click("open function");
         if (!live.house.exists) {
@@ -91,22 +91,22 @@ vi.mock("../src/importables/functions/housing", async (original) => ({
         }
     },
 }));
-vi.mock("../src/importables/functions/listFunctions", async (original) => ({
-    ...(await original<typeof import("../src/importables/functions/listFunctions")>()),
+vi.mock("@htsw/importer/importables/functions/listFunctions", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/importables/functions/listFunctions")>()),
     getSessionFunctionNamesLower: async () =>
         new Set(live.house.exists ? ["autokick"] : []),
     openFunctionList: async () => {
         live.house.click("open functions");
     },
 }));
-vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/menus/menuUtils")>()),
     clickGoBack: async () => {
         live.house.click("back");
     },
 }));
-vi.mock("../src/housingSync/actions/apply", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/apply")>()),
+vi.mock("@htsw/importer/housingSync/actions/apply", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/apply")>()),
     applyActionListPlan: async (_ctx: unknown, plan: ActionListPlan) => {
         const h = live.house;
         h.bodyWrites++;
@@ -144,8 +144,8 @@ vi.mock("../src/housingSync/actions/apply", async (original) => ({
         }
     },
 }));
-vi.mock("../src/housingSync/actions/readList", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/readList")>()),
+vi.mock("@htsw/importer/housingSync/actions/readList", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/readList")>()),
     scanActionList: async () => {
         const h = live.house;
         h.bodyReads++;
@@ -177,8 +177,8 @@ vi.mock("../src/housingSync/actions/readList", async (original) => ({
         return { slots, plan: new Map() };
     },
 }));
-vi.mock("../src/housingSync/actions/hydration/run", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/hydration/run")>()),
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/hydration/run")>()),
     hydrateActionListScan: async (
         _ctx: unknown,
         scan: {

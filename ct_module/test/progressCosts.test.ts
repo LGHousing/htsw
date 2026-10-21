@@ -27,28 +27,28 @@ import {
     ITEM_CAPTURE_FIELD_UNITS,
     REGION_BOUNDS_CHANGE_UNITS,
     editUnitsWithChildLists,
-} from "../src/housingSync/progress/costs";
+} from "@htsw/importer/housingSync/progress/costs";
 import {
     baselineActionListFromActions,
     diffActionList,
-} from "../src/housingSync/actions/diff";
+} from "@htsw/importer/housingSync/actions/diff";
 import {
     baselineConditionListFromConditions,
     diffConditionList,
-} from "../src/housingSync/actions/conditions/diff";
+} from "@htsw/importer/housingSync/actions/conditions/diff";
 import type {
     ActionHydrationPlan,
     ActionHydrationWork,
-} from "../src/housingSync/actions/hydration/plan";
+} from "@htsw/importer/housingSync/actions/hydration/plan";
 import type {
     ActionListOperation,
     ConditionListOperation,
-} from "../src/housingSync/actions/diff/types";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
-import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { listHashes } from "../src/importCache/hash";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
+} from "@htsw/importer/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ImportableCacheEntry } from "@htsw/importer/importCache/cache";
+import { listHashes } from "@htsw/importer/importCache/hash";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 
 import { conditional, message, observedSlot } from "./utils";
 

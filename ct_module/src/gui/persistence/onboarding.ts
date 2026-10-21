@@ -7,7 +7,7 @@
  * its fresh-install state.
  */
 
-import { asBoolean, defineDoc, defineValue } from "../../persistence/store";
+import { asBoolean, defineDoc, defineValue } from "@htsw/importer/persistence/store";
 
 const ONBOARDING = defineDoc({
     file: "onboarding.json",

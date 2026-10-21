@@ -4,7 +4,7 @@ import type { Element } from "../../lib/layout";
 import { Container, Icon } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { markGuiDirty } from "../../lib/dirty";
-import type { Section } from "../../../project/importJsonMutations";
+import type { Section } from "@htsw/importer/project/importJsonMutations";
 export { IMPORTABLE_TYPE_COLORS } from "../../importableVisuals";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a

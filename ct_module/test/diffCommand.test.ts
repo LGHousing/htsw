@@ -23,7 +23,7 @@ vi.mock("htsw", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: async () => ({
         parsed: { value: [], diagnostics: [] },
@@ -31,8 +31,8 @@ vi.mock("../src/runtime/parsing/parses", () => ({
     }),
 }));
 
-vi.mock("../src/project/paths", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/project/paths")>();
+vi.mock("@htsw/importer/project/paths", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@htsw/importer/project/paths")>();
     return {
         ...actual,
         resolveModuleRelativePath: (path: string) => path,
@@ -40,32 +40,32 @@ vi.mock("../src/project/paths", async (importOriginal) => {
     };
 });
 
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => false },
     isTaskCancelled: () => false,
 }));
 
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: (
         _kind: string,
         task: (ctx: { checkCancelled(): void }) => Promise<void>
     ) => Promise.resolve().then(() => task({ checkCancelled: () => undefined })),
 }));
 
-vi.mock("../src/importCache/housingId", () => ({
+vi.mock("@htsw/importer/importCache/housingId", () => ({
     getCurrentHousingUuid: () => Promise.resolve("house"),
 }));
 
-vi.mock("../src/importCache/houseLock", async (importOriginal) => {
+vi.mock("@htsw/importer/importCache/houseLock", async (importOriginal) => {
     const actual =
-        await importOriginal<typeof import("../src/importCache/houseLock")>();
+        await importOriginal<typeof import("@htsw/importer/importCache/houseLock")>();
     return {
         ...actual,
         readHouseLock: () => null,
     };
 });
 
-vi.mock("../src/runtime/diffProgress", () => ({
+vi.mock("@htsw/importer/runtime/diffProgress", () => ({
     createDiffProgressSession: () => ({
         start: state.start,
         sinkFor: () => undefined,

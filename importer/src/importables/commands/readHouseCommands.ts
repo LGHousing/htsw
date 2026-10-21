@@ -25,6 +25,7 @@ import {
     readOpenCommandSettings,
 } from "./housing";
 import { listAllCommandNames, resetCommandNameSession } from "./listCommands";
+import { platform } from "../../platform";
 
 type PendingCommandRead = {
     scan: ActionListScan;
@@ -118,7 +119,7 @@ async function writeCommandResult(
     }
 
     ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
+    platform().fileLib.write(target.htslPath, source, true);
 
     upsertImportableEntry(target.importJsonPath, "commands", {
         name,

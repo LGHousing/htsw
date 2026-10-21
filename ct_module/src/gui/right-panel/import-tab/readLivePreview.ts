@@ -1,8 +1,8 @@
 import type { Importable } from "htsw/types";
 
-import type { SyncEventHandler } from "../../../housingSync/syncEvents";
-import type { ObservedNode } from "../../../housingSync/observedActions";
-import { ActionPath, type ActionPathKey } from "../../../housingSync/actionPath";
+import type { SyncEventHandler } from "@htsw/importer/housingSync/syncEvents";
+import type { ObservedNode } from "@htsw/importer/housingSync/observedActions";
+import { ActionPath, type ActionPathKey } from "@htsw/importer/housingSync/actionPath";
 import {
     activatePreview,
     disposePreviewOperation,
@@ -17,7 +17,7 @@ import {
 import {
     readPreviewPath,
     type ReadProgressObserver,
-} from "../../../runtime/readProgress";
+} from "@htsw/importer/runtime/readProgress";
 
 export function createReadLivePreview(
     type: Importable["type"],

@@ -1,14 +1,14 @@
-import { rejectBridgeRun } from "../bridge/status";
+import { rejectBridgeRun } from "@htsw/importer/bridge/status";
 import type { Importable } from "htsw/types";
 
-import { autoRunQueueChanged, setAutoRunEnabled } from "../runtime/autoRun";
-import { getExportDestinationStatus } from "../runtime/exportDestination";
-import { compactFileLabel } from "../project/pathDisplay";
+import { autoRunQueueChanged, setAutoRunEnabled } from "@htsw/importer/runtime/autoRun";
+import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
+import { compactFileLabel } from "@htsw/importer/project/pathDisplay";
 import {
     parseImportJsonCurrent,
     parseImportJsonCurrentBlocking,
-} from "../runtime/parsing/parses";
-import { getHousingUuid } from "../runtime/state/index";
+} from "@htsw/importer/runtime/parsing/parses";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import {
     addQueueRow,
     clearQueue,
@@ -21,21 +21,21 @@ import {
     type QueueAddResult,
     type QueueMove,
     type QueueRow,
-} from "../runtime/queue";
+} from "@htsw/importer/runtime/queue";
 import {
     isQueueRunning,
     pauseQueue,
     startQueue,
-} from "../runtime/queueRunner";
-import { houseDisplayName } from "../importCache/aliases";
-import { importableIdentity } from "../importables/identity";
+} from "@htsw/importer/runtime/queueRunner";
+import { houseDisplayName } from "@htsw/importer/importCache/aliases";
+import { importableIdentity } from "@htsw/importer/importables/identity";
 import {
     HOUSE_READABLE_TYPES,
     type HouseReadableType,
-} from "../importables/export/readers";
-import { resolveModuleRelativePath } from "../project/paths";
-import { getAutoRun } from "../settings";
-import { stripSurroundingQuotes } from "../utils/helpers";
+} from "@htsw/importer/importables/export/readers";
+import { resolveModuleRelativePath } from "@htsw/importer/project/paths";
+import { getAutoRun } from "@htsw/importer/settings";
+import { stripSurroundingQuotes } from "@htsw/importer/utils/helpers";
 import { withCurrentHouse } from "./currentHouse";
 
 const IMPORTABLE_TYPES: Importable["type"][] = [

@@ -53,7 +53,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
 
-vi.mock("../src/runtime/parsing/offThreadParse", () => ({
+vi.mock("@htsw/importer/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => currentFingerprint(),
     parseImportJsonOffThread: (
         _path: string,
@@ -69,7 +69,7 @@ vi.mock("../src/runtime/parsing/offThreadParse", () => ({
         }),
 }));
 
-vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: () => null,
     restoreParseFromSnapshot: () => null,
@@ -81,32 +81,32 @@ vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
         bytes: 0,
     }),
 }));
-vi.mock("../src/importables/items/projectItems", () => ({
+vi.mock("@htsw/importer/importables/items/projectItems", () => ({
     createProjectItemIndex: () => ({}),
     invalidateProjectItemIndex: () => undefined,
 }));
-vi.mock("../src/importables/items/dependencyIndex", () => ({
+vi.mock("@htsw/importer/importables/items/dependencyIndex", () => ({
     createItemDependencyIndex: () => ({}),
     invalidateItemDependencyIndex: () => undefined,
 }));
-vi.mock("../src/importCache/houseBindings", () => ({
+vi.mock("@htsw/importer/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
-vi.mock("../src/importCache/status", () => ({
+vi.mock("@htsw/importer/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
-vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
+vi.mock("@htsw/importer/runtimeDebug/slowParseUpload", () => ({
     uploadSlowParseDiagnostics: () => undefined,
 }));
 
-let parseImportJsonCurrent: typeof import("../src/runtime/parsing/parses").parseImportJsonCurrent;
-let requestParse: typeof import("../src/runtime/parsing/parses").requestParse;
-let isParsePending: typeof import("../src/runtime/parsing/parses").isParsePending;
-let processPendingParses: typeof import("../src/runtime/parsing/parses").processPendingParses;
+let parseImportJsonCurrent: typeof import("@htsw/importer/runtime/parsing/parses").parseImportJsonCurrent;
+let requestParse: typeof import("@htsw/importer/runtime/parsing/parses").requestParse;
+let isParsePending: typeof import("@htsw/importer/runtime/parsing/parses").isParsePending;
+let processPendingParses: typeof import("@htsw/importer/runtime/parsing/parses").processPendingParses;
 
 beforeAll(async () => {
     ({ parseImportJsonCurrent, requestParse, isParsePending, processPendingParses } =
-        await import("../src/runtime/parsing/parses"));
+        await import("@htsw/importer/runtime/parsing/parses"));
 });
 
 describe("import parse freshness", () => {

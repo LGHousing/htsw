@@ -18,7 +18,7 @@ import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./po
 import { mouseIsOverHoverCard, tryDispatchHoverCardClick } from "./hoverCards";
 import { mcToOverlay } from "./overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
-import { span } from "../../perf/spans";
+import { span } from "@htsw/importer/perf/spans";
 import { isFramePerfEnabled, recordPanelFrame, recordPhase } from "./framePerf";
 
 const COLOR_PANEL = 0xf0242931 | 0;

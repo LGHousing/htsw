@@ -4,7 +4,7 @@ import {
     getAutoUpdatePreference,
     setAutoUpdatePreference,
     type AutoUpdatePreference,
-} from "../settings";
+} from "@htsw/importer/settings";
 import { javaType, runtimeString, type RuntimeString } from "../utils/java";
 
 const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";

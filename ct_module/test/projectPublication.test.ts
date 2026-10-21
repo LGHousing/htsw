@@ -41,49 +41,49 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => {
 });
 
 // The house side of an import session: record what each read is asked for.
-vi.mock("../src/importables/import/importers", () => ({
+vi.mock("@htsw/importer/importables/import/importers", () => ({
     scanImportable: async (_ctx: unknown, importable: Importable) => {
         mocks.scans.push(JSON.parse(JSON.stringify(importable)));
         throw new Error("house read stops here");
     },
 }));
-vi.mock("../src/importables/import/references", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importables/import/references")>()),
+vi.mock("@htsw/importer/importables/import/references", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importables/import/references")>()),
     planMissingReferencedShells: async (_ctx: unknown, importables: readonly Importable[]) => {
         mocks.shellPlans.push(importables.map((imp) => JSON.stringify(imp)));
         return { functions: [], menus: [], regions: [] };
     },
 }));
-vi.mock("../src/importCache", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache")>()),
+vi.mock("@htsw/importer/importCache", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache")>()),
     loadImportableCachesOffThread: (_requests: unknown, done: () => void) => done(),
 }));
-vi.mock("../src/importCache/hashMemo", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache/hashMemo")>()),
+vi.mock("@htsw/importer/importCache/hashMemo", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache/hashMemo")>()),
     warmImportableHashesOffThread: (_importables: unknown, done: () => void) => done(),
 }));
 vi.mock("../src/runtimeDebug/importFailureLog", () => ({
     writeTaskFailureLog: () => "failure.log",
 }));
 
-import { expandImportDependencies } from "../src/importables/import/dependencyExpansion";
-import { collectReferencedImportables } from "../src/importables/import/referenceScanner";
-import { runImportSession } from "../src/importables/import/session";
-import { visitItemReferences } from "../src/importables/items/dependencies";
-import { importableIdentity, importableKey } from "../src/importables/identity";
-import { buildTrustPlan } from "../src/importCache/trust";
-import { importableHash, listHashes } from "../src/importCache/hash";
-import { memoizedImportableHash } from "../src/importCache/status";
-import { cachePathForId } from "../src/importCache/paths";
-import { getParseAt, parseImportJsonCurrent } from "../src/runtime/parsing/parses";
-import { loadSnapshot } from "../src/runtime/parsing/parseSnapshot";
+import { expandImportDependencies } from "@htsw/importer/importables/import/dependencyExpansion";
+import { collectReferencedImportables } from "@htsw/importer/importables/import/referenceScanner";
+import { runImportSession } from "@htsw/importer/importables/import/session";
+import { visitItemReferences } from "@htsw/importer/importables/items/dependencies";
+import { importableIdentity, importableKey } from "@htsw/importer/importables/identity";
+import { buildTrustPlan } from "@htsw/importer/importCache/trust";
+import { importableHash, listHashes } from "@htsw/importer/importCache/hash";
+import { memoizedImportableHash } from "@htsw/importer/importCache/status";
+import { cachePathForId } from "@htsw/importer/importCache/paths";
+import { getParseAt, parseImportJsonCurrent } from "@htsw/importer/runtime/parsing/parses";
+import { loadSnapshot } from "@htsw/importer/runtime/parsing/parseSnapshot";
 import {
     installProjectPublication,
     publishProject,
     restoreProjectPublication,
     type ProjectPublication,
-} from "../src/project/publication";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/project/publication";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 const HOUSE = "0f7d1c2e-3b4a-4c5d-8e6f-708192a3b4c5";
 

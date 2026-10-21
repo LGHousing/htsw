@@ -5,20 +5,20 @@ import {
     getImportCacheWriteRevision,
     peekHouseTypeScanned,
     peekImportableCache,
-} from "../../importCache/cache";
-import { importableIdentity } from "../../importables/identity";
-import { getHousingUuid } from "../../runtime/state/housing";
-import { isHouseTrusted } from "../../runtime/state/trust";
+} from "@htsw/importer/importCache/cache";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { getHousingUuid } from "@htsw/importer/runtime/state/housing";
+import { isHouseTrusted } from "@htsw/importer/runtime/state/trust";
 import {
     buildCacheStatusRowFromEntry,
     getImportableHashRevision,
-} from "../../importCache/status";
+} from "@htsw/importer/importCache/status";
 import type { LinkStatusKey } from "./linkStatus";
 import {
     getImportableCacheWarmRevision,
     requestImportableCacheWarm,
-} from "../../importCache/cacheWarm";
-import { getItemDependencyIndexRevision } from "../../importables/items/dependencyIndex";
+} from "@htsw/importer/importCache/cacheWarm";
+import { getItemDependencyIndexRevision } from "@htsw/importer/importables/items/dependencyIndex";
 
 type HousePresenceState = "unscanned" | "present" | "absent";
 type ImportableLinkStatus = {

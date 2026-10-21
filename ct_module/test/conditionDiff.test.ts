@@ -5,10 +5,10 @@ import {
     baselineConditionListFromConditions,
     currentConditionListFromSlots,
     diffConditionList,
-} from "../src/housingSync/actions/conditions/diff";
-import type { ConditionListOperation } from "../src/housingSync/actions/diff/types";
-import type { ObservedConditionSlot } from "../src/housingSync/observedActions";
-import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
+} from "@htsw/importer/housingSync/actions/conditions/diff";
+import type { ConditionListOperation } from "@htsw/importer/housingSync/actions/diff/types";
+import type { ObservedConditionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ItemDiffContext } from "@htsw/importer/housingSync/actions/diff/itemDiffContext";
 
 function obs(index: number, condition: Condition | null): ObservedConditionSlot {
     return { index, slotId: index, slot: null as never, condition };

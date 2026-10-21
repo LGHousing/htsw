@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import type { ImportablesParseResult } from "htsw";
 
@@ -10,8 +9,8 @@ import {
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
-import { javaType } from "../../utils/java";
 import { autoTrackRefresh } from "../autoTrack";
+import { platform } from "../../platform";
 
 let fileExistsPath = "";
 let fileExistsAt = 0;
@@ -32,9 +31,7 @@ function fileExistsSafe(path: string): boolean {
     const now = Date.now();
     if (path === fileExistsPath && now - fileExistsAt < 500) return fileExistsResult;
     try {
-        const Files = javaType("java.nio.file.Files");
-        const Paths = javaType("java.nio.file.Paths");
-        fileExistsResult = Files.exists(Paths.get(path));
+        fileExistsResult = platform().files.exists(path);
     } catch (_e) {
         fileExistsResult = false;
     }

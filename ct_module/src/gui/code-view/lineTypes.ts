@@ -11,7 +11,7 @@ import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
 import type { IconName } from "../lib/icons.generated";
 import type { Diagnostic, ImportablesParseResult } from "htsw";
-import type { ActionTreePath } from "../../housingSync/actionPath";
+import type { ActionTreePath } from "@htsw/importer/housingSync/actionPath";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;

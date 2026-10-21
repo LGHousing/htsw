@@ -9,6 +9,7 @@ import {
     stripInteractData,
     type TagLike,
 } from "./itemTag";
+import type { Item } from "../../platform";
 
 export function canonicalItemShellKey(item: Item): string {
     return canonicalItemShellTagKey(itemToHtswTag(item));

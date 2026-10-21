@@ -1,6 +1,6 @@
 import type { Tag, TagCompound } from "htsw/nbt";
 import { Long, nbt as htswNbt } from "htsw";
-import { removedFormatting } from "./helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 import { javaType, runtimeString } from "./java";
 
 const NBTTagByte = javaType("net.minecraft.nbt.NBTTagByte");

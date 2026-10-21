@@ -1,15 +1,15 @@
 import { Diagnostic, SourceMap, parseActionsResult } from "htsw";
 
-import { appendActionsToOpenActionList } from "./housingSync/actions/apply";
-import { runHousingSyncTask } from "./housingSync/taskRunner";
-import { createProjectItemIndex } from "./importables/items/projectItems";
-import { createItemFieldResolver } from "./importables/items/resolveItem";
-import { TaskManager } from "./tasks/manager";
-import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
+import { appendActionsToOpenActionList } from "@htsw/importer/housingSync/actions/apply";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { printDiagnostic, printDiagnostics } from "@htsw/importer/tui/diagnostics";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
-import { compactFileLabel } from "./project/pathDisplay";
-import { emitBridgeEvent, rejectBridgeRun } from "./bridge/status";
-import { blockingDiagnostics } from "./utils/helpers";
+import { compactFileLabel } from "@htsw/importer/project/pathDisplay";
+import { emitBridgeEvent, rejectBridgeRun } from "@htsw/importer/bridge/status";
+import { blockingDiagnostics } from "@htsw/importer/utils/helpers";
 
 export function appendRawHtslFile(path: string): void {
     if (TaskManager.isBusy()) {

@@ -4,11 +4,11 @@ import {
     canonicalItemShellTag,
     canonicalLiveItemTag,
     type TagLike,
-} from "../src/housingSync/items/itemTag";
+} from "@htsw/importer/housingSync/items/itemTag";
 import {
     canonicalItemShellTagKey,
     normalizeItemSnbtForExport,
-} from "../src/housingSync/items/itemNbt";
+} from "@htsw/importer/housingSync/items/itemNbt";
 
 const str = (value: string): TagLike => ({ type: "string", value });
 const byte = (value: number): TagLike => ({ type: "byte", value });

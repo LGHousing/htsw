@@ -2,29 +2,29 @@
 
 import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
-import { normalizeSoundKey } from "../../../housingSync/fields/sounds";
+import { normalizeSoundKey } from "@htsw/importer/housingSync/fields/sounds";
 import type { TokenSpan, FieldSpan } from "../../code-view/lineTypes";
 import type {
     DiffFinalState,
     DiffOpKind,
     DiffSummary,
     PlannedOp,
-} from "../../../housingSync/syncEvents";
+} from "@htsw/importer/housingSync/syncEvents";
 import {
     ActionListPath,
     ActionPath,
     ActionTreePath,
     type ActionPathKey,
     type ChildActionListName,
-} from "../../../housingSync/actionPath";
+} from "@htsw/importer/housingSync/actionPath";
 import { tokenizeHtsl } from "../syntax";
-import { normalizeHtswPath } from "../../../project/pathDisplay";
+import { normalizeHtswPath } from "@htsw/importer/project/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
 import type {
     Observed,
     ObservedChildList,
     ObservedNode,
-} from "../../../housingSync/observedActions";
+} from "@htsw/importer/housingSync/observedActions";
 
 type PreviewVariant = "body" | "else" | "close" | "placeholder";
 

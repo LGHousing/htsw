@@ -8,8 +8,6 @@ import {
     getOpenContainerTitle,
 } from "./specifics/slots";
 import { waitFor, waitForTimeout, type WaitForPromise } from "./specifics/waitFor";
-import { C01PacketChatMessage } from "../utils/packets";
-import { sendPacket } from "../utils/java";
 import { removedFormatting } from "../utils/helpers";
 import { helpers } from "htsw";
 import { recordRuntimeDebug } from "../runtimeDebug/runtimeDebugBuffer";
@@ -20,6 +18,7 @@ import {
     deferPlayerChat,
     finishChatPromptDeferral,
 } from "./chatPromptDeferral";
+import { platform, type Packet } from "../platform";
 
 /**
  * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
@@ -76,9 +75,9 @@ const CHAT_MIN_INTERVAL_MS = 50;
  */
 const COMMAND_COOLDOWN_MS = 300;
 
-register("messageSent", (message, event) => {
+platform().onMessageSent((message, cancelSend) => {
     if (!deferPlayerChat(message)) return;
-    cancel(event);
+    cancelSend();
     recordRuntimeDebug("chatDeferred");
 });
 
@@ -206,12 +205,8 @@ export default class TaskContext {
         this.lastCommandAt = Date.now();
     }
 
-    private createChatPacket(message: string): HtswPacketInstance {
-        const packet = new C01PacketChatMessage("");
-        const messageField = packet.class.getDeclaredField("field_149440_a");
-        messageField.setAccessible(true);
-        messageField.set(packet, message);
-        return packet;
+    private createChatPacket(message: string): Packet {
+        return platform().createChatPacket(message);
     }
 
     /**
@@ -232,7 +227,7 @@ export default class TaskContext {
                     `with "Illegal characters in chat".`
             );
         }
-        sendPacket(this.createChatPacket(message));
+        platform().sendPacket(this.createChatPacket(message));
     }
 
     public async sendMessage(message: string): Promise<void> {
@@ -267,13 +262,13 @@ export default class TaskContext {
                     ? null
                     : this.waitFor("message", (incoming) => {
                           const text = removedFormatting(incoming);
-                          return text.endsWith(`${Player.getName()}: ${message}`);
+                          return text.endsWith(`${platform().playerName()}: ${message}`);
                       });
                 const packet = this.createChatPacket(message);
                 const sentWaiter = this.waitFor("packetSent", (sentPacket) =>
                     samePacket(packet, sentPacket)
                 );
-                sendPacket(packet);
+                platform().sendPacket(packet);
                 try {
                     await this.withTimeout(
                         sentWaiter,
@@ -305,7 +300,7 @@ export default class TaskContext {
     }
 
     public displayMessage(message: string) {
-        ChatLib.chat(message);
+        platform().chat(message);
     }
 
     public async sleep(

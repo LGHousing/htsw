@@ -20,6 +20,7 @@ import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import type TaskContext from "../../tasks/context";
 import { oneOf } from "../../tasks/waiters";
 import { itemEditorOpened } from "../waiters";
+import type { Item } from "../../platform";
 
 export async function readClickActions(
     ctx: TaskContext,

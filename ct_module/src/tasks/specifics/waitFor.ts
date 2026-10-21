@@ -13,10 +13,10 @@ import {
     setSlotPacketWindowId,
     windowItemsPacketId,
 } from "../../utils/packets";
-import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
+import { recordRuntimeDebug } from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { runOnMainThread } from "../../utils/mainThread";
-import { createTaskCancelledError } from "../cancellation";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
 
 type Packet = MCPacket<MCINetHandler>;
 

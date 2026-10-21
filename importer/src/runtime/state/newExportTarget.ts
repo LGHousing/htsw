@@ -1,4 +1,3 @@
-/// <reference types="../../../CTAutocomplete" />
 
 import { getExportImportJsonPath } from "./paths";
 import { normalizeHtswPath } from "../../project/pathDisplay";

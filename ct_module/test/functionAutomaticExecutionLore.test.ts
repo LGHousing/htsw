@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseAutomaticExecutionTicks } from "../src/importables/functions/housing";
+import { parseAutomaticExecutionTicks } from "@htsw/importer/importables/functions/housing";
 
 describe("automatic execution parse diagnostics", () => {
     test("includes the trimmed raw name and lore with visible formatting codes", () => {

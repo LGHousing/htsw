@@ -5,16 +5,16 @@ import type { Element } from "../../lib/layout";
 import { Col, Input, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { ACCENT_WARN } from "../../lib/theme";
-import { dirname, shortPath } from "../../../project/pathDisplay";
+import { dirname, shortPath } from "@htsw/importer/project/pathDisplay";
 import {
     canonicalPath,
     invalidateParseCacheEntry,
     requestParse,
-} from "../../../runtime/parsing/parses";
-import { importableDeclaringPath } from "../../../runtime/parsing/importablePaths";
-import { importableIdentity } from "../../../importables/identity";
-import { moveImportableEntry, type Section } from "../../../project/importJsonMutations";
-import { createIncludedFolderInTree } from "../../../project/paths";
+} from "@htsw/importer/runtime/parsing/parses";
+import { importableDeclaringPath } from "@htsw/importer/runtime/parsing/importablePaths";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { moveImportableEntry, type Section } from "@htsw/importer/project/importJsonMutations";
+import { createIncludedFolderInTree } from "@htsw/importer/project/paths";
 import { openTextPromptPopover } from "../../popovers/text-prompt";
 import { closeTab } from "../../right-panel/selection";
 import {

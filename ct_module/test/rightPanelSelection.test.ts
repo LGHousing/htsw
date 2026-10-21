@@ -58,9 +58,9 @@ describe("right-panel live import tab", () => {
 
     test("keeps a failed import preview available for attention", async () => {
         const taskProgress = await import(
-            "../src/runtime/taskProgress"
+            "@htsw/importer/runtime/taskProgress"
         );
-        const { taskPathChanges, taskProgressChanges } = await import("../src/runtime/events");
+        const { taskPathChanges, taskProgressChanges } = await import("@htsw/importer/runtime/events");
         taskPathChanges.observe(selection.rememberLiveTaskPath);
         taskProgressChanges.observe(({ wasRunning, running, needsAttention }) => {
             selection.onTaskRunningChanged(wasRunning, running, needsAttention);

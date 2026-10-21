@@ -1,4 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
 import { npcPosIdentity } from "htsw-editor-common/project";
@@ -65,6 +64,7 @@ import {
     type QueueOp,
 } from "./queue";
 import { errorMessage } from "../utils/helpers";
+import { platform } from "../platform";
 
 export type QueueRunState = "idle" | "running" | "paused";
 export type QueueStartOptions = { autoRun?: boolean };
@@ -256,7 +256,7 @@ async function finishProjectRow(
             tally.failed++;
             tally.reason ??= message;
         }
-        ChatLib.chat(`&c[htsw] ${row.target.label} failed: ${message}`);
+        platform().chat(`&c[htsw] ${row.target.label} failed: ${message}`);
         return false;
     }
     const finished = getQueueRow(row.key);
@@ -394,7 +394,7 @@ async function drainQueueInner(
                     tally.reason ??= message;
                 }
                 if (head.op === "import") return "idle";
-                ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
+                platform().chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
                 continue;
             }
             const inserted = expandBulkQueueRow(head.key, children);
@@ -424,7 +424,7 @@ async function drainQueueInner(
             if (isTaskCancelled(error)) {
                 resetSessionRows(session);
                 if (head.op !== "import") {
-                    ChatLib.chat(
+                    platform().chat(
                         `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f0&e ${queueOpVerb(head.op)}`
                     );
                 }
@@ -438,10 +438,10 @@ async function drainQueueInner(
                 tally.reason ??= message;
             }
             if (head.op === "import") {
-                ChatLib.chat(`&c[htsw] Import failed: ${String(error)}`);
+                platform().chat(`&c[htsw] Import failed: ${String(error)}`);
                 return "idle";
             }
-            ChatLib.chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
+            platform().chat(`&c[htsw] ${queueOpLabel(head.op)} failed: ${message}`);
             continue;
         }
 
@@ -452,7 +452,7 @@ async function drainQueueInner(
             }
             resetSessionRows(session);
             if (head.op !== "import") {
-                ChatLib.chat(
+                platform().chat(
                     `&e[htsw] ${queueOpLabel(head.op)} cancelled by user &7· &f${result.completedKeys.length}&e ${queueOpVerb(head.op)}`
                 );
             }
@@ -518,7 +518,7 @@ export function startQueue(options: QueueStartOptions = {}): boolean {
                 ...tally,
             });
             finishBridgeRun("failed", { reason: String(error), ...tally });
-            ChatLib.chat(`&c[htsw] Queue failed: ${String(error)}`);
+            platform().chat(`&c[htsw] Queue failed: ${String(error)}`);
             showToast(`Queue failed: ${String(error)}`, 0xffe85c5c, 8000);
         })
         .finally(() => {
@@ -542,7 +542,7 @@ export function printQueueRunEnd(runState: QueueRunState, tally: QueueRunTally):
         queued,
     });
     finishBridgeRun(status, { ...tally, queued });
-    ChatLib.chat(
+    platform().chat(
         `${colour}[htsw] Queue ${label} &7· &f${tally.completed}${colour} completed, &f${tally.failed}${colour} failed, &f${queued}&7 queued`
     );
 }
@@ -823,12 +823,12 @@ export async function runQueuedExportSession(
     for (const failure of failed) {
         const row = rows.find((candidate) => candidate.key === failure.key);
         if (row?.target.kind !== "importable") continue;
-        ChatLib.chat(
+        platform().chat(
             `&c[htsw] ${queueOpLabel(first.op)} failed on ${row.target.type} ${row.target.identity}: ${failure.error}`
         );
     }
     const elapsed = formatElapsedSeconds(ctx.elapsedMs() / 1000);
-    ChatLib.chat(
+    platform().chat(
         `&a[htsw] ${queueOpLabel(first.op)} complete in ${elapsed} &7· &f${completedKeys.length}&a ${queueOpVerb(first.op)}, &f${failed.length}&c failed`
     );
     return { completedKeys, failed };
@@ -891,7 +891,7 @@ const defaultDependencies: QueueRunnerDependencies = {
     async beforeFirstImport(ctx) {
         await gmcOnImportStart(ctx);
         if (!(await waitForCreativeMode(ctx))) {
-            ChatLib.chat(
+            platform().chat(
                 "&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot."
             );
         }

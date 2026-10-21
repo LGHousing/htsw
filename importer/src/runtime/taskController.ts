@@ -1,6 +1,5 @@
 import { Observers } from "../utils/observers";
 import { conflictReviews } from "./events";
-/// <reference types="../../CTAutocomplete" />
 
 import { isCurrentHouseTrusted, isImportCompletionSoundEnabled } from "./state/index";
 import {
@@ -48,6 +47,7 @@ import type { ImportConflict } from "../importables/import/conflicts";
 import type TaskContext from "../tasks/context";
 import { conflictAwaitingConfirmationMessage } from "../importables/import/conflictChat";
 import { emitBridgeEvent, finishBridgeSession } from "../bridge/status";
+import { platform } from "../platform";
 
 const CONFLICT_TYPE_LABEL: Partial<Record<ImportConflict["type"], string>> = {
     FUNCTION: "Function",
@@ -267,7 +267,7 @@ function prepareConflictReview(
                 sourcePath: request.batch.sourcePath,
             });
         }
-        ChatLib.chat(message);
+        platform().chat(message);
     };
     const readRows = insertQueueRowsBefore(
         importRows[0].key,
@@ -319,7 +319,7 @@ async function buildBatches(queue: readonly QueueRow[]): Promise<ImportBatch[] |
         if (group === undefined) {
             const cached = await parseImportJsonCurrent(item.path);
             if (cached.parsed === null) {
-                ChatLib.chat(
+                platform().chat(
                     `&c[htsw] Skipping ${item.path}: ${cached.error ?? "parse failed"}`
                 );
                 continue;
@@ -404,7 +404,7 @@ export async function runImportQueueSession(
     const batches = await buildBatches(importRows);
     if (batches === null) {
         const message = "Nothing matched the queued import selection.";
-        ChatLib.chat(`&c[htsw] Import failed: ${message}`);
+        platform().chat(`&c[htsw] Import failed: ${message}`);
         return {
             completedKeys: [],
             failed: [{ key: importRows[0].key, error: message }],
@@ -414,12 +414,12 @@ export async function runImportQueueSession(
         .map((batch) => ({ batch, errors: relevantParseErrors(batch) }))
         .filter((entry) => entry.errors.length > 0);
     if (failedParses.length > 0) {
-        ChatLib.chat(
+        platform().chat(
             `&c[htsw] Import aborted — ${failedParses.length} file${failedParses.length === 1 ? "" : "s"} ` +
                 "with errors. Fix the diagnostics below and retry."
         );
         for (const { batch, errors } of failedParses) {
-            ChatLib.chat(`&7  in ${batch.sourcePath}:`);
+            platform().chat(`&7  in ${batch.sourcePath}:`);
             printDiagnostics(batch.parsed.gcx.sourceMap, errors);
         }
         return {
@@ -474,7 +474,7 @@ export async function runImportQueueSession(
 
     const allErrors = relevantParseErrors(batch);
     if (allErrors.length > 0) {
-        ChatLib.chat(
+        platform().chat(
             "&c[htsw] Import aborted — required dependencies contain errors. Fix the diagnostics below and retry."
         );
         printDiagnostics(batch.parsed.gcx.sourceMap, allErrors);
@@ -522,7 +522,7 @@ export async function runImportQueueSession(
                     }
                     if (decision !== "proceed") {
                         cancelled = true;
-                        ChatLib.chat("[htsw] Import cancelled by user · 0 imported");
+                        platform().chat("[htsw] Import cancelled by user · 0 imported");
                     }
                     return decision;
                 },
@@ -562,7 +562,7 @@ export async function runImportQueueSession(
         if (!isTaskCancelled(error)) throw error;
         cancelled = true;
         const counts = events.counts();
-        ChatLib.chat(
+        platform().chat(
             `&e[htsw] Import cancelled by user &7· &f${counts.imported}&e imported`
         );
     }
@@ -575,7 +575,7 @@ export async function runImportQueueSession(
             `Import complete in ${elapsed} · ${counts.imported} imported, ${counts.skipped} skipped`,
             0xff5cb85c
         );
-        ChatLib.chat(
+        platform().chat(
             `&a[htsw] Import complete in ${elapsed} &7· &f${counts.imported}&a imported, &f${counts.skipped}&7 skipped`
         );
     }

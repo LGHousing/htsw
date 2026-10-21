@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { detectHousingUuid } from "../src/importCache/housingId";
+import { detectHousingUuid } from "@htsw/importer/importCache/housingId";
 import {
     getHousingPresence,
     reportHousingPresence,
     resetHousingPresence,
-} from "../src/importCache/housingPresence";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importCache/housingPresence";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 beforeEach(() => {
     resetHousingPresence();

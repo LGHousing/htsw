@@ -17,6 +17,7 @@ import type { ItemCaptureRegistry } from "./captureRegistry";
 import { readClickActions } from "./readClickActions";
 import { hasItemClickActions, writeInteractDataCache } from "./interactDataCache";
 import { sourceItemFieldContent } from "../../housingSync/items/fieldContent";
+import { platform } from "../../platform";
 
 function actionReference(snbtReference: string, side: "left" | "right"): string {
     return snbtReference.replace(/\.snbt$/i, `_${side}.htsl`);
@@ -37,7 +38,7 @@ function writeActions(
         ctx.displayMessage(`&7[export] &e${diagnostic.message}`);
     }
     ensureParentDirs(path);
-    FileLib.write(path, printed.source, true);
+    platform().fileLib.write(path, printed.source, true);
     if (showProgressMessages) ctx.displayMessage(`&7  -> ${path}`);
 }
 
@@ -86,7 +87,7 @@ export async function exportCapturedItems(
             newExportTargetImportJson
         );
         ensureParentDirs(target.snbtPath);
-        FileLib.write(target.snbtPath, portableItemSnbt(item.snbt), true);
+        platform().fileLib.write(target.snbtPath, portableItemSnbt(item.snbt), true);
 
         if (actions.left.length > 0) {
             writeActions(

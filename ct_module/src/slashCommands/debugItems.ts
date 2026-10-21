@@ -1,5 +1,5 @@
 import { isInCreativeMode } from "../housingSync/sideEffects";
-import { snbtFromItem } from "../housingSync/items/itemNbt";
+import { snbtFromItem } from "@htsw/importer/housingSync/items/itemNbt";
 import {
     heldItem,
     inventorySlotToPacketSlot,
@@ -8,20 +8,20 @@ import {
     canonicalSlug,
     PROJECTS_ROOT,
     resolveModuleRelativePath,
-} from "../project/paths";
+} from "@htsw/importer/project/paths";
 import { getItemFromSnbt } from "../utils/nbt";
 import { C10PacketCreativeInventoryAction } from "../utils/packets";
-import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
+import { parseCommandArgs, quoteCommandArg } from "@htsw/importer/utils/commandArgs";
 import { atomicWriteText, isDirectory } from "../utils/filesystem";
 import {
     chatSeparator,
     normalizeFormattingCodes,
     removedFormatting,
-} from "../utils/helpers";
+} from "@htsw/importer/utils/helpers";
 import { javaType, sendPacket } from "../utils/java";
 import { setClipboardString } from "../utils/osShell";
 import { chatLine, colouredComponent, rawComponent } from "../utils/chat";
-import { basename, dirname } from "../project/pathDisplay";
+import { basename, dirname } from "@htsw/importer/project/pathDisplay";
 
 function chatPath(path: string): string {
     const norm = path.split("\\").join("/");
