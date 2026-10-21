@@ -4,4 +4,9 @@ export class IncompleteReadError extends Error {
         super(`HTSW_INCOMPLETE_READ: ${detail}`);
         this.name = "IncompleteReadError";
     }
+
+    withContext(context: string): this {
+        this.message += ` (${context})`;
+        return this;
+    }
 }

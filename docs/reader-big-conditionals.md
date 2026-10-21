@@ -227,3 +227,75 @@ Both typechecks (`ct_module npm run typecheck`, `language npx tsc --noEmit`),
 ct_module lint and knip, and `git diff --check` passed. The affected tests also
 cover slot addition/removal, unrelated packets, listener cleanup, cancellation,
 and the prefix across export, planning, sync, nested hydration and timeouts.
+
+## Re-review: preserve the prefix through contextual errors
+
+Required behavior before implementation: wrappers must rethrow the original
+`IncompleteReadError`, retaining `HTSW_INCOMPLETE_READ:` at the start of its
+message and appending their context. The session's final diagnostic must start
+`Failed to import FUNCTION: HTSW_INCOMPLETE_READ:` when Add Action readiness
+fails. Ordinary errors keep their existing context; cancellation remains distinct.
+
+The module-wide catch/rethrow and rejection audit confirms the three reported
+wrappers (Add Action, function settings, function import) and finds two more
+reachable paths: Holder recovery prepends the original Holder failure, and
+`oneOf` combines failed menu/chat waiters into a new generic error. The latter
+must preserve an incomplete-read error only when all alternatives fail, so a
+successful alternative can still win. Hydration already preserves the error;
+action-apply result wrappers also retain Error instances. Inventory restoration
+only wraps synchronous packet sending or NBT parsing, not Housing menu reads;
+command creation only rewrites HousingTextRejectedError. Diagnostic formatting
+is the intentional final boundary, retaining the requested import header.
+
+The wrappers now use `IncompleteReadError.withContext` to append their labels
+without replacing the error object or moving its prefix. The combined waiter
+retains the first incomplete-read failure until all alternatives fail; it still
+allows a successful alternative and still preserves cancellation.
+
+The Add Action regression uses the real menu-wait timeout handling and the real
+import session diagnostic. Before the fix it produced:
+
+```text
+Failed to import FUNCTION: After clicking Add Action option "Send a Chat Message" (MESSAGE) in "Action Settings": HTSW_INCOMPLETE_READ: Timeout after 6000ms: Waiting for menu to load (window unknown)
+```
+
+After the fix it begins `Failed to import FUNCTION: HTSW_INCOMPLETE_READ:` and
+appends the Add Action context. The two affected-test batches passed 39 and 59
+tests (98 total). They include both function wrappers, Holder recovery, both
+failure orders in the combined waiter, a successful alternative after a failed
+read, cancellation, nested hydration and action-apply error preservation.
+
+Re-review verification output:
+
+```text
+Affected batch 1 — importSessionConflicts, functionSettings, holderRecovery
+Test Files  3 passed (3)
+Tests       39 passed (39)
+Duration    2.18s
+
+Affected batch 2 — waiters, readerCompleteness, actionApplyResult
+Test Files  3 passed (3)
+Tests       59 passed (59)
+Duration    2.42s
+
+ct_module full — npx vitest run --maxWorkers=2
+Test Files  164 passed (164)
+Tests       1313 passed | 1 skipped (1314)
+Duration    33.67s
+
+language full — npx vitest run --maxWorkers=2
+Test Files  14 passed (14)
+Tests       201 passed (201)
+Duration    2.09s
+
+Final assertion recheck — importSessionConflicts
+Test Files  1 passed (1)
+Tests       10 passed (10)
+Duration    1.80s
+```
+
+Both typechecks passed. Lint flagged two unsafe Vitest matcher assignments in
+the new test; those assertions now check the typed failure string directly.
+The affected test and module typecheck were rechecked after that adjustment,
+and module lint, knip and `git diff --check` passed. The suites were run once
+for this re-review; no production code changed after those full runs.

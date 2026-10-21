@@ -216,8 +216,7 @@ async function hydrateActionDetail(
         const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
         if (error instanceof IncompleteReadError) {
-            error.message = `${inner} (at ${path}, ${typeName})`;
-            throw error;
+            throw error.withContext(`at ${path}, ${typeName}`);
         }
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);
     }
