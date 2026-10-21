@@ -2,7 +2,7 @@ import "promise-polyfill/src/polyfill";
 import "./polyfills/promiseSyncDrain";
 import "./injectLong";
 import "./injectHousingDecimal";
-import "./tasks/manager";
+import "@htsw/importer/tasks/manager";
 
 import { registerSlashCommands } from "./slashCommands";
 import { CLIENT_DEBUG_SUBCOMMANDS, CLIENT_SUBCOMMANDS } from "./slashCommands/client";

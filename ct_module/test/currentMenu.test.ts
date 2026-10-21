@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { baseMenuTitle } from "../src/housingSync/menus/currentMenu";
+import { baseMenuTitle } from "@htsw/importer/housingSync/menus/currentMenu";
 
 describe("baseMenuTitle", () => {
     test("returns a plain title unchanged", () => {

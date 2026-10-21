@@ -5,20 +5,20 @@ const mocks = vi.hoisted(() => ({
     readActionListFully: vi.fn(),
 }));
 
-vi.mock("../src/housingSync/actions/hydration/run", () => ({
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", () => ({
     readActionListFully: mocks.readActionListFully,
 }));
-vi.mock("../src/importables/menus/housing", () => ({
+vi.mock("@htsw/importer/importables/menus/housing", () => ({
     openMenuEditor: async () => "opened",
     openMenuElements: async () => undefined,
 }));
-vi.mock("../src/importables/menus/listMenus", () => ({
+vi.mock("@htsw/importer/importables/menus/listMenus", () => ({
     listAllMenuNames: async () => [],
 }));
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     clickGoBack: async () => undefined,
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     waitForMenu: async () => undefined,
 }));
 vi.mock("../src/tasks/specifics/slots", () => ({
@@ -39,8 +39,8 @@ vi.mock("../src/tasks/specifics/slots", () => ({
         },
     ],
 }));
-vi.mock("../src/housingSync/items/itemNbt", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/items/itemNbt")>()),
+vi.mock("@htsw/importer/housingSync/items/itemNbt", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/items/itemNbt")>()),
     snbtFromItem: () => "{}",
 }));
 vi.mock("../src/housingSync/items/playerInventory", () => ({
@@ -48,17 +48,17 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     restorePlayerInventory: async () => undefined,
 }));
 
-import { createDiffProgressSession } from "../src/runtime/diffProgress";
+import { createDiffProgressSession } from "@htsw/importer/runtime/diffProgress";
 import { previewLinesForFile, resetPreview } from "../src/gui/right-panel/import-tab/livePreview";
 import {
     clearTaskProgress,
     getActiveTaskListLabel,
     getActiveTaskPath,
-} from "../src/runtime/taskProgress";
-import type { SyncEventHandler } from "../src/housingSync/syncEvents";
-import { ActionListPath, ActionPath } from "../src/housingSync/actionPath";
-import { readMenus } from "../src/importables/menus/readHouseMenus";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/runtime/taskProgress";
+import type { SyncEventHandler } from "@htsw/importer/housingSync/syncEvents";
+import { ActionListPath, ActionPath } from "@htsw/importer/housingSync/actionPath";
+import { readMenus } from "@htsw/importer/importables/menus/readHouseMenus";
+import type TaskContext from "@htsw/importer/tasks/context";
 import { message } from "./utils";
 
 const MANIFEST = "./project/import.json";
@@ -165,6 +165,6 @@ describe("diff menu preview", () => {
     });
 });
 
-import { readSessions } from "../src/runtime/readProgress";
+import { readSessions } from "@htsw/importer/runtime/readProgress";
 import { createReadLivePreview } from "../src/gui/right-panel/import-tab/readLivePreview";
 readSessions.observe(({ type, basePath, observe }) => observe(createReadLivePreview(type, basePath)));

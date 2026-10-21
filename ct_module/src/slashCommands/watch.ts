@@ -1,5 +1,5 @@
-import { getAutoRun } from "../settings";
-import { setAutoRunEnabled } from "../runtime/autoRun";
+import { getAutoRun } from "@htsw/importer/settings";
+import { setAutoRunEnabled } from "@htsw/importer/runtime/autoRun";
 
 export function commandWatch(args: string[]): void {
     const action = (args[0] ?? "").toLowerCase();

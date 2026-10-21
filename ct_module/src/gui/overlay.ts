@@ -16,7 +16,7 @@ import {
     getShowChatPanel,
     getShowInventoryButtons,
     getSmoothScrolling,
-} from "../settings";
+} from "@htsw/importer/settings";
 import { getMinecraft, javaType } from "./lib/java";
 
 declare const JavaAdapter: new (baseClass: unknown, implementation: object) => unknown;
@@ -52,8 +52,8 @@ import {
 } from "./lib/bounds";
 import { BottomToolbar } from "./bottom-toolbar";
 import { Container } from "./lib/components";
-import { handleCompletedParse, tickReparse } from "../runtime/parsing/reparse";
-import { onParseCacheEntryChanged, processPendingParses } from "../runtime/parsing/parses";
+import { handleCompletedParse, tickReparse } from "@htsw/importer/runtime/parsing/reparse";
+import { onParseCacheEntryChanged, processPendingParses } from "@htsw/importer/runtime/parsing/parses";
 import { invalidateSourceDiffForParse } from "./code-view/sourceDiff";
 import { CHAT_INPUT_ID } from "./chat";
 import { refreshChatLines } from "./chat/mcChat";
@@ -74,20 +74,20 @@ import {
     mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
-import { areTaskSoundsMuted } from "../runtime/state";
+import { areTaskSoundsMuted } from "@htsw/importer/runtime/state";
 import {
     getImportCachePresenceRevision,
     getImportCacheWriteRevision,
-} from "../importCache/cache";
-import { getHousingPresence } from "../importCache/housingPresence";
-import { isTaskRunning } from "../tasks/runningState";
+} from "@htsw/importer/importCache/cache";
+import { getHousingPresence } from "@htsw/importer/importCache/housingPresence";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
 
 import { getChatKeyCode, getInventoryKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { renderBadges } from "./badge";
-import { isAutoRunQueueRunning, setAutoRunDetectionLive } from "../runtime/autoRun";
-import { noteOverlayVisibility } from "../persistence/workspace";
-import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
+import { isAutoRunQueueRunning, setAutoRunDetectionLive } from "@htsw/importer/runtime/autoRun";
+import { noteOverlayVisibility } from "@htsw/importer/persistence/workspace";
+import { sampleProgressTraceTick } from "@htsw/importer/housingSync/trace/progressTrace";
 import { sampleImportCodeViewTrace } from "./right-panel/import-tab/codeViewTrace";
 import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
@@ -121,9 +121,9 @@ import {
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 import { canShowHousingFrame } from "./overlayVisibility";
-import { processImportableCacheWarm } from "../importCache/cacheWarm";
+import { processImportableCacheWarm } from "@htsw/importer/importCache/cacheWarm";
 import { pollLockBanners } from "./left-panel/projects/lockBanner";
-import { span } from "../perf/spans";
+import { span } from "@htsw/importer/perf/spans";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);

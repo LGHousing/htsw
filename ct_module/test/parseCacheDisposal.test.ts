@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CachedParse } from "../src/runtime/parsing/parses";
+import type { CachedParse } from "@htsw/importer/runtime/parsing/parses";
 
 const spies = vi.hoisted(() => ({
     invalidateProjectItems: vi.fn(),
@@ -66,7 +66,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 1,
 }));
 
-vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: (path: string) => ({
         importJsonPath: path,
@@ -92,22 +92,22 @@ vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
     }),
 }));
 
-vi.mock("../src/runtime/parsing/offThreadParse", () => ({
+vi.mock("@htsw/importer/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => ({}),
     parseImportJsonOffThread: () => undefined,
 }));
 
-vi.mock("../src/importables/items/projectItems", () => ({
+vi.mock("@htsw/importer/importables/items/projectItems", () => ({
     createProjectItemIndex: () => ({}),
     invalidateProjectItemIndex: spies.invalidateProjectItems,
 }));
 
-vi.mock("../src/importables/items/dependencyIndex", () => ({
+vi.mock("@htsw/importer/importables/items/dependencyIndex", () => ({
     createItemDependencyIndex: () => ({}),
     invalidateItemDependencyIndex: spies.invalidateItemDependencies,
 }));
 
-vi.mock("../src/importCache/houseBindings", () => ({
+vi.mock("@htsw/importer/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
 
@@ -115,11 +115,11 @@ vi.mock("../src/gui/lib/dirty", () => ({
     markGuiDirty: spies.markGuiDirty,
 }));
 
-vi.mock("../src/importCache/status", () => ({
+vi.mock("@htsw/importer/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
 
-vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
+vi.mock("@htsw/importer/runtimeDebug/slowParseUpload", () => ({
     uploadSlowParseDiagnostics: () => undefined,
 }));
 
@@ -127,7 +127,7 @@ vi.mock("../src/gui/left-panel/projects/rowModel", () => ({
     bumpTreeRevision: spies.bumpTreeRevision,
 }));
 
-vi.mock("../src/runtime/state/index", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({
     getImportJsonPath: () => "",
     setImportJsonPath: () => undefined,
 }));
@@ -140,7 +140,7 @@ vi.mock("../src/gui/lib/framePerf", () => ({
     recordPhase: () => undefined,
 }));
 
-type ParsesModule = typeof import("../src/runtime/parsing/parses");
+type ParsesModule = typeof import("@htsw/importer/runtime/parsing/parses");
 
 let parses: ParsesModule;
 
@@ -152,9 +152,9 @@ beforeEach(async () => {
     spies.markGuiDirty.mockClear();
     spies.disposeLineModels.mockClear();
     spies.bumpTreeRevision.mockClear();
-    const { runtimeChanges } = await import("../src/runtime/events");
+    const { runtimeChanges } = await import("@htsw/importer/runtime/events");
     runtimeChanges.observe(spies.markGuiDirty);
-    parses = await import("../src/runtime/parsing/parses");
+    parses = await import("@htsw/importer/runtime/parsing/parses");
 });
 
 describe("parse cache retention and disposal", () => {

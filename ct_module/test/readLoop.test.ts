@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     isTaskCancelled: (error: unknown) =>
         error instanceof Error && error.message === "CANCELLED",
 }));
 
-import { runReadLoop } from "../src/importables/export/reader";
-import type TaskContext from "../src/tasks/context";
-import type { ExportProgressSink } from "../src/housingSync/progress/types";
+import { runReadLoop } from "@htsw/importer/importables/export/reader";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { ExportProgressSink } from "@htsw/importer/housingSync/progress/types";
 
 function fakeCtx() {
     return {

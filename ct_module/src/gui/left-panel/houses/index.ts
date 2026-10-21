@@ -11,21 +11,21 @@ import {
     isHouseTrusted,
     setHousingUuid,
     setHouseTrust,
-} from "../../../runtime/state/index";
-import { shortPath } from "../../../project/pathDisplay";
-import { boundImportJsonPath } from "../../../importCache/houseBindings";
-import { getCurrentHousingUuid } from "../../../importCache/housingId";
-import { houseDisplayName, listAliases } from "../../../importCache/aliases";
+} from "@htsw/importer/runtime/state/index";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
+import { boundImportJsonPath } from "@htsw/importer/importCache/houseBindings";
+import { getCurrentHousingUuid } from "@htsw/importer/importCache/housingId";
+import { houseDisplayName, listAliases } from "@htsw/importer/importCache/aliases";
 import { openAliasPopover } from "./aliasPopover";
 import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu } from "../../lib/menu";
 import { togglePopover, closePopover, type PopoverHandle } from "../../lib/popovers";
-import { TaskManager } from "../../../tasks/manager";
-import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
-import { deleteHousingCache } from "../../../importCache/cache";
-import { clearAlias } from "../../../importCache/aliases";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { IMPORT_CACHE_ROOT } from "@htsw/importer/importCache/paths";
+import { deleteHousingCache } from "@htsw/importer/importCache/cache";
+import { clearAlias } from "@htsw/importer/importCache/aliases";
 import { javaType } from "../../lib/java";
-import { openBoundProjectForHouse } from "../../../runtime/boundProject";
+import { openBoundProjectForHouse } from "@htsw/importer/runtime/boundProject";
 import { confirmRebind } from "../../houseBinding";
 import {
     ACCENT_DANGER,

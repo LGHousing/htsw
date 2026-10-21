@@ -1,5 +1,5 @@
 import { loadBundledJavaClass } from "./bundledJava";
-import { setHousingDecimalQuantizer } from "./housingSync/actions/comparison";
+import { setHousingDecimalQuantizer } from "@htsw/importer/housingSync/actions/comparison";
 import { javaType } from "./utils/java";
 
 const JDouble = javaType("java.lang.Double");

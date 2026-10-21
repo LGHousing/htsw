@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { Diagnostic, SourceFile, SourceMap, Span } from "htsw";
 
-import { formatDiagnostic, formatDiagnostics } from "../src/diagnostics/format";
-import { normalizeDiagnosticSpans } from "../src/diagnostics/spans";
+import { formatDiagnostic, formatDiagnostics } from "@htsw/importer/diagnostics/format";
+import { normalizeDiagnosticSpans } from "@htsw/importer/diagnostics/spans";
 import { placeAnchoredRect } from "../src/gui/lib/anchoredRect";
-import { TextLayoutWrap } from "../src/diagnostics/textLayout";
-import { chatWidth } from "../src/utils/helpers";
+import { TextLayoutWrap } from "@htsw/importer/diagnostics/textLayout";
+import { chatWidth } from "@htsw/importer/utils/helpers";
 
 function sourceMap(files: { path: string; src: string }[]): SourceMap {
     const sm = new SourceMap({

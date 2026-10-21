@@ -13,27 +13,27 @@ const mocks = vi.hoisted(() => ({
     readCalls: [] as string[],
 }));
 
-vi.mock("../src/importables/functions/listFunctions", () => ({
+vi.mock("@htsw/importer/importables/functions/listFunctions", () => ({
     listAllFunctionNames: async () => [],
 }));
-vi.mock("../src/importables/menus/listMenus", () => ({
+vi.mock("@htsw/importer/importables/menus/listMenus", () => ({
     listAllMenuNames: async () => [],
 }));
-vi.mock("../src/importables/regions/listRegions", () => ({
+vi.mock("@htsw/importer/importables/regions/listRegions", () => ({
     listAllRegionNames: async () => [],
 }));
-vi.mock("../src/importables/commands/listCommands", () => ({
+vi.mock("@htsw/importer/importables/commands/listCommands", () => ({
     listAllCommandNames: async () => [],
 }));
-vi.mock("../src/importables/teams/listTeams", () => ({
+vi.mock("@htsw/importer/importables/teams/listTeams", () => ({
     listAllTeamNames: async () => [],
     deleteTeam: async () => undefined,
 }));
-vi.mock("../src/importables/groups/listGroups", () => ({
+vi.mock("@htsw/importer/importables/groups/listGroups", () => ({
     listAllGroupNames: async () => [],
     deleteGroup: async () => undefined,
 }));
-vi.mock("../src/importables/npcs/listNpcs", () => ({
+vi.mock("@htsw/importer/importables/npcs/listNpcs", () => ({
     listAllNpcs: async () => [],
     npcLabel: () => "NPC",
 }));
@@ -44,7 +44,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
         return true;
     },
 }));
-vi.mock("../src/importCache/cache", () => ({
+vi.mock("@htsw/importer/importCache/cache", () => ({
     recordHouseScan: () => undefined,
     listCachedImportables: () => [],
     readImportableCache: (_uuid: string, type: string, identity: string) => {
@@ -57,7 +57,7 @@ vi.mock("../src/importCache/cache", () => ({
         return true;
     },
 }));
-vi.mock("../src/importables/import/session", () => ({
+vi.mock("@htsw/importer/importables/import/session", () => ({
     runImportSession: async (
         _ctx: unknown,
         request: { importables: Importable[] }
@@ -68,7 +68,7 @@ vi.mock("../src/importables/import/session", () => ({
         mocks.importSessions.push(request.importables);
     },
 }));
-vi.mock("../src/importables/export/readers", () => ({
+vi.mock("@htsw/importer/importables/export/readers", () => ({
     HOUSE_READERS: new Proxy(
         {},
         {
@@ -95,14 +95,14 @@ vi.mock("../src/importables/export/readers", () => ({
         }
     ),
 }));
-vi.mock("../src/importables/export/projectDestination", () => ({
+vi.mock("@htsw/importer/importables/export/projectDestination", () => ({
     projectItemsFromParsedImportJson: () => [],
 }));
 
-import { applyPrunePlan } from "../src/prune/apply";
-import { readHouseLock } from "../src/importCache/houseLock";
-import type TaskContext from "../src/tasks/context";
-import type { PruneTarget } from "../src/prune/types";
+import { applyPrunePlan } from "@htsw/importer/prune/apply";
+import { readHouseLock } from "@htsw/importer/importCache/houseLock";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { PruneTarget } from "@htsw/importer/prune/types";
 
 const manifestPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";

@@ -6,9 +6,9 @@ import {
     actionListCost,
     type DesiredActionEntry,
     type KnownCurrentAction,
-} from "../../src/housingSync/actions/diff";
-import { actionsEqual } from "../../src/housingSync/actions/comparison";
-import type { CurrentActionListEntry } from "../../src/housingSync/actions/diff/types";
+} from "@htsw/importer/housingSync/actions/diff";
+import { actionsEqual } from "@htsw/importer/housingSync/actions/comparison";
+import type { CurrentActionListEntry } from "@htsw/importer/housingSync/actions/diff/types";
 
 export type OptimalityScore = {
     greedyCost: number;

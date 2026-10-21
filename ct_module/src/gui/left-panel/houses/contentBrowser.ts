@@ -13,18 +13,18 @@ import {
 } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import type { IconName } from "../../lib/icons.generated";
-import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "../../../runtime/state/index";
-import { requestParse } from "../../../runtime/parsing/parses";
+import { getExportImportJsonPath, getHousingUuid, isHouseTrusted } from "@htsw/importer/runtime/state/index";
+import { requestParse } from "@htsw/importer/runtime/parsing/parses";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
-import { getExportDestinationStatus } from "../../../runtime/exportDestination";
+import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
 import {
     clearExportSelection,
     getExportSelection,
     isInExportSelection,
     toggleExportSelection,
 } from "./exportSelection";
-import { importableIdentity } from "../../../importables/identity";
+import { importableIdentity } from "@htsw/importer/importables/identity";
 import {
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -48,10 +48,10 @@ import {
     houseContentTypeFor,
     type HouseContentType,
 } from "./contentTypes";
-import { type HouseImportable } from "../../../importCache/cache";
-import { buildCacheStatusRow } from "../../../importCache/status";
+import { type HouseImportable } from "@htsw/importer/importCache/cache";
+import { buildCacheStatusRow } from "@htsw/importer/importCache/status";
 import { confirmSelect } from "../../right-panel/selection";
-import { importableSourcePath } from "../../../runtime/parsing/importablePaths";
+import { importableSourcePath } from "@htsw/importer/runtime/parsing/importablePaths";
 import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
 import {
     optionRow,
@@ -67,8 +67,8 @@ import { TAB_GAP, tabLabelsFit } from "../tabs";
 import { ImportableIcon } from "../../importableVisuals";
 import { startChestExport } from "../../export/chestExport";
 import { markGuiDirty } from "../../lib/dirty";
-import { getUnmatchedFunctionsFirst } from "../../../settings";
-import type { HouseReadableType } from "../../../importables/export/readers";
+import { getUnmatchedFunctionsFirst } from "@htsw/importer/settings";
+import type { HouseReadableType } from "@htsw/importer/importables/export/readers";
 import { showToast } from "../../toast";
 import {
     enqueueHouseBulk,
@@ -82,7 +82,7 @@ import {
     type HouseQueueCounts,
     type HouseQueueMenuActionId,
 } from "./queueMenu";
-import { TaskManager } from "../../../tasks/manager";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";

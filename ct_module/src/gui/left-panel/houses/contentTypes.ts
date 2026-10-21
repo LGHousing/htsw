@@ -2,7 +2,7 @@
 
 import type { Importable } from "htsw/types";
 import { Icons, type IconName } from "../../lib/icons.generated";
-import type { HouseImportable } from "../../../importCache/cache";
+import type { HouseImportable } from "@htsw/importer/importCache/cache";
 import {
     getHouseFunctions,
     houseFunctionsScanned,
@@ -51,16 +51,16 @@ import {
     isNpcScanInFlight,
     scanHouseNpcs,
 } from "./sources/npcsSource";
-import { type HouseReadableType } from "../../../importables/export/readers";
-import type TaskContext from "../../../tasks/context";
-import { TaskManager } from "../../../tasks/manager";
+import { type HouseReadableType } from "@htsw/importer/importables/export/readers";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { showToast } from "../../toast";
-import { parseNpcPosIdentity } from "../../../importables/identity";
-import { openEventEditor } from "../../../importables/events/housing";
-import { openManageTeam } from "../../../importables/teams/listTeams";
-import { openEditGroup } from "../../../importables/groups/listGroups";
-import { openNpcEditorForPos, teleportToNpc } from "../../../importables/npcs/listNpcs";
-import { startExport } from "../../../runtime/exportQueue";
+import { parseNpcPosIdentity } from "@htsw/importer/importables/identity";
+import { openEventEditor } from "@htsw/importer/importables/events/housing";
+import { openManageTeam } from "@htsw/importer/importables/teams/listTeams";
+import { openEditGroup } from "@htsw/importer/importables/groups/listGroups";
+import { openNpcEditorForPos, teleportToNpc } from "@htsw/importer/importables/npcs/listNpcs";
+import { startExport } from "@htsw/importer/runtime/exportQueue";
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.

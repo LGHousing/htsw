@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { readSettingsFile, settingsFilePath } from "../src/persistence/settingsFiles";
+import { readSettingsFile, settingsFilePath } from "@htsw/importer/persistence/settingsFiles";
 
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: (path: string, value: string) => {

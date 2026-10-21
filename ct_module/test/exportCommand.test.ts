@@ -6,19 +6,19 @@ const state = vi.hoisted(() => ({
     lookups: 0,
 }));
 
-vi.mock("../src/runtime/state/index", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({
     getHousingUuid: () => state.house,
     setHousingUuid: (uuid: string | null) => {
         state.house = uuid;
     },
 }));
-vi.mock("../src/importCache/housingId", () => ({
+vi.mock("@htsw/importer/importCache/housingId", () => ({
     getCurrentHousingUuid: async () => {
         state.lookups++;
         return "resolved-house";
     },
 }));
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: (_kind: string, task: (ctx: unknown) => Promise<unknown>) =>
         task({}),
 }));
@@ -27,7 +27,7 @@ vi.mock("../src/slashCommands/exportDestination", () => ({
         importJsonPath: `/exports/${house}/import.json`,
     }),
 }));
-vi.mock("../src/runtime/queue", () => ({
+vi.mock("@htsw/importer/runtime/queue", () => ({
     addQueueRow: (row: Record<string, unknown>) => {
         state.rows.push(row);
         return { kind: "added", row, message: "Queued" };
@@ -35,15 +35,15 @@ vi.mock("../src/runtime/queue", () => ({
     makeBulkQueueRow: (args: Record<string, unknown>) => args,
     makeImportableQueueRow: (args: Record<string, unknown>) => args,
 }));
-vi.mock("../src/runtime/autoRun", () => ({ autoRunQueueChanged: () => {} }));
-vi.mock("../src/runtime/queueRunner", () => ({ pauseQueue: () => null }));
-vi.mock("../src/runtime/parsing/parses", () => ({}));
+vi.mock("@htsw/importer/runtime/autoRun", () => ({ autoRunQueueChanged: () => {} }));
+vi.mock("@htsw/importer/runtime/queueRunner", () => ({ pauseQueue: () => null }));
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({}));
 vi.mock("../src/importables/menus/exportChest", () => ({}));
-vi.mock("../src/importables/export/projectDestination", () => ({}));
+vi.mock("@htsw/importer/importables/export/projectDestination", () => ({}));
 vi.mock("../src/slashCommands/exportHelp", () => ({ printExportHelp: () => {} }));
-vi.mock("../src/bridge/status", () => ({ emitBridgeEvent: () => {} }));
-vi.mock("../src/project/paths", () => ({ parentDirOf: () => "" }));
-vi.mock("../src/importables/export/exportTypes", () => ({
+vi.mock("@htsw/importer/bridge/status", () => ({ emitBridgeEvent: () => {} }));
+vi.mock("@htsw/importer/project/paths", () => ({ parentDirOf: () => "" }));
+vi.mock("@htsw/importer/importables/export/exportTypes", () => ({
     houseExportTypeByToken: (token: string | undefined) =>
         token === "function" ? { type: "FUNCTION", named: true } : null,
 }));

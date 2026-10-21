@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HtswBridgeSnapshot } from "../src/bridge/types";
+import type { HtswBridgeSnapshot } from "@htsw/importer/bridge/types";
 
 describe("structured HTSW bridge", () => {
     beforeEach(() => vi.resetModules());
 
     it("retains the final refined total after the progress session is cleared", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         let plannedUnits: number | null = 10000;
         bridge.connectBridge(() => undefined, () => ({ plannedUnits }));
         bridge.beginBridgeRun("import", "queue");
@@ -19,7 +19,7 @@ describe("structured HTSW bridge", () => {
     });
 
     it("retains a whole queue run through sessions and snapshots short-lived transitions", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         let json = "";
         bridge.connectBridge(
             (value) => {
@@ -64,7 +64,7 @@ describe("structured HTSW bridge", () => {
     });
 
     it("publishes prompts immediately with conflicts, and withholds finish times until answered", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         let json = "";
         bridge.connectBridge(
             (value) => {
@@ -115,7 +115,7 @@ describe("structured HTSW bridge", () => {
     });
 
     it("rejects concurrent starts without replacing or terminating the active invocation", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         bridge.beginBridgeRun("export", "queue");
         const activeId = bridge.bridgeStatus().run!.runId;
         bridge.rejectBridgeRun("import", "busy");
@@ -139,7 +139,7 @@ describe("structured HTSW bridge", () => {
     });
 
     it("keeps setting and cache diagnostics independent of an active import", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         bridge.beginBridgeRun("import", "queue");
         bridge.beginBridgeSession("import");
         const activeId = bridge.bridgeStatus().run!.runId;
@@ -167,7 +167,7 @@ describe("structured HTSW bridge", () => {
     });
 
     it("bounds the ring, advances idle heartbeats, and stops publishing after disconnect", async () => {
-        const bridge = await import("../src/bridge/status");
+        const bridge = await import("@htsw/importer/bridge/status");
         const writer = vi.fn<(json: string) => void>();
         bridge.connectBridge(writer, () => ({}));
         const before = bridge.bridgeStatus().updatedAt!;

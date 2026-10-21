@@ -1,19 +1,19 @@
 import { describe, expect, test } from "vitest";
 
-import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
+import { createKnownActionListPlan } from "@htsw/importer/housingSync/actions/plan";
 import {
     commandApplicationPlan,
     type CommandImportPlan,
-} from "../src/importables/commands/import";
+} from "@htsw/importer/importables/commands/import";
 import {
     functionApplicationPlan,
     type FunctionImportPlan,
-} from "../src/importables/functions/import";
-import type { ImportContext } from "../src/importables/import/context";
+} from "@htsw/importer/importables/functions/import";
+import type { ImportContext } from "@htsw/importer/importables/import/context";
 import {
     regionApplicationPlan,
     type RegionImportPlan,
-} from "../src/importables/regions/import";
+} from "@htsw/importer/importables/regions/import";
 
 import { message } from "./utils";
 

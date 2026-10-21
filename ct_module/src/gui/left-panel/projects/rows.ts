@@ -11,7 +11,7 @@ import {
     isAutoTrackSource,
     isCurrentHouseTrusted,
     toggleAutoTrackSource,
-} from "../../../runtime/state/index";
+} from "@htsw/importer/runtime/state/index";
 import {
     ACCENT_DANGER,
     ACCENT_INFO,
@@ -21,7 +21,7 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
-import { BoundedMap } from "../../../utils/boundedLruMap";
+import { BoundedMap } from "@htsw/importer/utils/boundedLruMap";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import {
     cachedImportableLinkStatus,
@@ -29,30 +29,30 @@ import {
     linkStatusIcon,
 } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
-import { requestImportableCacheWarm } from "../../../importCache/cacheWarm";
+import { requestImportableCacheWarm } from "@htsw/importer/importCache/cacheWarm";
 import {
     hasChildList,
     importableDeclaringPath,
     importableSourcePath,
     importableChildListPath,
     type ImportableChildListName,
-} from "../../../runtime/parsing/importablePaths";
-import { importableIdentity } from "../../../importables/identity";
-import { houseDisplayName } from "../../../importCache/aliases";
+} from "@htsw/importer/runtime/parsing/importablePaths";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { houseDisplayName } from "@htsw/importer/importCache/aliases";
 import {
     planDeleteImportableEntry,
     removeImportableEntryForDelete,
     removeIncludeFromImportJson,
-} from "../../../project/importJsonMutations";
+} from "@htsw/importer/project/importJsonMutations";
 import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
 import {
     canonicalPath,
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
-} from "../../../runtime/parsing/parses";
-import { shortPath } from "../../../project/pathDisplay";
-import { peekImportableCache } from "../../../importCache/cache";
+} from "@htsw/importer/runtime/parsing/parses";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
+import { peekImportableCache } from "@htsw/importer/importCache/cache";
 import {
     importableMetadataComparisonValue,
     importableMetadataEntries,
@@ -68,13 +68,13 @@ import {
     removeFromQueue,
     removeFromQueueKey,
     toggleQueue,
-} from "../../../runtime/queue";
-import { isTaskRunning } from "../../../tasks/runningState";
+} from "@htsw/importer/runtime/queue";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
 import { composeFileMenu } from "../../menus/fileMenu";
 import { giveAllItemsMenuAction, giveItemMenuAction } from "../../menus/giveItemMenu";
-import { autoTrackRefresh, needsModifiedQueue } from "../../../runtime/autoTrack";
-import { autoRunQueueChanged } from "../../../runtime/autoRun";
-import { autoTrackBlock, autoTrackBoundHouse } from "../../../runtime/autoTrackScope";
+import { autoTrackRefresh, needsModifiedQueue } from "@htsw/importer/runtime/autoTrack";
+import { autoRunQueueChanged } from "@htsw/importer/runtime/autoRun";
+import { autoTrackBlock, autoTrackBoundHouse } from "@htsw/importer/runtime/autoTrackScope";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import {
     type IncludeNode,
@@ -108,10 +108,10 @@ import { openMoveDestinationPicker } from "./moveDestinationPicker";
 import { acceptHouseLockMenuAction } from "./acceptHouseLock";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Importable, MenuSlot } from "htsw/types";
-import { tagChild } from "../../../housingSync/items/itemTag";
+import { tagChild } from "@htsw/importer/housingSync/items/itemTag";
 import { ImportableIcon } from "../../importableVisuals";
 import { houseContentTypeFor } from "../houses/contentTypes";
-import { itemChanges } from "../../../importables/items/changes";
+import { itemChanges } from "@htsw/importer/importables/items/changes";
 import { showToast } from "../../toast";
 import { startDeepRead, type DeepReadSpec } from "../../knowledge/deepRead";
 import { importableMatchesFilters } from "./filter";

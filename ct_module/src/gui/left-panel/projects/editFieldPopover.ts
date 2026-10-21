@@ -7,12 +7,12 @@ import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../../lib/theme";
-import { updateImportableField, type Section } from "../../../project/importJsonMutations";
-import { markPathInSync } from "../../../runtime/parsing/reparse";
-import { getParseAt } from "../../../runtime/parsing/parses";
-import { importableHash } from "../../../importCache/hash";
-import { seedImportableHash } from "../../../importCache/status";
-import { importableIdentity } from "../../../importables/identity";
+import { updateImportableField, type Section } from "@htsw/importer/project/importJsonMutations";
+import { markPathInSync } from "@htsw/importer/runtime/parsing/reparse";
+import { getParseAt } from "@htsw/importer/runtime/parsing/parses";
+import { importableHash } from "@htsw/importer/importCache/hash";
+import { seedImportableHash } from "@htsw/importer/importCache/status";
+import { importableIdentity } from "@htsw/importer/importables/identity";
 import { SECTION_BY_TYPE } from "./rowModel";
 
 let editingValue = "";

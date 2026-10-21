@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 import { items as itemReferences } from "htsw";
 import { MINECRAFT_ITEMS, type ImportableItem } from "htsw/types";
 
-import { canonicalVanillaItemCompareName } from "../src/housingSync/items/itemReferences";
+import { canonicalVanillaItemCompareName } from "@htsw/importer/housingSync/items/itemReferences";
 import {
     createProjectItemIndex,
     type ProjectItem,
-} from "../src/importables/items/projectItems";
+} from "@htsw/importer/importables/items/projectItems";
 
 describe("vanilla item references", () => {
     test("every accepted variation name matches its observed display name", () => {

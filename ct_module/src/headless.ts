@@ -6,7 +6,7 @@ import "promise-polyfill/src/polyfill";
 import "./polyfills/promiseSyncDrain";
 import "./injectLong";
 import "./injectHousingDecimal";
-import "./tasks/manager";
+import "@htsw/importer/tasks/manager";
 
 import { registerSlashCommands } from "./slashCommands";
 import { initChatLiveness } from "./importCache/chatLiveness";
@@ -17,8 +17,8 @@ export {
     publishProject,
     restoreProjectPublication,
     installProjectPublication,
-} from "./project/publication";
-export { installVerifiedCacheEntry } from "./importCache/cache";
+} from "@htsw/importer/project/publication";
+export { installVerifiedCacheEntry } from "@htsw/importer/importCache/cache";
 
 initStatusBridge();
 initChatLiveness();

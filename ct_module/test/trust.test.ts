@@ -10,27 +10,27 @@ import type {
     MenuSlot,
 } from "htsw/types";
 
-import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { importableHash, listHashes } from "../src/importCache/hash";
-import { readCachedActionList } from "../src/importCache/actionLists";
+import type { ImportableCacheEntry } from "@htsw/importer/importCache/cache";
+import { importableHash, listHashes } from "@htsw/importer/importCache/hash";
+import { readCachedActionList } from "@htsw/importer/importCache/actionLists";
 import {
     buildTrustPlan,
     trustedChildListPathsForImportable,
     trustedChildListSnapshotsForImportable,
-} from "../src/importCache/trust";
-import { COST, estimateImportableUnits } from "../src/housingSync/progress/costs";
-import { readActionListSync } from "../src/housingSync/actions/prepareSync";
-import { ACTION_LIST_SCAN_HASH_VERSION } from "../src/housingSync/actions/scanHash";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
-import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importCache/trust";
+import { COST, estimateImportableUnits } from "@htsw/importer/housingSync/progress/costs";
+import { readActionListSync } from "@htsw/importer/housingSync/actions/prepareSync";
+import { ACTION_LIST_SCAN_HASH_VERSION } from "@htsw/importer/housingSync/actions/scanHash";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type TaskContext from "@htsw/importer/tasks/context";
 import {
     createItemDependencyIndex,
     type ItemDependencyIndex,
-} from "../src/importables/items/dependencyIndex";
-import { buildCacheStatusRow } from "../src/importCache/status";
-import { exportedItemDependencies } from "../src/importables/items/exportedDependencies";
+} from "@htsw/importer/importables/items/dependencyIndex";
+import { buildCacheStatusRow } from "@htsw/importer/importCache/status";
+import { exportedItemDependencies } from "@htsw/importer/importables/items/exportedDependencies";
 
 function chat(message: string): Action {
     return { type: "MESSAGE", message };

@@ -32,7 +32,7 @@ import {
     PHASE_READING,
     PHASE_SCANNING,
 } from "./phaseColors";
-import { cancelActiveTask } from "../../../tasks/activeTask";
+import { cancelActiveTask } from "@htsw/importer/tasks/activeTask";
 import { showToast } from "../../toast";
 import {
     getCurrentPhaseEtaSeconds,
@@ -49,13 +49,13 @@ import {
     parkedTaskFor,
     phaseFractions,
     type PhaseUnits,
-} from "../../../runtime/taskProgress";
+} from "@htsw/importer/runtime/taskProgress";
 import {
     countTaskRowsByStatus,
     isTaskTotalEtaReady,
     type MenuSlotFocus,
-} from "../../../housingSync/progress/types";
-import { formatElapsedSeconds } from "../../../runtime/elapsed";
+} from "@htsw/importer/housingSync/progress/types";
+import { formatElapsedSeconds } from "@htsw/importer/runtime/elapsed";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;

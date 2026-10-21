@@ -1,7 +1,7 @@
 import { VERSION } from "htsw";
 
-import { chatSeparator } from "../utils/helpers";
-import { HOUSE_EXPORT_TYPES } from "../importables/export/exportTypes";
+import { chatSeparator } from "@htsw/importer/utils/helpers";
+import { HOUSE_EXPORT_TYPES } from "@htsw/importer/importables/export/exportTypes";
 
 export function printExportHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);

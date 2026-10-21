@@ -17,9 +17,9 @@ import { isTourDone, setTourDone } from "../persistence/onboarding";
 import { setActiveLeftTab } from "../left-panel/tabs";
 import { createStarterProject, STARTER_DIR } from "../starterProject";
 import { getActivePath, previewSelect } from "../right-panel/selection";
-import { getImportJsonPath } from "../../runtime/state/index";
-import { requestParse } from "../../runtime/parsing/parses";
-import { importableSourcePath } from "../../runtime/parsing/importablePaths";
+import { getImportJsonPath } from "@htsw/importer/runtime/state/index";
+import { requestParse } from "@htsw/importer/runtime/parsing/parses";
+import { importableSourcePath } from "@htsw/importer/runtime/parsing/importablePaths";
 
 /**
  * First-load walkthrough. Each step can spotlight a named region (anchor

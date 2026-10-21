@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
-import { actionListConflictVerdict } from "../src/housingSync/actions/conflicts";
-import { actionListContentHashFromActions, actionListScanHashFromActions } from "../src/housingSync/actions/scanHash";
-import type { ItemFieldContent } from "../src/housingSync/items/fieldContent";
+import { actionListConflictVerdict } from "@htsw/importer/housingSync/actions/conflicts";
+import { actionListContentHashFromActions, actionListScanHashFromActions } from "@htsw/importer/housingSync/actions/scanHash";
+import type { ItemFieldContent } from "@htsw/importer/housingSync/items/fieldContent";
 import { observedSlot } from "./utils";
-import { createItemDiffContext } from "../src/importables/items/diff";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
+import { createItemDiffContext } from "@htsw/importer/importables/items/diff";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 import type {
     ProjectItem,
     ProjectItemIndex,
-} from "../src/importables/items/projectItems";
+} from "@htsw/importer/importables/items/projectItems";
 
 function itemContent(key: string): ItemFieldContent {
     return () => key;

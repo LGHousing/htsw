@@ -1,5 +1,5 @@
-import { isHouseTrusted, setHouseTrust } from "../runtime/state/trust";
-import { emitBridgeEvent } from "../bridge/status";
+import { isHouseTrusted, setHouseTrust } from "@htsw/importer/runtime/state/trust";
+import { emitBridgeEvent } from "@htsw/importer/bridge/status";
 import { withCurrentHouse } from "./currentHouse";
 
 type TrustAction = "status" | "on" | "off";

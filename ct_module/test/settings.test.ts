@@ -13,7 +13,7 @@ describe("diagnostic upload setting", () => {
             write: () => undefined,
         });
         const { getUploadDiagnostics, getUploadDiagnosticsPreference } =
-            await import("../src/settings");
+            await import("@htsw/importer/settings");
 
         expect(getUploadDiagnostics()).toBe(false);
         expect(getUploadDiagnosticsPreference()).toBe("unset");
@@ -25,7 +25,7 @@ describe("diagnostic upload setting", () => {
             read: () => JSON.stringify({ uploadDiagnostics: "enabled" }),
             write: () => undefined,
         });
-        const { getUploadDiagnostics } = await import("../src/settings");
+        const { getUploadDiagnostics } = await import("@htsw/importer/settings");
 
         expect(getUploadDiagnostics()).toBe(true);
     });
@@ -41,7 +41,7 @@ describe("diagnostic upload setting", () => {
             write,
         });
         const { getUploadDiagnosticsPreference, setUploadDiagnostics } =
-            await import("../src/settings");
+            await import("@htsw/importer/settings");
 
         setUploadDiagnostics(false);
 
@@ -64,7 +64,7 @@ describe("unmatched functions first setting", () => {
             read: () => null,
             write: () => undefined,
         });
-        const { getUnmatchedFunctionsFirst } = await import("../src/settings");
+        const { getUnmatchedFunctionsFirst } = await import("@htsw/importer/settings");
 
         expect(getUnmatchedFunctionsFirst()).toBe(false);
     });
@@ -75,7 +75,7 @@ describe("unmatched functions first setting", () => {
             read: () => JSON.stringify({ unmatchedFunctionsFirst: true }),
             write: () => undefined,
         });
-        const { getUnmatchedFunctionsFirst } = await import("../src/settings");
+        const { getUnmatchedFunctionsFirst } = await import("@htsw/importer/settings");
 
         expect(getUnmatchedFunctionsFirst()).toBe(true);
     });
@@ -90,7 +90,7 @@ describe("unmatched functions first setting", () => {
             },
         });
         const { getUnmatchedFunctionsFirst, setUnmatchedFunctionsFirst } =
-            await import("../src/settings");
+            await import("@htsw/importer/settings");
 
         setUnmatchedFunctionsFirst(true);
 
@@ -111,7 +111,7 @@ describe("auto-run setting migration", () => {
             read: () => JSON.stringify({ watchMode: true }),
             write: () => undefined,
         });
-        const { getAutoRun } = await import("../src/settings");
+        const { getAutoRun } = await import("@htsw/importer/settings");
 
         expect(getAutoRun()).toBe(true);
     });
@@ -122,7 +122,7 @@ describe("auto-run setting migration", () => {
             read: () => JSON.stringify({ watchMode: true, autoRun: false }),
             write: () => undefined,
         });
-        const { getAutoRun } = await import("../src/settings");
+        const { getAutoRun } = await import("@htsw/importer/settings");
 
         expect(getAutoRun()).toBe(false);
     });

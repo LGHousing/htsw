@@ -5,7 +5,7 @@ import {
     diffDetailsReportForImportConflicts,
     formatDiffDetailsFile,
     printerDiagnosticsForDiff,
-} from "../src/housingSync/actions/diffDetails";
+} from "@htsw/importer/housingSync/actions/diffDetails";
 
 describe("diff details", () => {
     it("distinguishes unavailable live evidence from equal canonical fields", () => {

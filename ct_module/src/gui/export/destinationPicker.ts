@@ -23,7 +23,7 @@ import {
     dirname,
     normalizeHtswPath,
     shortPath,
-} from "../../project/pathDisplay";
+} from "@htsw/importer/project/pathDisplay";
 import {
     getEffectiveNewExportTarget,
     getExportImportJsonPath,
@@ -31,19 +31,19 @@ import {
     getImportJsonPath,
     setExportImportJsonPath,
     setNewExportTarget,
-} from "../../runtime/state/index";
+} from "@htsw/importer/runtime/state/index";
 import {
     isSectionLayoutProject,
     setSectionLayoutProject,
-} from "../../project/sectionLayoutProjects";
-import { addRecent, getRecents } from "../../persistence/recents";
+} from "@htsw/importer/project/sectionLayoutProjects";
+import { addRecent, getRecents } from "@htsw/importer/persistence/recents";
 import {
     canonicalPath,
     forEachCachedParse,
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
-} from "../../runtime/parsing/parses";
+} from "@htsw/importer/runtime/parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../popovers/file-browser";
 import { openConfirmPopover } from "../popovers/confirm";
 import { openTextPromptPopover } from "../popovers/text-prompt";
@@ -56,8 +56,8 @@ import type { IncludeNode } from "../left-panel/projects/includeTree";
 import { bumpTreeRevision } from "../left-panel/projects/rowModel";
 import { openNewProjectPopover } from "./newProjectPopover";
 import { showToast } from "../toast";
-import { getAlias } from "../../importCache/aliases";
-import { boundImportJsonPath } from "../../importCache/houseBindings";
+import { getAlias } from "@htsw/importer/importCache/aliases";
+import { boundImportJsonPath } from "@htsw/importer/importCache/houseBindings";
 import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../project/projectFs";
 import {
@@ -65,8 +65,8 @@ import {
     createIncludedFolderInTree,
     projectPathExists,
     restructureProjectPerSection,
-} from "../../project/paths";
-import { getExportDestinationStatus } from "../../runtime/exportDestination";
+} from "@htsw/importer/project/paths";
+import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
 
 function selectExportImportJson(path: string): void {
     setExportImportJsonPath(path);

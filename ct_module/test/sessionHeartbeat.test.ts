@@ -47,20 +47,20 @@ vi.mock("../src/gui/cacheTelemetry", () => ({
     guiCacheSizes: () => cacheSizes,
     parsedManifestCount: () => 6,
 }));
-vi.mock("../src/settings", () => ({
+vi.mock("@htsw/importer/settings", () => ({
     getUploadDiagnostics: () => true,
 }));
 vi.mock("../src/autoUpdate", () => ({
     readLocalVersion: () => "0.13.0-test.4",
 }));
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => taskRunning.value },
 }));
 vi.mock("../src/utils/filesystem", () => ({ ensureParentDirs }));
 vi.mock("../src/runtimeDebug/importFailureUpload", () => ({
     uploadDiagnosticsFile,
 }));
-vi.mock("../src/runtimeDebug/runtimeDebugBuffer", () => ({
+vi.mock("@htsw/importer/runtimeDebug/runtimeDebugBuffer", () => ({
     runtimeDebugStats: () => runtimeDebug,
 }));
 

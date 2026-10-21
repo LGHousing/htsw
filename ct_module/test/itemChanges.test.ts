@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ImportableItem } from "htsw/types";
 
-import { itemChangeLines, itemChanges } from "../src/importables/items/changes";
-import type { TagLike } from "../src/housingSync/items/itemTag";
+import { itemChangeLines, itemChanges } from "@htsw/importer/importables/items/changes";
+import type { TagLike } from "@htsw/importer/housingSync/items/itemTag";
 import { message } from "./utils";
 
 function item(name: string, displayName: string): ImportableItem {

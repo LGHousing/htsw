@@ -14,12 +14,12 @@ const mocks = vi.hoisted(() => ({
     writeDiffDetailsFile: vi.fn(() => "./project/htsw-diff/latest.diff"),
 }));
 
-vi.mock("../src/importables/import/importers", () => ({
+vi.mock("@htsw/importer/importables/import/importers", () => ({
     scanImportable: mocks.scanImportable,
 }));
 
-vi.mock("../src/importCache", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache")>()),
+vi.mock("@htsw/importer/importCache", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache")>()),
     buildTrustPlan: (
         housingUuid: string,
         importables: readonly ImportableFunction[],
@@ -52,7 +52,7 @@ vi.mock("../src/importCache", async (importOriginal) => ({
     tryWriteImportableCache: mocks.tryWriteImportableCache,
 }));
 
-vi.mock("../src/importCache/houseLock", () => ({
+vi.mock("@htsw/importer/importCache/houseLock", () => ({
     removeHouseLockImportables: mocks.removeHouseLockImportables,
     upsertHouseLockImportablesOffThread: mocks.upsertHouseLockImportablesOffThread,
 }));
@@ -61,22 +61,24 @@ vi.mock("../src/runtimeDebug/importFailureLog", () => ({
     writeTaskFailureLog: () => "./failure.log",
 }));
 
-vi.mock("../src/housingSync/actions/diffDetails", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/actions/diffDetails")>()),
+vi.mock("@htsw/importer/housingSync/actions/diffDetails", async (importOriginal) => ({
+    ...(await importOriginal<
+        typeof import("@htsw/importer/housingSync/actions/diffDetails")
+    >()),
     writeDiffDetailsFile: mocks.writeDiffDetailsFile,
 }));
 
 import {
     runImportSession,
     type ImportSessionRequest,
-} from "../src/importables/import/session";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
-import { createTaskCancelledError } from "../src/tasks/cancellation";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importables/import/session";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
+import type TaskContext from "@htsw/importer/tasks/context";
 import { message } from "./utils";
-import { conflictAwaitingConfirmationMessage } from "../src/importables/import/conflictChat";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
-import type { TagLike } from "../src/housingSync/items/itemTag";
+import { conflictAwaitingConfirmationMessage } from "@htsw/importer/importables/import/conflictChat";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
+import type { TagLike } from "@htsw/importer/housingSync/items/itemTag";
 
 // @ts-expect-error Every import caller must choose conflict handling.
 const _requestWithoutConflictHandling: ImportSessionRequest = {
@@ -672,9 +674,9 @@ it("persists a menu cancellation snapshot as partial in both cache and lock", as
 });
 
 it("keeps the retry prefix first in the final FUNCTION reason when Add Action readiness times out", async () => {
-    const { addAction } = await import("../src/housingSync/actions/apply/actionOps");
-    const menuWait = await import("../src/housingSync/menus/menuWait");
-    const menuUtils = await import("../src/housingSync/menus/menuUtils");
+    const { addAction } = await import("@htsw/importer/housingSync/actions/apply/actionOps");
+    const menuWait = await import("@htsw/importer/housingSync/menus/menuWait");
+    const menuUtils = await import("@htsw/importer/housingSync/menus/menuUtils");
     const slots = await import("../src/tasks/specifics/slots");
     const click = vi.fn();
     // The picker opens; the real second readiness wait expires after selection.

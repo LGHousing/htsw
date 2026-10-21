@@ -29,7 +29,7 @@ describe("persistence store", () => {
 
     it("returns fallbacks when no file exists and persists on set", async () => {
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json" });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -43,7 +43,7 @@ describe("persistence store", () => {
     it("falls back per key, so one bad value cannot take the document with it", async () => {
         files.set(`${SETTINGS_DIR}/t.json`, JSON.stringify({ a: "nope", b: false }));
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json" });
         const a = defineValue(doc, { key: "a", fallback: true, parse: asBoolean });
@@ -56,7 +56,7 @@ describe("persistence store", () => {
     it("refuses to overwrite a document it could not parse", async () => {
         files.set(`${SETTINGS_DIR}/t.json`, "not json");
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json", onReadError: "refuse" });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -70,7 +70,7 @@ describe("persistence store", () => {
     it("resets and stays writable under the defaults policy", async () => {
         files.set(`${SETTINGS_DIR}/t.json`, "not json");
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json", onReadError: "defaults" });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -82,7 +82,7 @@ describe("persistence store", () => {
 
     it("rolls the in-memory value back when the write fails", async () => {
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json" });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -102,7 +102,7 @@ describe("persistence store", () => {
 
     it("increments revision only after a successful set", async () => {
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json" });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -128,7 +128,7 @@ describe("persistence store", () => {
         const legacy = "./config/ChatTriggers/modules/HTSW/gui-t.json";
         files.set(legacy, JSON.stringify({ on: false }));
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json", legacyPaths: [legacy] });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -141,7 +141,7 @@ describe("persistence store", () => {
     it("runs a migrate hook before any value is parsed", async () => {
         files.set(`${SETTINGS_DIR}/t.json`, JSON.stringify({ old: true }));
         const { defineDoc, defineValue, asBoolean } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({
             file: "t.json",
@@ -162,7 +162,7 @@ describe("persistence store", () => {
 
     it("coalesces debounced writes until flushed", async () => {
         const { defineDoc, defineValue, asBoolean, flushPersistence } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const doc = defineDoc({ file: "t.json", debounceMs: 5000 });
         const flag = defineValue(doc, { key: "on", fallback: true, parse: asBoolean });
@@ -176,7 +176,7 @@ describe("persistence store", () => {
 
     it("stores a root document as a bare value and round-trips a Set", async () => {
         const { defineRootDoc, asStringSetValue, serializeStringSet } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const value = defineRootDoc<Set<string>>({
             file: "r.json",
@@ -194,7 +194,7 @@ describe("persistence store", () => {
     it("re-reads a TTL document after it expires", async () => {
         files.set(`${SETTINGS_DIR}/r.json`, JSON.stringify(["a"]));
         const { defineRootDoc, asStringSetValue } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const value = defineRootDoc<Set<string>>({
             file: "r.json",
@@ -217,7 +217,7 @@ describe("persistence store", () => {
     it("increments revision only when a TTL re-read finds changed contents", async () => {
         files.set(`${SETTINGS_DIR}/r.json`, JSON.stringify(["a"]));
         const { defineRootDoc, asStringSetValue } = await import(
-            "../src/persistence/store"
+            "@htsw/importer/persistence/store"
         );
         const value = defineRootDoc<Set<string>>({
             file: "r.json",

@@ -64,6 +64,25 @@ jobs:
       - run: npm run typecheck --prefix editors/common
       - run: npm run knip --prefix editors/common
 
+  importer:
+    name: Importer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            language/package-lock.json
+            editors/common/package-lock.json
+            importer/package-lock.json
+      - run: npm ci --prefix language
+      - run: npm run build --prefix language
+      - run: npm ci --prefix editors/common
+      - run: npm ci --prefix importer
+      - run: npm run verify --prefix importer
+
   ct-module:
     name: ChatTriggers module
     runs-on: ubuntu-latest

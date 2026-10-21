@@ -4,8 +4,8 @@ import {
     normalizeItemSnbtForExport,
     portableItemSnbt,
     prettySnbt,
-} from "../src/housingSync/items/itemNbt";
-import { itemInteractDataMatches } from "../src/importables/items/interactDataCache";
+} from "@htsw/importer/housingSync/items/itemNbt";
+import { itemInteractDataMatches } from "@htsw/importer/importables/items/interactDataCache";
 
 describe("item SNBT export normalization", () => {
     test("preserves blank lore separators exactly as authored", () => {

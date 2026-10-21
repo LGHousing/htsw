@@ -2,9 +2,9 @@
 
 import type { Importable } from "htsw/types";
 
-import type { HouseReadableType } from "../../../importables/export/readers";
-import { autoRunQueueChanged } from "../../../runtime/autoRun";
-import { shortPath } from "../../../project/pathDisplay";
+import type { HouseReadableType } from "@htsw/importer/importables/export/readers";
+import { autoRunQueueChanged } from "@htsw/importer/runtime/autoRun";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
 import {
     addQueueRow,
     makeBulkQueueRow,
@@ -12,7 +12,7 @@ import {
     type BulkFilter,
     type QueueAddResult,
     type QueueRow,
-} from "../../../runtime/queue";
+} from "@htsw/importer/runtime/queue";
 import { showToast } from "../../toast";
 
 export type HouseQueueTarget = { identity: string; label?: string };

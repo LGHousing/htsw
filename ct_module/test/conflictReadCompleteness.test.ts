@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Action } from "htsw/types";
 import type { ItemSlot } from "../src/tasks/specifics/slots";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
 import {
     actionListContentHashFromActions,
     actionListScanHashFromActions,
-} from "../src/housingSync/actions/scanHash";
-import { readConditionList } from "../src/housingSync/actions/conditions/readList";
-import { readActionListPlan } from "../src/housingSync/actions/plan";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import { readConditionList } from "@htsw/importer/housingSync/actions/conditions/readList";
+import { readActionListPlan } from "@htsw/importer/housingSync/actions/plan";
 import { conditional } from "./utils";
 
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
 }));

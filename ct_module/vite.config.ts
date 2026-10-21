@@ -11,9 +11,12 @@ import {
     statSync,
 } from "node:fs";
 
+import { importerClientModules } from "./scripts/importerClientModules";
+
 const languageDistPath = fileURLToPath(new URL("../language/dist/", import.meta.url));
 const commonProjectSrcPath = fileURLToPath(new URL("../editors/common/src/project/", import.meta.url));
 const srcDir = fileURLToPath(new URL("./src/", import.meta.url));
+const importerSrcPath = fileURLToPath(new URL("../importer/src/", import.meta.url));
 
 const htswAliases = [
     { find: /^htsw$/, replacement: path.resolve(languageDistPath, "index.js") },
@@ -34,6 +37,8 @@ const htswAliases = [
         replacement: path.resolve(languageDistPath, "htsw/index.js"),
     },
     { find: /^htsw\/nbt$/, replacement: path.resolve(languageDistPath, "nbt/index.js") },
+    { find: /^@htsw\/importer$/, replacement: path.resolve(importerSrcPath, "index.ts") },
+    { find: /^@htsw\/importer\/(.*)$/, replacement: `${importerSrcPath}$1` },
 ];
 
 // Icon tree-shake: scan the bundled JS for `Icons.<camelKey>` references and copy ONLY
@@ -178,5 +183,5 @@ export default defineConfig({
         },
         outDir: "dist",
     },
-    plugins: [iconShakePlugin],
+    plugins: [importerClientModules(), iconShakePlugin],
 });

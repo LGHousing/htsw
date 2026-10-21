@@ -1,15 +1,15 @@
 import { isUnspawnableItem } from "htsw";
 
-import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
+import { recordRuntimeDebug } from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
-import TaskContext from "../../tasks/context";
-import { pollTicks } from "../../tasks/poll";
-import { removedFormatting } from "../../utils/helpers";
-import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
+import TaskContext from "@htsw/importer/tasks/context";
+import { pollTicks } from "@htsw/importer/tasks/poll";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
+import { timedWaitForMenu, waitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../menus/packets";
-import { COST } from "../progress/costs";
-import { timed } from "../progress/timing";
-import { canonicalLiveItemKey } from "./itemNbt";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
+import { timed } from "@htsw/importer/housingSync/progress/timing";
+import { canonicalLiveItemKey } from "@htsw/importer/housingSync/items/itemNbt";
 import {
     inventorySlotToOpenContainerSlot,
     readInventorySlot,
@@ -64,7 +64,7 @@ export async function selectItemFromOpenInventory(
         if (slot.getSlotId() < playerInvStart || slot.getSlotId() === ninthHotbarSlot) {
             return false;
         }
-        return match(slot.getItem().getItemStack(), desiredStack);
+        return match(slot.getItem().getItemStack() as MCItemStack, desiredStack);
     });
     if (existingSlot !== null) {
         recordRuntimeDebug("itemInjection", {
@@ -157,7 +157,7 @@ export async function selectItemFromOpenInventory(
                     `A house script might have taken it.`
             );
         }
-        if (!match(slot.getItem().getItemStack(), desiredStack)) {
+        if (!match(slot.getItem().getItemStack() as MCItemStack, desiredStack)) {
             const observed = summarizeItemStack(slot.getItem().getItemStack());
             recordRuntimeDebug("itemInjection", {
                 stage: "replacedBeforeSelect",

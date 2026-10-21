@@ -1,0 +1,462 @@
+/**
+ * Low-level menu wait primitives, broken out from helpers.ts so
+ * paginatedList.ts can depend on them without creating a helpers ↔
+ * paginatedList cycle (helpers.ts uses paginatedList for note-on-last-slot,
+ * paginatedList needs `timedWaitForMenu` for page turns).
+ *
+ * Anything here is: synchronous-feeling wait, no clicking, no field setting.
+ * Click + wait pairs live in helpers.ts.
+ */
+import TaskContext from "../../tasks/context";
+import {
+    describeGuiScreenMenu,
+    getMenuItemSlots,
+    getOpenContainerWindowId,
+    menuStateDescription,
+} from "../../tasks/specifics/slots";
+import {
+    S2DPacketOpenWindow,
+    S2FPacketSetSlot,
+    S30PacketWindowItems,
+    openWindowPacketId,
+    setSlotPacketWindowId,
+    setSlotPacketSlot,
+    setSlotPacketStack,
+    windowItemsPacketId,
+    windowItemsPacketStacks,
+} from "../../utils/packets";
+import {
+    describeRecentWindowOpens,
+    type WaitForPromise,
+} from "../../tasks/specifics/waitFor";
+import { errorMessage, removedFormatting } from "../../utils/helpers";
+import { itemStackRawNbt } from "../../utils/nbt";
+import { platform } from "../../platform";
+import { COST } from "../progress/costs";
+import { timed } from "../progress/timing";
+import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
+import { IncompleteReadError } from "../incompleteRead";
+
+const MENU_WAIT_TIMEOUT_MS = 6000;
+
+// After the opened window's packets arrive, MC applies them in two separate
+// main-thread steps: S2DPacketOpenWindow creates the container (sets the new
+// windowId, EMPTY), then S30PacketWindowItems fills its slots. Either can lag
+// a tick or two behind our first tick under load. So we poll until BOTH hold:
+// the active container's windowId matches the window we saw open, AND its
+// menu slots match the latest received WindowItems and SetSlot contents.
+// Checking windowId alone catches the right window but can still scan it empty (the gap between
+// the two steps). A click→menu reopen is ~1 tick, but a chat-input reopen is a
+// server round-trip and can take many ticks — so the cap is generous (under the
+// outer 6s timeout). On exceeding it we THROW rather than proceed: a clear "menu
+// never populated" failure beats silently scanning a half-built menu and
+// cascading into a confusing downstream error.
+const CONTAINER_SWITCH_MAX_TICKS = 80;
+
+const PLAYER_INVENTORY_SLOTS = 36;
+
+// Non-null menu items the WindowItems snapshot carries (its full array minus
+// the trailing 36 player-inventory slots). This only establishes population,
+// not readable content: Housing can send named items with missing lore or plain
+// "Head" items, and send another WindowItems later. List readers must validate
+// entries before treating them as actions/conditions; a matching count is not
+// evidence that the first snapshot is the final state of the menu.
+function s30MenuItemCount(packet: unknown): number {
+    const items = windowItemsPacketStacks(packet);
+    const end = Math.max(0, items.length - PLAYER_INVENTORY_SLOTS);
+    let n = 0;
+    for (let i = 0; i < end; i++) {
+        if (items[i] !== null) n++;
+    }
+    return n;
+}
+
+// Total slot count the WindowItems snapshot declares (full array length,
+// including the trailing 36 player-inventory slots). Compared against the live
+// container's getSize() to detect a window-size-vs-packet skew when the live
+// item count under-reads the snapshot.
+function s30SlotCount(packet: unknown): number {
+    return windowItemsPacketStacks(packet).length;
+}
+
+type MenuWaitState = {
+    openedWindowId: number | null;
+    expectedItems: number;
+    snapshot: Array<string | null> | null;
+    snapshotSlots: number;
+    ticksWaited: number;
+    lastCurId: number | null;
+    lastCount: number;
+    maxCount: number;
+    everMatchedWindow: boolean;
+    readySource: string;
+};
+
+function createMenuWaitState(openedWindowId: number | null = null): MenuWaitState {
+    return {
+        openedWindowId,
+        expectedItems: 0,
+        snapshot: null,
+        snapshotSlots: 0,
+        ticksWaited: 0,
+        lastCurId: null,
+        lastCount: 0,
+        maxCount: 0,
+        everMatchedWindow: false,
+        readySource: "",
+    };
+}
+
+function describeMenuWaitState(state: MenuWaitState): string {
+    if (state.openedWindowId === null) {
+        return `no S2DPacketOpenWindow/S30PacketWindowItems pair received; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+    }
+    if (!state.everMatchedWindow) {
+        const sampled =
+            state.ticksWaited === 0
+                ? "was not sampled before the wait timed out"
+                : `last sampled as windowId ${state.lastCurId}`;
+        return `window ${state.openedWindowId} opened with ${state.expectedItems} items, but readiness ${sampled}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+    }
+    return `window ${state.openedWindowId} opened, active container reached it, observed ${state.lastCount}/${state.expectedItems} items (peak ${state.maxCount}); snapshot slots=${state.snapshotSlots}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+}
+
+function expectedItemCount(state: MenuWaitState): number {
+    return Math.max(1, state.expectedItems);
+}
+
+function openContainerMatchesOpenedWindow(
+    state: MenuWaitState,
+    skipPopulateWait: boolean
+): boolean {
+    if (state.openedWindowId === null) return true;
+    const curId = getOpenContainerWindowId();
+    state.lastCurId = curId;
+    if (curId !== state.openedWindowId) return false;
+    state.everMatchedWindow = true;
+    const slots = getMenuItemSlots();
+    const count = slots === null ? 0 : slots.length;
+    state.lastCount = count;
+    if (count > state.maxCount) state.maxCount = count;
+    if (!skipPopulateWait) {
+        if (count < expectedItemCount(state)) return false;
+        if (state.snapshot !== null) {
+            const container = platform().openContainer();
+            if (container == null || container.getSize() !== state.snapshotSlots)
+                return false;
+            // Read the same container the consumers use, not merely a populated
+            // visible GUI or an equal number of stale/partly applied items.
+            if (slots === null || count !== state.expectedItems) return false;
+            for (const slot of slots) {
+                if (slot.getItem().getRawNBT() !== state.snapshot[slot.getSlotId()]) {
+                    return false;
+                }
+            }
+        }
+    }
+    state.readySource = "openContainer";
+    return true;
+}
+
+async function waitForOpenedWindowToBeReady(
+    ctx: TaskContext,
+    state: MenuWaitState,
+    skipPopulateWait: boolean,
+    setTickWaiter: (waiter: WaitForPromise<unknown> | null) => void
+): Promise<void> {
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+    try {
+        let ready = false;
+        const loopStartMs = Date.now();
+        traceMenuWait("pollStart", {
+            windowId: state.openedWindowId,
+            expectedItems: state.expectedItems,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
+        for (let i = 0; i < CONTAINER_SWITCH_MAX_TICKS; i++) {
+            if (openContainerMatchesOpenedWindow(state, skipPopulateWait)) {
+                ready = true;
+                break;
+            }
+            tickWaiter = ctx.waitFor("tick");
+            setTickWaiter(tickWaiter);
+            await tickWaiter;
+            state.ticksWaited++;
+            if (openContainerMatchesOpenedWindow(state, skipPopulateWait)) {
+                ready = true;
+                break;
+            }
+        }
+        if (state.openedWindowId !== null) {
+            if (!ready) {
+                const elapsed = Date.now() - loopStartMs;
+                throw new IncompleteReadError(
+                    `Menu not ready within ${CONTAINER_SWITCH_MAX_TICKS} ticks (${state.ticksWaited} ticks/${elapsed}ms): ${describeMenuWaitState(state)}`
+                );
+            }
+        }
+        traceMenuWait("ready", {
+            windowId: state.openedWindowId,
+            ticksWaited: state.ticksWaited,
+            observedItems: state.lastCount,
+            expectedItems: state.expectedItems,
+            source: state.readySource,
+        });
+    } finally {
+        tickWaiter?.cleanupWaiter?.();
+        setTickWaiter(null);
+    }
+}
+
+function wrapMenuWaitTimeout(
+    promise: Promise<void>,
+    cleanup: () => void,
+    state: MenuWaitState
+): WaitForPromise<void> {
+    const wrapped = promise.catch((error: unknown) => {
+        cleanup();
+        const message = errorMessage(error);
+        if (
+            message ===
+            `Timeout after ${MENU_WAIT_TIMEOUT_MS}ms: Waiting for menu to load`
+        ) {
+            error = new IncompleteReadError(
+                `${message} (window ${state.openedWindowId ?? "unknown"})`
+            );
+        }
+        // Full wait-state details go to the runtime-debug buffer (and from
+        // there into the import failure log), not the error message — the
+        // message is what the user sees in chat, so keep it short.
+        traceMenuWait("failure", {
+            error: errorMessage(error),
+            details: describeMenuWaitState(state),
+            recentWindowOpens: describeRecentWindowOpens(),
+            ticksWaited: state.ticksWaited,
+            openedWindowId: state.openedWindowId,
+            expectedItems: state.expectedItems,
+            observedItems: state.lastCount,
+            peakItems: state.maxCount,
+            source: state.readySource,
+        });
+        throw error;
+    }) as WaitForPromise<void>;
+    wrapped.cleanupWaiter = cleanup;
+    wrapped.catch(() => {});
+    return wrapped;
+}
+
+function finishChatPromptAfterMenu(
+    ctx: TaskContext,
+    menuWait: WaitForPromise<void>
+): WaitForPromise<void> {
+    const finished = menuWait.then(() => ctx.finishChatPrompt()) as WaitForPromise<void>;
+    finished.cleanupWaiter = menuWait.cleanupWaiter;
+    finished.catch(() => {});
+    return finished;
+}
+
+// `skipPopulateWait`: resolve as soon as the opened window is the active
+// container, skipping the "reached its WindowItems count" wait. For containers
+// whose live count never matches their server snapshot (only the anvil so far,
+// whose result slot is computed client-side). Callers that know they opened one
+// pass true; waitForMenu itself stays container-type-agnostic.
+export function waitForMenu(
+    ctx: TaskContext,
+    skipPopulateWait: boolean = false
+): WaitForPromise<void> {
+    // Track the inner waiters so the timeout/cancel path in `withTimeout` —
+    // and any caller racing this promise — can cancel them via `cleanupWaiter`
+    // and prevent a leaked container from matching a packet meant for someone
+    // else. CRITICAL: the promise handed to `withTimeout` must itself carry
+    // `cleanupWaiter`; passing a bare async thunk loses it (the thunk's
+    // anonymous promise has no `cleanupWaiter`, so withTimeout's `cleanup?.()`
+    // silently no-ops on timeout and the waiters leak).
+    let packetWaiter: WaitForPromise<unknown> | null = null;
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+    const state = createMenuWaitState();
+    if (isTaskTraceEnabled()) {
+        traceMenuWait("start", {
+            skipPopulateWait,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
+    }
+
+    const cleanup = (): void => {
+        packetWaiter?.cleanupWaiter?.();
+        tickWaiter?.cleanupWaiter?.();
+    };
+
+    const inner = (async (): Promise<void> => {
+        // Anchor on the actual window-open event. Hypixel assigns a fresh
+        // windowID and sends S2DPacketOpenWindow on every transition (open,
+        // sub-open, go-back, page-turn), followed by that window's
+        // S30PacketWindowItems. We capture the opened windowID from the S2D
+        // and start polling only on the S30 that matches it. A single stateful
+        // waiter (not S2D-then-S30 in sequence) avoids the microtask gap
+        // where the S30 lands between resolving an S2D waiter and
+        // registering an S30 waiter. Stray S30s for unrelated windows (e.g.
+        // a transient/empty Housing menu) carry a different ID and are
+        // ignored; the old `windowID !== lastWindowID` heuristic matched
+        // them, landing us in the wrong menu.
+        let startPolling!: () => void;
+        const firstSnapshot = new Promise<void>((resolve) => {
+            startPolling = resolve;
+        });
+        // Keep the same listener through polling: an animation or another
+        // player's edit can replace lore before the next readiness check.
+        packetWaiter = ctx.waitFor("packetReceived", (packet) => {
+            if (packet instanceof S2DPacketOpenWindow) {
+                // Once polling starts, stay anchored to this menu. A different
+                // window must not silently satisfy the original read.
+                if (state.snapshot !== null) return false;
+                const id = openWindowPacketId(packet);
+                if (id !== null && id !== 0) {
+                    state.openedWindowId = id;
+                    traceMenuWait("openWindow", { windowId: id });
+                }
+                return false;
+            }
+            if (state.openedWindowId !== null && packet instanceof S30PacketWindowItems) {
+                if (windowItemsPacketId(packet) !== state.openedWindowId) return false;
+                state.expectedItems = s30MenuItemCount(packet);
+                state.snapshotSlots = s30SlotCount(packet);
+                const stacks = windowItemsPacketStacks(packet);
+                state.snapshot = [];
+                for (
+                    let slot = 0;
+                    slot < state.snapshotSlots - PLAYER_INVENTORY_SLOTS;
+                    slot++
+                ) {
+                    const stack = stacks[slot];
+                    state.snapshot.push(
+                        stack === null ? null : itemStackRawNbt(stack)
+                    );
+                }
+                traceMenuWait("windowItems", {
+                    windowId: state.openedWindowId,
+                    expectedItems: state.expectedItems,
+                    snapshotSlots: state.snapshotSlots,
+                });
+                startPolling();
+            } else if (
+                state.snapshot !== null &&
+                packet instanceof S2FPacketSetSlot &&
+                setSlotPacketWindowId(packet) === state.openedWindowId
+            ) {
+                const slot = setSlotPacketSlot(packet);
+                // Cursor and player-inventory updates are not menu contents.
+                if (slot === null || slot < 0 || slot >= state.snapshot.length)
+                    return false;
+                const stack = setSlotPacketStack(packet);
+                const nbt = stack === null ? null : itemStackRawNbt(stack);
+                if (state.snapshot[slot] !== null) state.expectedItems--;
+                if (nbt !== null) state.expectedItems++;
+                state.snapshot[slot] = nbt;
+            }
+            return false;
+        });
+        try {
+            await firstSnapshot;
+            await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
+                tickWaiter = waiter;
+            });
+        } finally {
+            cleanup();
+        }
+    })() as WaitForPromise<void>;
+    inner.cleanupWaiter = cleanup;
+
+    const timedPromise = ctx.withTimeout(
+        inner,
+        "Waiting for menu to load",
+        MENU_WAIT_TIMEOUT_MS
+    );
+    // Cancel via the timed promise (stops the guard's tick loop) rather than the
+    // bare waiter cleanup, so an abandoned waitForMenu (a losing race branch)
+    // tears the timer down too instead of leaking a 6s phantom timeout.
+    return finishChatPromptAfterMenu(
+        ctx,
+        wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state)
+    );
+}
+
+export function waitForKnownMenu(
+    ctx: TaskContext,
+    openedWindowId: number,
+    skipPopulateWait: boolean = false
+): WaitForPromise<void> {
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+    const cleanup = (): void => {
+        tickWaiter?.cleanupWaiter?.();
+    };
+
+    const state = createMenuWaitState(openedWindowId);
+    if (isTaskTraceEnabled()) {
+        traceMenuWait("start", {
+            skipPopulateWait,
+            knownWindowId: openedWindowId,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
+    }
+    traceMenuWait("openWindow", { windowId: openedWindowId, known: true });
+
+    const inner = (async (): Promise<void> => {
+        await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
+            tickWaiter = waiter;
+        });
+    })() as WaitForPromise<void>;
+    inner.cleanupWaiter = cleanup;
+
+    const timedPromise = ctx.withTimeout(
+        inner,
+        "Waiting for menu to load",
+        MENU_WAIT_TIMEOUT_MS
+    );
+    return wrapMenuWaitTimeout(
+        timedPromise,
+        timedPromise.cleanupWaiter ?? cleanup,
+        state
+    );
+}
+
+export function timedWaitForMenu(
+    ctx: TaskContext,
+    kind:
+        | "menuClickWait"
+        | "pageTurnWait"
+        | "goBackWait"
+        | "commandMenuWait" = "menuClickWait"
+): WaitForPromise<void> {
+    const expected =
+        kind === "pageTurnWait"
+            ? COST.pageTurnWait
+            : kind === "goBackWait"
+              ? COST.goBackWait
+              : kind === "commandMenuWait"
+                ? COST.commandMenuWait
+                : COST.menuClickWait;
+    return timed(kind, expected, () => {
+        const menuWaiter = waitForMenu(ctx);
+        if (kind !== "commandMenuWait") return menuWaiter;
+
+        const permissionWaiter = ctx.waitFor(
+            "message",
+            (message) =>
+                removedFormatting(message) ===
+                "You do not have permission to use this command!"
+        );
+        const permissionRejected = permissionWaiter.then(() => {
+            throw new Error(
+                "Housing rejected the command: you do not have permission to use it in this house."
+            );
+        });
+        permissionRejected.catch(() => {});
+        return ctx.race([
+            [menuWaiter, menuWaiter],
+            [permissionRejected, permissionWaiter],
+        ]);
+    });
+}

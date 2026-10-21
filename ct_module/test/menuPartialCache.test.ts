@@ -1,29 +1,29 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Action, ImportableMenu } from "htsw/types";
-import type { ActionListApplyResult } from "../src/housingSync/actions/apply";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type { ImportContext } from "../src/importables/import/context";
+import type { ActionListApplyResult } from "@htsw/importer/housingSync/actions/apply";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type { ImportContext } from "@htsw/importer/importables/import/context";
 import {
     applyImportableMenuPlan,
     menuApplicationPlan,
     planImportableMenu,
     reconstructPartialMenu,
     type MenuImportPlan,
-} from "../src/importables/menus/import";
+} from "@htsw/importer/importables/menus/import";
 import {
     type ActionListPlan,
     createKnownActionListPlan,
     readActionListPlan,
-} from "../src/housingSync/actions/plan";
-import { actionListApplyResultFromError } from "../src/housingSync/actions/apply";
-import { ApplicationProgress } from "../src/importables/import/applicationProgress";
-import { writeImportableCache, readImportableCache } from "../src/importCache/cache";
-import { upsertHouseLockImportable, readHouseLock } from "../src/importCache/houseLock";
-import { houseLockCurrentEntryFor } from "../src/importCache/acceptHouseLock";
-import { buildCacheStatusRow } from "../src/importCache/status";
-import { buildTrustPlan } from "../src/importCache/trust";
-import { scanActionListSync } from "../src/housingSync/actions/prepareSync";
-import { menuSlotActionsPath } from "../src/importCache/actionLists";
+} from "@htsw/importer/housingSync/actions/plan";
+import { actionListApplyResultFromError } from "@htsw/importer/housingSync/actions/apply";
+import { ApplicationProgress } from "@htsw/importer/importables/import/applicationProgress";
+import { writeImportableCache, readImportableCache } from "@htsw/importer/importCache/cache";
+import { upsertHouseLockImportable, readHouseLock } from "@htsw/importer/importCache/houseLock";
+import { houseLockCurrentEntryFor } from "@htsw/importer/importCache/acceptHouseLock";
+import { buildCacheStatusRow } from "@htsw/importer/importCache/status";
+import { buildTrustPlan } from "@htsw/importer/importCache/trust";
+import { scanActionListSync } from "@htsw/importer/housingSync/actions/prepareSync";
+import { menuSlotActionsPath } from "@htsw/importer/importCache/actionLists";
 import { message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -33,19 +33,19 @@ const mocks = vi.hoisted(() => ({
     resize: vi.fn(),
     select: vi.fn(),
 }));
-vi.mock("../src/housingSync/actions/apply", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/apply")>()),
+vi.mock("@htsw/importer/housingSync/actions/apply", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/apply")>()),
     applyActionListPlan: mocks.apply,
 }));
-vi.mock("../src/housingSync/actions/readList", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/readList")>()),
+vi.mock("@htsw/importer/housingSync/actions/readList", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/readList")>()),
     scanActionList: mocks.scan,
 }));
-vi.mock("../src/housingSync/actions/hydration/run", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/actions/hydration/run")>()),
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/actions/hydration/run")>()),
     hydrateActionListScan: vi.fn(async () => undefined),
 }));
-vi.mock("../src/importables/menus/housing", () => ({
+vi.mock("@htsw/importer/importables/menus/housing", () => ({
     openMenuEditor: vi.fn(async () => "opened"),
     openMenuElements: vi.fn(async () => undefined),
     setMenuSize: mocks.resize,
@@ -53,12 +53,12 @@ vi.mock("../src/importables/menus/housing", () => ({
 vi.mock("../src/housingSync/items/itemPicker", () => ({
     selectItemFromOpenInventory: mocks.select,
 }));
-vi.mock("../src/housingSync/menus/menuUtils", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/menus/menuUtils")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/menus/menuUtils")>()),
     clickGoBack: vi.fn(async () => undefined),
 }));
-vi.mock("../src/housingSync/menus/menuWait", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/menus/menuWait")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuWait", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/menus/menuWait")>()),
     timedWaitForMenu: vi.fn(async () => undefined),
 }));
 vi.mock("../src/utils/nbt", async (original) => ({
@@ -66,8 +66,8 @@ vi.mock("../src/utils/nbt", async (original) => ({
     getItemFromNbt: () => ({ getName: () => "Stone" }),
     getItemFromSnbt: () => ({ getName: () => "Stone" }),
 }));
-vi.mock("../src/housingSync/items/itemNbt", async (original) => ({
-    ...(await original<typeof import("../src/housingSync/items/itemNbt")>()),
+vi.mock("@htsw/importer/housingSync/items/itemNbt", async (original) => ({
+    ...(await original<typeof import("@htsw/importer/housingSync/items/itemNbt")>()),
     canonicalItemShellKey: () => "stone",
 }));
 vi.mock("../src/utils/filesystem", () => ({

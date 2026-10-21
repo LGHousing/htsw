@@ -5,10 +5,10 @@ import {
     cacheEntryHash,
     cacheEntryHashesAreCurrent,
     type ImportableCacheEntry,
-} from "../src/importCache/cache";
-import { importableHash, listHashes } from "../src/importCache/hash";
-import { cacheEntryListHashes } from "../src/importCache/status";
-import { functionIconsEqual } from "../src/importables/functions/iconComparison";
+} from "@htsw/importer/importCache/cache";
+import { importableHash, listHashes } from "@htsw/importer/importCache/hash";
+import { cacheEntryListHashes } from "@htsw/importer/importCache/status";
+import { functionIconsEqual } from "@htsw/importer/importables/functions/iconComparison";
 
 function fn(icon: ImportableFunction["icon"]): ImportableFunction {
     return {

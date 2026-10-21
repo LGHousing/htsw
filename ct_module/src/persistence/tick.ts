@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { flushPersistence } from "./store";
-import { tickWorkspace } from "./workspace";
-import { span } from "../perf/spans";
+import { flushPersistence } from "@htsw/importer/persistence/store";
+import { tickWorkspace } from "@htsw/importer/persistence/workspace";
+import { span } from "@htsw/importer/perf/spans";
 
 /**
  * Drives workspace restore/capture and the debounced writer from the client

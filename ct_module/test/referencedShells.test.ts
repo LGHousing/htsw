@@ -7,29 +7,29 @@ const mocks = vi.hoisted(() => ({
     ensureRegions: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/importables/functions/housing", () => ({
+vi.mock("@htsw/importer/importables/functions/housing", () => ({
     ensureFunctionNamesExist: mocks.ensureFunctions,
 }));
-vi.mock("../src/importables/menus/housing", () => ({
+vi.mock("@htsw/importer/importables/menus/housing", () => ({
     ensureMenuNamesExist: mocks.ensureMenus,
 }));
-vi.mock("../src/importables/regions/housing", () => ({
+vi.mock("@htsw/importer/importables/regions/housing", () => ({
     ensureRegionNamesExist: mocks.ensureRegions,
 }));
-vi.mock("../src/importables/functions/listFunctions", () => ({
+vi.mock("@htsw/importer/importables/functions/listFunctions", () => ({
     getSessionFunctionNamesLower: async () => new Set<string>(),
 }));
-vi.mock("../src/importables/menus/listMenus", () => ({
+vi.mock("@htsw/importer/importables/menus/listMenus", () => ({
     getSessionMenuNamesLower: async () => new Set<string>(),
 }));
-vi.mock("../src/importables/regions/listRegions", () => ({
+vi.mock("@htsw/importer/importables/regions/listRegions", () => ({
     listAllRegionNames: async () => [],
 }));
 
 import {
     applyReferencedShellPlan,
     planMissingReferencedShells,
-} from "../src/importables/import/references";
+} from "@htsw/importer/importables/import/references";
 
 function fn(name: string, actions: Action[]): Importable {
     return { type: "FUNCTION", name, actions } as unknown as Importable;

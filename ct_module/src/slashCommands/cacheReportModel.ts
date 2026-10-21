@@ -1,13 +1,13 @@
 import type { Importable } from "htsw/types";
 
-import { cacheEntryHash, type ImportableCachePeek } from "../importCache/cache";
-import { importableHash } from "../importCache/hash";
-import type { ImportableTrustPlan, TrustPlan } from "../importCache/trust";
+import { cacheEntryHash, type ImportableCachePeek } from "@htsw/importer/importCache/cache";
+import { importableHash } from "@htsw/importer/importCache/hash";
+import type { ImportableTrustPlan, TrustPlan } from "@htsw/importer/importCache/trust";
 import {
     hasInteractDataCache,
     hasItemClickActions,
-} from "../importables/items/interactDataCache";
-import type { ItemDependencyIndex } from "../importables/items/dependencyIndex";
+} from "@htsw/importer/importables/items/interactDataCache";
+import type { ItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
 
 type CacheReportReason =
     | "no-cache-entry"

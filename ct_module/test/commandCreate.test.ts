@@ -1,22 +1,22 @@
 import { beforeEach, expect, test, vi } from "vitest";
 
-vi.mock("../src/importables/commands/listCommands", () => ({
+vi.mock("@htsw/importer/importables/commands/listCommands", () => ({
     getSessionCommandNamesLower: vi.fn(async () => new Set<string>()),
     noteCommandCreated: vi.fn(),
     resetCommandNameSession: vi.fn(),
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(),
 }));
 
-import { ensureCommandExists } from "../src/importables/commands/housing";
+import { ensureCommandExists } from "@htsw/importer/importables/commands/housing";
 import {
     getSessionCommandNamesLower,
     noteCommandCreated,
     resetCommandNameSession,
-} from "../src/importables/commands/listCommands";
-import { timedWaitForMenu } from "../src/housingSync/menus/menuWait";
-import TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importables/commands/listCommands";
+import { timedWaitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
+import TaskContext from "@htsw/importer/tasks/context";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
 
 function commandContext() {

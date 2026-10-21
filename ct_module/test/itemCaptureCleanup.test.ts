@@ -23,14 +23,14 @@ vi.mock("../src/utils/packets", async (original) => ({
         constructor(public slot: number) {}
     },
 }));
-vi.mock("../src/housingSync/items/itemNbt", () => ({
+vi.mock("@htsw/importer/housingSync/items/itemNbt", () => ({
     snbtFromItem: (item: FakeItem) => item.snbt,
     canonicalItemShellSnbtKey: (snbt: string) => snbt,
 }));
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     clickGoBack: async () => undefined,
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: async () => undefined,
 }));
 

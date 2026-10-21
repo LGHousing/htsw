@@ -3,9 +3,9 @@ import {
     getPaginatedListSlotAtIndex,
     parsePaginatedTitlePage,
     readPaginatedList,
-} from "../src/housingSync/menus/paginatedList";
+} from "@htsw/importer/housingSync/menus/paginatedList";
 
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
 }));
 

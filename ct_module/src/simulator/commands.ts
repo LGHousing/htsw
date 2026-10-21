@@ -8,12 +8,12 @@ import {
     runSimulatorActions,
 } from "./session";
 import { StringFileLoader } from "../utils/fileLoaders";
-import { printDiagnostic } from "../tui/diagnostics";
+import { printDiagnostic } from "@htsw/importer/tui/diagnostics";
 import {
     TextLayoutCanvas,
     TextLayoutText,
     TextLayoutVStack,
-} from "../diagnostics/textLayout";
+} from "@htsw/importer/diagnostics/textLayout";
 
 export function registerCommandTriggers(): CommandTrigger[] {
     return [

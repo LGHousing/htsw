@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
-import { importableHash } from "../src/importCache/hash";
+import { importableHash } from "@htsw/importer/importCache/hash";
 import type { ResultImport } from "../src/gui/left-panel/projects/rowModel";
 
 const state = {
@@ -14,7 +14,7 @@ const state = {
     busy: false,
 };
 
-vi.mock("../src/runtime/state/index", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({
     getHousingUuid: () => state.housingUuid,
 }));
 vi.mock("../src/gui/cache-status", () => ({
@@ -22,7 +22,7 @@ vi.mock("../src/gui/cache-status", () => ({
         state.statuses.get(imp.name) ?? null,
     importableLinkStatusContextKey: () => state.statusKey,
 }));
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => state.busy },
 }));
 vi.mock("../src/gui/lib/dirty", () => ({
@@ -35,7 +35,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: (path: string) => state.mtimes.get(path) ?? 0,
 }));
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
 }));
 vi.mock("../src/gui/left-panel/projects/acceptHouseLock", () => ({

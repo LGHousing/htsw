@@ -10,9 +10,9 @@ import {
     actionsEqual,
     conditionsEqual,
     scalarFieldDiffers,
-} from "../src/housingSync/actions/comparison";
-import { getActionScalarLoreFields } from "../src/housingSync/fields/actionMappings";
-import type { Observed } from "../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/actions/comparison";
+import { getActionScalarLoreFields } from "@htsw/importer/housingSync/fields/actionMappings";
+import type { Observed } from "@htsw/importer/housingSync/observedActions";
 
 import { changeVar, message, playSound } from "./utils";
 

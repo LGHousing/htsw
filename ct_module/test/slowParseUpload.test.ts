@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const uploadDiagnosticsFile = vi.hoisted(() => vi.fn());
 
-vi.mock("../src/settings", () => ({
+vi.mock("@htsw/importer/settings", () => ({
     getUploadDiagnostics: () => true,
 }));
 vi.mock("../src/utils/filesystem", () => ({
@@ -11,7 +11,7 @@ vi.mock("../src/utils/filesystem", () => ({
 vi.mock("../src/runtimeDebug/importFailureUpload", () => ({
     uploadDiagnosticsFile,
 }));
-vi.mock("../src/runtimeDebug/runtimeDebugBuffer", () => ({
+vi.mock("@htsw/importer/runtimeDebug/runtimeDebugBuffer", () => ({
     recentRuntimeDebugRecords: () => [
         {
             kind: "failure",
@@ -51,7 +51,7 @@ describe("slow parse upload privacy", () => {
         const write = vi.fn();
         vi.stubGlobal("FileLib", { write });
         const { uploadSlowParseDiagnostics } =
-            await import("../src/runtimeDebug/slowParseUpload");
+            await import("@htsw/importer/runtimeDebug/slowParseUpload");
 
         uploadSlowParseDiagnostics({
             canon: "/Users/alice/Projects/secret/import.json",

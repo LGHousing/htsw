@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import type TaskContext from "../tasks/context";
-import { pollTicks } from "../tasks/poll";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { pollTicks } from "@htsw/importer/tasks/poll";
 import { getMinecraft, getPlayer, javaType } from "../utils/java";
 
 const KeyBinding = javaType("net.minecraft.client.settings.KeyBinding");

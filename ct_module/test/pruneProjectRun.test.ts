@@ -42,20 +42,20 @@ const mocks = vi.hoisted(() => ({
     confirmCalls: 0,
 }));
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     parseImportJsonCurrent: async (path: string) => ({
         canonicalPath: path,
         parsed: mocks.parsed,
     }),
 }));
-vi.mock("../src/runtime/state/autoTrack", () => ({
+vi.mock("@htsw/importer/runtime/state/autoTrack", () => ({
     getAutoTrackSources: () => mocks.tracked,
 }));
-vi.mock("../src/runtime/autoTrackScope", () => ({
+vi.mock("@htsw/importer/runtime/autoTrackScope", () => ({
     autoTrackBoundHouse: (path: string) => mocks.boundHouses.get(path) ?? null,
 }));
-vi.mock("../src/prune/apply", () => ({
+vi.mock("@htsw/importer/prune/apply", () => ({
     applyPrunePlan: async (
         _ctx: unknown,
         targets: { identity: string }[],
@@ -76,17 +76,17 @@ vi.mock("../src/prune/apply", () => ({
     },
     formatPruneApplyResult: () => [],
 }));
-vi.mock("../src/prune/consent", () => ({
+vi.mock("@htsw/importer/prune/consent", () => ({
     hasPruneConsent: () => mocks.consented,
     grantPruneConsent: () => true,
 }));
-vi.mock("../src/prune/session", () => ({
+vi.mock("@htsw/importer/prune/session", () => ({
     confirmPrune: async () => {
         mocks.confirmCalls++;
         return mocks.confirmAnswer;
     },
 }));
-vi.mock("../src/prune/rename", () => ({
+vi.mock("@htsw/importer/prune/rename", () => ({
     applyRenames: async (
         _ctx: unknown,
         _path: string,
@@ -96,14 +96,14 @@ vi.mock("../src/prune/rename", () => ({
         return { renamed: renames, unconfirmed: [] };
     },
 }));
-vi.mock("../src/prune/plan", () => ({
+vi.mock("@htsw/importer/prune/plan", () => ({
     vanishedWork: () => ({ plan: mocks.lockPlan, renames: mocks.renames }),
     scanHousePrunePlan: async () => {
         mocks.scans++;
         return mocks.scanPlan;
     },
 }));
-vi.mock("../src/prune/report", () => ({ formatPrunePlan: () => [] }));
+vi.mock("@htsw/importer/prune/report", () => ({ formatPrunePlan: () => [] }));
 
 import {
     beginProjectRun,
@@ -111,9 +111,9 @@ import {
     hasPendingRemovals,
     needsArmingScan,
     resetArmingScans,
-} from "../src/prune/projectRun";
-import { makeBulkQueueRow } from "../src/runtime/queue";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/prune/projectRun";
+import { makeBulkQueueRow } from "@htsw/importer/runtime/queue";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 const manifest = "./projects/demo/import.json";
 const house = "house-1";

@@ -1,30 +1,30 @@
 import { describe, expect, test } from "vitest";
 
-import { createKnownActionListPlan } from "../src/housingSync/actions/plan";
-import { COST } from "../src/housingSync/progress/costs";
+import { createKnownActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
 import {
     groupApplicationPlan,
     groupPlanApplicationUnits,
     planImportableGroup,
     type GroupImportPlan,
-} from "../src/importables/groups/import";
+} from "@htsw/importer/importables/groups/import";
 import {
     itemApplicationPlan,
     itemPlanApplicationUnits,
     type ItemImportPlan,
-} from "../src/importables/items/import";
+} from "@htsw/importer/importables/items/import";
 import {
     npcApplicationPlan,
     npcPlanApplicationUnits,
     type NpcImportPlan,
-} from "../src/importables/npcs/import";
-import { validateSupportedNpcFields } from "../src/importables/npcs/housing";
+} from "@htsw/importer/importables/npcs/import";
+import { validateSupportedNpcFields } from "@htsw/importer/importables/npcs/housing";
 import {
     planImportableTeam,
     teamApplicationPlan,
     teamPlanApplicationUnits,
     type TeamImportPlan,
-} from "../src/importables/teams/import";
+} from "@htsw/importer/importables/teams/import";
 
 import { message } from "./utils";
 

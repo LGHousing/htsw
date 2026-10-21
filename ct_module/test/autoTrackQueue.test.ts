@@ -23,17 +23,17 @@ const fixture = vi.hoisted<{
     queueRunning: false,
 }));
 
-vi.mock("../src/runtime/state/index", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({
     getHousingUuid: () => "house-uuid",
     isAnyAutoTrackEnabled: () => true,
     isCurrentHouseTrusted: () => false,
 }));
 
-vi.mock("../src/runtime/autoTrackScope", () => ({
+vi.mock("@htsw/importer/runtime/autoTrackScope", () => ({
     getActiveAutoTrackSources: () => new Set([SOURCE_PATH]),
 }));
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     canonicalPath: (path: string) => path,
     forEachCachedParse: (
         visit: (entry: {
@@ -55,42 +55,42 @@ vi.mock("../src/runtime/parsing/parses", () => ({
     getParseCacheRevision: () => 0,
 }));
 
-vi.mock("../src/importCache/importableStatus", () => ({
+vi.mock("@htsw/importer/importCache/importableStatus", () => ({
     cachedStatusForImportable: () => fixture.status,
     statusForImportableBlocking: () => fixture.status ?? "unknown",
 }));
 
-vi.mock("../src/importCache/cacheWarm", () => ({
+vi.mock("@htsw/importer/importCache/cacheWarm", () => ({
     onImportableCacheWarm: () => () => {},
 }));
 
-vi.mock("../src/importables/import/dependencyExpansion", () => ({
+vi.mock("@htsw/importer/importables/import/dependencyExpansion", () => ({
     expandImportDependencies: (
         _parsed: unknown,
         modified: (typeof fixture.importable)[]
     ) => ({ importables: modified, addedImportables: [] }),
 }));
 
-vi.mock("../src/runtime/autoRun", () => ({ autoRunRefresh: () => {} }));
-vi.mock("../src/settings", () => ({ getAutoRun: () => false }));
-vi.mock("../src/runtime/queueRunner", () => ({
+vi.mock("@htsw/importer/runtime/autoRun", () => ({ autoRunRefresh: () => {} }));
+vi.mock("@htsw/importer/settings", () => ({ getAutoRun: () => false }));
+vi.mock("@htsw/importer/runtime/queueRunner", () => ({
     isQueueRunning: () => fixture.queueRunning,
 }));
-vi.mock("../src/prune/projectRun", () => ({
+vi.mock("@htsw/importer/prune/projectRun", () => ({
     isArmedForPrune: () => fixture.armed,
     hasPendingRemovals: () => fixture.pendingRemovals,
     needsArmingScan: () => false,
     setOnArmingScansReset: () => {},
 }));
 
-import { autoTrackRefresh } from "../src/runtime/autoTrack";
+import { autoTrackRefresh } from "@htsw/importer/runtime/autoTrack";
 import {
     addToQueue,
     clearQueue,
     getQueue,
     makeImportableQueueRow,
     setQueueRowStatus,
-} from "../src/runtime/queue";
+} from "@htsw/importer/runtime/queue";
 
 beforeEach(() => {
     clearQueue();

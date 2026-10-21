@@ -4,8 +4,8 @@ import {
     createEtaCalculator,
     easeEta,
     type EtaCalculator,
-} from "../src/housingSync/progress/eta";
-import type { TaskProgress } from "../src/housingSync/progress/types";
+} from "@htsw/importer/housingSync/progress/eta";
+import type { TaskProgress } from "@htsw/importer/housingSync/progress/types";
 
 let now = 0;
 const realDateNow = Date.now;

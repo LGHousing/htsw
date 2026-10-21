@@ -48,7 +48,7 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: (path: string) => mtimes.get(path) ?? 0,
 }));
 
-vi.mock("../src/runtime/parsing/offThreadParse", () => ({
+vi.mock("@htsw/importer/runtime/parsing/offThreadParse", () => ({
     buildParseFingerprint: () => currentFingerprint(),
     parseImportJsonOffThread: (
         _path: string,
@@ -64,7 +64,7 @@ vi.mock("../src/runtime/parsing/offThreadParse", () => ({
         }),
 }));
 
-vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parseSnapshot", () => ({
     diffSnapshotFingerprint: () => [],
     loadSnapshot: () => null,
     restoreParseFromSnapshot: () => null,
@@ -76,37 +76,37 @@ vi.mock("../src/runtime/parsing/parseSnapshot", () => ({
         bytes: 0,
     }),
 }));
-vi.mock("../src/importables/items/projectItems", () => ({
+vi.mock("@htsw/importer/importables/items/projectItems", () => ({
     createProjectItemIndex: () => ({}),
     invalidateProjectItemIndex: () => undefined,
 }));
-vi.mock("../src/importables/items/dependencyIndex", () => ({
+vi.mock("@htsw/importer/importables/items/dependencyIndex", () => ({
     createItemDependencyIndex: () => ({}),
     invalidateItemDependencyIndex: () => undefined,
 }));
-vi.mock("../src/importCache/houseBindings", () => ({
+vi.mock("@htsw/importer/importCache/houseBindings", () => ({
     recordHouseBinding: () => undefined,
 }));
-vi.mock("../src/importCache/status", () => ({
+vi.mock("@htsw/importer/importCache/status", () => ({
     seedImportableHash: () => undefined,
 }));
-vi.mock("../src/runtimeDebug/slowParseUpload", () => ({
+vi.mock("@htsw/importer/runtimeDebug/slowParseUpload", () => ({
     uploadSlowParseDiagnostics: () => undefined,
 }));
 
 vi.mock("../src/gui/lib/icons.generated", () => ({ Icons: { house: "house" } }));
-vi.mock("../src/project/pathDisplay", () => ({ shortPath: (path: string) => path }));
+vi.mock("@htsw/importer/project/pathDisplay", () => ({ shortPath: (path: string) => path }));
 vi.mock("../src/gui/popovers/confirm", () => ({
     openConfirmPopover: (options: { onConfirm: () => void }) => options.onConfirm(),
 }));
-vi.mock("../src/runtime/state/index", () => ({
+vi.mock("@htsw/importer/runtime/state/index", () => ({
     getHousingUuid: () => houseUuid,
     setExportImportJsonPath: () => undefined,
 }));
-vi.mock("../src/importCache/aliases", () => ({
+vi.mock("@htsw/importer/importCache/aliases", () => ({
     houseDisplayName: (uuid: string) => uuid,
 }));
-vi.mock("../src/project/importJsonMutations", () => ({
+vi.mock("@htsw/importer/project/importJsonMutations", () => ({
     setHouseUuidKey: (path: string, uuid: string | null) => {
         fileHouseUuid = uuid;
         mtimes.set(path, (mtimes.get(path) ?? 0) + 1);
@@ -114,12 +114,12 @@ vi.mock("../src/project/importJsonMutations", () => ({
     },
 }));
 
-let parseImportJsonCurrent: typeof import("../src/runtime/parsing/parses").parseImportJsonCurrent;
+let parseImportJsonCurrent: typeof import("@htsw/importer/runtime/parsing/parses").parseImportJsonCurrent;
 let confirmRebind: typeof import("../src/gui/houseBinding").confirmRebind;
 
 beforeAll(async () => {
     vi.stubGlobal("ChatLib", { chat: () => undefined });
-    ({ parseImportJsonCurrent } = await import("../src/runtime/parsing/parses"));
+    ({ parseImportJsonCurrent } = await import("@htsw/importer/runtime/parsing/parses"));
     ({ confirmRebind } = await import("../src/gui/houseBinding"));
 });
 

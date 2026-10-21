@@ -1,5 +1,5 @@
-import { diffActionList } from "../../src/housingSync/actions/diff";
-import type { ActionListDiff } from "../../src/housingSync/actions/diff/types";
+import { diffActionList } from "@htsw/importer/housingSync/actions/diff";
+import type { ActionListDiff } from "@htsw/importer/housingSync/actions/diff/types";
 import type { DiffInputCapture } from "./loader";
 import { aggregateScores, scoreDiff, type DiffScore } from "./scorer";
 import { actionListsEqual, applyPlan } from "./oracle";

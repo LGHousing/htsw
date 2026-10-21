@@ -1,6 +1,6 @@
-import { statusForImportableBlocking } from "../../importCache/importableStatus";
-export { cachedStatusForImportable } from "../../importCache/importableStatus";
-import type { CacheState } from "../../importCache/status";
+import { statusForImportableBlocking } from "@htsw/importer/importCache/importableStatus";
+export { cachedStatusForImportable } from "@htsw/importer/importCache/importableStatus";
+import type { CacheState } from "@htsw/importer/importCache/status";
 import { findFileTarget } from "../code-view/sourceDiff";
 
 export { linkStatusIcon, type LinkStatusKey } from "./linkStatus";

@@ -1,7 +1,7 @@
-import { errorMessage } from "../utils/helpers";
-import { getCurrentHousingUuid } from "../importCache/housingId";
-import { getHousingUuid, setHousingUuid } from "../runtime/state/index";
-import { runHousingSyncTask } from "../housingSync/taskRunner";
+import { errorMessage } from "@htsw/importer/utils/helpers";
+import { getCurrentHousingUuid } from "@htsw/importer/importCache/housingId";
+import { getHousingUuid, setHousingUuid } from "@htsw/importer/runtime/state/index";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
 
 /**
  * Calls `use` with the house the player is in. Without a cached UUID (no

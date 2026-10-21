@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Action } from "htsw/types";
 
-import type { ActionListDiff } from "../src/housingSync/actions/diff/types";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
-import type { ActionListPlan } from "../src/housingSync/actions/plan";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
+import type { ActionListDiff } from "@htsw/importer/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import type { ItemDiffContext } from "@htsw/importer/housingSync/actions/diff/itemDiffContext";
 import {
     baselineActionListFromSlots,
     diffActionList,
-} from "../src/housingSync/actions/diff";
+} from "@htsw/importer/housingSync/actions/diff";
 import { conditional, message, observedSlot } from "./utils";
 
 const mocks = vi.hoisted(() => ({
@@ -31,19 +31,19 @@ const mocks = vi.hoisted(() => ({
     getSlotPaginate: vi.fn(),
 }));
 
-vi.mock("../src/housingSync/menus/paginatedList", () => ({
+vi.mock("@htsw/importer/housingSync/menus/paginatedList", () => ({
     getPaginatedListSlotAtIndex: vi.fn(async () => ({
         click: vi.fn(),
     })),
     goToPaginatedListPage: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     clickGoBack: mocks.clickGoBack,
     getSlotPaginate: mocks.getSlotPaginate,
     isLimitExceeded: vi.fn(() => false),
@@ -55,7 +55,7 @@ vi.mock("../src/housingSync/menus/menuUtils", () => ({
     ),
 }));
 
-vi.mock("../src/housingSync/actions/io", () => ({
+vi.mock("@htsw/importer/housingSync/actions/io", () => ({
     getActionIo: vi.fn(() => ({
         displayName: "Send a Chat Message",
         write: true,
@@ -144,7 +144,7 @@ describe("ActionListApplyResult", () => {
             new Error("writer failed after touching the editor")
         );
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
+            await import("@htsw/importer/housingSync/actions/apply");
 
         let thrown: unknown = null;
         try {
@@ -166,9 +166,9 @@ describe("ActionListApplyResult", () => {
 
     test("a nested failure cannot publish its child snapshot or the stale enclosing function", async () => {
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
+            await import("@htsw/importer/housingSync/actions/apply");
         const { throwWithActionListApplyResult } =
-            await import("../src/housingSync/actions/apply/run");
+            await import("@htsw/importer/housingSync/actions/apply/run");
         const observed = conditional({ ifActions: [message("before")] });
         const desired = conditional({ ifActions: [message("after")] });
         const failure = new Error('Could not find "Holder" in "Settings"');
@@ -202,7 +202,7 @@ describe("ActionListApplyResult", () => {
         expect(thrown).toBe(failure);
         expect(actionListApplyResultFromError(thrown)).toBeNull();
         const { reconstructPartialFunction } =
-            await import("../src/importables/functions/import");
+            await import("@htsw/importer/importables/functions/import");
         expect(reconstructPartialFunction({} as never, actionListApplyResultFromError(thrown))).toBeNull();
     });
 
@@ -231,7 +231,7 @@ describe("ActionListApplyResult", () => {
         const sync = syncContext();
         sync.itemDiff = itemDiff;
         const { applyActionListPlan } = await import(
-            "../src/housingSync/actions/apply"
+            "@htsw/importer/housingSync/actions/apply"
         );
 
         const result = await applyActionListPlan(
@@ -258,7 +258,7 @@ describe("ActionListApplyResult", () => {
     test("exposes the updated result when a confirmed edit is followed by a later failure", async () => {
         mocks.clickGoBack.mockRejectedValue(new Error("failed after writer returned"));
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
+            await import("@htsw/importer/housingSync/actions/apply");
 
         let thrown: unknown = null;
         try {
@@ -283,7 +283,7 @@ describe("ActionListApplyResult", () => {
 
     test("keeps the previous result cacheable when opening Add Action fails before mutation", async () => {
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
+            await import("@htsw/importer/housingSync/actions/apply");
         const ctx = {
             checkCancelled: () => undefined,
             finishBeforeCancelling: async (run: () => Promise<unknown>) => run(),
@@ -310,7 +310,7 @@ describe("ActionListApplyResult", () => {
 
     test("does not expose a result after the Add Action choice may have mutated Housing", async () => {
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
+            await import("@htsw/importer/housingSync/actions/apply");
         mocks.getSlotPaginate.mockReturnValue({
             getItem: () => ({ getLore: () => [] }),
             click: () => {
@@ -339,8 +339,8 @@ describe("ActionListApplyResult", () => {
 
     test("refuses a denied Add Action option before clicking or invalidating the previous result", async () => {
         const { applyActionListPlan, actionListApplyResultFromError } =
-            await import("../src/housingSync/actions/apply");
-        const { getActionIo } = await import("../src/housingSync/actions/io");
+            await import("@htsw/importer/housingSync/actions/apply");
+        const { getActionIo } = await import("@htsw/importer/housingSync/actions/io");
         vi.mocked(getActionIo).mockReturnValueOnce({
             displayName: "Set Gamemode",
             write: true,

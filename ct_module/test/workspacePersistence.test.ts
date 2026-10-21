@@ -28,7 +28,7 @@ describe("workspace persistence", () => {
     });
 
     async function loadWorkspace() {
-        return await import("../src/persistence/workspace");
+        return await import("@htsw/importer/persistence/workspace");
     }
 
     it("restores a saved slice on the first tick, then captures changes", async () => {

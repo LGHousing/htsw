@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import { COST, hydrationEntryUnits } from "../src/housingSync/progress/costs";
-import { createHydrationEntryAccount } from "../src/housingSync/progress/hydrationAccount";
-import type { ProgressPayload } from "../src/housingSync/progress/types";
-import type { ActionHydrationWork } from "../src/housingSync/actions/hydration/plan";
+import { COST, hydrationEntryUnits } from "@htsw/importer/housingSync/progress/costs";
+import { createHydrationEntryAccount } from "@htsw/importer/housingSync/progress/hydrationAccount";
+import type { ProgressPayload } from "@htsw/importer/housingSync/progress/types";
+import type { ActionHydrationWork } from "@htsw/importer/housingSync/actions/hydration/plan";
 import type {
     ChildListsToRead,
     ObservedActionSlot,
-} from "../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/observedActions";
 
 import { conditional, message, observedSlot } from "./utils";
 

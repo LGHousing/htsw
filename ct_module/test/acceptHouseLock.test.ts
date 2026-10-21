@@ -4,14 +4,14 @@ import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 import {
     acceptHouseLockAsCurrent,
     houseLockCurrentEntryFor,
-} from "../src/importCache/acceptHouseLock";
-import type { HouseLock } from "../src/importCache/houseLock";
-import { importableHash } from "../src/importCache/hash";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importCache/acceptHouseLock";
+import type { HouseLock } from "@htsw/importer/importCache/houseLock";
+import { importableHash } from "@htsw/importer/importCache/hash";
+import type TaskContext from "@htsw/importer/tasks/context";
 import type {
     ItemDependencyIndex,
     ItemDependencySnapshot,
-} from "../src/importables/items/dependencyIndex";
+} from "@htsw/importer/importables/items/dependencyIndex";
 
 // No Java in the test runner: report a file's mtime from the stubbed FileLib.
 vi.mock("../src/utils/filesystem", async (importOriginal) => ({

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     placeItem: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/importables/import/importers", () => ({
+vi.mock("@htsw/importer/importables/import/importers", () => ({
     scanImportable: mocks.scanImportable,
 }));
 
@@ -21,8 +21,8 @@ vi.mock("../src/housingSync/items/heldItem", () => ({
     }),
 }));
 
-vi.mock("../src/importCache", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache")>()),
+vi.mock("@htsw/importer/importCache", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache")>()),
     buildTrustPlan: (
         housingUuid: string,
         importables: readonly ImportableItem[],
@@ -55,14 +55,14 @@ vi.mock("../src/importCache", async (importOriginal) => ({
     tryWriteImportableCache: mocks.tryWriteImportableCache,
 }));
 
-vi.mock("../src/importCache/houseLock", () => ({
+vi.mock("@htsw/importer/importCache/houseLock", () => ({
     removeHouseLockImportables: mocks.removeHouseLockImportables,
     upsertHouseLockImportablesOffThread: mocks.upsertHouseLockImportablesOffThread,
 }));
 
-import { runImportSession } from "../src/importables/import/session";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
-import type TaskContext from "../src/tasks/context";
+import { runImportSession } from "@htsw/importer/importables/import/session";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 describe("trusted item rows", () => {
     beforeEach(() => {

@@ -4,10 +4,10 @@ import type { Action, ActionPlaySound, Condition } from "htsw/types";
 import {
     baselineActionListFromSlots,
     diffActionList,
-} from "../src/housingSync/actions/diff";
-import type { ActionListOperation } from "../src/housingSync/actions/diff/types";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
-import type { ItemDiffContext } from "../src/housingSync/actions/diff/itemDiffContext";
+} from "@htsw/importer/housingSync/actions/diff";
+import type { ActionListOperation } from "@htsw/importer/housingSync/actions/diff/types";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
+import type { ItemDiffContext } from "@htsw/importer/housingSync/actions/diff/itemDiffContext";
 
 import {
     changeVar,

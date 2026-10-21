@@ -2,7 +2,7 @@
 
 import { javaType } from "../lib/java";
 import { setClipboardString } from "../../utils/osShell";
-import { chatWidth } from "../../utils/helpers";
+import { chatWidth } from "@htsw/importer/utils/helpers";
 import { joinTokenText } from "./wrap";
 import type { RenderableLine, TokenSpan } from "./lineTypes";
 import { markGuiDirty } from "../lib/dirty";

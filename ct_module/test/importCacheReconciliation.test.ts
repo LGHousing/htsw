@@ -14,7 +14,7 @@ import {
     deleteHousingCache,
     houseTypeScanned,
     recordHouseScan,
-} from "../src/importCache/cache";
+} from "@htsw/importer/importCache/cache";
 
 const globals = globalThis as typeof globalThis & {
     Java: Java;

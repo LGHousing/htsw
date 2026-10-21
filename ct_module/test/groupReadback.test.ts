@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import type TaskContext from "../src/tasks/context";
+import type TaskContext from "@htsw/importer/tasks/context";
 import type { ItemSlot } from "../src/tasks/specifics/slots";
 
 vi.mock("../src/utils/itemLore", () => ({
     itemLore: (item: { lore: string[] }) => item.lore,
 }));
-vi.mock("../src/housingSync/menus/menuUtils", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", () => ({
     enterValue: async () => undefined,
     openSubmenu: async () => undefined,
     clickGoBack: async () => undefined,
     forEachPaginatedPage: async (_ctx: unknown, read: () => unknown) => read(),
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     waitForMenu: async () => undefined,
     timedWaitForMenu: async () => undefined,
 }));
@@ -21,7 +21,7 @@ import {
     setGroupPriority,
     setGroupTagShownInChat,
     applyGroupPermissionMenu,
-} from "../src/importables/groups/housing";
+} from "@htsw/importer/importables/groups/housing";
 
 function context(lore: string[], after?: string[]) {
     const slot = {

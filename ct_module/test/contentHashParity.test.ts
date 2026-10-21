@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { actionListContentHashFromActions } from "../src/housingSync/actions/scanHash";
-import { scalarFieldDiffers } from "../src/housingSync/actions/comparison";
+import { actionListContentHashFromActions } from "@htsw/importer/housingSync/actions/scanHash";
+import { scalarFieldDiffers } from "@htsw/importer/housingSync/actions/comparison";
 
 describe("content hash live/source parity", () => {
     it("treats an explicit default the same as an omitted field", () => {

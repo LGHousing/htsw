@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decideStringWrite } from "../src/housingSync/menus/stringValueDecision";
+import { decideStringWrite } from "@htsw/importer/housingSync/menus/stringValueDecision";
 
 describe("decideStringWrite", () => {
     it("skips when the field already holds the desired value", () => {

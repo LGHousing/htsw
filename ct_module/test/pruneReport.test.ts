@@ -4,8 +4,8 @@ import {
     formatPrunePlan,
     prunePlanPopoverLines,
     summarizeTargets,
-} from "../src/prune/report";
-import { emptyPrunePlan, type PrunePlan, type PruneTarget } from "../src/prune/types";
+} from "@htsw/importer/prune/report";
+import { emptyPrunePlan, type PrunePlan, type PruneTarget } from "@htsw/importer/prune/types";
 
 function target(
     identity: string,

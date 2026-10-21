@@ -7,18 +7,18 @@ import {
     upsertHouseLockImportable,
     upsertHouseLockImportables,
     type HouseLock,
-} from "../src/importCache/houseLock";
+} from "@htsw/importer/importCache/houseLock";
 import {
     ACTION_LIST_CONTENT_HASH_VERSION,
     ACTION_LIST_SCAN_HASH_VERSION,
     actionListContentHashFromActions,
     actionListScanHashFromActions,
-} from "../src/housingSync/actions/scanHash";
-import type { ItemDependencySnapshot } from "../src/importables/items/dependencyIndex";
-import type { ItemFieldContent } from "../src/housingSync/items/fieldContent";
-import { cloneActionsWithItemFieldContent } from "../src/housingSync/items/fieldContent";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
-import type { TagLike } from "../src/housingSync/items/itemTag";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import type { ItemDependencySnapshot } from "@htsw/importer/importables/items/dependencyIndex";
+import type { ItemFieldContent } from "@htsw/importer/housingSync/items/fieldContent";
+import { cloneActionsWithItemFieldContent } from "@htsw/importer/housingSync/items/fieldContent";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
+import type { TagLike } from "@htsw/importer/housingSync/items/itemTag";
 
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: (path: string, content: string) => {

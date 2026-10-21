@@ -1,6 +1,6 @@
 import { Diagnostic, SourceMap, runtime, types } from "htsw";
 
-import { printDiagnostic } from "../tui/diagnostics";
+import { printDiagnostic } from "@htsw/importer/tui/diagnostics";
 
 let active = false;
 let sourceMap: SourceMap | null = null;

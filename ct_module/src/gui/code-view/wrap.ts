@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { chatWidth } from "../../utils/helpers";
+import { chatWidth } from "@htsw/importer/utils/helpers";
 import type { TokenSpan } from "./lineTypes";
 
 const MIN_WRAP_W = 6;

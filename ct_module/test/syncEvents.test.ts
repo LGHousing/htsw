@@ -1,16 +1,16 @@
 import { describe, expect, test } from "vitest";
 
-import { applyActionListPlan } from "../src/housingSync/actions/apply";
-import { type SyncEvent, type SyncEventHandler } from "../src/housingSync/syncEvents";
-import { ActionPath, ActionListPath } from "../src/housingSync/actionPath";
-import type { ActionListDiff } from "../src/housingSync/actions/diff/types";
-import type { ActionListPlan } from "../src/housingSync/actions/plan";
-import { createProjectItemIndex } from "../src/importables/items/projectItems";
-import { createItemDependencyIndex } from "../src/importables/items/dependencyIndex";
-import { createItemFieldResolver } from "../src/importables/items/resolveItem";
-import type { ActionSyncContext } from "../src/housingSync/actions/syncContext";
-import { orderImportablesForSession } from "../src/importables/import/session";
-import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/items/dependencies";
+import { applyActionListPlan } from "@htsw/importer/housingSync/actions/apply";
+import { type SyncEvent, type SyncEventHandler } from "@htsw/importer/housingSync/syncEvents";
+import { ActionPath, ActionListPath } from "@htsw/importer/housingSync/actionPath";
+import type { ActionListDiff } from "@htsw/importer/housingSync/actions/diff/types";
+import type { ActionListPlan } from "@htsw/importer/housingSync/actions/plan";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
+import { createItemDependencyIndex } from "@htsw/importer/importables/items/dependencyIndex";
+import { createItemFieldResolver } from "@htsw/importer/importables/items/resolveItem";
+import type { ActionSyncContext } from "@htsw/importer/housingSync/actions/syncContext";
+import { orderImportablesForSession } from "@htsw/importer/importables/import/session";
+import { expandDeclaredTeamAndGroupDependencies } from "@htsw/importer/importables/items/dependencies";
 import type {
     ImportableFunction,
     ImportableGroup,

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import type { Action } from "htsw/types";
 
-import type { CurrentActionListEntry } from "../../src/housingSync/actions/diff/types";
+import type { CurrentActionListEntry } from "@htsw/importer/housingSync/actions/diff/types";
 
 export type DiffInputCapture = {
     kind: "diffInput";

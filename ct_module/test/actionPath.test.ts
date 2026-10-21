@@ -6,7 +6,7 @@ import {
     ActionListPath,
     ActionTreePath,
     ConditionListPath,
-} from "../src/housingSync/actionPath";
+} from "@htsw/importer/housingSync/actionPath";
 
 describe("action paths", () => {
     test("builds typed nested action and list paths", () => {

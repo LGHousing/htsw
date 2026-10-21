@@ -1,6 +1,6 @@
 import type { Tag, TagCompound } from "htsw/nbt";
 import { Long, nbt as htswNbt } from "htsw";
-import { removedFormatting } from "./helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 import { javaType, runtimeString } from "./java";
 
 const NBTTagByte = javaType("net.minecraft.nbt.NBTTagByte");
@@ -167,6 +167,11 @@ export function itemToHtswTag(item: Item): Tag {
     const compound = new NBTTagCompound();
     stack.func_77955_b(compound);
     return fromMinecraftTag(compound);
+}
+
+/** The stack's raw NBT, as ChatTriggers' `Item.getRawNBT()` prints it. */
+export function itemStackRawNbt(stack: HtswMinecraftItemStack): string {
+    return new Item(stack).getRawNBT();
 }
 
 export function getItemFromNbt(nbt: Tag): Item {

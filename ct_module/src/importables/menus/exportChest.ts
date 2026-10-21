@@ -1,12 +1,12 @@
-import { emitBridgeEvent } from "../../bridge/status";
+import { emitBridgeEvent } from "@htsw/importer/bridge/status";
 import type { ImportableItem } from "htsw/types";
 
-import { portableItemSnbt, snbtFromItem } from "../../housingSync/items/itemNbt";
-import { ItemCaptureRegistry } from "../items/captureRegistry";
-import { upsertImportableEntry } from "../../project/importJsonMutations";
-import { importJsonTargetForSectionEntry, parentDirOf } from "../../project/paths";
+import { portableItemSnbt, snbtFromItem } from "@htsw/importer/housingSync/items/itemNbt";
+import { ItemCaptureRegistry } from "@htsw/importer/importables/items/captureRegistry";
+import { upsertImportableEntry } from "@htsw/importer/project/importJsonMutations";
+import { importJsonTargetForSectionEntry, parentDirOf } from "@htsw/importer/project/paths";
 import { ensureParentDirs, readTextFileOrNull } from "../../utils/filesystem";
-import { removedFormatting } from "../../utils/helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 
 type CapturedChestSlot = {
     slot: number;

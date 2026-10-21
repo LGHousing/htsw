@@ -1,5 +1,5 @@
-import { printDiagnostics } from "../tui/diagnostics";
-import { TaskManager } from "../tasks/manager";
+import { printDiagnostics } from "@htsw/importer/tui/diagnostics";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { loadTestFixtures } from "./fixtures";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 import { runLiveTestSuite } from "./runner";

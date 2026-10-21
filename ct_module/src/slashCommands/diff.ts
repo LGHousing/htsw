@@ -4,39 +4,39 @@ import {
     emitBridgeEvent,
     rejectBridgeRun,
     setBridgeConflictDetails,
-} from "../bridge/status";
+} from "@htsw/importer/bridge/status";
 
-import { canonicalPath, parseImportJsonCurrent } from "../runtime/parsing/parses";
-import { openAnswerableConflictPrompt } from "../runtime/conflictPrompt";
-import { getCurrentHousingUuid } from "../importCache/housingId";
-import { actionListsOfImportable } from "../importCache/actionLists";
+import { canonicalPath, parseImportJsonCurrent } from "@htsw/importer/runtime/parsing/parses";
+import { openAnswerableConflictPrompt } from "@htsw/importer/runtime/conflictPrompt";
+import { getCurrentHousingUuid } from "@htsw/importer/importCache/housingId";
+import { actionListsOfImportable } from "@htsw/importer/importCache/actionLists";
 import {
     houseLockAcceptsUpdate,
     houseLockEntryFor,
     readHouseLock,
     upsertHouseLockImportables,
-} from "../importCache/houseLock";
+} from "@htsw/importer/importCache/houseLock";
 import {
     cacheEntryHash,
     readImportableCache,
     writeImportableCache,
-} from "../importCache/cache";
-import { HOUSE_READERS } from "../importables/export/readers";
-import { projectItemsFromParsedImportJson } from "../importables/export/projectDestination";
-import { createProjectItemIndex } from "../importables/items/projectItems";
+} from "@htsw/importer/importCache/cache";
+import { HOUSE_READERS } from "@htsw/importer/importables/export/readers";
+import { projectItemsFromParsedImportJson } from "@htsw/importer/importables/export/projectDestination";
+import { createProjectItemIndex } from "@htsw/importer/importables/items/projectItems";
 import {
     createItemDependencyIndex,
     sameItemDependencySnapshot,
     type ItemDependencyIndex,
-} from "../importables/items/dependencyIndex";
-import { importableIdentity, importableKey } from "../importables/identity";
-import { resolveModuleRelativePath } from "../project/paths";
-import { TaskManager } from "../tasks/manager";
-import type TaskContext from "../tasks/context";
-import { blockingDiagnostics, errorMessage, stripSurroundingQuotes } from "../utils/helpers";
-import { runHousingSyncTask } from "../housingSync/taskRunner";
-import { createDiffProgressSession } from "../runtime/diffProgress";
-import { writeDiffDetailsFile } from "../housingSync/actions/diffDetails";
+} from "@htsw/importer/importables/items/dependencyIndex";
+import { importableIdentity, importableKey } from "@htsw/importer/importables/identity";
+import { resolveModuleRelativePath } from "@htsw/importer/project/paths";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { blockingDiagnostics, errorMessage, stripSurroundingQuotes } from "@htsw/importer/utils/helpers";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
+import { createDiffProgressSession } from "@htsw/importer/runtime/diffProgress";
+import { writeDiffDetailsFile } from "@htsw/importer/housingSync/actions/diffDetails";
 import {
     appendGroupDiffReport,
     evaluateDiffReport,

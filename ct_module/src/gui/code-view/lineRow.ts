@@ -7,7 +7,7 @@ import { CodeViewColors } from "./lineModel";
 import type { LineDecorations, LineSelection, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { offerLineHover } from "./diagnosticHover";
-import { chatWidth } from "../../utils/helpers";
+import { chatWidth } from "@htsw/importer/utils/helpers";
 import { COLOR_SELECTION } from "../lib/theme";
 import { beginSelection, onRowDrag, selectWord, sourceColAtX } from "./selection";
 import { tokensWithMarks } from "./tokenMarks";

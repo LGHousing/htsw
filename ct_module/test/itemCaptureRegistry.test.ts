@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import * as htsw from "htsw";
 
-import { ItemCaptureRegistry } from "../src/importables/items/captureRegistry";
+import { ItemCaptureRegistry } from "@htsw/importer/importables/items/captureRegistry";
 import { MINECRAFT_ITEMS, type ImportableItem } from "htsw/types";
 
 const first = '{id:"minecraft:stone",tag:{ExtraAttributes:{interact_data:{version:1}}}}';

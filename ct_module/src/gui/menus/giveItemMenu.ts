@@ -10,9 +10,9 @@ import {
 } from "../../housingSync/items/giveItem";
 import { Icons } from "../lib/icons.generated";
 import type { MenuAction } from "../lib/menu";
-import { shortPath } from "../../project/pathDisplay";
+import { shortPath } from "@htsw/importer/project/pathDisplay";
 import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN } from "../lib/theme";
-import { getHousingUuid } from "../../runtime/state/index";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import { showToast } from "../toast";
 
 /** Give for one declared item: its project SNBT with the cached signature. */

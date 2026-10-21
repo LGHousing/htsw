@@ -1,18 +1,18 @@
 import { Diagnostic, parseImportablesResult, SourceMap } from "htsw";
 
-import { runHousingSyncTask } from "../housingSync/taskRunner";
-import { emitBridgeEvent } from "../bridge/status";
-import { expandImportDependencies } from "../importables/import/dependencyExpansion";
-import { peekImportableCache } from "../importCache/cache";
-import { getCurrentHousingUuid } from "../importCache/housingId";
-import { buildTrustPlan } from "../importCache/trust";
-import { canonicalPath } from "../runtime/parsing/parses";
-import { resolveModuleRelativePath } from "../project/paths";
-import { TaskManager } from "../tasks/manager";
-import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
+import { emitBridgeEvent } from "@htsw/importer/bridge/status";
+import { expandImportDependencies } from "@htsw/importer/importables/import/dependencyExpansion";
+import { peekImportableCache } from "@htsw/importer/importCache/cache";
+import { getCurrentHousingUuid } from "@htsw/importer/importCache/housingId";
+import { buildTrustPlan } from "@htsw/importer/importCache/trust";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
+import { resolveModuleRelativePath } from "@htsw/importer/project/paths";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { printDiagnostic, printDiagnostics } from "@htsw/importer/tui/diagnostics";
 import { ensureParentDirs } from "../utils/filesystem";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { blockingDiagnostics, stripSurroundingQuotes } from "../utils/helpers";
+import { blockingDiagnostics, stripSurroundingQuotes } from "@htsw/importer/utils/helpers";
 import {
     buildCacheReportRows,
     deriveCacheReportCounts,

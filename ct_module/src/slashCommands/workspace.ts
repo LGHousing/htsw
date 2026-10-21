@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { getRestoreWorkspace, setRestoreWorkspace } from "../settings";
-import { flushWorkspace, resetWorkspace } from "../persistence/workspace";
-import { settingsFilePath } from "../persistence/settingsFiles";
+import { getRestoreWorkspace, setRestoreWorkspace } from "@htsw/importer/settings";
+import { flushWorkspace, resetWorkspace } from "@htsw/importer/persistence/workspace";
+import { settingsFilePath } from "@htsw/importer/persistence/settingsFiles";
 
 const WORKSPACE_PATH = settingsFilePath("workspace.json");
 

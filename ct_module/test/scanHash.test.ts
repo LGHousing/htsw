@@ -6,8 +6,8 @@ import {
     actionListContentHashFromSlots,
     actionListScanHashFromActions,
     actionListScanHashFromSlots,
-} from "../src/housingSync/actions/scanHash";
-import type { ObservedActionSlot } from "../src/housingSync/observedActions";
+} from "@htsw/importer/housingSync/actions/scanHash";
+import type { ObservedActionSlot } from "@htsw/importer/housingSync/observedActions";
 import {
     changeVar,
     conditional,

@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import type TaskContext from "../src/tasks/context";
+import type TaskContext from "@htsw/importer/tasks/context";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
 
 const state = vi.hoisted(() => ({
@@ -28,7 +28,7 @@ vi.mock("../src/tasks/specifics/slots", () => ({
 vi.mock("../src/tasks/specifics/waitFor", () => ({
     describeRecentWindowOpens: () => "",
 }));
-vi.mock("../src/housingSync/trace/taskTrace", () => ({
+vi.mock("@htsw/importer/housingSync/trace/taskTrace", () => ({
     isTaskTraceEnabled: () => false,
     traceMenuWait: vi.fn(),
 }));
@@ -61,8 +61,8 @@ import {
     S2FPacketSetSlot,
     S30PacketWindowItems,
 } from "../src/utils/packets";
-import { createTaskCancelledError } from "../src/tasks/cancellation";
-import { waitForMenu } from "../src/housingSync/menus/menuWait";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
+import { waitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
 
 const flush = async () => {
     for (let i = 0; i < 12; i++) await Promise.resolve();

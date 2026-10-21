@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { cyrb53 } from "../src/utils/helpers";
+import { cyrb53 } from "@htsw/importer/utils/helpers";
 
 // These exact values were produced by ChatTriggers' Rhino (ctjs 2.2.1,
 // optimization level 9 — the in-game engine) and are the form persisted in

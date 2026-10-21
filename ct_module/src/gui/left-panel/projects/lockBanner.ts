@@ -11,18 +11,18 @@ import {
     COLOR_TEXT_FAINT,
 } from "../../lib/theme";
 import { markGuiDirty } from "../../lib/dirty";
-import { TaskManager } from "../../../tasks/manager";
-import { getHousingUuid } from "../../../runtime/state/index";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import {
     cachedStatusForImportable,
     importableLinkStatusContextKey,
 } from "../../cache-status";
-import { canonicalPath } from "../../../runtime/parsing/parses";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
 import {
     houseLockPathForImportJson,
     readHouseLock,
-} from "../../../importCache/houseLock";
-import { houseLockCurrentEntryFor } from "../../../importCache/acceptHouseLock";
+} from "@htsw/importer/importCache/houseLock";
+import { houseLockCurrentEntryFor } from "@htsw/importer/importCache/acceptHouseLock";
 import { confirmAcceptProjectLock } from "./acceptHouseLock";
 import { ROW_BG, ROW_HOVER_BG, bumpTreeRevision, type ResultImport } from "./rowModel";
 import { getMtimeMs } from "../../../utils/filesystem";

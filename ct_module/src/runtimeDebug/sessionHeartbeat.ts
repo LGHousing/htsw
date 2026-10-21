@@ -4,13 +4,13 @@ import {
     type GuiCacheSizes,
 } from "../gui/cacheTelemetry";
 import { readLocalVersion } from "../autoUpdate";
-import { getUploadDiagnostics } from "../settings";
-import { TaskManager } from "../tasks/manager";
+import { getUploadDiagnostics } from "@htsw/importer/settings";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { ensureParentDirs } from "../utils/filesystem";
 import { javaType } from "../utils/java";
 import { uploadDiagnosticsFile } from "./importFailureUpload";
-import { runtimeDebugStats } from "./runtimeDebugBuffer";
-import { span } from "../perf/spans";
+import { runtimeDebugStats } from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
+import { span } from "@htsw/importer/perf/spans";
 
 const HEARTBEAT_INTERVAL_SECONDS = 30 * 60;
 const HEARTBEAT_PATH = "./htsw/import-errors/session-heartbeat.json";

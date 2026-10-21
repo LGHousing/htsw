@@ -3,14 +3,14 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 const files = new Map<string, string>();
 
 vi.mock("../src/utils/filesystem", () => ({ ensureParentDirs: () => undefined }));
-vi.mock("../src/importCache/status", () => ({
+vi.mock("@htsw/importer/importCache/status", () => ({
     memoizedImportableHash: () => "hash",
     seedImportableHash: () => undefined,
 }));
 
-let saveSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").saveSnapshot;
-let loadSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").loadSnapshot;
-let restoreParseFromSnapshot: typeof import("../src/runtime/parsing/parseSnapshot").restoreParseFromSnapshot;
+let saveSnapshot: typeof import("@htsw/importer/runtime/parsing/parseSnapshot").saveSnapshot;
+let loadSnapshot: typeof import("@htsw/importer/runtime/parsing/parseSnapshot").loadSnapshot;
+let restoreParseFromSnapshot: typeof import("@htsw/importer/runtime/parsing/parseSnapshot").restoreParseFromSnapshot;
 
 beforeAll(async () => {
     vi.stubGlobal("FileLib", {
@@ -21,7 +21,7 @@ beforeAll(async () => {
         },
     });
     ({ saveSnapshot, loadSnapshot, restoreParseFromSnapshot } =
-        await import("../src/runtime/parsing/parseSnapshot"));
+        await import("@htsw/importer/runtime/parsing/parseSnapshot"));
 });
 
 describe("parse snapshot import.json metadata", () => {

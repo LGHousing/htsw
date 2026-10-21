@@ -4,7 +4,7 @@ import { Rect } from "../lib/layout";
 import { Col, Container, Text } from "../lib/components";
 import { togglePopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
-import { asEnum, defineDoc, defineValue } from "../../persistence/store";
+import { asEnum, defineDoc, defineValue } from "@htsw/importer/persistence/store";
 
 /** Hypixel housing chat-command shortcuts surfaced in the toolbar dropdown. */
 type OpenTargetId = "functions" | "eventactions" | "regions" | "menus";

@@ -1,18 +1,18 @@
 import type { ImportableItem } from "htsw/types";
 
-import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
+import { itemDependencyIndexFor } from "@htsw/importer/importables/items/dependencyIndex";
 import {
     hasItemClickActions,
     readInteractDataCache,
-} from "../../importables/items/interactDataCache";
-import type TaskContext from "../../tasks/context";
-import { TaskManager } from "../../tasks/manager";
+} from "@htsw/importer/importables/items/interactDataCache";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { readTextFileOrNull } from "../../utils/filesystem";
 import { getItemFromNbt, getItemFromSnbt, itemWithInteractData } from "../../utils/nbt";
-import { runHousingSyncTask } from "../taskRunner";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
 import { injectIntoInventorySlot } from "./heldItem";
 import { readInventorySlot } from "./playerInventory";
-import { errorMessage } from "../../utils/helpers";
+import { errorMessage } from "@htsw/importer/utils/helpers";
 
 const INVENTORY_SIZE = 36;
 

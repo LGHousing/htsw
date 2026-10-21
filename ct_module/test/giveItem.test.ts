@@ -30,11 +30,11 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     }),
 }));
 
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: vi.fn(),
 }));
 
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: () => false },
 }));
 

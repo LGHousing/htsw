@@ -1,19 +1,19 @@
 import { describe, expect, test, vi } from "vitest";
 import type { Condition } from "htsw/types";
 
-import type TaskContext from "../src/tasks/context";
-import { createActionApplyContext } from "../src/housingSync/context/actionApplyContext";
-import { ActionPath } from "../src/housingSync/actionPath";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { createActionApplyContext } from "@htsw/importer/housingSync/context/actionApplyContext";
+import { ActionPath } from "@htsw/importer/housingSync/actionPath";
 import {
     baselineActionListFromSlots,
     diffActionList,
-} from "../src/housingSync/actions/diff";
+} from "@htsw/importer/housingSync/actions/diff";
 import type {
     ActionListOperation,
     ChildActionListDiff,
     ConditionListDiff,
-} from "../src/housingSync/actions/diff/types";
-import type { PlannedChildActionList } from "../src/housingSync/actions/apply/types";
+} from "@htsw/importer/housingSync/actions/diff/types";
+import type { PlannedChildActionList } from "@htsw/importer/housingSync/actions/apply/types";
 
 import { conditional, message, observedSlot } from "./utils";
 

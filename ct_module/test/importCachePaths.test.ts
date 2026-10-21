@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { cyrb53 } from "../src/utils/helpers";
+import { cyrb53 } from "@htsw/importer/utils/helpers";
 import {
     cachePathForId,
     legacyCachePathForId,
-} from "../src/importCache/paths";
+} from "@htsw/importer/importCache/paths";
 
 describe("import cache paths", () => {
     it("keeps case-sensitive identities distinct on case-insensitive filesystems", () => {

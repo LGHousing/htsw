@@ -4,10 +4,10 @@ import { createJsonlTrace } from "../../../trace/jsonl";
 import { atomicWriteText } from "../../../utils/filesystem";
 import { javaType, runtimeString, type RuntimeString } from "../../../utils/java";
 import { openPathInOS } from "../../../utils/osShell";
-import { ActionTreePath } from "../../../housingSync/actionPath";
+import { ActionTreePath } from "@htsw/importer/housingSync/actionPath";
 import { inspectImportCodeView } from "../importCodeView";
-import { getTaskProgress } from "../../../runtime/taskProgress";
-import { errorMessage } from "../../../utils/helpers";
+import { getTaskProgress } from "@htsw/importer/runtime/taskProgress";
+import { errorMessage } from "@htsw/importer/utils/helpers";
 
 const TRACE_PATH = "./htsw/import-codeview-trace.jsonl";
 const REPLAY_PATH = "./htsw/import-codeview-replay.html";

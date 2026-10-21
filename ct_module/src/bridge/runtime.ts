@@ -5,13 +5,13 @@ import {
     getSessionVerb,
     isEtaEstimating,
     isEtaRough,
-} from "../runtime/taskProgress";
-import { isTaskTotalEtaReady } from "../housingSync/progress/types";
+} from "@htsw/importer/runtime/taskProgress";
+import { isTaskTotalEtaReady } from "@htsw/importer/housingSync/progress/types";
 import { javaType } from "../utils/java";
-import { connectBridge, disconnectBridge, publishBridgeStatus } from "./status";
-import { HTSW_STATUS_PROPERTY, type HtswRunStatus } from "./types";
-import { getSessionTimingUnits } from "../housingSync/progress/timing";
-import { span } from "../perf/spans";
+import { connectBridge, disconnectBridge, publishBridgeStatus } from "@htsw/importer/bridge/status";
+import { HTSW_STATUS_PROPERTY, type HtswRunStatus } from "@htsw/importer/bridge/types";
+import { getSessionTimingUnits } from "@htsw/importer/housingSync/progress/timing";
+import { span } from "@htsw/importer/perf/spans";
 
 export function sampleBridgeProgress(): Partial<HtswRunStatus> {
     const progress = getTaskProgress();

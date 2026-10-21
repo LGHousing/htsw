@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "vitest";
 
-import { createExportProgressSink } from "../src/runtime/exportProgress";
+import { createExportProgressSink } from "@htsw/importer/runtime/exportProgress";
 import {
     clearTaskProgress,
     getTaskProgress,
-} from "../src/runtime/taskProgress";
-import { runHousingSyncTask } from "../src/housingSync/taskRunner";
-import { cancelActiveTask } from "../src/tasks/activeTask";
-import { isTaskRunning } from "../src/tasks/runningState";
+} from "@htsw/importer/runtime/taskProgress";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
+import { cancelActiveTask } from "@htsw/importer/tasks/activeTask";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
 
 function deferred(): {
     promise: Promise<void>;

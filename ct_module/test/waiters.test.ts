@@ -1,10 +1,10 @@
 import { expect, test, vi } from "vitest";
 
-import type TaskContext from "../src/tasks/context";
-import type { TaskWaiter } from "../src/tasks/context";
-import { createTaskCancelledError } from "../src/tasks/cancellation";
+import type TaskContext from "@htsw/importer/tasks/context";
+import type { TaskWaiter } from "@htsw/importer/tasks/context";
+import { createTaskCancelledError } from "@htsw/importer/tasks/cancellation";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
-import { oneOf } from "../src/tasks/waiters";
+import { oneOf } from "@htsw/importer/tasks/waiters";
 
 function pendingWaiter(label: string): {
     waiter: TaskWaiter<void>;
@@ -52,7 +52,7 @@ test("oneOf preserves cancellation instead of aggregating it as a failure", asyn
 test.each([true, false])(
     "oneOf preserves an incomplete read when all alternatives fail (read first: %s)",
     async (readFirst) => {
-        const { IncompleteReadError } = await import("../src/housingSync/incompleteRead");
+        const { IncompleteReadError } = await import("@htsw/importer/housingSync/incompleteRead");
         const opened = pendingWaiter("menu opened");
         const missing = pendingWaiter("missing message");
         const failure = new IncompleteReadError("Menu not ready");
@@ -72,7 +72,7 @@ test.each([true, false])(
 );
 
 test("oneOf still accepts a successful alternative after an incomplete menu read", async () => {
-    const { IncompleteReadError } = await import("../src/housingSync/incompleteRead");
+    const { IncompleteReadError } = await import("@htsw/importer/housingSync/incompleteRead");
     const opened = pendingWaiter("menu opened");
     const missing = pendingWaiter("missing message");
     const failure = new IncompleteReadError("Menu not ready");

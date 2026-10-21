@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseFunctionDescriptionLore } from "../src/importables/functions/housing";
+import { parseFunctionDescriptionLore } from "@htsw/importer/importables/functions/housing";
 
 describe("parseFunctionDescriptionLore", () => {
     test("a function without a description reads as undefined", () => {

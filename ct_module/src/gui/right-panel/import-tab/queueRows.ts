@@ -19,14 +19,14 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { openMenu, type MenuAction } from "../../lib/menu";
-import { basename, compactPath, shortPath } from "../../../project/pathDisplay";
-import { buildCacheStatusRow } from "../../../importCache/status";
-import { listCachedImportables } from "../../../importCache/cache";
-import { importableIdentity } from "../../../importables/identity";
-import { isTaskRunning } from "../../../tasks/runningState";
-import { getHousingUuid, isCurrentHouseTrusted } from "../../../runtime/state/index";
-import { isHouseTrusted } from "../../../runtime/state/trust";
-import { canonicalPath, requestParse } from "../../../runtime/parsing/parses";
+import { basename, compactPath, shortPath } from "@htsw/importer/project/pathDisplay";
+import { buildCacheStatusRow } from "@htsw/importer/importCache/status";
+import { listCachedImportables } from "@htsw/importer/importCache/cache";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { isTaskRunning } from "@htsw/importer/tasks/runningState";
+import { getHousingUuid, isCurrentHouseTrusted } from "@htsw/importer/runtime/state/index";
+import { isHouseTrusted } from "@htsw/importer/runtime/state/trust";
+import { canonicalPath, requestParse } from "@htsw/importer/runtime/parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
 import { revealInProjectsTree } from "../../left-panel/projects/tree";
 import { revealInHousesView } from "../../left-panel/houses";
@@ -36,7 +36,7 @@ import {
     getQueueRowRunState,
     isCurrentQueueRow,
     type QueueRowRunState,
-} from "../../../runtime/taskProgress";
+} from "@htsw/importer/runtime/taskProgress";
 import {
     canMoveQueueRow,
     dismissQueueRow,
@@ -47,8 +47,8 @@ import {
     retryQueueRow,
     type QueueMove,
     type QueueRow,
-} from "../../../runtime/queue";
-import { cancelQueue } from "../../../runtime/queueRunner";
+} from "@htsw/importer/runtime/queue";
+import { cancelQueue } from "@htsw/importer/runtime/queueRunner";
 import {
     isQueueRowDragging,
     isQueueRowSelected,

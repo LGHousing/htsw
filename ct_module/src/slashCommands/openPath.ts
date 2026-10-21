@@ -1,5 +1,5 @@
-import { PROJECTS_ROOT, resolveModuleRelativePath } from "../project/paths";
-import { parseCommandArgs } from "../utils/commandArgs";
+import { PROJECTS_ROOT, resolveModuleRelativePath } from "@htsw/importer/project/paths";
+import { parseCommandArgs } from "@htsw/importer/utils/commandArgs";
 import { javaType } from "../utils/java";
 import { showInExplorer, revealInFilesLabel } from "../utils/osShell";
 import { chatLine } from "../utils/chat";

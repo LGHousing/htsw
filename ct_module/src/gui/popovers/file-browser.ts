@@ -26,15 +26,15 @@ import {
     COLOR_TEXT_DIM,
     SIZE_ROW_H,
 } from "../lib/theme";
-import { getHousingUuid, setImportJsonPath } from "../../runtime/state/index";
-import { addRecent } from "../../persistence/recents";
+import { getHousingUuid, setImportJsonPath } from "@htsw/importer/runtime/state/index";
+import { addRecent } from "@htsw/importer/persistence/recents";
 import { normalizePathSeparators } from "htsw-editor-common/project";
-import { basename, normalizeHtswPath } from "../../project/pathDisplay";
+import { basename, normalizeHtswPath } from "@htsw/importer/project/pathDisplay";
 import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
-import { PROJECTS_ROOT } from "../../project/paths";
-import { boundImportJsonPath } from "../../importCache/houseBindings";
-import { asNullableString, defineRootDoc } from "../../persistence/store";
+import { PROJECTS_ROOT } from "@htsw/importer/project/paths";
+import { boundImportJsonPath } from "@htsw/importer/importCache/houseBindings";
+import { asNullableString, defineRootDoc } from "@htsw/importer/persistence/store";
 import { pathExists } from "../../utils/filesystem";
 
 type Entry = {

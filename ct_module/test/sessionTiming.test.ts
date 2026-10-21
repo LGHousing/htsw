@@ -1,11 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { runHousingSyncTask } from "../src/housingSync/taskRunner";
-import { getTaskElapsedMs } from "../src/runtime/taskProgress";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
+import { getTaskElapsedMs } from "@htsw/importer/runtime/taskProgress";
 import {
     getActiveTaskElapsedMs,
     getActiveTaskStartedAt,
-} from "../src/tasks/activeTask";
+} from "@htsw/importer/tasks/activeTask";
 
 afterEach(() => {
     vi.useRealTimers();

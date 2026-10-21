@@ -1,13 +1,13 @@
 import type { Importable, MenuSlot } from "htsw/types";
 
-import { menuSlotCompareKey } from "../../importables/menus/slotComparison";
-import { peekImportableCache } from "../../importCache/cache";
-import { importableIdentity } from "../../importables/identity";
-import { getHousingUuid } from "../../runtime/state/housing";
-import { isHouseTrusted } from "../../runtime/state/trust";
+import { menuSlotCompareKey } from "@htsw/importer/importables/menus/slotComparison";
+import { peekImportableCache } from "@htsw/importer/importCache/cache";
+import { importableIdentity } from "@htsw/importer/importables/identity";
+import { getHousingUuid } from "@htsw/importer/runtime/state/housing";
+import { isHouseTrusted } from "@htsw/importer/runtime/state/trust";
 import type { LinkStatusKey } from "./linkStatus";
-import { itemDependencyIndexFor } from "../../importables/items/dependencyIndex";
-import { requestImportableCacheWarm } from "../../importCache/cacheWarm";
+import { itemDependencyIndexFor } from "@htsw/importer/importables/items/dependencyIndex";
+import { requestImportableCacheWarm } from "@htsw/importer/importCache/cacheWarm";
 
 export type MenuSlotCacheStatus = { key: LinkStatusKey; tooltip: string };
 

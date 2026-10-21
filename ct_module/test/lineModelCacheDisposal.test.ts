@@ -33,16 +33,16 @@ vi.mock("../src/gui/code-view/htslParse", () => ({
     }),
 }));
 
-vi.mock("../src/runtime/parsing/selectedParse", () => ({
+vi.mock("@htsw/importer/runtime/parsing/selectedParse", () => ({
     getSelectedParsedResult: () => null,
 }));
 
-vi.mock("../src/runtime/parsing/parses", () => ({
+vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
     getParseAt: () => null,
     onParseCacheEntryChanged: () => () => undefined,
 }));
 
-vi.mock("../src/project/pathDisplay", () => ({
+vi.mock("@htsw/importer/project/pathDisplay", () => ({
     shortPath: (path: string) => path,
 }));
 

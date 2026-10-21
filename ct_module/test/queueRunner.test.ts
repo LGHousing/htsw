@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type TaskContext from "../src/tasks/context";
-import { getActiveTaskKind } from "../src/tasks/activeTask";
-import { runHousingSyncTask } from "../src/housingSync/taskRunner";
+import type TaskContext from "@htsw/importer/tasks/context";
+import { getActiveTaskKind } from "@htsw/importer/tasks/activeTask";
+import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
 import {
     addToQueue,
     clearQueue,
@@ -16,7 +16,7 @@ import {
     type BulkFilter,
     type QueueOp,
     type QueueRow,
-} from "../src/runtime/queue";
+} from "@htsw/importer/runtime/queue";
 import {
     bulkFilterAllowed,
     expandBulkDefault,
@@ -27,16 +27,16 @@ import {
     runQueuedExportSession,
     type QueueRunnerDependencies,
     type QueueSessionResult,
-} from "../src/runtime/queueRunner";
-import { exportHeldItem } from "../src/importables/items/export";
-import * as parses from "../src/runtime/parsing/parses";
-import { getTaskActivity } from "../src/tasks/activity";
-import type { runExportSession } from "../src/importables/export/session";
-import { createExportProgressSink } from "../src/runtime/exportProgress";
+} from "@htsw/importer/runtime/queueRunner";
+import { exportHeldItem } from "@htsw/importer/importables/items/export";
+import * as parses from "@htsw/importer/runtime/parsing/parses";
+import { getTaskActivity } from "@htsw/importer/tasks/activity";
+import type { runExportSession } from "@htsw/importer/importables/export/session";
+import { createExportProgressSink } from "@htsw/importer/runtime/exportProgress";
 import {
     clearTaskProgress,
     getTaskProgress,
-} from "../src/runtime/taskProgress";
+} from "@htsw/importer/runtime/taskProgress";
 
 const ctx = {
     checkCancelled: () => undefined,

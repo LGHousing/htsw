@@ -1,32 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ItemSlot } from "../src/tasks/specifics/slots";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
-import TaskContext from "../src/tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
 
 vi.mock("../src/utils/itemLore", () => ({
     itemLore: (item: { lore: string[] }) => item.lore,
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     waitForMenu: vi.fn(),
     timedWaitForMenu: vi.fn(),
     waitForKnownMenu: vi.fn(),
 }));
 
-import { timedWaitForMenu, waitForMenu } from "../src/housingSync/menus/menuWait";
+import { timedWaitForMenu, waitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
 import {
     setListItemNote,
     setStringValue,
     setStringOrPaginatedOptionValue,
-} from "../src/housingSync/menus/menuUtils";
+} from "@htsw/importer/housingSync/menus/menuUtils";
 import {
     housingTextRejection,
     submitHousingText,
-} from "../src/housingSync/menus/textInput";
-import { writeGiveExperienceLevels } from "../src/housingSync/actions/writers";
-import { writeCompareVar } from "../src/housingSync/actions/conditions/writers";
+} from "@htsw/importer/housingSync/menus/textInput";
+import { writeGiveExperienceLevels } from "@htsw/importer/housingSync/actions/writers";
+import { writeCompareVar } from "@htsw/importer/housingSync/actions/conditions/writers";
 
-import { chatMessage } from "../src/housingSync/menus/menuWaiters";
-import { setTeamTag } from "../src/importables/teams/housing";
+import { chatMessage } from "@htsw/importer/housingSync/menus/menuWaiters";
+import { setTeamTag } from "@htsw/importer/importables/teams/housing";
 
 const BLOCKED = "§cThe stat key provided contains blocked words! (1)";
 

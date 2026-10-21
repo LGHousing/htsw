@@ -1,4 +1,4 @@
-import TaskContext from "../../tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
 import {
     C10PacketCreativeInventoryAction,
     S2FPacketSetSlot,
@@ -18,7 +18,9 @@ export const SET_SLOT_ACK_TIMEOUT_MS = 2000;
 export const SET_SLOT_ACK_MAX_TICKS = 40;
 
 export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
-    return ctx.waitFor("packetReceived", (packet) => packet instanceof S2FPacketSetSlot);
+    return ctx.waitFor("packetReceived", (packet) => packet instanceof S2FPacketSetSlot) as Promise<
+        [Packet]
+    >;
 }
 
 /**
@@ -45,7 +47,7 @@ export function waitForSetSlotAck(
                 setSlotPacketSlot(packet),
                 setSlotPacketStack(packet)
             )
-    );
+    ) as WaitForPromise<[Packet]>;
 }
 
 export function sendCreativeInventoryAction(

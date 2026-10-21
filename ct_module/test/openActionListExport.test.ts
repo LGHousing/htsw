@@ -46,15 +46,15 @@ vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: mocks.atomicWriteText,
 }));
 
-vi.mock("../src/housingSync/actions/hydration/run", () => ({
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", () => ({
     readActionListFully: mocks.readActionListFully,
 }));
 
-vi.mock("../src/housingSync/taskRunner", () => ({
+vi.mock("@htsw/importer/housingSync/taskRunner", () => ({
     runHousingSyncTask: mocks.runHousingSyncTask,
 }));
 
-vi.mock("../src/tasks/manager", () => ({
+vi.mock("@htsw/importer/tasks/manager", () => ({
     TaskManager: { isBusy: mocks.isBusy },
 }));
 
@@ -67,8 +67,8 @@ vi.mock("../src/gui/toast", () => ({
 }));
 
 import { startOpenActionListExport } from "../src/gui/export/openActionListExport";
-import { exportOpenActionListTo } from "../src/runtime/openActionListExport";
-import { toasts } from "../src/runtime/events";
+import { exportOpenActionListTo } from "@htsw/importer/runtime/openActionListExport";
+import { toasts } from "@htsw/importer/runtime/events";
 toasts.observe((event) => {
     if (event.kind === "show") mocks.showToast(event.message, event.color, event.durationMs, event.key);
 });

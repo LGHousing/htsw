@@ -58,7 +58,7 @@ vi.mock("../src/utils/java", async (original) => ({
     }),
 }));
 
-vi.mock("../src/tasks/poll", () => ({
+vi.mock("@htsw/importer/tasks/poll", () => ({
     pollTicks: vi.fn(
         async (
             _ctx: unknown,
@@ -80,7 +80,7 @@ vi.mock("../src/housingSync/sideEffects", () => ({
     ensurePlayerInventoryScreen: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/progress/timing", () => ({
+vi.mock("@htsw/importer/housingSync/progress/timing", () => ({
     timed: vi.fn(async (_name: string, _cost: number, callback: () => unknown) =>
         callback()
     ),
@@ -151,7 +151,7 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     }),
 }));
 
-vi.mock("../src/housingSync/items/itemNbt", () => ({
+vi.mock("@htsw/importer/housingSync/items/itemNbt", () => ({
     canonicalLiveItemKey: (item: { getItemStack(): MockStack }) =>
         item.getItemStack().name,
 }));
@@ -165,7 +165,7 @@ import {
     temporarilyHoldItem,
 } from "../src/housingSync/items/heldItem";
 
-import { readClickActions } from "../src/importables/items/readClickActions";
+import { readClickActions } from "@htsw/importer/importables/items/readClickActions";
 
 function stack(name: string): MockStack {
     const itemType = {};

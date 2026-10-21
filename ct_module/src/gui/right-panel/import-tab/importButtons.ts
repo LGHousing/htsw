@@ -11,18 +11,18 @@ import {
     COLOR_TOGGLE_ON,
     COLOR_TOGGLE_ON_HOVER,
 } from "../../lib/theme";
-import { TaskManager } from "../../../tasks/manager";
-import { getQueue, runnableQueueRowCount } from "../../../runtime/queue";
-import { getHousingUuid } from "../../../runtime/state/index";
-import { queueRunState, resumeQueue, startQueue } from "../../../runtime/queueRunner";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { getQueue, runnableQueueRowCount } from "@htsw/importer/runtime/queue";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
+import { queueRunState, resumeQueue, startQueue } from "@htsw/importer/runtime/queueRunner";
 import { openFileBrowserWithHtslSelection } from "../../popovers/file-browser";
 import { appendRawHtslFile } from "../../../rawHtslImport";
 import { startOpenActionListExport } from "../../export/openActionListExport";
-import { getAutoRun } from "../../../settings";
-import { setAutoRunEnabled } from "../../../runtime/autoRun";
-import { getTaskActivity, observeTaskActivity } from "../../../tasks/activity";
+import { getAutoRun } from "@htsw/importer/settings";
+import { setAutoRunEnabled } from "@htsw/importer/runtime/autoRun";
+import { getTaskActivity, observeTaskActivity } from "@htsw/importer/tasks/activity";
 import { markGuiDirty } from "../../lib/dirty";
-import { getTaskProgress } from "../../../runtime/taskProgress";
+import { getTaskProgress } from "@htsw/importer/runtime/taskProgress";
 
 observeTaskActivity(markGuiDirty);
 

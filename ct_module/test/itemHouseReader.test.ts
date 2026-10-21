@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as htsw from "htsw";
 import type { ImportableItem } from "htsw/types";
-import type { ListReadOptions } from "../src/housingSync/context/actionReadContext";
-import type { ActionListScan } from "../src/housingSync/actions/readList";
+import type { ListReadOptions } from "@htsw/importer/housingSync/context/actionReadContext";
+import type { ActionListScan } from "@htsw/importer/housingSync/actions/readList";
 
 type FakeItem = { snbt: string };
 
@@ -52,52 +52,52 @@ vi.mock("../src/housingSync/items/playerInventory", () => ({
     }),
     restorePlayerInventory: mocks.restorePlayerInventory,
 }));
-vi.mock("../src/housingSync/actions/readList", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/actions/readList")>()),
+vi.mock("@htsw/importer/housingSync/actions/readList", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/actions/readList")>()),
     scanActionList: mocks.scanActionList,
 }));
-vi.mock("../src/housingSync/actions/hydration/run", () => ({
+vi.mock("@htsw/importer/housingSync/actions/hydration/run", () => ({
     hydrateActionListScan: mocks.hydrateActionListScan,
 }));
-vi.mock("../src/housingSync/menus/menuUtils", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/housingSync/menus/menuUtils")>()),
+vi.mock("@htsw/importer/housingSync/menus/menuUtils", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/housingSync/menus/menuUtils")>()),
     clickGoBack: async () => undefined,
 }));
-vi.mock("../src/housingSync/menus/menuWait", () => ({
+vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: async () => undefined,
 }));
-vi.mock("../src/importCache/cache", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/importCache/cache")>()),
+vi.mock("@htsw/importer/importCache/cache", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/importCache/cache")>()),
     writeImportableCache: mocks.writeImportableCache,
 }));
-vi.mock("../src/project/paths", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/project/paths")>()),
+vi.mock("@htsw/importer/project/paths", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/project/paths")>()),
     snbtTargetForItemExport: (importJsonPath: string, rootDir: string, name: string) => ({
         importJsonPath,
         snbtPath: `${rootDir}/items/${name}.snbt`,
         snbtReference: `items/${name}.snbt`,
     }),
 }));
-vi.mock("../src/project/importJsonMutations", async (importOriginal) => ({
-    ...(await importOriginal<typeof import("../src/project/importJsonMutations")>()),
+vi.mock("@htsw/importer/project/importJsonMutations", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@htsw/importer/project/importJsonMutations")>()),
     upsertImportableEntry: mocks.upsertImportableEntry,
 }));
 
-import type TaskContext from "../src/tasks/context";
+import type TaskContext from "@htsw/importer/tasks/context";
 import type { LiveDiffImportable } from "../src/slashCommands/diffReport";
 import {
     evaluateDiffReport,
     matchDiffActionLists,
 } from "../src/slashCommands/diffReport";
-import { readItems } from "../src/importables/items/readHouseItems";
-import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "../src/importables/export/readers";
-import { importableHash } from "../src/importCache/hash";
-import { exportCapturedItems } from "../src/importables/items/exportCapturedItems";
-import { ItemCaptureRegistry } from "../src/importables/items/captureRegistry";
-import * as projectDestination from "../src/importables/export/projectDestination";
-import { runQueuedExportSession } from "../src/runtime/queueRunner";
-import { makeImportableQueueRow } from "../src/runtime/queue";
-import { canonicalItemShellTagKey } from "../src/housingSync/items/itemNbt";
+import { readItems } from "@htsw/importer/importables/items/readHouseItems";
+import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "@htsw/importer/importables/export/readers";
+import { importableHash } from "@htsw/importer/importCache/hash";
+import { exportCapturedItems } from "@htsw/importer/importables/items/exportCapturedItems";
+import { ItemCaptureRegistry } from "@htsw/importer/importables/items/captureRegistry";
+import * as projectDestination from "@htsw/importer/importables/export/projectDestination";
+import { runQueuedExportSession } from "@htsw/importer/runtime/queueRunner";
+import { makeImportableQueueRow } from "@htsw/importer/runtime/queue";
+import { canonicalItemShellTagKey } from "@htsw/importer/housingSync/items/itemNbt";
 import { message } from "./utils";
 
 const SHELL = '{id:"minecraft:cookie",tag:{display:{Name:"Cookie"}}}';

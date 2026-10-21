@@ -1,17 +1,17 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../../runtime/state/index";
+import { TaskManager } from "@htsw/importer/tasks/manager";
+import { getHousingUuid } from "@htsw/importer/runtime/state/index";
 import { showToast } from "../../../toast";
-import { listAllNpcs } from "../../../../importables/npcs/listNpcs";
+import { listAllNpcs } from "@htsw/importer/importables/npcs/listNpcs";
 import { npcPosIdentity } from "htsw-editor-common/project";
-import { removedFormatting } from "../../../../utils/helpers";
+import { removedFormatting } from "@htsw/importer/utils/helpers";
 import {
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     type HouseImportable,
-} from "../../../../importCache/cache";
+} from "@htsw/importer/importCache/cache";
 
 let scanInFlight = false;
 

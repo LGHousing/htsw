@@ -1,12 +1,12 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { PROJECTS_ROOT } from "../project/paths";
+import { PROJECTS_ROOT } from "@htsw/importer/project/paths";
 import { queueSourcePath } from "./left-panel/projects/source";
 import { forceImportExpand } from "./left-panel/projects/rows";
-import { canonicalPath } from "../runtime/parsing/parses";
+import { canonicalPath } from "@htsw/importer/runtime/parsing/parses";
 import { previewSelect } from "./right-panel/selection";
-import { setImportJsonPath } from "../runtime/state/index";
-import { addRecent } from "../persistence/recents";
+import { setImportJsonPath } from "@htsw/importer/runtime/state/index";
+import { addRecent } from "@htsw/importer/persistence/recents";
 import { showToast } from "./toast";
 import {
     STARTER_PROJECT_NAME,

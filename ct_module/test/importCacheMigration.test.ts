@@ -6,11 +6,11 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     getMtimeMs: () => 1,
 }));
 
-import { readImportableCache } from "../src/importCache/cache";
+import { readImportableCache } from "@htsw/importer/importCache/cache";
 import {
     cachePathForId,
     legacyCachePathForId,
-} from "../src/importCache/paths";
+} from "@htsw/importer/importCache/paths";
 
 function entry(name: string): string {
     const importable: ImportableFunction = { type: "FUNCTION", name, actions: [] };

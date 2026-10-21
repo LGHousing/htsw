@@ -5,7 +5,7 @@ import {
     recordRuntimeDebug,
     resetRuntimeDebugRecords,
     runtimeDebugStats,
-} from "../src/runtimeDebug/runtimeDebugBuffer";
+} from "@htsw/importer/runtimeDebug/runtimeDebugBuffer";
 
 describe("runtime debug buffer", () => {
     beforeEach(() => resetRuntimeDebugRecords());

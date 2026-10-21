@@ -11,8 +11,8 @@ vi.mock("../src/utils/filesystem", async (importOriginal) => ({
     atomicWriteText: io.write,
     getMtimeMs: () => io.mtime,
 }));
-vi.mock("../src/importCache/hash", async (importOriginal) => {
-    const original = await importOriginal<typeof import("../src/importCache/hash")>();
+vi.mock("@htsw/importer/importCache/hash", async (importOriginal) => {
+    const original = await importOriginal<typeof import("@htsw/importer/importCache/hash")>();
     return {
         ...original,
         importableHash: vi.fn(original.importableHash),
@@ -30,11 +30,11 @@ import {
     readImportableCache,
     writeImportableCache,
     type ImportableCacheEntry,
-} from "../src/importCache/cache";
-import { importableHash, listHashes } from "../src/importCache/hash";
-import { memoizedImportableHash } from "../src/importCache/hashMemo";
-import { cachePathForId, legacyCachePathForId } from "../src/importCache/paths";
-import type TaskContext from "../src/tasks/context";
+} from "@htsw/importer/importCache/cache";
+import { importableHash, listHashes } from "@htsw/importer/importCache/hash";
+import { memoizedImportableHash } from "@htsw/importer/importCache/hashMemo";
+import { cachePathForId, legacyCachePathForId } from "@htsw/importer/importCache/paths";
+import type TaskContext from "@htsw/importer/tasks/context";
 
 const importables: Importable[] = [
     {

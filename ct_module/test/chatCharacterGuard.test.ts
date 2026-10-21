@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import TaskContext from "../src/tasks/context";
+import TaskContext from "@htsw/importer/tasks/context";
 
 const NUL = String.fromCharCode(0);
 

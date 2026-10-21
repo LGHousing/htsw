@@ -9,8 +9,8 @@ import {
     makeBulkQueueRow,
     makeImportableQueueRow,
     type QueueAddResult,
-} from "../../runtime/queue";
-import { autoRunQueueChanged } from "../../runtime/autoRun";
+} from "@htsw/importer/runtime/queue";
+import { autoRunQueueChanged } from "@htsw/importer/runtime/autoRun";
 
 export type DeepReadSpec = {
     type: Importable["type"];

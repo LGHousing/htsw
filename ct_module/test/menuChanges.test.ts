@@ -4,9 +4,9 @@ import type { Action } from "htsw/types";
 import {
     planMenuChanges,
     type MenuSlotSnapshot,
-} from "../src/importables/menus/menuChanges";
-import { menuActionBaseline } from "../src/importables/menus/import";
-import type { ActionListPlan } from "../src/housingSync/actions/plan";
+} from "@htsw/importer/importables/menus/menuChanges";
+import { menuActionBaseline } from "@htsw/importer/importables/menus/import";
+import type { ActionListPlan } from "@htsw/importer/housingSync/actions/plan";
 import { observedSlot } from "./utils";
 
 function chat(message: string): Action {

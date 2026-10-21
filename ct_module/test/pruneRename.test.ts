@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     refusal: null as string | null,
 }));
 
-vi.mock("../src/tasks/manager", () => ({ isTaskCancelled: () => false }));
+vi.mock("@htsw/importer/tasks/manager", () => ({ isTaskCancelled: () => false }));
 vi.mock("../src/utils/filesystem", () => ({
     atomicWriteText: (path: string, content: string) => {
         FileLib.write(path, content, true);
@@ -15,11 +15,11 @@ vi.mock("../src/utils/filesystem", () => ({
     },
 }));
 
-import { applyRenames, detectRenames } from "../src/prune/rename";
-import { readHouseLock } from "../src/importCache/houseLock";
-import TaskContext from "../src/tasks/context";
+import { applyRenames, detectRenames } from "@htsw/importer/prune/rename";
+import { readHouseLock } from "@htsw/importer/importCache/houseLock";
+import TaskContext from "@htsw/importer/tasks/context";
 import type { WaitForPromise } from "../src/tasks/specifics/waitFor";
-import type { PrunableType } from "../src/prune/registry";
+import type { PrunableType } from "@htsw/importer/prune/registry";
 
 const manifestPath = "./projects/demo/import.json";
 const lockPath = "./projects/demo/house.lock.json";

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { initialReducerState, reduce } from "../src/housingSync/progress/reducer";
-import type { SyncEvent } from "../src/housingSync/syncEvents";
-import { isTaskTotalEtaReady } from "../src/housingSync/progress/types";
+import { initialReducerState, reduce } from "@htsw/importer/housingSync/progress/reducer";
+import type { SyncEvent } from "@htsw/importer/housingSync/syncEvents";
+import { isTaskTotalEtaReady } from "@htsw/importer/housingSync/progress/types";
 
 function emit(events: SyncEvent[]) {
     let s = initialReducerState();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectFs } from "htsw-editor-common/project";
 
-import { removeEmptyEventExport } from "../src/importables/events/readHouseEvents";
+import { removeEmptyEventExport } from "@htsw/importer/importables/events/readHouseEvents";
 
 function memoryFs(
     files: Record<string, string>,

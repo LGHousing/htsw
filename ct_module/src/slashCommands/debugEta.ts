@@ -1,5 +1,5 @@
-import { getTimingStats } from "../housingSync/progress/timing";
-import { COST } from "../housingSync/progress/costs";
+import { getTimingStats } from "@htsw/importer/housingSync/progress/timing";
+import { COST } from "@htsw/importer/housingSync/progress/costs";
 
 export function printOpKindStats(): void {
     const stats = getTimingStats();
