@@ -63,6 +63,7 @@ export function chatMessage(
     message: string,
     kind: MessageWaitKind = "commandMessageWait"
 ): TaskWaiter<void> {
+    const expected = removedFormatting(message);
     return {
         label: `Waiting for chat message "${message}"`,
         start(ctx: TaskContext): WaitForPromise<void> {
@@ -73,7 +74,7 @@ export function chatMessage(
                     const waiter = ctx.withTimeout(
                         ctx.waitFor(
                             "message",
-                            (chatMessage) => removedFormatting(chatMessage) === message
+                            (chatMessage) => removedFormatting(chatMessage) === expected
                         ),
                         "Waiting for message in chat"
                     );

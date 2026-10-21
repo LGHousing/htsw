@@ -25,6 +25,9 @@ import {
 import { writeGiveExperienceLevels } from "../src/housingSync/actions/writers";
 import { writeCompareVar } from "../src/housingSync/actions/conditions/writers";
 
+import { chatMessage } from "../src/housingSync/menus/menuWaiters";
+import { setTeamTag } from "../src/importables/teams/housing";
+
 const BLOCKED = "§cThe stat key provided contains blocked words! (1)";
 
 function inputContext(field = "Variable", before = "Kills") {
@@ -122,6 +125,55 @@ describe("Housing text inputs", () => {
             expect(menuCleanup).toHaveBeenCalled();
         }
     );
+
+    it.each(["&cRED", "§cRED"])(
+        "accepts a correctly applied formatted team tag %s",
+        async (tag) => {
+            const { ctx, slot } = inputContext();
+            const tagSlot = (current: string) =>
+                ({
+                    getItem: () => ({ lore: [`Current Tag: [${current}]`] }),
+                    click: () => slot.click(),
+                }) as unknown as ItemSlot;
+            ctx.getMenuItemSlot = () => tagSlot("GUEST");
+            ctx.tryGetMenuItemSlot = () => tagSlot("§cRED");
+            await expect(setTeamTag(ctx, tag)).resolves.toBeUndefined();
+        }
+    );
+
+    it("still fails when Housing retains the wrong team tag", async () => {
+        const { ctx, slot } = inputContext();
+        const tagSlot = {
+            getItem: () => ({ lore: ["Current Tag: [GUEST]"] }),
+            click: () => slot.click(),
+        } as unknown as ItemSlot;
+        ctx.getMenuItemSlot = () => tagSlot;
+        ctx.tryGetMenuItemSlot = () => tagSlot;
+        await expect(setTeamTag(ctx, "&cRED")).rejects.toThrow("HTSW_INPUT_REJECTED:");
+    });
+
+    it.each([setStringValue, setStringOrPaginatedOptionValue])(
+        "accepts formatted display names through the shared string reader (%s)",
+        async (write) => {
+            const { ctx, slot, setActual } = inputContext("Item Name", "Old");
+            setActual("§cRED");
+            await expect(write(ctx, slot, "&cRED")).resolves.toBeUndefined();
+        }
+    );
+
+    it.each([
+        "Created custom menu with the title &cRED!",
+        "Created region &cRED!",
+        "Renamed function Old to &cRED",
+        "Renamed region Old to &cRED",
+    ])("accepts confirmations containing formatted names: %s", async (message) => {
+        const { ctx, receive, listeners } = inputContext();
+        const confirmation = chatMessage(message).start(ctx);
+        receive(message.replace("&cRED", "§cBLUE"));
+        expect(listeners.size).toBe(1);
+        receive(message.replace("&cRED", "§cRED"));
+        await expect(confirmation).resolves.toBeUndefined();
+    });
 
     it("fails a read-back mismatch without a rejection reply", async () => {
         const { ctx, slot } = inputContext();

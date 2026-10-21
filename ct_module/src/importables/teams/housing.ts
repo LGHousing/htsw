@@ -2,6 +2,7 @@ import { enterValue } from "../../housingSync/menus/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import type TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
 import { openTeamsList } from "./listTeams";
 import {
     CHANGE_COLOR_SLOT,
@@ -52,7 +53,7 @@ export async function setTeamTag(ctx: TaskContext, tag: string): Promise<void> {
             const fresh = ctx.tryGetMenuItemSlot(CHANGE_TAG_SLOT);
             return fresh === null ? null : readTagValue(fresh);
         },
-        matches: (actual, expected) => actual === expected,
+        matches: (actual, expected) => actual === removedFormatting(expected),
     });
 }
 

@@ -70,7 +70,7 @@ export async function setGroupTag(ctx: TaskContext, tag: string): Promise<void> 
     if (readTagValue(slot) === tag) return;
     slot.click(MouseButton.LEFT);
     await enterValue(ctx, tag, "Group tag");
-    verifyGroupField("tag", tag, readGroupSettings(ctx).tag);
+    verifyGroupField("tag", removedFormatting(tag), readGroupSettings(ctx).tag);
 }
 
 export async function setGroupTagShownInChat(
