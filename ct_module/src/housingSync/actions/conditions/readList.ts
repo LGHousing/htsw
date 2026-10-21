@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../incompleteRead";
 import type { Condition } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
@@ -49,7 +50,7 @@ async function readConditionsListPage(
 ): Promise<ObservedConditionSlot[]> {
     const visible = getVisiblePaginatedItemSlots(ctx);
     if (visible.length === 0) {
-        throw new Error(
+        throw new IncompleteReadError(
             "Incomplete condition list: no entries or empty-list placeholder."
         );
     }
@@ -57,7 +58,7 @@ async function readConditionsListPage(
         (slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG)
     );
     if (slots.length !== visible.length && visible.length !== 1) {
-        throw new Error(
+        throw new IncompleteReadError(
             "Incomplete condition list: empty-list placeholder mixed with entries."
         );
     }
@@ -71,7 +72,7 @@ async function readConditionsListPage(
         };
 
         if (!type) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Incomplete condition list in "${ctx.getOpenContainerTitle()}": unreadable condition "${slot.getItem().getName()}" at slot ${slot.getSlotId()}. Read stopped; retry after the Housing menu has loaded.`
             );
         }

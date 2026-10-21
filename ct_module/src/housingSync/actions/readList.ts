@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../incompleteRead";
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
@@ -144,13 +145,15 @@ async function readActionsListPage(
 ): Promise<ObservedActionSlot[]> {
     const visible = getVisiblePaginatedItemSlots(ctx);
     if (visible.length === 0) {
-        throw new Error("Incomplete action list: no entries or empty-list placeholder.");
+        throw new IncompleteReadError(
+            "Incomplete action list: no entries or empty-list placeholder."
+        );
     }
     const slots = visible.filter(
         (slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG)
     );
     if (slots.length !== visible.length && visible.length !== 1) {
-        throw new Error(
+        throw new IncompleteReadError(
             "Incomplete action list: empty-list placeholder mixed with entries."
         );
     }
@@ -172,7 +175,7 @@ async function readActionsListPage(
                 childListsToRead: new Set(),
             };
             if (!entry.type) {
-                throw new Error(
+                throw new IncompleteReadError(
                     `Incomplete action list in "${ctx.getOpenContainerTitle()}": unreadable action "${removedFormatting(entry.slot.getItem().getName())}" at slot ${observed.slotId}. Read stopped; retry after the Housing menu has loaded.`
                 );
             }

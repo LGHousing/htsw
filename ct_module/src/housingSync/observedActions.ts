@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "./incompleteRead";
 import type { Action, Condition } from "htsw/types";
 
 import type { ItemSlot } from "../tasks/specifics/slots";
@@ -138,9 +139,7 @@ function observedNodeFromChildAction(action: Observed): ObservedNode {
     const childLists: Partial<Record<ChildListName, ObservedChildList>> = {};
     for (const field of fields) {
         if (field.kind === "actionList") {
-            throw new Error(
-                `Action child list "${field.prop}" reached a child action.`
-            );
+            throw new Error(`Action child list "${field.prop}" reached a child action.`);
         }
         const value = (action as Record<string, unknown>)[field.prop];
         if (!Array.isArray(value)) continue;
@@ -196,7 +195,9 @@ export function fullyHydratedObservedSlotsToActions(
 ): Action[] {
     return slots.map((slot) => {
         if (slot.action === null) {
-            throw new Error("A hydrated action slot has no parsed action.");
+            throw new IncompleteReadError(
+                `A hydrated action slot at index ${slot.index} has no parsed action.`
+            );
         }
         return observedActionToActionStrict(slot.action);
     });
@@ -207,14 +208,14 @@ function observedActionToActionStrict(observed: Observed): Action {
     for (const field of getChildListFields(observed.type)) {
         const value = action[field.prop];
         if (!Array.isArray(value)) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Hydrated action "${observed.type}" is missing child list "${field.prop}".`
             );
         }
         const entries = value as unknown[];
         action[field.prop] = entries.map((entry) => {
             if (entry === null) {
-                throw new Error(
+                throw new IncompleteReadError(
                     `Hydrated action "${observed.type}" has an unread entry in "${field.prop}".`
                 );
             }
@@ -235,18 +236,16 @@ function observedChildActionToActionStrict(observed: Observed): ChildAction {
     const action = { ...observed } as Record<string, unknown>;
     for (const field of getChildListFields(observed.type)) {
         if (field.kind === "actionList") {
-            throw new Error(
-                `Action child list "${field.prop}" reached a child action.`
-            );
+            throw new Error(`Action child list "${field.prop}" reached a child action.`);
         }
         const value = action[field.prop];
         if (!Array.isArray(value)) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Hydrated action "${observed.type}" is missing child list "${field.prop}".`
             );
         }
         if (value.some((entry) => entry === null)) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Hydrated action "${observed.type}" has an unread entry in "${field.prop}".`
             );
         }

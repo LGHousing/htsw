@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../incompleteRead";
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../../tasks/context";
@@ -214,6 +215,10 @@ async function hydrateActionDetail(
         const inner = errorMessage(error);
         const path = ActionPath.key(entryPath);
         const typeName = entry.action?.type ?? "<null>";
+        if (error instanceof IncompleteReadError) {
+            error.message = `${inner} (at ${path}, ${typeName})`;
+            throw error;
+        }
         throw new Error(`(at ${path}, ${typeName}) ${inner}`);
     }
 }
@@ -299,7 +304,7 @@ async function hydrateActionDetailFromEditor(
                         child.type !== summary[index]
                 )
             ) {
-                throw new Error(
+                throw new IncompleteReadError(
                     `Incomplete ${entry.action.type}.${prop}: child list does not match its list preview (${summary.length} entries expected). Read stopped.`
                 );
             }

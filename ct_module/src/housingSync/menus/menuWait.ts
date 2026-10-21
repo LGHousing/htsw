@@ -16,8 +16,12 @@ import {
 } from "../../tasks/specifics/slots";
 import {
     S2DPacketOpenWindow,
+    S2FPacketSetSlot,
     S30PacketWindowItems,
     openWindowPacketId,
+    setSlotPacketWindowId,
+    setSlotPacketSlot,
+    setSlotPacketStack,
     windowItemsPacketId,
     windowItemsPacketStacks,
 } from "../../utils/packets";
@@ -29,6 +33,7 @@ import { errorMessage, removedFormatting } from "../../utils/helpers";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
+import { IncompleteReadError } from "../incompleteRead";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
@@ -36,9 +41,9 @@ const MENU_WAIT_TIMEOUT_MS = 6000;
 // main-thread steps: S2DPacketOpenWindow creates the container (sets the new
 // windowId, EMPTY), then S30PacketWindowItems fills its slots. Either can lag
 // a tick or two behind our first tick under load. So we poll until BOTH hold:
-// the active container's windowId matches the window we saw open, AND it has
-// its menu slots match the received WindowItems snapshot. Checking windowId
-// alone catches the right window but can still scan it empty (the gap between
+// the active container's windowId matches the window we saw open, AND its
+// menu slots match the latest received WindowItems and SetSlot contents.
+// Checking windowId alone catches the right window but can still scan it empty (the gap between
 // the two steps). A click→menu reopen is ~1 tick, but a chat-input reopen is a
 // server round-trip and can take many ticks — so the cap is generous (under the
 // outer 6s timeout). On exceeding it we THROW rather than proceed: a clear "menu
@@ -184,7 +189,7 @@ async function waitForOpenedWindowToBeReady(
         if (state.openedWindowId !== null) {
             if (!ready) {
                 const elapsed = Date.now() - loopStartMs;
-                throw new Error(
+                throw new IncompleteReadError(
                     `Menu not ready within ${CONTAINER_SWITCH_MAX_TICKS} ticks (${state.ticksWaited} ticks/${elapsed}ms): ${describeMenuWaitState(state)}`
                 );
             }
@@ -208,12 +213,21 @@ function wrapMenuWaitTimeout(
     state: MenuWaitState
 ): WaitForPromise<void> {
     const wrapped = promise.catch((error: unknown) => {
+        cleanup();
         const message = errorMessage(error);
+        if (
+            message ===
+            `Timeout after ${MENU_WAIT_TIMEOUT_MS}ms: Waiting for menu to load`
+        ) {
+            error = new IncompleteReadError(
+                `${message} (window ${state.openedWindowId ?? "unknown"})`
+            );
+        }
         // Full wait-state details go to the runtime-debug buffer (and from
         // there into the import failure log), not the error message — the
         // message is what the user sees in chat, so keep it short.
         traceMenuWait("failure", {
-            error: message,
+            error: errorMessage(error),
             details: describeMenuWaitState(state),
             recentWindowOpens: describeRecentWindowOpens(),
             ticksWaited: state.ticksWaited,
@@ -277,15 +291,24 @@ export function waitForMenu(
         // windowID and sends S2DPacketOpenWindow on every transition (open,
         // sub-open, go-back, page-turn), followed by that window's
         // S30PacketWindowItems. We capture the opened windowID from the S2D
-        // and resolve only on the S30 that matches it. A single stateful
+        // and start polling only on the S30 that matches it. A single stateful
         // waiter (not S2D-then-S30 in sequence) avoids the microtask gap
         // where the S30 lands between resolving an S2D waiter and
         // registering an S30 waiter. Stray S30s for unrelated windows (e.g.
         // a transient/empty Housing menu) carry a different ID and are
         // ignored; the old `windowID !== lastWindowID` heuristic matched
         // them, landing us in the wrong menu.
+        let startPolling!: () => void;
+        const firstSnapshot = new Promise<void>((resolve) => {
+            startPolling = resolve;
+        });
+        // Keep the same listener through polling: an animation or another
+        // player's edit can replace lore before the next readiness check.
         packetWaiter = ctx.waitFor("packetReceived", (packet) => {
             if (packet instanceof S2DPacketOpenWindow) {
+                // Once polling starts, stay anchored to this menu. A different
+                // window must not silently satisfy the original read.
+                if (state.snapshot !== null) return false;
                 const id = openWindowPacketId(packet);
                 if (id !== null && id !== 0) {
                     state.openedWindowId = id;
@@ -314,15 +337,32 @@ export function waitForMenu(
                     expectedItems: state.expectedItems,
                     snapshotSlots: state.snapshotSlots,
                 });
-                return true;
+                startPolling();
+            } else if (
+                state.snapshot !== null &&
+                packet instanceof S2FPacketSetSlot &&
+                setSlotPacketWindowId(packet) === state.openedWindowId
+            ) {
+                const slot = setSlotPacketSlot(packet);
+                // Cursor and player-inventory updates are not menu contents.
+                if (slot === null || slot < 0 || slot >= state.snapshot.length)
+                    return false;
+                const stack = setSlotPacketStack(packet);
+                const nbt = stack === null ? null : new Item(stack).getRawNBT();
+                if (state.snapshot[slot] !== null) state.expectedItems--;
+                if (nbt !== null) state.expectedItems++;
+                state.snapshot[slot] = nbt;
             }
             return false;
         });
-        await packetWaiter;
-
-        await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
-            tickWaiter = waiter;
-        });
+        try {
+            await firstSnapshot;
+            await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
+                tickWaiter = waiter;
+            });
+        } finally {
+            cleanup();
+        }
     })() as WaitForPromise<void>;
     inner.cleanupWaiter = cleanup;
 

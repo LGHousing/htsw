@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../incompleteRead";
 // Split out from helpers.ts so that mapping tables (actionMappings.ts,
 // conditionMappings.ts) and diff/compare code can consume lore parsers
 // without transitively pulling in the GUI toolkit (waitForMenu, anvil
@@ -289,7 +290,7 @@ export function assertReadableScalarLore(
                     label === "Compare Value") &&
                 value === "")
         ) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Incomplete ${type} at slot ${slot.getSlotId()}: missing or invalid "${label}" lore. Read stopped; retry after the Housing menu has loaded.`
             );
         }
@@ -297,7 +298,7 @@ export function assertReadableScalarLore(
     if (parsed.holder !== undefined) {
         const holder = parseHolderField(slot, parsed.holder);
         if (holder === undefined || (holder.type === "Team" && !holder.team)) {
-            throw new Error(
+            throw new IncompleteReadError(
                 `Incomplete ${type} at slot ${slot.getSlotId()}: unreadable Holder/Team lore. Read stopped.`
             );
         }

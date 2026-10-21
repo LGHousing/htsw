@@ -135,7 +135,9 @@ describe.each(Object.entries(readers))("%s rejects incomplete reads", (_name, re
                     ui.ctx,
                     Array.from({ length: 25 }, (_, i) => variable(i))
                 )
-            ).rejects.toThrow(/Incomplete action list.*Head.*slot/);
+            ).rejects.toThrow(
+                /^HTSW_INCOMPLETE_READ: Incomplete action list.*Head.*slot/
+            );
         }
     );
     test.each(["Variable", "Operation", "Value", "Holder", "Automatic Unset", "all"])(
@@ -150,7 +152,7 @@ describe.each(Object.entries(readers))("%s rejects incomplete reads", (_name, re
                 entries: () => [slot(10, "Change Variable", lore)],
             });
             await expect(read(ui.ctx, [variable(0)])).rejects.toThrow(
-                /Incomplete CHANGE_VAR.*lore/
+                /^HTSW_INCOMPLETE_READ: Incomplete CHANGE_VAR.*lore/
             );
         }
     );
@@ -161,7 +163,7 @@ describe.each(Object.entries(readers))("%s rejects incomplete reads", (_name, re
             entries: () => [slot(10, "Kill Player")],
         });
         await expect(read(ui.ctx, [{ type: "KILL" }])).rejects.toThrow(
-            "Incomplete paginated action list"
+            "HTSW_INCOMPLETE_READ: Incomplete paginated action list"
         );
     });
 });
@@ -170,7 +172,9 @@ test.each(["Head", "Variable Requirement"])(
     "rejects an unreadable %s condition",
     async (name) => {
         const ui = menus({ title: "Edit Conditions", entries: () => [slot(10, name)] });
-        await expect(readConditionList(ui.ctx, options)).rejects.toThrow(/Incomplete/);
+        await expect(readConditionList(ui.ctx, options)).rejects.toThrow(
+            /^HTSW_INCOMPLETE_READ: Incomplete/
+        );
     }
 );
 
@@ -180,7 +184,7 @@ test("rejects a mixed empty placeholder rather than discarding it", async () => 
         entries: () => [slot(10, "No Actions!"), slot(11, "Kill Player")],
     });
     await expect(readActionListFully(ui.ctx, options)).rejects.toThrow(
-        "empty-list placeholder mixed with entries"
+        "HTSW_INCOMPLETE_READ: Incomplete action list: empty-list placeholder mixed with entries"
     );
 });
 
@@ -290,7 +294,23 @@ for (const [name, read] of Object.entries(readers)) {
         `${name} stops on nested %s`,
         async (change) => {
             const ui = conditionalMenu(change);
-            await expect(read(ui.ctx, ui.expected)).rejects.toThrow(/Incomplete/);
+            await expect(read(ui.ctx, ui.expected)).rejects.toThrow(
+                /^HTSW_INCOMPLETE_READ: Incomplete/
+            );
         }
     );
 }
+
+test.each(["actions", "conditions"])(
+    "empty %s menus retain the retry marker",
+    async (kind) => {
+        const ui = menus({ title: `Edit ${kind}`, entries: () => [] });
+        await expect(
+            kind === "actions"
+                ? readActionListFully(ui.ctx, options)
+                : readConditionList(ui.ctx, options)
+        ).rejects.toThrow(
+            /^HTSW_INCOMPLETE_READ: .*no entries or empty-list placeholder/
+        );
+    }
+);

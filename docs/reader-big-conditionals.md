@@ -169,3 +169,61 @@ both pages; absent scalar fields; unreadable conditions; final-page omissions;
 and a complete 25-conditional/1,250-action read. Menu-wait tests hold the item
 count constant while changing lore, slot positions, window size, and window ID,
 then either apply the snapshot or exhaust the bounded wait.
+
+## Review follow-up: readiness updates and retry classification
+
+Required behavior before implementing the review fixes:
+
+- Keep observing matching WindowItems and SetSlot packets until readiness ends.
+  Compare the container to the latest received menu contents, including changes
+  in occupied slots. A legitimate lore update while waiting must succeed once
+  the container applies it. Ignore unrelated windows and player-inventory slots;
+  remove the listener on success, failure, timeout, or cancellation.
+- Every incomplete-read failure introduced or newly enforced by this change
+  must contain the stable prefix `HTSW_INCOMPLETE_READ:` in HTSW's failure reason,
+  including nested hydration, pagination, and menu readiness failures. Keep
+  cancellation and unrelated errors distinct. The engine will classify this
+  prefix as transient; engine changes are outside this PR.
+
+The review's stale-snapshot cause is confirmed in the code: the packet
+predicate returns true on the first matching WindowItems, removing itself
+before the tick readiness loop. The generic errors also lack a shared marker.
+
+Implemented with one packet listener retained until readiness ends. Matching
+WindowItems replaces the expected contents; matching SetSlot updates one menu
+slot and its occupied-slot count. The wait stays anchored to its original
+window once polling begins. Cleanup runs on success and every failure or
+abandonment path. The two new lore-update tests fail against the previous
+commit because the listener has already been removed, and pass with this fix.
+
+`IncompleteReadError` supplies `HTSW_INCOMPLETE_READ:` for unreadable actions,
+conditions and scalar lore; empty or mixed-placeholder lists; pagination
+completeness checks; child-preview mismatches and strict hydration conversion;
+and menu readiness exhaustion/timeouts. Nested hydration retains the prefix
+and appends its action path. HTSW's existing bridge failure paths serialize the
+message (or the error), retaining the marker. Cancellation keeps its existing
+classification. No engine code was changed.
+
+Final review-fix verification (full suites and typechecks run once at the end):
+
+```text
+Affected: menuReadiness, readerCompleteness, conflictReadCompleteness
+Test Files  3 passed (3)
+Tests       89 passed (89)
+Duration    2.29s
+
+ct_module — npx vitest run --maxWorkers=2
+Test Files  164 passed (164)
+Tests       1306 passed | 1 skipped (1307)
+Duration    38.27s
+
+language — npx vitest run --maxWorkers=2
+Test Files  14 passed (14)
+Tests       201 passed (201)
+Duration    2.17s
+```
+
+Both typechecks (`ct_module npm run typecheck`, `language npx tsc --noEmit`),
+ct_module lint and knip, and `git diff --check` passed. The affected tests also
+cover slot addition/removal, unrelated packets, listener cleanup, cancellation,
+and the prefix across export, planning, sync, nested hydration and timeouts.
