@@ -1,0 +1,9 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": ["scripts/*.ts"],
+    "project": ["src/**/*.ts", "scripts/**/*.ts"],
+    "ignoreIssues": {
+        "src/runtime/queue.ts": ["exports", "types", "duplicates"],
+        "src/runtime/queueRunner.ts": ["exports"],
+    },
+}
