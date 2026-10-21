@@ -65,7 +65,7 @@ export function setHousingDecimalQuantizer(
     return previous;
 }
 
-function normalizeValueTextForCompare(value: string): string {
+export function normalizeValueTextForCompare(value: string): string {
     const isIntegerDisplay = INTEGER_DISPLAY_VALUE_PATTERN.test(value);
     const isDecimalDisplay = DECIMAL_DISPLAY_VALUE_PATTERN.test(value);
     if (!isIntegerDisplay && !isDecimalDisplay) return value;

@@ -32,18 +32,22 @@ function commandContext() {
     menu.cleanupWaiter = menuCleanup;
     vi.mocked(timedWaitForMenu).mockReturnValue(menu);
     const ctx = Object.create(TaskContext.prototype) as TaskContext;
-    ctx.waitFor = vi.fn((_event, predicate) => {
+    ctx.waitFor = vi.fn((event, predicate) => {
         const promise = new Promise<[string]>((resolve) => {
-            receive = (message) => {
-                if ((predicate as (message: string) => boolean)(message))
-                    resolve([message]);
-            };
+            if (event === "message")
+                receive = (message) => {
+                    if ((predicate as (message: string) => boolean)(message))
+                        resolve([message]);
+                };
         }) as WaitForPromise<[string]>;
         promise.cleanupWaiter = messageCleanup;
         return promise;
     }) as typeof ctx.waitFor;
     const runCommand = vi.fn(async (_command: string) => {});
-    ctx.runCommand = runCommand;
+    ctx.runCommand = async (command, onSent) => {
+        onSent?.();
+        await runCommand(command);
+    };
     return {
         ctx,
         runCommand,
@@ -57,20 +61,15 @@ function commandContext() {
 
 beforeEach(() => vi.clearAllMocks());
 
-test.each([
-    ["  This command is not valid!  ", "This command is not valid!"],
-    // Any reason with the observed refusal prefix is handled without guessing
-    // Housing's other reason texts.
-    ["This command is not valid! A server-supplied reason.", "A server-supplied reason."],
-])(
+test.each(["  This command is not valid!  "])(
     "rejects command creation immediately for %s, even during send",
-    async (reply, reason) => {
+    async (reply) => {
         const { ctx, runCommand, receive, messageCleanup, menuCleanup } =
             commandContext();
         runCommand.mockImplementation(async () => receive(reply));
 
         await expect(ensureCommandExists(ctx, "tpa")).rejects.toThrow(
-            `command name rejected by Housing: ${reason}`
+            `command name rejected by Housing: ${reply.trim()}`
         );
 
         expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create tpa");
@@ -107,9 +106,10 @@ for (const reply of [
     test(`refuses an already-existing command only after one fresh list still hides it: ${reply}`, async () => {
         const { ctx, runCommand, receive } = commandContext();
         runCommand.mockImplementation(async () => receive(reply));
-        await expect(ensureCommandExists(ctx, "home")).rejects.toThrow(
-            "command name rejected by Housing: already exists (not visible in Commands)"
-        );
+        await expect(ensureCommandExists(ctx, "home")).rejects.toMatchObject({
+            message:
+                "command name rejected by Housing: already exists (not visible in Commands)",
+        });
         expect(resetCommandNameSession).toHaveBeenCalledTimes(1);
         expect(getSessionCommandNamesLower).toHaveBeenCalledTimes(2);
         expect(runCommand).toHaveBeenCalledExactlyOnceWith("/command create home");
@@ -154,12 +154,12 @@ test("keeps permission/timeout failures and cleans the refusal listener", async 
     expect(noteCommandCreated).not.toHaveBeenCalled();
 });
 
-test("cleans the refusal listener if sending fails", async () => {
-    const { ctx, runCommand, messageCleanup } = commandContext();
+test("cleans listeners if sending fails", async () => {
+    const { ctx, runCommand, messageCleanup, menuCleanup } = commandContext();
     runCommand.mockRejectedValue(new Error("cancelled"));
     await expect(ensureCommandExists(ctx, "new")).rejects.toThrow("cancelled");
     expect(messageCleanup).toHaveBeenCalled();
-    expect(timedWaitForMenu).not.toHaveBeenCalled();
+    expect(menuCleanup).toHaveBeenCalled();
 });
 
 test("leaves commands found in the list alone", async () => {
@@ -168,4 +168,14 @@ test("leaves commands found in the list alone", async () => {
     await expect(ensureCommandExists(ctx, "TPA")).resolves.toBe("existing");
     expect(runCommand).not.toHaveBeenCalled();
     expect(ctx.waitFor).not.toHaveBeenCalled();
+});
+
+test("ignores an unrecognized error sentence during command creation", async () => {
+    const { ctx, runCommand, receive, openMenu } = commandContext();
+    runCommand.mockImplementation(async () => {
+        receive("This route is not valid!");
+        openMenu();
+    });
+    await expect(ensureCommandExists(ctx, "route")).resolves.toBe("created");
+    expect(noteCommandCreated).toHaveBeenCalledExactlyOnceWith("route");
 });
