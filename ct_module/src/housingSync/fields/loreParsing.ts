@@ -269,6 +269,41 @@ export function parseLoreFields<TProp extends string>(
     return parsed;
 }
 
+/** Validate the raw preview before parsers can supply defaults or drop unset fields. */
+export function assertReadableScalarLore(
+    slot: ItemSlot,
+    type: string,
+    loreFields: Record<string, { prop: string; kind: UiFieldKind }>
+): void {
+    const parsed = parseLoreFields(slot, loreFields);
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (field.kind === "actionList" || field.kind === "conditionList") continue;
+        const value = parsed[field.prop];
+        if (
+            value === undefined ||
+            ((field.kind === "select" || field.kind === "cycle") && value === "") ||
+            ((type === "CHANGE_VAR" || type === "COMPARE_VAR") &&
+                (label === "Variable" ||
+                    label === "Value" ||
+                    label === "Compare Value") &&
+                value === "")
+        ) {
+            throw new Error(
+                `Incomplete ${type} at slot ${slot.getSlotId()}: missing or invalid "${label}" lore. Read stopped; retry after the Housing menu has loaded.`
+            );
+        }
+    }
+    if (parsed.holder !== undefined) {
+        const holder = parseHolderField(slot, parsed.holder);
+        if (holder === undefined || (holder.type === "Team" && !holder.team)) {
+            throw new Error(
+                `Incomplete ${type} at slot ${slot.getSlotId()}: unreadable Holder/Team lore. Read stopped.`
+            );
+        }
+    }
+}
+
 export function readListItemNote(slot: ItemSlot): string | undefined {
     const lore = itemLore(slot.getItem()).map((line) => removedFormatting(line).trim());
 

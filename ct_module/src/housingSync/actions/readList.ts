@@ -48,6 +48,7 @@ import { ActionPath, ActionListPath } from "../actionPath";
 import { COST, exactHydrationPlanUnits, phaseUnitsTotal } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfigs";
 import { itemLore } from "../../utils/itemLore";
+import { assertReadableScalarLore } from "../fields/loreParsing";
 
 export type ActionListReadMode =
     | { kind: "full" }
@@ -148,6 +149,11 @@ async function readActionsListPage(
     const slots = visible.filter(
         (slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG)
     );
+    if (slots.length !== visible.length && visible.length !== 1) {
+        throw new Error(
+            "Incomplete action list: empty-list placeholder mixed with entries."
+        );
+    }
     const observed: ObservedActionSlot[] = slots
         .map((slot) => ({
             slot,
@@ -166,9 +172,16 @@ async function readActionsListPage(
                 childListsToRead: new Set(),
             };
             if (!entry.type) {
-                return observed;
+                throw new Error(
+                    `Incomplete action list in "${ctx.getOpenContainerTitle()}": unreadable action "${removedFormatting(entry.slot.getItem().getName())}" at slot ${observed.slotId}. Read stopped; retry after the Housing menu has loaded.`
+                );
             }
 
+            assertReadableScalarLore(
+                entry.slot,
+                entry.type,
+                ACTION_MAPPINGS[entry.type].loreFields
+            );
             const action = parseActionListItem(entry.slot, entry.type);
             const childList = readChildListSummaries(action, entry.slot);
             const truncatedFields = scalarFieldsNeedingHydration(action);
@@ -232,7 +245,7 @@ export async function scanActionList(
                 },
             });
         },
-        read
+        { ...read, requireFullPages: true }
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isRootList = read.listPath === undefined;

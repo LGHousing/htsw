@@ -17,7 +17,10 @@ import {
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "../../fields/conditionMappings";
-import { scalarFieldLooksTruncated } from "../../fields/loreParsing";
+import {
+    assertReadableScalarLore,
+    scalarFieldLooksTruncated,
+} from "../../fields/loreParsing";
 import { refreshTruncatedScalarFields } from "../../fields/readScalars";
 import type { ObservedConditionSlot } from "../../observedActions";
 import {
@@ -50,35 +53,45 @@ async function readConditionsListPage(
             "Incomplete condition list: no entries or empty-list placeholder."
         );
     }
-    return visible
-        .filter((slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG))
-        .map((slot, index) => {
-            const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
-            const observedCondition: ObservedConditionSlot = {
-                index,
-                slotId: slot.getSlotId(),
-                slot,
-                condition: null,
-            };
+    const slots = visible.filter(
+        (slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG)
+    );
+    if (slots.length !== visible.length && visible.length !== 1) {
+        throw new Error(
+            "Incomplete condition list: empty-list placeholder mixed with entries."
+        );
+    }
+    return slots.map((slot, index) => {
+        const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
+        const observedCondition: ObservedConditionSlot = {
+            index,
+            slotId: slot.getSlotId(),
+            slot,
+            condition: null,
+        };
 
-            if (!type) {
-                return observedCondition;
-            }
+        if (!type) {
+            throw new Error(
+                `Incomplete condition list in "${ctx.getOpenContainerTitle()}": unreadable condition "${slot.getItem().getName()}" at slot ${slot.getSlotId()}. Read stopped; retry after the Housing menu has loaded.`
+            );
+        }
 
-            const condition = parseConditionListItem(slot, type);
-            if (isConditionListItemInverted(slot)) {
-                condition.inverted = true;
-            }
+        assertReadableScalarLore(slot, type, CONDITION_MAPPINGS[type].loreFields);
+        const condition = parseConditionListItem(slot, type);
+        if (isConditionListItemInverted(slot)) {
+            condition.inverted = true;
+        }
 
-            observedCondition.condition = condition;
-            return observedCondition;
-        });
+        observedCondition.condition = condition;
+        return observedCondition;
+    });
 }
 
-export type ReadConditionListOptions = ItemReadOptions & PaginatedListReadOptions & {
-    phaseUnits?: PhaseUnits;
-    progress?: ProgressHandler;
-};
+export type ReadConditionListOptions = ItemReadOptions &
+    PaginatedListReadOptions & {
+        phaseUnits?: PhaseUnits;
+        progress?: ProgressHandler;
+    };
 
 export async function readConditionList(
     ctx: TaskContext,
@@ -89,7 +102,7 @@ export async function readConditionList(
         CONDITION_LIST_CONFIG,
         () => readConditionsListPage(ctx),
         undefined,
-        options
+        { ...options, requireFullPages: true }
     );
     await hydrateScalarConditions(ctx, observed, options);
     await captureConditionItems(ctx, observed, options);

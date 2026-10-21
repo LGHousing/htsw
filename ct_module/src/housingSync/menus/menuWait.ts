@@ -10,7 +10,6 @@
 import TaskContext from "../../tasks/context";
 import {
     describeGuiScreenMenu,
-    getDisplayedGuiMenuState,
     getMenuItemSlots,
     getOpenContainerWindowId,
     menuStateDescription,
@@ -38,7 +37,7 @@ const MENU_WAIT_TIMEOUT_MS = 6000;
 // windowId, EMPTY), then S30PacketWindowItems fills its slots. Either can lag
 // a tick or two behind our first tick under load. So we poll until BOTH hold:
 // the active container's windowId matches the window we saw open, AND it has
-// at least one item (i.e. its WindowItems has been applied). Checking windowId
+// its menu slots match the received WindowItems snapshot. Checking windowId
 // alone catches the right window but can still scan it empty (the gap between
 // the two steps). A click→menu reopen is ~1 tick, but a chat-input reopen is a
 // server round-trip and can take many ticks — so the cap is generous (under the
@@ -50,10 +49,11 @@ const CONTAINER_SWITCH_MAX_TICKS = 80;
 const PLAYER_INVENTORY_SLOTS = 36;
 
 // Non-null menu items the WindowItems snapshot carries (its full array minus
-// the trailing 36 player-inventory slots). WindowItems is the complete final
-// state of the menu (it arrives after all the per-slot SetSlots), so this is
-// exactly how many items the container will hold once the menu is fully
-// applied — our deterministic "menu ready" target.
+// the trailing 36 player-inventory slots). This only establishes population,
+// not readable content: Housing can send named items with missing lore or plain
+// "Head" items, and send another WindowItems later. List readers must validate
+// entries before treating them as actions/conditions; a matching count is not
+// evidence that the first snapshot is the final state of the menu.
 function s30MenuItemCount(packet: unknown): number {
     const items = windowItemsPacketStacks(packet);
     const end = Math.max(0, items.length - PLAYER_INVENTORY_SLOTS);
@@ -62,11 +62,6 @@ function s30MenuItemCount(packet: unknown): number {
         if (items[i] !== null) n++;
     }
     return n;
-}
-
-function openContainerItemCount(): number {
-    const slots = getMenuItemSlots();
-    return slots === null ? 0 : slots.length;
 }
 
 // Total slot count the WindowItems snapshot declares (full array length,
@@ -80,6 +75,7 @@ function s30SlotCount(packet: unknown): number {
 type MenuWaitState = {
     openedWindowId: number | null;
     expectedItems: number;
+    snapshot: Array<string | null> | null;
     snapshotSlots: number;
     ticksWaited: number;
     lastCurId: number | null;
@@ -93,6 +89,7 @@ function createMenuWaitState(openedWindowId: number | null = null): MenuWaitStat
     return {
         openedWindowId,
         expectedItems: 0,
+        snapshot: null,
         snapshotSlots: 0,
         ticksWaited: 0,
         lastCurId: null,
@@ -121,33 +118,6 @@ function expectedItemCount(state: MenuWaitState): number {
     return Math.max(1, state.expectedItems);
 }
 
-function visibleGuiMatchesOpenedWindow(
-    state: MenuWaitState,
-    skipPopulateWait: boolean
-): boolean {
-    if (state.openedWindowId === null) return false;
-    const gui = getDisplayedGuiMenuState();
-    if (gui === null) return false;
-    if (gui.windowId !== state.openedWindowId) return false;
-    state.everMatchedWindow = true;
-    state.lastCurId = gui.windowId;
-    state.lastCount = gui.itemCount;
-    if (gui.itemCount > state.maxCount) state.maxCount = gui.itemCount;
-    if (!skipPopulateWait && gui.itemCount < expectedItemCount(state)) return false;
-    state.readySource = "visibleGui";
-    return true;
-}
-
-function displayedGuiReadySummary(state: MenuWaitState): Record<string, unknown> {
-    const gui = getDisplayedGuiMenuState();
-    return {
-        openedWindowId: state.openedWindowId,
-        expectedItems: state.expectedItems,
-        gui,
-        menu: menuStateDescription(),
-    };
-}
-
 function openContainerMatchesOpenedWindow(
     state: MenuWaitState,
     skipPopulateWait: boolean
@@ -157,10 +127,26 @@ function openContainerMatchesOpenedWindow(
     state.lastCurId = curId;
     if (curId !== state.openedWindowId) return false;
     state.everMatchedWindow = true;
-    const count = openContainerItemCount();
+    const slots = getMenuItemSlots();
+    const count = slots === null ? 0 : slots.length;
     state.lastCount = count;
     if (count > state.maxCount) state.maxCount = count;
-    if (!skipPopulateWait && count < expectedItemCount(state)) return false;
+    if (!skipPopulateWait) {
+        if (count < expectedItemCount(state)) return false;
+        if (state.snapshot !== null) {
+            const container = Player.getContainer();
+            if (container == null || container.getSize() !== state.snapshotSlots)
+                return false;
+            // Read the same container the consumers use, not merely a populated
+            // visible GUI or an equal number of stale/partly applied items.
+            if (slots === null || count !== state.expectedItems) return false;
+            for (const slot of slots) {
+                if (slot.getItem().getRawNBT() !== state.snapshot[slot.getSlotId()]) {
+                    return false;
+                }
+            }
+        }
+    }
     state.readySource = "openContainer";
     return true;
 }
@@ -182,10 +168,7 @@ async function waitForOpenedWindowToBeReady(
             gui: describeGuiScreenMenu(),
         });
         for (let i = 0; i < CONTAINER_SWITCH_MAX_TICKS; i++) {
-            if (
-                openContainerMatchesOpenedWindow(state, skipPopulateWait) ||
-                visibleGuiMatchesOpenedWindow(state, skipPopulateWait)
-            ) {
+            if (openContainerMatchesOpenedWindow(state, skipPopulateWait)) {
                 ready = true;
                 break;
             }
@@ -193,10 +176,7 @@ async function waitForOpenedWindowToBeReady(
             setTickWaiter(tickWaiter);
             await tickWaiter;
             state.ticksWaited++;
-            if (
-                openContainerMatchesOpenedWindow(state, skipPopulateWait) ||
-                visibleGuiMatchesOpenedWindow(state, skipPopulateWait)
-            ) {
+            if (openContainerMatchesOpenedWindow(state, skipPopulateWait)) {
                 ready = true;
                 break;
             }
@@ -229,21 +209,6 @@ function wrapMenuWaitTimeout(
 ): WaitForPromise<void> {
     const wrapped = promise.catch((error: unknown) => {
         const message = errorMessage(error);
-        if (
-            message.indexOf("Timeout after") !== -1 &&
-            visibleGuiMatchesOpenedWindow(state, false)
-        ) {
-            traceMenuWait("timeoutRecovered", {
-                error: message,
-                ticksWaited: state.ticksWaited,
-                openedWindowId: state.openedWindowId,
-                expectedItems: state.expectedItems,
-                observedItems: state.lastCount,
-                source: state.readySource,
-                ...displayedGuiReadySummary(state),
-            });
-            return;
-        }
         // Full wait-state details go to the runtime-debug buffer (and from
         // there into the import failure log), not the error message — the
         // message is what the user sees in chat, so keep it short.
@@ -332,6 +297,18 @@ export function waitForMenu(
                 if (windowItemsPacketId(packet) !== state.openedWindowId) return false;
                 state.expectedItems = s30MenuItemCount(packet);
                 state.snapshotSlots = s30SlotCount(packet);
+                const stacks = windowItemsPacketStacks(packet);
+                state.snapshot = [];
+                for (
+                    let slot = 0;
+                    slot < state.snapshotSlots - PLAYER_INVENTORY_SLOTS;
+                    slot++
+                ) {
+                    const stack = stacks[slot];
+                    state.snapshot.push(
+                        stack === null ? null : new Item(stack).getRawNBT()
+                    );
+                }
                 traceMenuWait("windowItems", {
                     windowId: state.openedWindowId,
                     expectedItems: state.expectedItems,
