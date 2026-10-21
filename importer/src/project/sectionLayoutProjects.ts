@@ -1,4 +1,3 @@
-
 import { projectSectionFolders } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 import { normalizeHtswPath } from "./htswPath";

@@ -1,4 +1,3 @@
-
 /**
  * Shared task progress state. Owns the `TaskProgress` object used by import,
  * read, export, and diff flows, plus derived queue-row render state and helpers

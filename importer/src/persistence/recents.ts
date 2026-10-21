@@ -1,4 +1,3 @@
-
 import { pathExists } from "../utils/filesystem";
 import { normalizeHtswPath } from "../project/pathDisplay";
 import { defineRootDoc } from "./store";

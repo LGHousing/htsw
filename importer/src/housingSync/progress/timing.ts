@@ -1,4 +1,3 @@
-
 import { runtimeString } from "../../utils/runtimeString";
 import { platform } from "../../platform";
 

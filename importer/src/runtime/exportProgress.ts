@@ -1,4 +1,3 @@
-
 /**
  * GUI-driving implementation of `ExportProgressSink`: a thin adapter that
  * translates sink calls into the existing progress event stream and runs them

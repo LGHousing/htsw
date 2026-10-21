@@ -1,4 +1,3 @@
-
 import type { Importable } from "htsw/types";
 
 import { getHousingUuid } from "./state";

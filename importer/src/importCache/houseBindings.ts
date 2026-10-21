@@ -1,4 +1,3 @@
-
 import { IMPORT_CACHE_ROOT } from "./paths";
 import { atomicWriteText } from "../utils/filesystem";
 import { platform } from "../platform";

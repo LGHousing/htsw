@@ -1,4 +1,3 @@
-
 import { Observers } from "../utils/observers";
 import { platform } from "../platform";
 

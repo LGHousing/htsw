@@ -1,4 +1,3 @@
-
 import { atomicWriteText } from "../utils/filesystem";
 import { runtimeString, type RuntimeString } from "../utils/runtimeString";
 import { platform } from "../platform";

@@ -1,4 +1,3 @@
-
 import type { SyncEvent } from "../syncEvents";
 import type { TaskProgress } from "../progress/types";
 import { currentMsPerUnit } from "../progress/eta";

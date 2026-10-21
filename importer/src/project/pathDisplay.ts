@@ -1,4 +1,3 @@
-
 import { normalizePathSeparators } from "htsw-editor-common/project";
 import { normalizeHtswPath } from "./htswPath";
 

@@ -1,4 +1,3 @@
-
 /**
  * A label for what the running task is doing during stretches no progress row
  * covers. Callers clear it once an importable's own progress row takes over.

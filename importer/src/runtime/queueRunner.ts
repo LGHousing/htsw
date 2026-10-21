@@ -1,4 +1,3 @@
-
 import type { Importable } from "htsw/types";
 import { npcPosIdentity } from "htsw-editor-common/project";
 import {

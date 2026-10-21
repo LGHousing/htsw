@@ -1,4 +1,3 @@
-
 import type { SyncEvent } from "../syncEvents";
 import { createJsonlTrace } from "../../trace/jsonl";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
