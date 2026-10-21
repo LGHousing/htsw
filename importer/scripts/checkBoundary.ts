@@ -178,6 +178,8 @@ for (const sf of program.getSourceFiles()) {
                 );
                 if (CLIENT_GLOBALS.has(node.text) && !declaredHere) {
                     report(file, node, `client global ${node.text}`);
+                } else if (declaredByLib && (node.text === "eval" || node.text === "Function")) {
+                    report(file, node, `${node.text}, which runs code the boundary check can't see`);
                 } else if (symbol === undefined && !declaredHere && !declaredByLib) {
                     // Only names with no declaration at all; typecheck reports these
                     // too, this keeps the boundary check on its own.
