@@ -229,7 +229,7 @@ function loadPersistedStats(): void {
 function schedulePersist(): void {
     if (persistScheduled) return;
     persistScheduled = true;
-    setTimeout(() => {
+    platform().setTimeout(() => {
         persistScheduled = false;
         persistTimingStats();
     }, 5000);

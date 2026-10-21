@@ -902,6 +902,6 @@ const defaultDependencies: QueueRunnerDependencies = {
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {
-        setTimeout(callback, 1500);
+        platform().setTimeout(callback, 1500);
     },
 };

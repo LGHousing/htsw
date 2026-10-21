@@ -39,6 +39,7 @@ import { span } from "../../perf/spans";
 import { runOnMainThread } from "../../utils/mainThread";
 import { resolveCanonicalPath, resolveCanonicalPaths } from "./realPath";
 import { getMtimeMs } from "../../utils/filesystem";
+import { platform } from "../../platform";
 
 /**
  * Per-file `import.json` parse cache. Lets the Projects tree show
@@ -458,7 +459,7 @@ export function parseImportJsonCurrentBlocking(rawPath: string): CachedParse {
 }
 
 function yieldFilesystemScan(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 0));
+    return new Promise((resolve) => platform().setTimeout(resolve, 0));
 }
 
 /**
@@ -699,7 +700,7 @@ function pumpPendingParses(): void {
     if (revalidation) pendingRevalidationPaths.delete(parseCanon);
     else pendingParsePaths.delete(parseCanon);
     parseInFlight = { path: parseCanon, revalidation };
-    setTimeout(
+    platform().setTimeout(
         () =>
             span("parse.pump", () => {
                 const startedAt = Date.now();

@@ -108,7 +108,7 @@ function autoRunEligibleRows(): QueueRow[] {
 }
 
 function monitorAutoRun(importKeys: readonly string[], workKeys: readonly string[]): void {
-    setTimeout(() => {
+    platform().setTimeout(() => {
         if (isQueueRunning()) {
             monitorAutoRun(importKeys, workKeys);
             return;
@@ -116,7 +116,7 @@ function monitorAutoRun(importKeys: readonly string[], workKeys: readonly string
         startedByAutoRun = false;
         // Successful rows remain visible briefly in the queue. Inspect after
         // that done-state window so absence means the import really completed.
-        setTimeout(() => {
+        platform().setTimeout(() => {
             let successful = importKeys.length > 0;
             for (const key of importKeys) {
                 if (getQueueRow(key) !== null) {
@@ -152,7 +152,7 @@ export function autoRunQueueChanged(): void {
     ensureRunEndedListener();
     clearDebounce();
     const revision = debounceRevision;
-    setTimeout(() => {
+    platform().setTimeout(() => {
         if (revision === debounceRevision) runAutoQueue();
     }, 2000);
 }

@@ -81,6 +81,9 @@ export interface Platform {
     openContainer(): Container | undefined;
     /** The player's own inventory (`Player.getInventory()`), null with no player. */
     playerInventory(): Container | null;
+    /** Call `callback` once, `delay` ms from now (ChatTriggers' `setTimeout`,
+     * which runs it on a new thread). */
+    setTimeout(callback: () => void, delay: number): void;
     /** Run `run` on a new background (daemon) thread. */
     startDaemonThread(run: () => void): void;
     /** True on the client's main (game) thread. */

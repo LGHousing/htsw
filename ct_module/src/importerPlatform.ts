@@ -25,6 +25,10 @@ function deletePathRecursive(Files: HtswJavaFilesClass, path: HtswJavaPath): voi
     Files.deleteIfExists(path);
 }
 
+let chatPacketClass:
+    HtswJavaTypeMap["net.minecraft.network.play.client.C01PacketChatMessage"] | null =
+    null;
+
 const ctPlatform: Platform = {
     chat(message) {
         ChatLib.chat(message);
@@ -38,6 +42,9 @@ const ctPlatform: Platform = {
     serverIp: () => Server.getIP(),
     openContainer: () => Player.getContainer(),
     playerInventory: () => Player.getInventory(),
+    setTimeout(callback, delay) {
+        setTimeout(callback, delay);
+    },
     startDaemonThread(run) {
         const Thread = javaType("java.lang.Thread");
         const Runnable = javaType("java.lang.Runnable");
@@ -47,7 +54,14 @@ const ctPlatform: Platform = {
     },
     isMainThread: () => getMinecraft().func_152345_ab(),
     createChatPacket(message) {
-        const packet = new (javaType("net.minecraft.network.play.client.C01PacketChatMessage"))("");
+        // Looked up on first use, not at load: this module loads with
+        // utils/helpers.ts, long before the first chat packet.
+        if (chatPacketClass === null) {
+            chatPacketClass = javaType(
+                "net.minecraft.network.play.client.C01PacketChatMessage"
+            );
+        }
+        const packet = new chatPacketClass("");
         const messageField = packet.class.getDeclaredField("field_149440_a");
         messageField.setAccessible(true);
         messageField.set(packet, message);
@@ -77,18 +91,28 @@ const ctPlatform: Platform = {
             const File = javaType("java.io.File");
             return new File(dir).list();
         },
-        exists: (path) => javaType("java.nio.file.Files").exists(javaType("java.nio.file.Paths").get(path)),
+        exists: (path) =>
+            javaType("java.nio.file.Files").exists(
+                javaType("java.nio.file.Paths").get(path)
+            ),
         notExists: (path) =>
-            javaType("java.nio.file.Files").notExists(javaType("java.nio.file.Paths").get(path)),
+            javaType("java.nio.file.Files").notExists(
+                javaType("java.nio.file.Paths").get(path)
+            ),
         move(from, to) {
             const Paths = javaType("java.nio.file.Paths");
             javaType("java.nio.file.Files").move(Paths.get(from), Paths.get(to));
         },
         deleteIfExists(path) {
-            javaType("java.nio.file.Files").deleteIfExists(javaType("java.nio.file.Paths").get(path));
+            javaType("java.nio.file.Files").deleteIfExists(
+                javaType("java.nio.file.Paths").get(path)
+            );
         },
         deleteRecursive(path) {
-            deletePathRecursive(javaType("java.nio.file.Files"), javaType("java.nio.file.Paths").get(path));
+            deletePathRecursive(
+                javaType("java.nio.file.Files"),
+                javaType("java.nio.file.Paths").get(path)
+            );
         },
         forEachFileName(dir, visit) {
             const Paths = javaType("java.nio.file.Paths");
