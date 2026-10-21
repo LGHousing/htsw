@@ -3,19 +3,21 @@ import { describe, expect, test } from "vitest";
 import { parseAutomaticExecutionTicks } from "../src/importables/functions/housing";
 
 describe("automatic execution lore", () => {
-    test("reads 5 ticks from plausible ON-state lore with formatting codes", () => {
-        for (const current of ["§a5", "§a5 §7ticks", "§aEvery §b5 §aticks"]) {
-            expect(
-                parseAutomaticExecutionTicks([
-                    "§7Automatically runs this function.",
-                    "§7Minimum interval: §e4 ticks",
-                    "",
-                    `  §7Current: ${current}§r  `,
-                    "",
-                    "§eClick to edit!",
-                ])
-            ).toBe(5);
-        }
+    test("reads the interval from Housing's ON-state lore", () => {
+        // Captured live on 2026-10-21 from a function set to 15 minutes.
+        const lore = (current: string) => [
+            "§7Functions can be enabled to",
+            "§7automatically execute for all players",
+            "§7in the house every X amount of ticks.",
+            "§7§7TIP: 1 second is 20 ticks",
+            "",
+            `§7Current: ${current}`,
+            "",
+            "§eClick to change!",
+        ];
+        expect(parseAutomaticExecutionTicks(lore("§a18000 Ticks (15m00s)"))).toBe(18000);
+        expect(parseAutomaticExecutionTicks(lore("§a5 Ticks (0m00s)"))).toBe(5);
+        expect(parseAutomaticExecutionTicks(lore("§a5"))).toBe(5);
     });
 
     test("reads Disabled as zero", () => {
@@ -30,6 +32,8 @@ describe("automatic execution lore", () => {
                 "",
                 "Enabled",
                 "Every 5 to 10 ticks",
+                "Every 5 ticks",
+                "5 Ticks (0m00s) extra",
                 "-5 ticks",
                 "+5 ticks",
                 "5.5 ticks",
