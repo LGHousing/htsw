@@ -300,3 +300,15 @@ test("refuses a changed list length before refreshing", async () => {
     expect(slot.click).not.toHaveBeenCalled();
     expect(reopenList).not.toHaveBeenCalled();
 });
+
+test("a failed Holder recovery retains the incomplete-read prefix and original context", async () => {
+    const { IncompleteReadError } = await import("../src/housingSync/incompleteRead");
+    const incomplete = new IncompleteReadError("Parent action list not ready");
+    mocks.back.mockRejectedValueOnce(incomplete);
+    await expect(
+        withHolderRecovery(ctx as never, entry, vi.fn().mockRejectedValue(failure()))
+    ).rejects.toBe(incomplete);
+    expect(incomplete.message).toBe(
+        `HTSW_INCOMPLETE_READ: Parent action list not ready (Holder recovery after ${diagnostic})`
+    );
+});

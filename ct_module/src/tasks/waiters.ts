@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../housingSync/incompleteRead";
 import type TaskContext from "./context";
 import type { TaskWaiter } from "./context";
 import type { WaitForPromise } from "./specifics/waitFor";
@@ -74,6 +75,7 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
             let settled = false;
             let remaining = keys.length;
             const failures: string[] = [];
+            let incompleteRead: IncompleteReadError | undefined;
 
             const promise = new Promise<WaiterKey<T>>((resolve, reject) => {
                 if (keys.length === 0) {
@@ -85,7 +87,8 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
                     if (settled || remaining > 0) return;
                     settled = true;
                     cleanupWaiters(waiters);
-                    reject(new Error(`${label}: ${failures.join("; ")}`));
+                    const context = `${label}: ${failures.join("; ")}`;
+                    reject(incompleteRead?.withContext(context) ?? new Error(context));
                 };
 
                 const handleFailure = (key: WaiterKey<T>, error: unknown): void => {
@@ -97,7 +100,15 @@ export function oneOf<T extends Record<string, AnyWaiter>>(
                         return;
                     }
                     remaining--;
-                    failures.push(`${key}: ${errorMessage(error)}`);
+                    if (
+                        error instanceof IncompleteReadError &&
+                        incompleteRead === undefined
+                    ) {
+                        incompleteRead = error;
+                        failures.push(`${key} failed`);
+                    } else {
+                        failures.push(`${key}: ${errorMessage(error)}`);
+                    }
                     failIfDone();
                 };
 

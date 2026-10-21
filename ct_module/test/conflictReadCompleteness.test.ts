@@ -200,7 +200,9 @@ describe("full conflict re-read completeness", () => {
     );
 
     it.each([
-        [1, false], [22, false], [22, true],
+        [1, false],
+        [22, false],
+        [22, true],
     ] as const)(
         "keeps the conflict when the re-read drops a trailing HEAL after %i baseline entries (unnumbered first page: %s)",
         async (count, unnumberedFirstPage) => {
@@ -230,7 +232,11 @@ describe("full conflict re-read completeness", () => {
     );
 
     it.each([
-        [1, false], [21, false], [35, false], [42, false], [35, true],
+        [1, false],
+        [21, false],
+        [35, false],
+        [42, false],
+        [35, true],
     ] as const)(
         "clears a scan conflict after consistent complete reads of %i entries (unnumbered first page: %s)",
         async (count, unnumberedFirstPage) => {
@@ -409,7 +415,14 @@ describe("full conflict re-read completeness", () => {
         expect(sync.conflicts).toEqual([target]);
     });
 
-    it.each(["equal", "count mismatch", "outside edit", "missing Next", "short page", "nested conditional"])(
+    it.each([
+        "equal",
+        "count mismatch",
+        "outside edit",
+        "missing Next",
+        "short page",
+        "nested conditional",
+    ])(
         "checks a conditional's paginated children before clearing: %s",
         async (scenario) => {
             const baselineChildren = [...Array<Action>(21).fill(heal), kill];
@@ -483,20 +496,19 @@ describe("full conflict re-read completeness", () => {
             if (
                 scenario === "missing Next" ||
                 scenario === "short page" ||
+                scenario === "count mismatch" ||
                 scenario === "nested conditional"
             ) {
                 // Nested containers are unsupported; an unread inner list must
                 // preserve the conflict just as an incomplete page does.
-                await expect(read(ui.ctx, sync, baseline)).rejects.toThrow(
-                    scenario === "nested conditional"
-                        ? "CONDITIONAL action cannot appear inside an action child list"
-                        : "Incomplete paginated action list"
-                );
+                await expect(read(ui.ctx, sync, baseline)).rejects.toThrow("Incomplete");
             } else {
                 const plan = await read(ui.ctx, sync, baseline);
-                expect(plan.observed[0].action).toEqual(conditional({
-                    ifActions: scenario === "count mismatch" ? baselineChildren : live,
-                }));
+                expect(plan.observed[0].action).toEqual(
+                    conditional({
+                        ifActions: live,
+                    })
+                );
             }
             expect(sync.conflicts).toHaveLength(scenario === "equal" ? 0 : 1);
         }

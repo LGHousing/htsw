@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../housingSync/incompleteRead";
 import { submitHousingText } from "../../housingSync/menus/textInput";
 import type { FunctionIcon, ImportableFunction } from "htsw/types";
 import { isUnspawnableItem } from "htsw";
@@ -245,6 +246,7 @@ async function functionSettingsStep<T>(label: string, run: () => Promise<T>): Pr
     try {
         return await run();
     } catch (error) {
+        if (error instanceof IncompleteReadError) throw error.withContext(label);
         const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }

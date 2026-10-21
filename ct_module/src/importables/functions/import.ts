@@ -1,3 +1,4 @@
+import { IncompleteReadError } from "../../housingSync/incompleteRead";
 import { Diagnostic } from "htsw";
 import type { Action, Importable, ImportableFunction } from "htsw/types";
 
@@ -379,6 +380,7 @@ async function functionImportStep<T>(label: string, run: () => Promise<T>): Prom
     try {
         return await run();
     } catch (error) {
+        if (error instanceof IncompleteReadError) throw error.withContext(label);
         const message = errorMessage(error);
         throw new Error(`${label}: ${message}`);
     }
