@@ -280,6 +280,8 @@ export function assertReadableScalarLore(
     for (const label in loreFields) {
         const field = loreFields[label];
         if (field.kind === "actionList" || field.kind === "conditionList") continue;
+        // Housing shows no Value or Automatic Unset line for an Unset Change Variable.
+        if (type === "CHANGE_VAR" && parsed.op === "Unset" && (label === "Value" || label === "Automatic Unset")) continue;
         const value = parsed[field.prop];
         if (
             value === undefined ||
