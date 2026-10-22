@@ -156,6 +156,21 @@ describe.each(Object.entries(readers))("%s rejects incomplete reads", (_name, re
             );
         }
     );
+    test("reads an Unset Change Variable, which has no Value or Automatic Unset lore", async () => {
+        const ui = menus({
+            title: "Edit Actions",
+            entries: () => [
+                slot(10, "Change Variable", ["Holder: Player", "Variable: test", "Operation: Unset"]),
+            ],
+        });
+        const unset: ActionChangeVar = {
+            type: "CHANGE_VAR",
+            holder: { type: "Player" },
+            key: "test",
+            op: "Unset",
+        } as ActionChangeVar;
+        await expect(read(ui.ctx, [unset])).resolves.toBeDefined();
+    });
     test("rejects a short nonfinal page", async () => {
         const ui = menus({
             title: "Edit Actions",
