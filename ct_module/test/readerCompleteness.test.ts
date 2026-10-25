@@ -168,7 +168,7 @@ describe.each(Object.entries(readers))("%s rejects incomplete reads", (_name, re
             holder: { type: "Player" },
             key: "test",
             op: "Unset",
-        } as ActionChangeVar;
+        };
         await expect(read(ui.ctx, [unset])).resolves.toBeDefined();
     });
     test("rejects a short nonfinal page", async () => {
