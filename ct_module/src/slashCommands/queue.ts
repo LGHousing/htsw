@@ -1,3 +1,4 @@
+import { TaskManager } from "@htsw/importer/tasks/manager";
 import { rejectBridgeRun } from "@htsw/importer/bridge/status";
 import type { Importable } from "htsw/types";
 
@@ -384,7 +385,11 @@ function commandQueueRun(): void {
     const count = getQueue().length;
     if (startQueue()) ChatLib.chat(`&a[htsw] Running queue with ${count} item(s)`);
     else
-        ChatLib.chat("&c[htsw] The queue could not start while another task is running.");
+        ChatLib.chat(
+            isQueueRunning() || TaskManager.isBusy()
+                ? "&c[htsw] The queue could not start while another task is running."
+                : "&c[htsw] The queue has no runnable items."
+        );
 }
 
 function commandQueuePause(): void {

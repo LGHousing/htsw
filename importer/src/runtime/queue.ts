@@ -327,12 +327,11 @@ export function retryQueueRow(key: string): boolean {
 
 function removeRows(keys: ReadonlySet<string>): boolean {
     if (keys.size === 0) return false;
-    keys = new Set([
-        ...keys,
-        ...items
-            .filter((row) => row.parentKey !== null && keys.has(row.parentKey))
-            .map((row) => row.key),
-    ]);
+    const removing = new Set(keys);
+    for (const row of items) {
+        if (row.parentKey !== null && keys.has(row.parentKey)) removing.add(row.key);
+    }
+    keys = removing;
     const before = items.length;
     items = items.filter((row) => !keys.has(row.key));
     if (items.length === before) return false;
