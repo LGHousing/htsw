@@ -526,7 +526,7 @@ describe("item house reader", () => {
 
     it("preserves the cached signature when exporting a differently signed click item", async () => {
         const cachedSignature = '{signature:"already imported"}';
-        const write = vi.fn();
+        const write = vi.fn<(path: string, content: string) => void>();
         vi.stubGlobal("FileLib", {
             exists: (path: string) => path.includes("/interact_data/"),
             read: () => cachedSignature,
