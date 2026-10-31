@@ -93,6 +93,7 @@ import { readItems } from "@htsw/importer/importables/items/readHouseItems";
 import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "@htsw/importer/importables/export/readers";
 import { importableHash } from "@htsw/importer/importCache/hash";
 import { exportCapturedItems } from "@htsw/importer/importables/items/exportCapturedItems";
+import * as interactDataCache from "@htsw/importer/importables/items/interactDataCache";
 import { ItemCaptureRegistry } from "@htsw/importer/importables/items/captureRegistry";
 import * as projectDestination from "@htsw/importer/importables/export/projectDestination";
 import { runQueuedExportSession } from "@htsw/importer/runtime/queueRunner";
@@ -521,6 +522,37 @@ describe("item house reader", () => {
         expect(mocks.restoreTemporarilyHeldItem).toHaveBeenCalledOnce();
         expect(mocks.holdInventoryItem).not.toHaveBeenCalled();
         expect(ctx.runCommand).toHaveBeenCalledWith("/edit");
+    });
+
+    it("preserves the cached signature when exporting a differently signed click item", async () => {
+        const cachedSignature = '{signature:"already imported"}';
+        const write = vi.fn<(path: string, content: string) => void>();
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => path.includes("/interact_data/"),
+            read: () => cachedSignature,
+            write,
+        });
+        const writeSignature = vi.spyOn(interactDataCache, "writeInteractDataCache");
+        const registry = new ItemCaptureRegistry("live");
+        const name = registry.register(signed("exported"), "cookie");
+        const exportedItem = { ...sourceItem(), name };
+        vi.spyOn(projectDestination, "readParsedImportablesForExport").mockReturnValue({
+            value: [exportedItem],
+        } as NonNullable<ReturnType<typeof projectDestination.readParsedImportablesForExport>>);
+
+        expect(await exportCapturedItems(
+            context() as unknown as TaskContext,
+            registry,
+            "/project",
+            "/project/import.json",
+            "house"
+        )).toBe(1);
+
+        expect(writeSignature).not.toHaveBeenCalled();
+        expect(write.mock.calls.some(([path]) => path.includes("/interact_data/"))).toBe(false);
+        expect(mocks.writeImportableCache).toHaveBeenCalledWith(
+            expect.anything(), "house", exportedItem, "exporter", expect.anything()
+        );
     });
 
     it("hashes source and read-back items alike after Housing default NBT and signing", () => {
