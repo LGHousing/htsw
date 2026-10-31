@@ -24,7 +24,10 @@ import { buildCacheStatusRow } from "@htsw/importer/importCache/status";
 import { listCachedImportables } from "@htsw/importer/importCache/cache";
 import { importableIdentity } from "@htsw/importer/importables/identity";
 import { isTaskRunning } from "@htsw/importer/tasks/runningState";
-import { getHousingUuid, isCurrentHouseTrusted } from "@htsw/importer/runtime/state/index";
+import {
+    getHousingUuid,
+    isCurrentHouseTrusted,
+} from "@htsw/importer/runtime/state/index";
 import { isHouseTrusted } from "@htsw/importer/runtime/state/trust";
 import { canonicalPath, requestParse } from "@htsw/importer/runtime/parsing/parses";
 import { setActiveLeftTab } from "../../left-panel/tabs";
@@ -235,12 +238,11 @@ function moveActions(row: QueueRow): MenuAction[] {
     ];
 }
 
-function rowMenuActions(row: QueueRow, child: boolean): MenuAction[] {
+function rowMenuActions(row: QueueRow): MenuAction[] {
     if (rowHasRunningWork(row)) {
         return [{ label: "Cancel", icon: Icons.square, onClick: () => cancelQueue() }];
     }
-    // Bulk children run with their group, so only top-level rows move.
-    const moves = child ? [] : moveActions(row);
+    const moves = moveActions(row);
     if (row.status === "failed" || row.status === "cancelled") {
         return moves.concat([
             {
@@ -456,18 +458,16 @@ export function queueRow(row: QueueRow, options: QueueRowRenderOptions = {}): El
         },
         onClick: (_rect, info) => {
             if (info.button === 1) {
-                openMenu(info.x, info.y, rowMenuActions(row, child));
+                openMenu(info.x, info.y, rowMenuActions(row));
                 return;
             }
-            if (info.button === 0 && !child) {
+            if (info.button === 0) {
                 pressQueueRow(row.key, info.x, info.y, () => revealQueueRow(row, info));
             } else {
                 revealQueueRow(row, info);
             }
         },
-        // A child row stands in for its bulk group while another row is dragged.
-        onHover: (_rect, mouseX, mouseY) =>
-            updateQueueDrag(child ? (row.parentKey ?? row.key) : row.key, mouseX, mouseY),
+        onHover: (_rect, mouseX, mouseY) => updateQueueDrag(row.key, mouseX, mouseY),
         children: [
             queueStateRail(stateColor),
             child &&

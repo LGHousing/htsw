@@ -19,10 +19,7 @@ import {
 } from "../importables/export/readers";
 import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import { listAllGroupNames } from "../importables/groups/listGroups";
-import {
-    importableIdentity,
-    parseNpcPosIdentity,
-} from "../importables/identity";
+import { importableIdentity, parseNpcPosIdentity } from "../importables/identity";
 import { listAllMenuNames } from "../importables/menus/listMenus";
 import { listAllNpcs } from "../importables/npcs/listNpcs";
 import { readProjectExportDestination } from "../importables/export/projectDestination";
@@ -51,7 +48,6 @@ import {
     expandBulkQueueRow,
     getQueue,
     getQueueRow,
-    isBulkQueueRowExpanded,
     isProjectQueueRow,
     isRestoredQueueRow,
     isUnfinishedProjectRow,
@@ -160,6 +156,7 @@ export function isQueueCancellationPending(): boolean {
 
 function isRunnable(row: QueueRow, house: string, autoRun: boolean): boolean {
     return (
+        (row.parentKey === null || getQueueRow(row.parentKey)?.status === "running") &&
         row.status === "queued" &&
         (row.house === null || row.house === house) &&
         (!autoRun || !isRestoredQueueRow(row.key))
@@ -173,7 +170,6 @@ export function headRunnableQueueRow(
     const autoRun = options.autoRun === true;
     for (const row of getQueue()) {
         if (!isRunnable(row, currentHouse, autoRun)) continue;
-        if (row.target.kind === "bulk" && isBulkQueueRowExpanded(row.key)) continue;
         return row;
     }
     return null;

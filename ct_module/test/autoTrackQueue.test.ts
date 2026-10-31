@@ -47,7 +47,7 @@ vi.mock("@htsw/importer/runtime/parsing/parses", () => ({
         visit({
             canonicalPath: SOURCE_PATH,
             parsed: {
-                value: [fixture.importable],
+                value: [fixture.importable, { ...fixture.importable, name: "Second" }],
                 importJson: { houseUuid: "house-uuid" },
             },
         });
@@ -89,6 +89,7 @@ import {
     clearQueue,
     getQueue,
     makeImportableQueueRow,
+    moveQueueRow,
     setQueueRowStatus,
 } from "@htsw/importer/runtime/queue";
 
@@ -105,7 +106,7 @@ afterEach(clearQueue);
 describe("Auto-Track queue reconciliation", () => {
     test("removes an auto-queued function after it becomes current", () => {
         autoTrackRefresh("reparse");
-        expect(getQueue()).toHaveLength(1);
+        expect(getQueue()).toHaveLength(3);
 
         fixture.status = "current";
         autoTrackRefresh("reparse");
@@ -113,15 +114,25 @@ describe("Auto-Track queue reconciliation", () => {
         expect(getQueue()).toHaveLength(0);
     });
 
-    test("queues the whole project as one row", () => {
+    test("previews changed imports and preserves their order on refresh", () => {
         autoTrackRefresh("reparse");
 
-        expect(getQueue()).toHaveLength(1);
+        expect(getQueue()).toHaveLength(3);
         expect(getQueue()[0].target).toMatchObject({
             kind: "bulk",
             scope: { kind: "file", path: SOURCE_PATH },
             filter: "modified",
         });
+        const [project, first, second] = getQueue();
+        expect(first.parentKey).toBe(project.key);
+        expect(second.parentKey).toBe(project.key);
+        expect(moveQueueRow(second.key, "top", "house-uuid")).toBe(true);
+        autoTrackRefresh("cacheWarm");
+        expect(getQueue().map((row) => row.key)).toEqual([
+            project.key,
+            second.key,
+            first.key,
+        ]);
     });
 
     test("queues a project that claims its house when a save only removed things", () => {

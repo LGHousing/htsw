@@ -4,7 +4,12 @@ import { getScrollState, setScrollOffset } from "../../lib/layout";
 import { javaType } from "../../lib/java";
 import { markGuiDirty } from "../../lib/dirty";
 import { getHousingUuid } from "@htsw/importer/runtime/state/index";
-import { getQueue, getQueueRow, moveQueueRowsOnto, queuePeerKeys } from "@htsw/importer/runtime/queue";
+import {
+    getQueue,
+    getQueueRow,
+    moveQueueRowsOnto,
+    queuePeerKeys,
+} from "@htsw/importer/runtime/queue";
 
 const MouseClass = javaType("org.lwjgl.input.Mouse");
 const KeyboardClass = javaType("org.lwjgl.input.Keyboard");
@@ -40,7 +45,7 @@ function selectedInQueueOrder(): string[] {
         .map((row) => row.key);
 }
 
-/** Press on a top-level row: extends the selection with Shift, and may start a drag. */
+/** Press on a row: extends the selection with Shift, and may start a drag. */
 export function pressQueueRow(
     key: string,
     mouseX: number,
@@ -83,7 +88,7 @@ export function pressQueueRow(
     markGuiDirty();
 }
 
-/** `targetKey` is the top-level row under the cursor (a child reports its bulk parent). */
+/** `targetKey` is the row under the cursor. */
 export function updateQueueDrag(targetKey: string, mouseX: number, mouseY: number): void {
     if (dragState === null) return;
     if (!MouseClass.isButtonDown(0)) {
@@ -98,6 +103,9 @@ export function updateQueueDrag(targetKey: string, mouseX: number, mouseY: numbe
         if (dx * dx + fromStart * fromStart < DRAG_THRESHOLD * DRAG_THRESHOLD) return;
         dragState.dragging = true;
         markGuiDirty();
+    }
+    if (getQueueRow(dragState.keys[0])?.parentKey === null) {
+        targetKey = getQueueRow(targetKey)?.parentKey ?? targetKey;
     }
     if (dragState.keys.indexOf(targetKey) >= 0) return;
     // Only move the way the cursor travels. Rows differ in height (an expanded

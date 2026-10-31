@@ -6,6 +6,8 @@ import { runHousingSyncTask } from "@htsw/importer/housingSync/taskRunner";
 import {
     addToQueue,
     clearQueue,
+    expandBulkQueueRow,
+    moveQueueRow,
     getQueue,
     insertQueueRowsAfter,
     insertQueueRowsBefore,
@@ -33,10 +35,7 @@ import * as parses from "@htsw/importer/runtime/parsing/parses";
 import { getTaskActivity } from "@htsw/importer/tasks/activity";
 import type { runExportSession } from "@htsw/importer/importables/export/session";
 import { createExportProgressSink } from "@htsw/importer/runtime/exportProgress";
-import {
-    clearTaskProgress,
-    getTaskProgress,
-} from "@htsw/importer/runtime/taskProgress";
+import { clearTaskProgress, getTaskProgress } from "@htsw/importer/runtime/taskProgress";
 
 const ctx = {
     checkCancelled: () => undefined,
@@ -257,10 +256,14 @@ describe("operation queue drain", () => {
         ]);
     });
 
-    it("finishes a project row after its importables, and only then", async () => {
+    it("refreshes previewed imports in the chosen order and finishes the project afterward", async () => {
         const path = "/project/import.json";
         const project = projectRow(path);
         enqueue(project);
+        const first = row("first", "import", path);
+        const second = row("second", "import", path);
+        expandBulkQueueRow(project.key, [first, second, row("stale")], true);
+        expect(moveQueueRow(second.key, "top", "house-a")).toBe(true);
         const calls: string[] = [];
         await drainQueue(
             ctx,
@@ -270,7 +273,7 @@ describe("operation queue drain", () => {
                 },
                 expandBulk: async (_ctx, parent) => {
                     calls.push("expand");
-                    return [{ ...row("child", "import", path), parentKey: parent.key }];
+                    return [first, second, row("new", "import", parent.path)];
                 },
                 runImport: async (_ctx, rows) => {
                     calls.push(`import ${rows.map((r) => r.target.label).join(",")}`);
@@ -281,7 +284,12 @@ describe("operation queue drain", () => {
                 },
             })
         );
-        expect(calls).toEqual(["begin", "expand", "import child", "finish project"]);
+        expect(calls).toEqual([
+            "begin",
+            "expand",
+            "import second,first,new",
+            "finish project",
+        ]);
         expect(getQueue()).toEqual([]);
     });
 
