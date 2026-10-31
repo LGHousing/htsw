@@ -14,6 +14,8 @@ import {
 } from "../importCache/importableStatus";
 import { shortPath } from "../project/pathDisplay";
 import {
+    expandBulkQueueRow,
+    getQueueRow,
     makeBulkQueueRow,
     makeImportableQueueRow,
     queueItemKey,
@@ -35,15 +37,14 @@ import { autoRunRefresh } from "./autoRun";
 import { span } from "../perf/spans";
 
 /**
- * One tracked project's pending work. It queues as a single project row, whose
- * importables are expanded when it runs, from the files as they are then.
+ * One tracked project and the importables previewed beneath it.
  */
 type ProjectPlan = {
     row: QueueRow | null;
     changed: number;
     complete: boolean;
-    /** Queue keys of the importables the row would import, dependencies included. */
-    workKeys: string[];
+    /** Importables the row would import, dependencies included. */
+    work: QueueRow[];
 };
 
 function importableStatus(
@@ -88,15 +89,16 @@ function planProject(sourcePath: string, parsed: ImportablesParseResult): Projec
                   })
               );
     const work = expansion?.importables ?? modified;
-    const workKeys = work.map(
-        (importable) =>
-            makeImportableQueueRow({
-                op: "import",
-                house,
-                path: canonicalSourcePath,
-                type: importable.type,
-                identity: importableIdentity(importable),
-            }).key
+    const children = work.map((importable) =>
+        makeImportableQueueRow({
+            op: "import",
+            house,
+            path: canonicalSourcePath,
+            origin: "expansion",
+            type: importable.type,
+            identity: importableIdentity(importable),
+            label: importable.type === "EVENT" ? importable.event : importable.name,
+        })
     );
 
     // A project that claims its whole house also has work when a save only
@@ -119,7 +121,7 @@ function planProject(sourcePath: string, parsed: ImportablesParseResult): Projec
                   origin: "autotrack",
               })
             : null;
-    return { row, changed: modified.length, complete, workKeys };
+    return { row, changed: modified.length, complete, work: children };
 }
 
 export type AutoTrackRefreshTrigger = "reparse" | "cacheWarm";
@@ -153,7 +155,7 @@ function refresh(trigger: AutoTrackRefreshTrigger): void {
         plans.push(plan);
         if (!plan.complete) reconciliationComplete = false;
         changed += plan.changed;
-        for (const key of plan.workKeys) detectedWorkKeys.push(key);
+        for (const row of plan.work) detectedWorkKeys.push(row.key);
     });
     if (seenTracked.size !== tracked.size) reconciliationComplete = false;
 
@@ -169,6 +171,13 @@ function refresh(trigger: AutoTrackRefreshTrigger): void {
         retryStopped
     );
     for (const plan of plans) {
+        if (
+            plan.row !== null &&
+            plan.complete &&
+            getQueueRow(plan.row.key)?.status === "queued"
+        ) {
+            expandBulkQueueRow(plan.row.key, plan.work, true);
+        }
         if (plan.row !== null && autoAddedKeys.has(queueItemKey(plan.row))) {
             newlyQueuedChanged += plan.changed;
         }

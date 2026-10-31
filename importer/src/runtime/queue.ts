@@ -327,6 +327,12 @@ export function retryQueueRow(key: string): boolean {
 
 function removeRows(keys: ReadonlySet<string>): boolean {
     if (keys.size === 0) return false;
+    keys = new Set([
+        ...keys,
+        ...items
+            .filter((row) => row.parentKey !== null && keys.has(row.parentKey))
+            .map((row) => row.key),
+    ]);
     const before = items.length;
     items = items.filter((row) => !keys.has(row.key));
     if (items.length === before) return false;
@@ -380,34 +386,54 @@ export function completeQueueRows(keys: readonly string[]): void {
 }
 export function expandBulkQueueRow(
     parentKey: string,
-    children: readonly QueueRowInput[]
+    children: readonly QueueRowInput[],
+    preview = false
 ): QueueRow[] {
     const parentIndex = items.findIndex((row) => row.key === parentKey);
     if (parentIndex < 0) return [];
     const parent = items[parentIndex];
     if (parent.target.kind !== "bulk") return [];
     const existingChildren = items.filter((row) => row.parentKey === parentKey);
-    if (existingChildren.length > 0) return existingChildren;
-    const inserted: QueueRow[] = [];
-    const seen = new Set<string>();
+    if (parent.status === "running" && existingChildren.length > 0)
+        return existingChildren;
+    const desiredKeys = new Set(children.map(queueRowKey));
+    if (
+        preview &&
+        existingChildren.length === desiredKeys.size &&
+        existingChildren.every((row) => desiredKeys.has(row.key))
+    )
+        return existingChildren;
+    const inserted: QueueRow[] = existingChildren.filter((row) =>
+        desiredKeys.has(row.key)
+    );
+    const existingKeys = new Set(existingChildren.map((row) => row.key));
+    items = items.filter((row) => row.parentKey !== parentKey);
+    for (const key of existingKeys) {
+        byKey.delete(key);
+        autoTrackedKeys.delete(key);
+    }
+    const seen = new Set(inserted.map((row) => row.key));
     for (let i = 0; i < children.length; i++) {
         const child = normalizeQueueRow({ ...children[i], parentKey });
         if (byKey.has(child.key) || seen.has(child.key)) continue;
         seen.add(child.key);
         inserted.push(child);
     }
-    if (inserted.length === 0 && !isProjectQueueRow(parent)) {
+    if (!preview && inserted.length === 0 && !isProjectQueueRow(parent)) {
         completeQueueRows([parentKey]);
         return [];
     }
     const runningParent: QueueRow = {
         ...parent,
-        status: "running",
+        status: preview ? "queued" : "running",
         error: null,
     };
     items = items
         .slice(0, parentIndex)
         .concat([runningParent], inserted, items.slice(parentIndex + 1));
+    if (autoTrackedKeys.has(parentKey)) {
+        for (const child of inserted) autoTrackedKeys.add(child.key);
+    }
     rebuildLookup();
     queueChanged();
     return inserted;
@@ -488,17 +514,26 @@ function houseGroup(row: QueueRow, currentHouse: string | null): string | null {
     return row.house === null || row.house === currentHouse ? null : row.house;
 }
 
-/** Keys of the top-level rows in the same house group as `key`, in queue order. */
+/** Siblings within a bulk row, or top-level rows in the same house group. */
 export function queuePeerKeys(key: string, currentHouse: string | null): string[] {
     const row = byKey.get(key);
     if (row === undefined) return [];
+    if (row.parentKey !== null) {
+        return items
+            .filter((peer) => peer.parentKey === row.parentKey)
+            .map((peer) => peer.key);
+    }
     const group = houseGroup(row, currentHouse);
     return queueUnits()
         .filter((unit) => houseGroup(unit[0], currentHouse) === group)
         .map((unit) => unit[0].key);
 }
 
-function stepTarget(key: string, move: QueueMove, currentHouse: string | null): string | null {
+function stepTarget(
+    key: string,
+    move: QueueMove,
+    currentHouse: string | null
+): string | null {
     const peers = queuePeerKeys(key, currentHouse);
     const from = peers.indexOf(key);
     const to =
@@ -520,7 +555,8 @@ function planRowsOnto(
     targetKey: string,
     currentHouse: string | null
 ): QueueRow[][] | null {
-    const units = queueUnits();
+    const parentKey = byKey.get(targetKey)?.parentKey ?? null;
+    const units = parentKey === null ? queueUnits() : items.map((row) => [row]);
     const moving = units.filter((unit) => keys.indexOf(unit[0].key) >= 0);
     const target = units.find((unit) => unit[0].key === targetKey);
     if (moving.length === 0 || target === undefined || moving.indexOf(target) >= 0) {
@@ -528,8 +564,16 @@ function planRowsOnto(
     }
     const group = houseGroup(target[0], currentHouse);
     for (const unit of moving) {
-        if (houseGroup(unit[0], currentHouse) !== group) return null;
-        if (unit.some((row) => row.target.kind === "importable" && row.status === "running")) {
+        if (
+            unit[0].parentKey !== parentKey ||
+            houseGroup(unit[0], currentHouse) !== group
+        )
+            return null;
+        if (
+            unit.some(
+                (row) => row.target.kind === "importable" && row.status === "running"
+            )
+        ) {
             return null;
         }
     }
@@ -571,14 +615,6 @@ export function moveQueueRow(
     return target !== null && moveQueueRowsOnto([key], target, currentHouse);
 }
 
-export function isBulkQueueRowExpanded(key: string): boolean {
-    const parent = byKey.get(key);
-    if (parent?.target.kind !== "bulk") return false;
-    for (let i = 0; i < items.length; i++) {
-        if (items[i].parentKey === key) return true;
-    }
-    return false;
-}
 export function clearQueue(): void {
     if (items.length === 0) return;
     items = [];
@@ -674,7 +710,11 @@ export function reconcileAutoTrackedQueue(
         const stale = new Set<string>();
         for (const key of autoTrackedKeys) {
             const row = byKey.get(key);
-            if (!desiredKeys.has(key) && row?.status !== "running") {
+            if (
+                !desiredKeys.has(key) &&
+                row?.status !== "running" &&
+                row?.parentKey === null
+            ) {
                 stale.add(key);
             }
         }
