@@ -7,6 +7,7 @@ import { exportDestinationPicker } from "./destinationPicker";
 import { getExportDestinationStatus } from "@htsw/importer/runtime/exportDestination";
 
 export function exportDestinationButton(): Element {
+    const status = getExportDestinationStatus();
     return Container({
         anchorKey: "tour:export-destination",
         style: {
@@ -24,14 +25,12 @@ export function exportDestinationButton(): Element {
                         },
                     }),
                 ],
-                tooltip: () => {
-                    const status = getExportDestinationStatus();
-                    if (status.kind === "ready") return "Change where exports go";
-                    if (status.kind === "missing") {
-                        return "Choose a replacement export project";
-                    }
-                    return "Choose an export project";
-                },
+                tooltip:
+                    status.kind === "ready"
+                        ? "Change where exports go"
+                        : status.kind === "missing"
+                          ? "Choose a replacement export project"
+                          : "Choose an export project",
                 tooltipColor: COLOR_TEXT_DIM,
                 style: {
                     width: { kind: "grow" },

@@ -40,6 +40,7 @@ import { addRecent, getRecents } from "@htsw/importer/persistence/recents";
 import {
     canonicalPath,
     forEachCachedParse,
+    getParseCacheRevision,
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
@@ -248,17 +249,15 @@ function rebuildExportSubTree(base: string): void {
     }
 }
 
-function ensureExportSubTree(): void {
-    const base = availableExportImportJsonPath();
+function ensureExportSubTree(base: string): void {
     const sig = exportSubSignature(base);
     if (sig === exportSubSig) return;
     exportSubSig = sig;
     rebuildExportSubTree(base);
 }
 
-function exportSubTreeRows(): Element[] {
-    ensureExportSubTree();
-    const base = availableExportImportJsonPath();
+function exportSubTreeRows(base: string): Element[] {
+    ensureExportSubTree(base);
     return pickerTreeRows(exportSubRoots, {
         expansion: exportSubExpansion,
         filter: "",
@@ -283,7 +282,7 @@ function exportSubTreeRows(): Element[] {
 // Create `<folder>/import.json` (included from the deepest existing file whose
 // folder contains it, so `functions/combat` nests under functions/) and route
 // new exports there. Closes the picker; reopening shows the new file checked.
-function newExportFileRow(): Element {
+function newExportFileRow(availableExportImportJsonPath: () => string): Element {
     const disabled = (): boolean => availableExportImportJsonPath() === "";
     return Button({
         icon: Icons.folderPlus,
@@ -346,7 +345,7 @@ function newExportFileRow(): Element {
 // One-shot bulk migration into a folder per type, offered only for a flat
 // project. Once split, the folders show up as selectable rows in the tree.
 function splitAction(dest: string): Element | false {
-    if (dest.trim() === "" || !projectPathExists(dest)) return false;
+    if (dest.trim() === "") return false;
     if (isSectionLayoutProject(dest)) return false;
     return Button({
         icon: Icons.folderTree,
@@ -376,6 +375,25 @@ function splitAction(dest: string): Element | false {
 }
 
 export function exportDestinationPicker(): Element {
+    // Popovers lay out again for every frame, click and scroll. Only touch the
+    // filesystem when the destination or parsed projects change, or on reopen.
+    let destination = "";
+    let revision = -1;
+    let availablePath = "";
+    let split: Element | false = false;
+    const availableExportImportJsonPath = (): string => {
+        const path = normalizeHtswPath(getExportImportJsonPath());
+        const nextRevision = getParseCacheRevision();
+        if (path !== destination || nextRevision !== revision) {
+            destination = path;
+            revision = nextRevision;
+            const status = getExportDestinationStatus();
+            availablePath = status.kind === "ready" ? status.path : "";
+            split = splitAction(availablePath);
+        }
+        return availablePath;
+    };
+
     const open = currentExportDestinations();
     const recents = getRecents().filter((path) => {
         const norm = normalizeHtswPath(path);
@@ -452,29 +470,32 @@ export function exportDestinationPicker(): Element {
             }),
             Row({
                 style: { gap: 4, align: "center", height: { kind: "px", value: 16 } },
-                children: () => [
-                    Text({
-                        text: "Export destination",
-                        color: COLOR_TEXT_FAINT,
-                        style: {
-                            width: { kind: "grow" },
-                            padding: { side: "x", value: 4 },
-                        },
-                    }),
-                    splitAction(availableExportImportJsonPath()),
-                ],
+                children: () => {
+                    availableExportImportJsonPath();
+                    return [
+                        Text({
+                            text: "Export destination",
+                            color: COLOR_TEXT_FAINT,
+                            style: {
+                                width: { kind: "grow" },
+                                padding: { side: "x", value: 4 },
+                            },
+                        }),
+                        split,
+                    ];
+                },
             }),
             Scroll({
                 id: "export-subtarget-tree",
                 style: { gap: 1, height: { kind: "grow" } },
-                children: () => exportSubTreeRows(),
+                children: () => exportSubTreeRows(availableExportImportJsonPath()),
             }),
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
                     Container({
                         style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                        children: [newExportFileRow()],
+                        children: [newExportFileRow(availableExportImportJsonPath)],
                     }),
                     Button({
                         text: "Done",
@@ -490,9 +511,4 @@ export function exportDestinationPicker(): Element {
             }),
         ],
     });
-}
-
-function availableExportImportJsonPath(): string {
-    const status = getExportDestinationStatus();
-    return status.kind === "ready" ? status.path : "";
 }
