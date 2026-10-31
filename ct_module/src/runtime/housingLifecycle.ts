@@ -2,7 +2,7 @@
 
 import { getHousingUuid, setHousingUuid } from "@htsw/importer/runtime/state";
 import { getHousingPresence, resetHousingPresence } from "@htsw/importer/importCache/housingPresence";
-import { detectHousingUuid } from "@htsw/importer/importCache/housingId";
+import { detectHousingUuid, isOwnProbeRejection } from "@htsw/importer/importCache/housingId";
 import { cancelActiveTask } from "@htsw/importer/tasks/activeTask";
 import { TaskManager } from "@htsw/importer/tasks/manager";
 import { closeBoundProjectForHouse, openBoundProjectForHouse } from "@htsw/importer/runtime/boundProject";
@@ -77,6 +77,12 @@ export function initHousingLifecycle(): void {
         // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
         const msg = ChatLib.getChatMessage(event, false);
         if (typeof msg !== "string") return;
+        if (isOwnProbeRejection(msg)) {
+            // Later chat triggers (the probe's waiter included) still see a
+            // cancelled line; only the player doesn't.
+            cancel(event);
+            return;
+        }
         if (msg.indexOf("Sending you to ") !== 0) return;
         leaveHousingServer();
     });

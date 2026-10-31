@@ -22,6 +22,23 @@ function houseNameFromMapMessage(rawMessage: string, uuid: string): string | nul
     return name.length === 0 ? null : name;
 }
 
+let awaitingProbeReply = false;
+
+/**
+ * Whether an unformatted chat line is Hypixel rejecting HTSW's own `/wtfmap`
+ * probe. The client hides that line: the rejection is how HTSW learns it is
+ * outside a house, so the player shouldn't see "Unknown command" for a
+ * command they never typed. A `/wtfmap` the player types themselves, and
+ * every other command error, still show.
+ */
+export function isOwnProbeRejection(message: string): boolean {
+    return (
+        awaitingProbeReply &&
+        message.startsWith("Unknown command") &&
+        message.endsWith("(/wtfmap)")
+    );
+}
+
 /**
  * Run `/wtfmap` and classify the reply:
  *  - "You are currently playing on <UUID> ..." → the 36-char housing UUID.
@@ -32,10 +49,10 @@ function houseNameFromMapMessage(rawMessage: string, uuid: string): string | nul
  * callers that don't yet know whether the player is in a house.
  */
 export async function detectHousingUuid(ctx: TaskContext): Promise<string | null> {
-    await ctx.runCommand("/wtfmap");
-
-    const rawMessage = await ctx
-        .withTimeout(
+    awaitingProbeReply = true;
+    try {
+        await ctx.runCommand("/wtfmap");
+        const [rawMessage] = await ctx.withTimeout(
             ctx.waitFor("message", (msg) => {
                 const m = removedFormatting(msg);
                 return (
@@ -44,21 +61,23 @@ export async function detectHousingUuid(ctx: TaskContext): Promise<string | null
                 );
             }),
             "Waiting for /wtfmap reply"
-        )
-        .then(([msg]) => msg);
-    const message = removedFormatting(rawMessage);
+        );
+        const message = removedFormatting(rawMessage);
 
-    if (!message.startsWith("You are currently playing on")) {
-        reportHousingPresence("out");
-        return null;
+        if (!message.startsWith("You are currently playing on")) {
+            reportHousingPresence("out");
+            return null;
+        }
+
+        // "You are currently playing on " is 29 chars; UUIDs are 36 chars long.
+        const uuid = message.substring(29, 65);
+        const houseName = houseNameFromMapMessage(rawMessage, uuid);
+        if (houseName !== null && getAlias(uuid) === null) setAlias(uuid, houseName);
+        reportHousingPresence("in");
+        return uuid;
+    } finally {
+        awaitingProbeReply = false;
     }
-
-    // "You are currently playing on " is 29 chars; UUIDs are 36 chars long.
-    const uuid = message.substring(29, 65);
-    const houseName = houseNameFromMapMessage(rawMessage, uuid);
-    if (houseName !== null && getAlias(uuid) === null) setAlias(uuid, houseName);
-    reportHousingPresence("in");
-    return uuid;
 }
 
 /**
