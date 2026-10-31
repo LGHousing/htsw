@@ -49,14 +49,12 @@ const STEPS: TourStep[] = [
             "Import sends those files into the house.",
             "Export copies the house into one chosen project.",
         ],
-        setup: () => {
-            setActiveLeftTab("projects");
-        },
+        setup: () => setActiveLeftTab("projects"),
     },
     {
         title: "Start with a project",
         lines: [
-            "Every workflow starts from an import.json.",
+            "A project is a folder with an import.json.",
             "Open your own with Browse, or create the sample.",
             "The sample is small, commented, and safe to edit.",
             "You can delete it when you're comfortable.",
@@ -74,10 +72,9 @@ const STEPS: TourStep[] = [
     {
         title: "Import: files → house",
         lines: [
-            "Select project entries with their checkboxes.",
-            "The queue and Import button live below the code.",
-            "Import changes the house to match your files.",
-            "Review the preview before you run it.",
+            "Tick an entry's box to add it to the queue.",
+            "Run makes the house match the queued files.",
+            "Exports wait in this same queue.",
         ],
         anchor: "tour:right-import",
         setup: () => {
@@ -86,10 +83,10 @@ const STEPS: TourStep[] = [
         },
     },
     {
-        title: "Choose where export writes",
+        title: "Choose where exports go",
         lines: [
-            "This project receives everything you export.",
-            "Pick or create it before starting a long export.",
+            "This button picks the project exports are saved to.",
+            "Pick or create one before your first export.",
         ],
         anchor: "tour:export-destination",
         setup: () => setActiveLeftTab("houses"),
@@ -97,10 +94,10 @@ const STEPS: TourStep[] = [
     {
         title: "Export: house → files",
         lines: [
-            "Scan lists names quickly; select what you need.",
-            "Export copies full house content into the project",
-            "shown above and confirms before overwriting.",
-            "Use Read when you only want a comparison.",
+            "Scan lists what's in this house.",
+            "Select entries, then press Export to queue them.",
+            "Run saves them into the export project.",
+            "Read checks them against your files instead.",
         ],
         anchor: "tour:left-body",
         setup: () => setActiveLeftTab("houses"),
@@ -109,13 +106,11 @@ const STEPS: TourStep[] = [
         title: "Keep each house paired",
         lines: [
             "Bind a project with the house button on its row.",
-            "HTSW will select it when you enter this house.",
+            "HTSW opens it whenever you enter that house.",
             "Edit files → Import. Build in-game → Export.",
             "Replay this anytime with /htsw tour.",
         ],
-        setup: () => {
-            setActiveLeftTab("projects");
-        },
+        setup: () => setActiveLeftTab("projects"),
     },
 ];
 
