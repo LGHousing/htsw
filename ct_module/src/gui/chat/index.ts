@@ -11,12 +11,15 @@ import {
 import { Col, Container, Input, Scroll, Text } from "../lib/components";
 import {
     ACCENT_INFO,
+    COLOR_BUTTON_HOVER,
     COLOR_INPUT_BG,
     COLOR_PANEL,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
 import { setFocusedInput } from "../lib/focus";
+import { markGuiDirty } from "../lib/dirty";
+import { getChatPanelHeight, setChatPanelHeight } from "@htsw/importer/settings";
 import { getChatKeyName } from "../keybinds";
 import { isSimulatorActive } from "../../simulator/session";
 import { getChatLines } from "./mcChat";
@@ -24,9 +27,12 @@ import {
     getMinecraft,
     javaArrayAt,
     javaArrayLength,
+    javaType,
     runtimeString,
     type RuntimeString,
 } from "../lib/java";
+
+const MouseClass = javaType("org.lwjgl.input.Mouse");
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 const CHAT_SCROLL_ID = "htsw-chat-scroll";
@@ -187,6 +193,64 @@ function chatRows(wrapWidth: number): Element[] {
         }
     }
     return rows;
+}
+
+// Smallest chat panel we'll render: the input bar plus a couple of scrollback rows.
+const CHAT_MIN_H = 56;
+
+// The strip between the left panel and the chat drags to resize the chat.
+// `drag` holds the live height until the mouse is released, then it is saved.
+let drag: { startY: number; startH: number; h: number } | null = null;
+let shownH = 0;
+let maxH = 0;
+
+/**
+ * Height of the chat panel: the one being dragged, else the saved one, else
+ * `vanillaH` (lined up with the vanilla chat). Never below CHAT_MIN_H or above
+ * `limitH`, so neither the chat nor the panel above it can collapse.
+ */
+export function chatPanelHeight(vanillaH: number, limitH: number): number {
+    maxH = Math.max(0, limitH);
+    const wanted = drag !== null ? drag.h : getChatPanelHeight() ?? vanillaH;
+    shownH = Math.min(Math.max(wanted, CHAT_MIN_H), maxH);
+    return shownH;
+}
+
+export function ChatResizeHandle(height: number): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            height: { kind: "px", value: height },
+            background: () => (drag !== null ? COLOR_BUTTON_HOVER : undefined),
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        noClickFlash: true,
+        onClick: (_rect, info) => {
+            if (info.button !== 0) return;
+            drag = { startY: info.y, startH: shownH, h: shownH };
+        },
+        children: [],
+    });
+}
+
+/** Follows the mouse while the chat is being resized. `mouseY` is in overlay space. */
+export function updateChatResize(mouseY: number): void {
+    if (drag === null) return;
+    if (!MouseClass.isButtonDown(0)) {
+        endChatResize();
+        return;
+    }
+    const h = Math.min(Math.max(drag.startH + drag.startY - mouseY, CHAT_MIN_H), maxH);
+    if (h === drag.h) return;
+    drag.h = h;
+    markGuiDirty();
+}
+
+export function endChatResize(): void {
+    if (drag === null) return;
+    if (drag.h !== drag.startH) setChatPanelHeight(drag.h);
+    drag = null;
+    markGuiDirty();
 }
 
 function ChatInputBar(): Element {

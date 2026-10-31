@@ -20,6 +20,7 @@ import {
 } from "@htsw/importer/runtime/state/flags";
 import {
     getAutoUpdatePreference,
+    getHideImportChat,
     getRestoreWorkspace,
     getShowChatPanel,
     getShowInventoryButtons,
@@ -27,6 +28,7 @@ import {
     getUnmatchedFunctionsFirst,
     getUploadDiagnostics,
     getAutoRun,
+    setHideImportChat,
     setRestoreWorkspace,
     setShowChatPanel,
     setShowInventoryButtons,
@@ -101,6 +103,13 @@ export function SettingsView(): Element {
                 label: "Show chat panel",
                 isOn: () => getShowChatPanel(),
                 onToggle: () => setShowChatPanel(!getShowChatPanel()),
+            }),
+            toggleRow({
+                icon: () =>
+                    getHideImportChat() ? Icons.messageSquareOff : Icons.messageSquare,
+                label: "Hide import messages in chat",
+                isOn: () => getHideImportChat(),
+                onToggle: () => setHideImportChat(!getHideImportChat()),
             }),
             toggleRow({
                 icon: () => (getSmoothScrolling() ? Icons.waves : Icons.mouse),
