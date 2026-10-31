@@ -59,6 +59,7 @@ import {
     type QueueOp,
 } from "./queue";
 import { errorMessage } from "../utils/helpers";
+import { runOnMainThread } from "../utils/mainThread";
 import { platform } from "../platform";
 
 export type QueueRunState = "idle" | "running" | "paused";
@@ -897,6 +898,7 @@ const defaultDependencies: QueueRunnerDependencies = {
     runImport: runImportQueueSession,
     runExport: runQueuedExportSession,
     scheduleDone(callback) {
-        platform().setTimeout(callback, 1500);
+        // CT timers run on separate threads; child and parent removals share the queue.
+        platform().setTimeout(() => runOnMainThread(callback), 1500);
     },
 };
