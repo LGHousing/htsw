@@ -58,6 +58,10 @@ const SAMPLE_CLAMP_RATIO = 3;
 
 const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
 const PERSIST_PATH = "./htsw/eta-stats.json";
+// Bump whenever what one expected-unit means changes (see costs.ts). Stats
+// saved under another version are dropped on load, since their ms/unit would
+// skew estimates for a long time (the slow average only moves 2% per sample).
+const PERSIST_VERSION = 2;
 let loadedPersistedStats = false;
 let persistScheduled = false;
 
@@ -170,18 +174,8 @@ type PersistedEntry = {
     count?: number;
     ewmaMsPerUnit?: number;
     ewmaSlowMsPerUnit?: number;
-    totalMs?: number;
     totalExpectedUnits?: number;
 };
-
-function weightFromPersisted(entry: PersistedEntry, count: number): number {
-    if (typeof entry.totalExpectedUnits === "number" && entry.totalExpectedUnits > 0) {
-        return entry.totalExpectedUnits;
-    }
-    // Older persisted stats had no unit total — fall back to occurrence count
-    // (assume ~1 unit/op). Corrects itself as new samples accumulate.
-    return Math.max(0, count);
-}
 
 function loadPersistedStats(): void {
     if (loadedPersistedStats) return;
@@ -190,34 +184,26 @@ function loadPersistedStats(): void {
     try {
         const raw = runtimeString(platform().fileLib.read(PERSIST_PATH));
         const parsed = JSON.parse(raw) as {
+            version?: number;
             stats?: { [kind: string]: PersistedEntry | undefined };
         };
-        const persisted = parsed.stats;
-        if (persisted === undefined) return;
-        for (const kind in persisted) {
-            const entry = persisted[kind];
-            if (entry === undefined) continue;
-            if (typeof entry.count !== "number") continue;
-            let ewmaMsPerUnit: number | null = null;
-            if (typeof entry.ewmaMsPerUnit === "number") {
-                ewmaMsPerUnit = Math.max(0, entry.ewmaMsPerUnit);
-            } else if (
-                typeof entry.totalMs === "number" &&
-                typeof entry.totalExpectedUnits === "number" &&
-                entry.totalExpectedUnits > 0
+        if (parsed.version !== PERSIST_VERSION || parsed.stats === undefined) return;
+        for (const kind in parsed.stats) {
+            const entry = parsed.stats[kind];
+            if (
+                entry === undefined ||
+                typeof entry.count !== "number" ||
+                typeof entry.ewmaMsPerUnit !== "number" ||
+                typeof entry.ewmaSlowMsPerUnit !== "number" ||
+                typeof entry.totalExpectedUnits !== "number"
             ) {
-                ewmaMsPerUnit = entry.totalMs / entry.totalExpectedUnits;
+                continue;
             }
-            if (ewmaMsPerUnit === null) continue;
-            const ewmaSlowMsPerUnit =
-                typeof entry.ewmaSlowMsPerUnit === "number"
-                    ? Math.max(0, entry.ewmaSlowMsPerUnit)
-                    : ewmaMsPerUnit;
             stats[kind] = {
                 count: Math.max(0, entry.count),
-                ewmaMsPerUnit,
-                ewmaSlowMsPerUnit,
-                totalExpectedUnits: weightFromPersisted(entry, entry.count),
+                ewmaMsPerUnit: Math.max(0, entry.ewmaMsPerUnit),
+                ewmaSlowMsPerUnit: Math.max(0, entry.ewmaSlowMsPerUnit),
+                totalExpectedUnits: Math.max(0, entry.totalExpectedUnits),
             };
         }
     } catch (_error) {
@@ -240,7 +226,7 @@ function persistTimingStats(): void {
             PERSIST_PATH,
             JSON.stringify(
                 {
-                    version: 1,
+                    version: PERSIST_VERSION,
                     updatedAt: new Date().toISOString(),
                     stats,
                 },
