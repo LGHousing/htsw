@@ -318,6 +318,7 @@ async function importHouse(
         : undefined;
     // Every retry plans from the live interval and body; nothing is journalled.
     let plan: FunctionImportPlan = {
+        observedSettings: {},
         kind: "FUNCTION",
         exists: house.exists,
         importable,

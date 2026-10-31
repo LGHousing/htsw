@@ -87,6 +87,7 @@ test.each(["open settings", "write description"])(
         if (step === "open settings") open.mockRejectedValue(failure);
         else vi.spyOn(menus, "setStringValue").mockRejectedValue(failure);
         const plan: import("@htsw/importer/importables/functions/import").FunctionImportPlan = {
+            observedSettings: {},
             kind: "FUNCTION",
             exists: true,
             importable: { type: "FUNCTION", name: "Readiness", actions: [] },

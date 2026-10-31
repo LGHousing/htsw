@@ -31,7 +31,7 @@ type FunctionSettingHandler<K extends FunctionSettingKey> = {
         desired: ImportableFunction
     ) => FunctionSettingChangeOf<K> | null;
     writeExportValue(
-        observed: ObservedFunctionSettings,
+        observed: FunctionSettings,
         target: FunctionSettings
     ): void;
 };
@@ -128,7 +128,7 @@ export function functionSettingsMatchDesired(
 }
 
 export function functionSettingsForExport(
-    observed: ObservedFunctionSettings
+    observed: FunctionSettings
 ): FunctionSettings {
     const settings: FunctionSettings = {};
     for (const key of functionSettingKeys()) {
