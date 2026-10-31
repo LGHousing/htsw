@@ -37,6 +37,8 @@ import {
 } from "./housing";
 import {
     functionSettingsMatchDesired,
+    functionSettingsForExport,
+    type FunctionSettings,
     planFunctionSettingChanges,
     type FunctionSettingChange,
     type ObservedFunctionSettings,
@@ -64,6 +66,7 @@ export type FunctionImportPlan = {
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
     settingsPlan: FunctionSettingChange[] | null;
+    observedSettings: FunctionSettings;
     exists: boolean;
 };
 
@@ -127,7 +130,10 @@ export async function hydrateImportableFunction(
 }
 
 export function planImportableFunction(read: FunctionRead): FunctionImportPlan {
+    const cached = read.trustPlan?.entry?.importable;
+    const settings = read.settings ?? (cached?.type === "FUNCTION" ? cached : {});
     return {
+        observedSettings: functionSettingsForExport(settings),
         kind: "FUNCTION",
         importable: read.importable,
         trustPlan: read.trustPlan,
@@ -414,7 +420,12 @@ export function reconstructObservedFunction(plan: FunctionImportPlan): Importabl
     if (plan.actionsPlan === null) return null;
     const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
     if (actions === null) return null;
-    return { type: "FUNCTION", name: plan.importable.name, actions };
+    return {
+        type: "FUNCTION",
+        name: plan.importable.name,
+        ...plan.observedSettings,
+        actions,
+    };
 }
 
 function functionSettingsTrusted(

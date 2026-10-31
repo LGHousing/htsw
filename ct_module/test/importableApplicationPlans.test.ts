@@ -45,6 +45,7 @@ function sessionWithPlannedShells(
 describe("importable application plans", () => {
     test("no-op function and command plans contain only the cache step", () => {
         const functionPlan: FunctionImportPlan = {
+            observedSettings: {},
             kind: "FUNCTION",
             importable: {
                 type: "FUNCTION",
@@ -84,6 +85,7 @@ describe("importable application plans", () => {
 
     test("a planned referenced function shell is not budgeted a second time", () => {
         const plan: FunctionImportPlan = {
+            observedSettings: {},
             kind: "FUNCTION",
             importable: {
                 type: "FUNCTION",
@@ -127,6 +129,7 @@ describe("importable application plans", () => {
 
     test("function settings do not plan a close step after Housing exits the editor", () => {
         const plan: FunctionImportPlan = {
+            observedSettings: {},
             kind: "FUNCTION",
             importable: {
                 type: "FUNCTION",
