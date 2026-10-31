@@ -191,6 +191,25 @@ export async function applyImportableItemPlan(
     const uuid = plan.housingUuid;
     const dependencyIndex = session.itemDependencies;
     const needsActionApply = plan.leftPlan !== null || plan.rightPlan !== null;
+    // All items are read before application. An earlier item may have signed
+    // these same click actions since this rebuild was planned.
+    const cachedInteractData = needsActionApply
+        ? readInteractDataCache(importable, dependencyIndex, uuid)
+        : undefined;
+    if (cachedInteractData !== undefined) {
+        await application.run("placeItem", () =>
+            session.itemPlacement.place(
+                ctx,
+                itemWithInteractData(importable.nbt, cachedInteractData)
+            )
+        );
+        for (const step of itemApplicationPlan(plan).steps) {
+            if (step.key !== "placeItem" && step.key !== "cache") {
+                application.complete(step.key);
+            }
+        }
+        return;
+    }
     if (!needsActionApply) {
         await application.run("placeItem", () =>
             session.itemPlacement.place(ctx, plan.item)

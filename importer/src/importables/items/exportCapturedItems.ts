@@ -15,7 +15,11 @@ import { createProjectItemIndex } from "./projectItems";
 import { readParsedImportablesForExport } from "../export/projectDestination";
 import type { ItemCaptureRegistry } from "./captureRegistry";
 import { readClickActions } from "./readClickActions";
-import { hasItemClickActions, writeInteractDataCache } from "./interactDataCache";
+import {
+    hasItemClickActions,
+    readInteractDataCache,
+    writeInteractDataCache,
+} from "./interactDataCache";
 import { sourceItemFieldContent } from "../../housingSync/items/fieldContent";
 import { platform } from "../../platform";
 
@@ -125,7 +129,10 @@ export async function exportCapturedItems(
         const dependencies = createItemDependencyIndex(parsed.value, items);
         for (const importable of parsed.value) {
             if (importable.type !== "ITEM" || !written.has(importable.name)) continue;
-            let interactionCacheReady = !hasItemClickActions(importable);
+            // Keep the signature already used by imported givers and checks.
+            let interactionCacheReady =
+                !hasItemClickActions(importable) ||
+                readInteractDataCache(importable, dependencies, housingUuid) !== undefined;
             if (!interactionCacheReady) {
                 try {
                     const interactData = registry.capturedInteractData(importable.name);
