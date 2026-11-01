@@ -11,6 +11,8 @@ const IMPORT_CHAT = [
     /^Created custom menu with the title .+!$/,
     /^Updated region to your current selection!$/,
     /^Position [AB] set to .+\.$/,
+    /^Added action .+!$/,
+    /^This function will (now|no longer) automatically execute.*!$/,
 ];
 
 function isImportChat(message: string): boolean {
