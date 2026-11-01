@@ -35,7 +35,8 @@ export function isOwnProbeRejection(message: string): boolean {
     return (
         awaitingProbeReply &&
         message.startsWith("Unknown command") &&
-        message.endsWith("(/wtfmap)")
+        // Hypixel has ended this line with both "(/wtfmap)" and "('wtfmap')".
+        message.indexOf("wtfmap") !== -1
     );
 }
 
