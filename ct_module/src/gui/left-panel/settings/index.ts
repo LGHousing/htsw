@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import type { Element } from "../../lib/layout";
-import { Col, Container, Icon, Text } from "../../lib/components";
+import { Element, SCROLLBAR_WIDTH } from "../../lib/layout";
+import { Container, Icon, Scroll, Text } from "../../lib/components";
 import { Icons, type IconName } from "../../lib/icons.generated";
 import {
     COLOR_BUTTON,
@@ -89,8 +89,17 @@ function toggleRow(opts: ToggleRow): Element {
 }
 
 export function SettingsView(): Element {
-    return Col({
-        style: { gap: 6, height: { kind: "grow" }, padding: 4 },
+    // Scrolls so every setting stays reachable when the chat panel is tall.
+    return Scroll({
+        id: "left-settings-scroll",
+        style: {
+            gap: 6,
+            height: { kind: "grow" },
+            padding: [
+                { side: "all", value: 4 },
+                { side: "right", value: SCROLLBAR_WIDTH + 4 },
+            ],
+        },
         children: [
             toggleRow({
                 icon: () => Icons.layoutPanelTop,
