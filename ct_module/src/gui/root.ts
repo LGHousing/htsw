@@ -11,19 +11,18 @@ import { getContainerBoundsOverlay } from "./lib/overlayScale";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
-import { ChatPanel } from "./chat";
+import { ChatPanel, ChatResizeHandle, chatPanelHeight } from "./chat";
 import { COLOR_PANEL } from "./lib/theme";
 import { getShowChatPanel, getShowInventoryButtons } from "@htsw/importer/settings";
 import { isTaskRunning } from "@htsw/importer/tasks/runningState";
 
-// Smallest chat panel we'll render (input bar + a couple scrollback rows) and
-// the minimum height the left rail keeps above it, so a short window degrades
-// gracefully instead of squeezing one out entirely.
-const CHAT_MIN_H = 56;
+// The minimum height the left rail keeps above the chat, so a short window
+// degrades gracefully instead of squeezing it out entirely.
 const RAIL_MIN_H = 60;
-// Transparent sliver between the rail and the chat, mirroring the overlay's
-// screen-edge gutters so the two read as separate panels.
-const RAIL_CHAT_GAP = 2;
+// Transparent strip between the rail and the chat, as wide as the overlay's
+// screen-edge gutters so the two read as separate panels. Dragging it resizes
+// the chat.
+const RAIL_CHAT_GAP = SCREEN_PAD;
 
 function transparentPad(h: number): Element {
     return Container({
@@ -95,14 +94,14 @@ function buildLayout(b: ContainerBounds): Element {
 
     const topGapH = Math.max(0, b.top - contentRowY);
     const contentRowH = Math.max(0, b.screenH - SCREEN_PAD - contentRowY);
-    // Chat fills from the vanilla chat top straight down to the bottom of the
-    // column (no dead transparent gap below it). Clamp so neither the chat nor
-    // the rail above it collapses on a short window.
+    // Unless the player has resized it, the chat fills from the vanilla chat
+    // top straight down to the bottom of the column (no dead transparent gap
+    // below it).
     const chatTopInLeftCol = Math.max(0, chat.y - contentRowY);
-    let chatH = contentRowH - chatTopInLeftCol;
-    chatH = Math.max(chatH, CHAT_MIN_H);
-    chatH = Math.min(chatH, Math.max(0, contentRowH - RAIL_MIN_H - RAIL_CHAT_GAP));
-    chatH = Math.max(0, chatH);
+    const chatH = chatPanelHeight(
+        contentRowH - chatTopInLeftCol,
+        contentRowH - RAIL_MIN_H - RAIL_CHAT_GAP
+    );
 
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
@@ -121,7 +120,7 @@ function buildLayout(b: ContainerBounds): Element {
                         children: getShowChatPanel()
                             ? [
                                   bgWrap(LeftPanel(leftColW), "grow"),
-                                  transparentPad(RAIL_CHAT_GAP),
+                                  ChatResizeHandle(RAIL_CHAT_GAP),
                                   ChatPanel(leftColW, chatH),
                               ]
                             : [bgWrap(LeftPanel(leftColW), "grow")],

@@ -55,7 +55,8 @@ import { Container } from "./lib/components";
 import { handleCompletedParse, tickReparse } from "@htsw/importer/runtime/parsing/reparse";
 import { onParseCacheEntryChanged, processPendingParses } from "@htsw/importer/runtime/parsing/parses";
 import { invalidateSourceDiffForParse } from "./code-view/sourceDiff";
-import { CHAT_INPUT_ID } from "./chat";
+import { CHAT_INPUT_ID, endChatResize, updateChatResize } from "./chat";
+import { initImportChatHiding } from "./chat/hideImportChat";
 import { refreshChatLines } from "./chat/mcChat";
 import {
     initPopoverRendering,
@@ -421,6 +422,8 @@ export function initHtswGui(): void {
     initialized = true;
     syncHtswGuiProperties();
 
+    initImportChatHiding();
+
     // Drive the lib's wheel easing from the user's "Smooth scrolling" setting.
     setScrollEasingProvider(getSmoothScrolling);
 
@@ -695,6 +698,7 @@ export function initHtswGui(): void {
             span("lockBanner.poll", pollLockBanners);
             tickTabDragAutoScroll(mcToOverlay(mouseX));
             tickQueueDragAutoScroll(mcToOverlay(mouseY));
+            updateChatResize(mcToOverlay(mouseY));
             const dragging = isDraggingScrollbar();
             if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
             if (visible && getShowChatPanel() && refreshChatLines()) markGuiDirty();
@@ -707,6 +711,7 @@ export function initHtswGui(): void {
         endScrollbarDrag();
         endTabDrag();
         endQueueDrag();
+        endChatResize();
     });
 
     // Clear focus when the user clicks anywhere outside every visible panel.

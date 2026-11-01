@@ -579,12 +579,13 @@ function valueInputTiming(mode: "CHAT" | "ANVIL" | "SIGN"): {
     return { kind: "anvilInput", units: COST.anvilInput };
 }
 
+/** What Housing says when it wants a value typed in chat. */
+export const CHAT_INPUT_PROMPT = "Please use the chat to provide the value you wish to set.";
+
 function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
     ctx.beginChatPrompt();
     return ctx.waitFor("message", (message) => {
-        return removedFormatting(message).includes(
-            "Please use the chat to provide the value you wish to set."
-        );
+        return removedFormatting(message).includes(CHAT_INPUT_PROMPT);
     });
 }
 

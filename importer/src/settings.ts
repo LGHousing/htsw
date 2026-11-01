@@ -66,6 +66,19 @@ const showChatPanel = defineValue(SETTINGS, {
     fallback: true,
     parse: asBoolean,
 });
+// Null follows the vanilla chat's height; a number is the height the player
+// dragged the HTSW chat panel to.
+const chatPanelHeight = defineValue<number | null>(SETTINGS, {
+    key: "chatPanelHeight",
+    fallback: null,
+    parse: (raw, fallback) =>
+        typeof raw === "number" && isFinite(raw) && raw > 0 ? raw : fallback,
+});
+const hideImportChat = defineValue(SETTINGS, {
+    key: "hideImportChat",
+    fallback: false,
+    parse: asBoolean,
+});
 const muteTaskSounds = defineValue(SETTINGS, {
     key: "muteTaskSounds",
     fallback: false,
@@ -119,6 +132,21 @@ export function getShowChatPanel(): boolean {
 }
 export function setShowChatPanel(value: boolean): void {
     showChatPanel.set(value);
+}
+
+export function getChatPanelHeight(): number | null {
+    return chatPanelHeight.get();
+}
+export function setChatPanelHeight(value: number): void {
+    chatPanelHeight.set(value);
+}
+
+/** Whether Housing chat that an import answers or confirms by itself is hidden. */
+export function getHideImportChat(): boolean {
+    return hideImportChat.get();
+}
+export function setHideImportChat(value: boolean): void {
+    hideImportChat.set(value);
 }
 
 export function getMuteTaskSounds(): boolean {
