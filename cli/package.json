@@ -23,7 +23,7 @@
         "@types/node": "^26.1.2",
         "knip": "^6.31.0",
         "typescript": "^7.0.2",
-        "vite": "^8.3.4"
+        "vite": "^8.3.5"
     },
     "dependencies": {
         "htsw": "file:../language"
