@@ -15,6 +15,7 @@ vi.mock("@htsw/importer/housingSync/menus/menuWait", () => ({
 import { timedWaitForMenu, waitForMenu } from "@htsw/importer/housingSync/menus/menuWait";
 import {
     setListItemNote,
+    setNumberValue,
     setStringValue,
     setStringOrPaginatedOptionValue,
 } from "@htsw/importer/housingSync/menus/menuUtils";
@@ -228,6 +229,43 @@ describe("Housing text inputs", () => {
             ).resolves.toBeUndefined();
         }
     );
+
+    it("accepts decimal display 2.0 when writing integer 2 to number fields", async () => {
+        const pitch = inputContext("Pitch", "1.0");
+        pitch.setActual("2.0");
+        await expect(setNumberValue(pitch.ctx, pitch.slot, 2)).resolves.toBeUndefined();
+
+        const levels = inputContext("Levels", "0");
+        levels.setActual("2.0");
+        await expect(
+            writeGiveExperienceLevels(levels.ctx, {
+                type: "GIVE_EXPERIENCE_LEVELS",
+                amount: "2",
+            })
+        ).resolves.toBeUndefined();
+    });
+
+    it("rejects wrong numbers on number fields and keeps typed variable values distinct", async () => {
+        const pitch = inputContext("Pitch", "1.0");
+        await expect(setNumberValue(pitch.ctx, pitch.slot, 2)).rejects.toThrow(
+            'HTSW_INPUT_REJECTED: Housing did not apply Pitch: expected "2", read "1.0"'
+        );
+
+        const largeInt = inputContext("Levels", "9007199254740992.0");
+        await expect(
+            writeGiveExperienceLevels(largeInt.ctx, {
+                type: "GIVE_EXPERIENCE_LEVELS",
+                amount: "9007199254740993",
+            })
+        ).rejects.toThrow("HTSW_INPUT_REJECTED:");
+
+        const typedVar = inputContext("Value", "2.0");
+        await expect(
+            setStringValue(typedVar.ctx, typedVar.slot, "2", "value")
+        ).rejects.toThrow(
+            'HTSW_INPUT_REJECTED: Housing did not apply Value: expected "2", read "2.0"'
+        );
+    });
 
     it.each([true, false])(
         "checks visible note text after writing (accepted=%s)",

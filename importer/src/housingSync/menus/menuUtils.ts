@@ -33,7 +33,12 @@ import {
     submitSignValue,
 } from "./menuInput";
 import { submitHousingText, type TextReadBack } from "./textInput";
-import { normalizeValueTextForCompare } from "../actions/comparison";
+import {
+    normalizeValueTextForCompare,
+    numericDisplayValuesEqual,
+    parseNumericDisplayValue,
+    quantizeHousingDecimal,
+} from "../actions/comparison";
 
 function describeVisibleOptions(ctx: TaskContext): string {
     const names: string[] = [];
@@ -593,10 +598,10 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
     const newValue = String(value);
     const currentValue = readCurrentValue(slot);
     if (currentValue !== null) {
-        const currentNumber = Number(
-            removedFormatting(currentValue).trim().split(",").join("")
+        const currentNumber = parseNumericDisplayValue(
+            removedFormatting(currentValue).trim()
         );
-        if (Number.isFinite(currentNumber) && currentNumber === value) {
+        if (currentNumber !== null && currentNumber === value) {
             return;
         }
     }
@@ -604,16 +609,31 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
     slot.click();
     const started = Date.now();
     const field = removedFormatting(slot.getItem().getName()).trim();
-    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, true));
+    const mode = await enterValue(
+        ctx,
+        newValue,
+        field,
+        undefined,
+        fieldReadBack(ctx, field, (actual, expected) => {
+            if (actual === expected) return true;
+            const actualNumber = parseNumericDisplayValue(actual);
+            return (
+                actualNumber !== null &&
+                quantizeHousingDecimal(actualNumber) === quantizeHousingDecimal(value)
+            );
+        })
+    );
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
+
+type StringReadBackMode = "text" | "value" | "number";
 
 export async function setStringValue(
     ctx: TaskContext,
     slot: ItemSlot,
     value: string,
-    numeric: boolean = false
+    readBackMode: StringReadBackMode = "text"
 ): Promise<void> {
     const newValue = value;
     const currentValue = readStringValue(slot);
@@ -630,12 +650,31 @@ export async function setStringValue(
     slot.click();
     const started = Date.now();
     const field = removedFormatting(slot.getItem().getName()).trim();
-    const mode = await enterValue(ctx, newValue, field, undefined, fieldReadBack(ctx, field, numeric));
+    const matches =
+        readBackMode === "number"
+            ? numericDisplayValuesEqual
+            : readBackMode === "value"
+              ? (actual: string, expected: string) =>
+                    normalizeValueTextForCompare(actual) ===
+                    normalizeValueTextForCompare(expected)
+              : undefined;
+    const mode = await enterValue(
+        ctx,
+        newValue,
+        field,
+        undefined,
+        fieldReadBack(ctx, field, matches)
+    );
     const timing = valueInputTiming(mode);
     recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
 
-function fieldReadBack(ctx: TaskContext, field: string, numeric = false): TextReadBack {
+function fieldReadBack(
+    ctx: TaskContext,
+    field: string,
+    matches: (actual: string, expected: string) => boolean = (actual, expected) =>
+        actual === expected
+): TextReadBack {
     const visible = (text: string) => removedFormatting(text).trim().replace(/\s+/g, " ");
     return {
         read: () => {
@@ -645,9 +684,7 @@ function fieldReadBack(ctx: TaskContext, field: string, numeric = false): TextRe
             if (actual === null || actual.endsWith("...") || actual.endsWith("…")) return null;
             return visible(actual);
         },
-        matches: (actual, expected) => numeric
-            ? normalizeValueTextForCompare(actual) === normalizeValueTextForCompare(visible(expected))
-            : actual === visible(expected),
+        matches: (actual, expected) => matches(actual, visible(expected)),
     };
 }
 

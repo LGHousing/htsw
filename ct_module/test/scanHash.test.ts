@@ -207,6 +207,30 @@ describe("action-list content hashes", () => {
         );
     });
 
+    it("hashes untyped numeric action and condition fields equally across integer and .0 forms", () => {
+        expect(
+            actionListContentHashFromActions([
+                { type: "GIVE_EXPERIENCE_LEVELS", amount: "2" },
+                { type: "SET_VELOCITY", x: "2", y: "0", z: "0" },
+                conditional({
+                    conditions: [
+                        { type: "COMPARE_DAMAGE", op: "Greater Than", amount: "2" },
+                    ],
+                }),
+            ])
+        ).toBe(
+            actionListContentHashFromActions([
+                { type: "GIVE_EXPERIENCE_LEVELS", amount: "2.0" },
+                { type: "SET_VELOCITY", x: "2.0", y: "0.0", z: "0.0" },
+                conditional({
+                    conditions: [
+                        { type: "COMPARE_DAMAGE", op: "Greater Than", amount: "2.0" },
+                    ],
+                }),
+            ])
+        );
+    });
+
     it("returns unknown until every slot is fully hydrated", () => {
         const slot = observedSlot(0, message("live"));
         slot.hydrated = false;

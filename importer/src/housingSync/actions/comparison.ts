@@ -53,8 +53,59 @@ function fallbackHousingDecimalQuantizer(num: number): number {
 
 let housingDecimalQuantizer = fallbackHousingDecimalQuantizer;
 
-function quantizeHousingDecimal(num: number): number {
+export function quantizeHousingDecimal(num: number): number {
     return housingDecimalQuantizer(num);
+}
+
+function exactIntegerDisplay(value: string): string | null {
+    const isInt = INTEGER_DISPLAY_VALUE_PATTERN.test(value);
+    const isDec = !isInt && DECIMAL_DISPLAY_VALUE_PATTERN.test(value);
+    if (!isInt && !isDec) return null;
+
+    const withoutCommas = value.replace(/,/g, "");
+    const negative = withoutCommas.charAt(0) === "-";
+    const unsigned =
+        negative || withoutCommas.charAt(0) === "+"
+            ? withoutCommas.substring(1)
+            : withoutCommas;
+    const dot = unsigned.indexOf(".");
+    if (dot !== -1 && /[^0]/.test(unsigned.substring(dot + 1))) {
+        return null;
+    }
+
+    const wholeRaw = dot === -1 ? unsigned : unsigned.substring(0, dot);
+    const whole = wholeRaw.replace(/^0+/, "") || "0";
+    return whole === "0" ? "0" : `${negative ? "-" : ""}${whole}`;
+}
+
+export function parseNumericDisplayValue(value: string): number | null {
+    if (
+        !INTEGER_DISPLAY_VALUE_PATTERN.test(value) &&
+        !DECIMAL_DISPLAY_VALUE_PATTERN.test(value)
+    ) {
+        return null;
+    }
+    const num = Number(value.replace(/,/g, ""));
+    return Number.isFinite(num) ? num : null;
+}
+
+function canonicalNumericKey(value: string): string | number | null {
+    const exactInt = exactIntegerDisplay(value);
+    if (exactInt !== null) {
+        const num = Number(exactInt);
+        return Number.isSafeInteger(num) ? num : exactInt;
+    }
+    const num = parseNumericDisplayValue(value);
+    if (num === null) return null;
+    const quantized = quantizeHousingDecimal(num);
+    return quantized === 0 ? 0 : quantized;
+}
+
+export function numericDisplayValuesEqual(actual: string, expected: string): boolean {
+    if (actual === expected) return true;
+    const actualKey = canonicalNumericKey(actual);
+    const expectedKey = canonicalNumericKey(expected);
+    return actualKey !== null && expectedKey !== null && actualKey === expectedKey;
 }
 
 export function setHousingDecimalQuantizer(
@@ -243,11 +294,12 @@ function canonicalizeFieldValue(type: string, prop: string, value: unknown): unk
         value = normalizeLoreValueFormatting(value);
     }
     if (kind === "value" && shouldCoerceNumericField(type, prop)) {
-        if (typeof value === "string" && value !== "") {
-            const num = Number(value);
-            if (Number.isFinite(num)) return quantizeHousingDecimal(num);
+        if (typeof value === "string") {
+            const numeric = canonicalNumericKey(value);
+            return numeric !== null ? numeric : collapseInteriorSpaces(value);
         } else if (typeof value === "number" && Number.isFinite(value)) {
-            return quantizeHousingDecimal(value);
+            const quantized = quantizeHousingDecimal(value);
+            return quantized === 0 ? 0 : quantized;
         }
     } else if (kind === "value" && typeof value === "string") {
         const numericDisplay = normalizeValueTextForCompare(value);

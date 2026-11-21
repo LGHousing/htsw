@@ -72,7 +72,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Change Max Health",
         loreFields: {
             Mode: { prop: "op", kind: "select", default: "Set" },
-            "Max Health": { prop: "amount", kind: "value" },
+            "Max Health": { prop: "amount", kind: "value", numeric: true },
             "Heal On Change": { prop: "heal", kind: "boolean", default: true },
         },
     },
@@ -137,7 +137,7 @@ export const ACTION_MAPPINGS = {
     GIVE_EXPERIENCE_LEVELS: {
         displayName: "Give Experience Levels",
         loreFields: {
-            Levels: { prop: "amount", kind: "value" },
+            Levels: { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -215,7 +215,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Change Health",
         loreFields: {
             Mode: { prop: "op", kind: "select", default: "Set" },
-            Health: { prop: "amount", kind: "value" },
+            Health: { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -223,7 +223,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Change Hunger Level",
         loreFields: {
             Mode: { prop: "op", kind: "select", default: "Set" },
-            Level: { prop: "amount", kind: "value" },
+            Level: { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -324,9 +324,9 @@ export const ACTION_MAPPINGS = {
     SET_VELOCITY: {
         displayName: "Change Velocity",
         loreFields: {
-            "X Direction": { prop: "x", kind: "value" },
-            "Y Direction": { prop: "y", kind: "value" },
-            "Z Direction": { prop: "z", kind: "value" },
+            "X Direction": { prop: "x", kind: "value", numeric: true },
+            "Y Direction": { prop: "y", kind: "value", numeric: true },
+            "Z Direction": { prop: "z", kind: "value", numeric: true },
         },
     },
 

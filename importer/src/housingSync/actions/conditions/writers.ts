@@ -155,7 +155,7 @@ export async function writeCompareVar(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "amount")),
             condition.amount,
-            true
+            "value"
         );
     }
 
@@ -163,7 +163,7 @@ export async function writeCompareVar(
         ctx,
         ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
         condition.fallback ?? stringConditionDefault("COMPARE_VAR", "fallback"),
-        true
+        "value"
     );
 }
 
@@ -258,7 +258,7 @@ export async function writeCompareHealth(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HEALTH", "amount")),
             condition.amount,
-            true
+            "number"
         );
     }
 }
@@ -280,7 +280,7 @@ export async function writeCompareMaxHealth(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_MAX_HEALTH", "amount")),
             condition.amount,
-            true
+            "number"
         );
     }
 }
@@ -302,7 +302,7 @@ export async function writeCompareHunger(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HUNGER", "amount")),
             condition.amount,
-            true
+            "number"
         );
     }
 }
@@ -348,7 +348,7 @@ export async function writeComparePlaceholder(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "amount")),
             condition.amount,
-            true
+            "value"
         );
     }
 }
@@ -453,7 +453,7 @@ export async function writeCompareDamage(
             ctx,
             ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_DAMAGE", "amount")),
             condition.amount,
-            true
+            "number"
         );
     }
 }

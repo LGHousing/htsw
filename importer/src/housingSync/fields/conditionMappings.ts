@@ -98,7 +98,7 @@ export const CONDITION_MAPPINGS = {
         displayName: "Player Health",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
-            "Compare Value": { prop: "amount", kind: "value" },
+            "Compare Value": { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -106,7 +106,7 @@ export const CONDITION_MAPPINGS = {
         displayName: "Max Player Health",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
-            "Compare Value": { prop: "amount", kind: "value" },
+            "Compare Value": { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -114,7 +114,7 @@ export const CONDITION_MAPPINGS = {
         displayName: "Player Hunger",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
-            "Compare Value": { prop: "amount", kind: "value" },
+            "Compare Value": { prop: "amount", kind: "value", numeric: true },
         },
     },
 
@@ -193,7 +193,7 @@ export const CONDITION_MAPPINGS = {
         displayName: "Damage Amount",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
-            "Compare Value": { prop: "amount", kind: "value" },
+            "Compare Value": { prop: "amount", kind: "value", numeric: true },
         },
     },
 } satisfies {
